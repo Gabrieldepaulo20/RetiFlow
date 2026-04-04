@@ -1,0 +1,997 @@
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { useData } from '@/contexts/DataContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { Button } from '@/components/ui/button';
+import { DatePicker } from '@/components/ui/date-picker';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Separator } from '@/components/ui/separator';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { useToast } from '@/hooks/use-toast';
+import {
+  ArrowLeft,
+  Plus,
+  Trash2,
+  User,
+  Car,
+  Wrench,
+  FileText,
+  DollarSign,
+  CalendarDays,
+  AlertCircle,
+  Search,
+} from 'lucide-react';
+import { NoteType, FINAL_STATUSES, IntakeNote } from '@/types';
+import { generateId } from '@/lib/generateId';
+import { cn } from '@/lib/utils';
+import { buildCustomerAddressLabel } from '@/services/domain/customers';
+import { formatNoteNumber, normalizeNoteNumber } from '@/lib/noteNumbers';
+
+/* ─── Shared micro-components ─── */
+
+export function SectionHeader({
+  icon,
+  title,
+  step,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  step: number;
+}) {
+  return (
+    <div className="flex items-center gap-3 mb-4">
+      <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+        <span className="text-[10px] font-bold text-primary">{step}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-muted-foreground/60">{icon}</span>
+        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+      </div>
+    </div>
+  );
+}
+
+export function Field({
+  label,
+  required,
+  children,
+  className,
+}: {
+  label: string;
+  required?: boolean;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <Label className="text-xs font-medium text-muted-foreground">
+        {label}
+        {required && <span className="text-destructive ml-0.5">*</span>}
+      </Label>
+      <div className="mt-1.5">{children}</div>
+    </div>
+  );
+}
+
+export function FormSection({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="bg-card rounded-xl border border-border/50 shadow-sm p-5">
+      {children}
+    </div>
+  );
+}
+
+const numberInputClassName =
+  '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none';
+
+/* ─── Item type ─── */
+
+interface ServiceItem {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  discount: number;
+}
+
+const newItem = (): ServiceItem => ({
+  id: generateId('item'),
+  description: '',
+  quantity: 1,
+  unitPrice: 0,
+  discount: 0,
+});
+
+/* ─── NoteFormCore ─── */
+
+export interface NoteFormCoreProps {
+  /** Pre-load an existing note for editing */
+  editingNote?: IntakeNote;
+  /** Pre-fill from URL query params or parent context */
+  preClientId?: string;
+  preParentId?: string;
+  /** Called with the created/updated note on success */
+  onSuccess: (note: IntakeNote) => void;
+  /** Called when user cancels */
+  onCancel: () => void;
+  /**
+   * When true the component renders without a page header and
+   * outputs two sibling divs:
+   *   1. overflow-y-auto scrollable body
+   *   2. shrink-0 sticky footer with financial summary + actions
+   *
+   * The parent (NoteFormModal) is responsible for wrapping these in a
+   * flex flex-col container (DialogContent already is one).
+   */
+  isModal?: boolean;
+}
+
+export default function NoteFormCore({
+  editingNote,
+  preClientId = '',
+  preParentId = '',
+  onSuccess,
+  onCancel,
+  isModal = false,
+}: NoteFormCoreProps) {
+  const {
+    clients,
+    notes,
+    addNote,
+    addService,
+    addProduct,
+    getServicesForNote,
+    getProductsForNote,
+    replaceServicesForNote,
+    replaceProductsForNote,
+    updateNote,
+    noteCounter,
+  } = useData();
+  const { user } = useAuth();
+  const { toast } = useToast();
+
+  const isEditing = Boolean(editingNote);
+
+  /* ── Form state ── */
+  const [noteType, setNoteType] = useState<NoteType>(
+    editingNote?.type ?? (preParentId ? 'COMPRA' : 'SERVICO'),
+  );
+  const [parentNoteId, setParentNoteId] = useState(
+    editingNote?.parentNoteId ?? preParentId,
+  );
+  const [data, setData] = useState('');
+  const [prazo, setPrazo] = useState('');
+  const [clientId, setClientId] = useState(editingNote?.clientId ?? preClientId);
+  const [vehicleModel, setVehicleModel] = useState('');
+  const [engineType, setEngineType] = useState('Cabeçote');
+  const [plate, setPlate] = useState('');
+  const [km, setKm] = useState('');
+  const [complaint, setComplaint] = useState('');
+  const [observations, setObservations] = useState('');
+  const [items, setItems] = useState<ServiceItem[]>([newItem()]);
+  const [clientSearch, setClientSearch] = useState('');
+  const [clientResultsOpen, setClientResultsOpen] = useState(false);
+  const clientSearchRef = useRef<HTMLDivElement | null>(null);
+  const [osNumber, setOsNumber] = useState(() => formatNoteNumber(noteCounter));
+
+  /* ── Populate form when editing an existing note ── */
+  useEffect(() => {
+    if (!editingNote) return;
+
+    setNoteType(editingNote.type);
+    setParentNoteId(editingNote.parentNoteId || '');
+    setData(editingNote.createdAt.split('T')[0] || '');
+    setPrazo(editingNote.updatedAt.split('T')[0] || '');
+    setClientId(editingNote.clientId);
+    setVehicleModel(editingNote.vehicleModel);
+    setEngineType(editingNote.engineType || 'Cabeçote');
+    setPlate(editingNote.plate || '');
+    setKm(editingNote.km ? String(editingNote.km) : '');
+    setComplaint(editingNote.complaint);
+    setObservations(editingNote.observations);
+
+    const existingItems =
+      editingNote.type === 'SERVICO'
+        ? getServicesForNote(editingNote.id).map((s) => ({
+            id: `svc-${s.id}`,
+            description: s.name || s.description,
+            quantity: s.quantity,
+            unitPrice: s.price,
+            discount: 0,
+          }))
+        : getProductsForNote(editingNote.id).map((p) => ({
+            id: `prd-${p.id}`,
+            description: p.name,
+            quantity: p.quantity,
+            unitPrice: p.unitPrice,
+            discount: 0,
+          }));
+
+    setItems(existingItems.length > 0 ? existingItems : [newItem()]);
+  }, [editingNote, getServicesForNote, getProductsForNote]);
+
+  /* ── Keep osNumber in sync with noteCounter when not editing ── */
+  useEffect(() => {
+    if (!isEditing) {
+      setOsNumber(formatNoteNumber(noteCounter));
+    }
+  }, [noteCounter, isEditing]);
+
+  /* ── Auto-fill from parent note (COMPRA linked to SERVICO) ── */
+  const parentNote = parentNoteId ? notes.find((n) => n.id === parentNoteId) : null;
+  useEffect(() => {
+    if (!parentNote) return;
+    setClientId(parentNote.clientId);
+    setVehicleModel(parentNote.vehicleModel);
+    if (parentNote.engineType) setEngineType(parentNote.engineType);
+    if (parentNote.plate) setPlate(parentNote.plate);
+    if (parentNote.km) setKm(String(parentNote.km));
+    if (parentNote.complaint) setComplaint(parentNote.complaint);
+  }, [parentNote]);
+
+  const selectedClient = clients.find((c) => c.id === clientId);
+  const activeClients = useMemo(
+    () => clients.filter((client) => client.isActive).sort((a, b) => a.name.localeCompare(b.name)),
+    [clients],
+  );
+  const filteredClients = useMemo(() => {
+    const query = clientSearch.trim().toLowerCase();
+
+    if (!query) {
+      return activeClients.slice(0, 8);
+    }
+
+    return activeClients.filter((client) => {
+      const haystack = [
+        client.name,
+        client.docNumber,
+        client.phone || '',
+        client.email || '',
+      ]
+        .join(' ')
+        .toLowerCase();
+
+      return haystack.includes(query);
+    }).slice(0, 8);
+  }, [activeClients, clientSearch]);
+
+  const serviceNotes = useMemo(
+    () => notes.filter((n) => n.type === 'SERVICO' && !FINAL_STATUSES.has(n.status)),
+    [notes],
+  );
+
+  useEffect(() => {
+    if (selectedClient) {
+      setClientSearch(selectedClient.name);
+      return;
+    }
+
+    if (!clientId) {
+      setClientSearch('');
+    }
+  }, [clientId, selectedClient]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!clientSearchRef.current?.contains(event.target as Node)) {
+        setClientResultsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+    };
+  }, []);
+
+  /* ── Item helpers ── */
+  const updateItem = (id: string, field: keyof ServiceItem, value: string | number) =>
+    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
+
+  const removeItem = (id: string) => {
+    if (items.length <= 1) return;
+    setItems((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const itemTotals = useMemo(
+    () =>
+      items.map((item) => {
+        const sub = item.quantity * item.unitPrice;
+        return sub - sub * (item.discount / 100);
+      }),
+    [items],
+  );
+
+  const subtotal = useMemo(() => itemTotals.reduce((a, b) => a + b, 0), [itemTotals]);
+  const totalDiscount = useMemo(
+    () =>
+      items.reduce(
+        (acc, item) => acc + (item.quantity * item.unitPrice * item.discount) / 100,
+        0,
+      ),
+    [items],
+  );
+
+  /* ── Submit ── */
+  const handleSubmit = () => {
+    if (!clientId || !data) {
+      toast({ title: 'Preencha cliente e data', variant: 'destructive' });
+      return;
+    }
+    if (items.every((i) => !i.description)) {
+      toast({ title: 'Adicione pelo menos um item', variant: 'destructive' });
+      return;
+    }
+
+    const validItems = items.filter((i) => i.description && i.unitPrice > 0);
+    const totalAmount = validItems.reduce((acc, item) => {
+      const sub = item.quantity * item.unitPrice;
+      return acc + sub - (sub * item.discount) / 100;
+    }, 0);
+
+    const payload = {
+      clientId,
+      status: editingNote?.status || ('ABERTO' as const),
+      type: noteType,
+      parentNoteId: parentNoteId || undefined,
+      engineType: engineType || 'Cabeçote',
+      vehicleModel: vehicleModel || '-',
+      plate: plate || undefined,
+      km: km ? parseInt(km) : undefined,
+      complaint: complaint.trim() || validItems.map((i) => i.description).join('; '),
+      observations,
+      createdByUserId: editingNote?.createdByUserId || user!.id,
+      totalServices: noteType === 'SERVICO' ? totalAmount : 0,
+      totalProducts: noteType === 'COMPRA' ? totalAmount : 0,
+      totalAmount,
+    };
+
+    const itemPayload = validItems.map((item) => {
+      const sub = item.quantity * item.unitPrice;
+      return {
+        name: item.description,
+        description: item.description,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        price: item.unitPrice,
+        subtotal: sub - sub * (item.discount / 100),
+      };
+    });
+
+    if (editingNote) {
+      updateNote(editingNote.id, payload);
+      if (noteType === 'SERVICO') {
+        replaceServicesForNote(
+          editingNote.id,
+          itemPayload.map((item) => ({
+            noteId: editingNote.id,
+            name: item.name,
+            description: item.description,
+            price: item.price,
+            quantity: item.quantity,
+            subtotal: item.subtotal,
+          })),
+        );
+        replaceProductsForNote(editingNote.id, []);
+      } else {
+        replaceProductsForNote(
+          editingNote.id,
+          itemPayload.map((item) => ({
+            noteId: editingNote.id,
+            name: item.name,
+            unitPrice: item.unitPrice,
+            quantity: item.quantity,
+            subtotal: item.subtotal,
+          })),
+        );
+        replaceServicesForNote(editingNote.id, []);
+      }
+      toast({ title: `O.S. ${editingNote.number} atualizada com sucesso!` });
+      onSuccess(editingNote);
+      return;
+    }
+
+    const note = addNote({ ...payload, number: normalizeNoteNumber(osNumber) });
+    itemPayload.forEach((item) => {
+      if (noteType === 'SERVICO') {
+        addService({
+          noteId: note.id,
+          name: item.name,
+          description: item.description,
+          price: item.price,
+          quantity: item.quantity,
+          subtotal: item.subtotal,
+        });
+      } else {
+        addProduct({
+          noteId: note.id,
+          name: item.name,
+          unitPrice: item.unitPrice,
+          quantity: item.quantity,
+          subtotal: item.subtotal,
+        });
+      }
+    });
+
+    if (parentNoteId) {
+      const parent = notes.find((n) => n.id === parentNoteId);
+      if (parent && parent.status !== 'AGUARDANDO_COMPRA') {
+        updateNote(parentNoteId, { previousStatus: parent.status, status: 'AGUARDANDO_COMPRA' });
+      }
+    }
+
+    toast({ title: `O.S. ${note.number} criada com sucesso!` });
+    onSuccess(note);
+  };
+
+  /* ─────────────────── JSX Sections ─────────────────── */
+
+  const section1 = (
+    <FormSection>
+      <SectionHeader step={1} icon={<CalendarDays className="w-3.5 h-3.5" />} title="Dados da O.S." />
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+        <Field label="Número da O.S." required>
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm font-mono text-muted-foreground shrink-0">OS-</span>
+            <Input
+              type="number"
+              min={0}
+              max={10000}
+              value={osNumber.replace(/\D/g, '')}
+              onChange={(e) => setOsNumber(`OS-${e.target.value}`)}
+              onBlur={() => setOsNumber(normalizeNoteNumber(osNumber))}
+              disabled={isEditing}
+              className={cn('font-mono', numberInputClassName)}
+            />
+          </div>
+        </Field>
+        <Field label="Tipo da Nota" required>
+          <Select
+            value={noteType}
+            onValueChange={(v) => {
+              setNoteType(v as NoteType);
+              if (v === 'SERVICO') setParentNoteId('');
+            }}
+            disabled={isEditing}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="SERVICO">Serviço</SelectItem>
+              <SelectItem value="COMPRA">Compra</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label="Data" required>
+          <DatePicker
+            value={data}
+            onChange={setData}
+            placeholder="Selecionar data"
+          />
+        </Field>
+        <Field label="Prazo de Entrega">
+          <DatePicker
+            value={prazo}
+            onChange={setPrazo}
+            placeholder="Definir prazo"
+          />
+        </Field>
+      </div>
+
+      {noteType === 'COMPRA' && (
+        <div className="mt-4">
+          <Field label="Vincular a O.S. de Serviço">
+            <Select
+              value={parentNoteId || '__none__'}
+              onValueChange={(v) => setParentNoteId(v === '__none__' ? '' : v)}
+              disabled={isEditing}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Nenhuma (independente)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Nenhuma (independente)</SelectItem>
+                {serviceNotes.map((n) => {
+                  const c = clients.find((cl) => cl.id === n.clientId);
+                  return (
+                    <SelectItem key={n.id} value={n.id}>
+                      {n.number} — {c?.name}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </Field>
+          {parentNote && (
+            <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1.5">
+              <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              Dados do veículo e cliente serão preenchidos a partir da nota pai.
+            </p>
+          )}
+        </div>
+      )}
+    </FormSection>
+  );
+
+  const section2 = (
+    <FormSection>
+      <SectionHeader step={2} icon={<User className="w-3.5 h-3.5" />} title="Cliente" />
+      <Field label="Selecionar Cliente" required>
+        <div ref={clientSearchRef} className="relative">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={clientSearch}
+              placeholder="Digite o nome, documento ou telefone do cliente..."
+              className="h-10 pl-9"
+              onFocus={() => setClientResultsOpen(true)}
+              onChange={(event) => {
+                setClientSearch(event.target.value);
+                setClientResultsOpen(true);
+                if (selectedClient && event.target.value !== selectedClient.name) {
+                  setClientId('');
+                }
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  setClientResultsOpen(false);
+                }
+              }}
+            />
+          </div>
+
+          {clientResultsOpen && (
+            <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-xl border border-border/70 bg-popover shadow-lg">
+              <div className="border-b border-border/60 bg-muted/30 px-3 py-2 text-[11px] font-medium text-muted-foreground">
+                {clientSearch.trim()
+                  ? `${filteredClients.length} cliente(s) encontrado(s)`
+                  : 'Comece digitando para filtrar os clientes'}
+              </div>
+
+              {filteredClients.length > 0 ? (
+                <div className="max-h-64 overflow-y-auto p-1.5">
+                  {filteredClients.map((client) => (
+                    <button
+                      key={client.id}
+                      type="button"
+                      onClick={() => {
+                        setClientId(client.id);
+                        setClientSearch(client.name);
+                        setClientResultsOpen(false);
+                      }}
+                      className={cn(
+                        'flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors',
+                        client.id === clientId ? 'bg-primary/10' : 'hover:bg-muted/70',
+                      )}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-foreground">{client.name}</p>
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {client.docNumber}
+                          {client.phone ? ` · ${client.phone}` : ''}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                  Nenhum cliente corresponde ao que foi digitado.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </Field>
+      {selectedClient && (
+        <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3 p-3 bg-muted/30 rounded-lg border border-border/40">
+          <div>
+            <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">
+              Documento
+            </p>
+            <p className="font-medium text-sm mt-0.5">{selectedClient.docNumber}</p>
+          </div>
+          <div>
+            <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">
+              Telefone
+            </p>
+            <p className="font-medium text-sm mt-0.5">{selectedClient.phone}</p>
+          </div>
+          <div>
+            <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">
+              Email
+            </p>
+            <p className="font-medium text-sm mt-0.5 truncate">{selectedClient.email}</p>
+          </div>
+          <div className="col-span-2 sm:col-span-3">
+            <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">
+              Endereço
+            </p>
+            <p className="font-medium text-sm mt-0.5">
+              {buildCustomerAddressLabel(selectedClient)}
+            </p>
+          </div>
+        </div>
+      )}
+    </FormSection>
+  );
+
+  const section3 = (
+    <FormSection>
+      <SectionHeader step={3} icon={<Car className="w-3.5 h-3.5" />} title="Veículo" />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <Field label="Modelo / Veículo" className="col-span-2">
+          <Input
+            value={vehicleModel}
+            onChange={(e) => setVehicleModel(e.target.value)}
+            placeholder="Ex: Gol 1.0 8v"
+          />
+        </Field>
+        <Field label="Tipo de Motor">
+          <Input
+            value={engineType}
+            onChange={(e) => setEngineType(e.target.value)}
+            placeholder="Ex: Cabeçote"
+          />
+        </Field>
+        <Field label="Placa">
+          <Input
+            value={plate}
+            onChange={(e) => setPlate(e.target.value.toUpperCase())}
+            placeholder="ABC-1234"
+            maxLength={8}
+          />
+        </Field>
+        <Field label="KM Atual">
+          <Input
+            type="number"
+            value={km}
+            onChange={(e) => setKm(e.target.value)}
+            placeholder="0"
+            min={0}
+            className={numberInputClassName}
+          />
+        </Field>
+      </div>
+      <div className="mt-4">
+        <Field label="Reclamação / Defeito relatado pelo cliente">
+          <Textarea
+            value={complaint}
+            onChange={(e) => setComplaint(e.target.value)}
+            placeholder="Descreva o defeito ou problema relatado pelo cliente..."
+            className="min-h-[80px] resize-y text-sm"
+          />
+        </Field>
+      </div>
+    </FormSection>
+  );
+
+  const section4 = (
+    <FormSection>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+            <span className="text-[10px] font-bold text-primary">4</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Wrench className="w-3.5 h-3.5 text-muted-foreground/60" />
+            <h2 className="text-sm font-semibold text-foreground">
+              {noteType === 'COMPRA' ? 'Peças / Produtos' : 'Serviços / Itens'}
+            </h2>
+          </div>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setItems((prev) => [...prev, newItem()])}
+          className="gap-1.5 h-8 text-xs"
+        >
+          <Plus className="w-3.5 h-3.5" /> Adicionar item
+        </Button>
+      </div>
+
+      <div className="space-y-2">
+        <div className="hidden sm:grid sm:grid-cols-[1fr_64px_100px_64px_88px_32px] gap-2 px-1 text-[10px] uppercase font-semibold text-muted-foreground tracking-wider">
+          <span>Descrição</span>
+          <span className="text-center">Qtd</span>
+          <span className="text-right">Valor Unit.</span>
+          <span className="text-center">Desc.%</span>
+          <span className="text-right">Total</span>
+          <span />
+        </div>
+        <Separator className="hidden sm:block" />
+
+        {items.map((item, i) => (
+          <div key={item.id}>
+            {/* Desktop row */}
+            <div className="hidden sm:grid sm:grid-cols-[1fr_64px_100px_64px_88px_32px] gap-2 items-center">
+              <Input
+                value={item.description}
+                onChange={(e) => updateItem(item.id, 'description', e.target.value)}
+                placeholder={
+                  noteType === 'COMPRA' ? 'Nome da peça/produto' : 'Descrição do serviço'
+                }
+                className="h-9 text-sm"
+              />
+              <Input
+                type="number"
+                min="1"
+                value={item.quantity}
+                onChange={(e) =>
+                  updateItem(item.id, 'quantity', Math.max(1, +e.target.value))
+                }
+                className={cn('h-9 text-sm text-center', numberInputClassName)}
+              />
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={item.unitPrice || ''}
+                onChange={(e) => updateItem(item.id, 'unitPrice', +e.target.value)}
+                placeholder="0,00"
+                className={cn('h-9 text-sm text-right', numberInputClassName)}
+              />
+              <Input
+                type="number"
+                min="0"
+                max="100"
+                value={item.discount || ''}
+                onChange={(e) =>
+                  updateItem(item.id, 'discount', Math.min(100, +e.target.value))
+                }
+                placeholder="0"
+                className={cn('h-9 text-sm text-center', numberInputClassName)}
+              />
+              <div className="text-right text-sm font-semibold tabular-nums pr-1">
+                R$ {itemTotals[i]?.toFixed(2) ?? '0.00'}
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="w-8 h-8 text-muted-foreground hover:text-destructive"
+                onClick={() => removeItem(item.id)}
+                disabled={items.length <= 1}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+
+            {/* Mobile card */}
+            <div className={cn('sm:hidden rounded-lg border border-border/50 p-3 space-y-3 bg-muted/10')}>
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  Item {i + 1}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="w-6 h-6 -mr-1 -mt-1 text-muted-foreground hover:text-destructive"
+                  onClick={() => removeItem(item.id)}
+                  disabled={items.length <= 1}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+              <Input
+                value={item.description}
+                onChange={(e) => updateItem(item.id, 'description', e.target.value)}
+                placeholder={
+                  noteType === 'COMPRA' ? 'Nome da peça/produto' : 'Descrição do serviço'
+                }
+                className="h-9 text-sm"
+              />
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <p className="text-[10px] text-muted-foreground mb-1">Qtd</p>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={item.quantity}
+                    onChange={(e) =>
+                      updateItem(item.id, 'quantity', Math.max(1, +e.target.value))
+                    }
+                    className={cn('h-9 text-sm text-center', numberInputClassName)}
+                  />
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground mb-1">Valor</p>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={item.unitPrice || ''}
+                    onChange={(e) => updateItem(item.id, 'unitPrice', +e.target.value)}
+                    placeholder="0,00"
+                    className={cn('h-9 text-sm', numberInputClassName)}
+                  />
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground mb-1">Desc.%</p>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={item.discount || ''}
+                    onChange={(e) =>
+                      updateItem(item.id, 'discount', Math.min(100, +e.target.value))
+                    }
+                    placeholder="0"
+                    className={cn('h-9 text-sm', numberInputClassName)}
+                  />
+                </div>
+              </div>
+              <div className="text-right text-sm font-semibold tabular-nums text-foreground/80">
+                Total: R$ {itemTotals[i]?.toFixed(2) ?? '0.00'}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </FormSection>
+  );
+
+  const section5 = (
+    <FormSection>
+      <SectionHeader step={5} icon={<FileText className="w-3.5 h-3.5" />} title="Observações Internas" />
+      <Textarea
+        value={observations}
+        onChange={(e) => setObservations(e.target.value)}
+        placeholder="Anotações internas sobre esta O.S. (não visíveis para o cliente)..."
+        className="min-h-[80px] resize-y text-sm"
+      />
+    </FormSection>
+  );
+
+  const financialSummary = (
+    <div className="flex items-center gap-2 flex-wrap">
+      <DollarSign className="w-4 h-4 text-primary shrink-0" />
+      <span className="text-sm font-semibold text-muted-foreground">Resumo:</span>
+      {totalDiscount > 0 && (
+        <span className="text-xs text-muted-foreground tabular-nums">
+          Subtotal{' '}
+          <span className="font-medium text-foreground">
+            R$ {(subtotal + totalDiscount).toFixed(2)}
+          </span>{' '}
+          · Desconto{' '}
+          <span className="font-medium text-destructive">
+            −R$ {totalDiscount.toFixed(2)}
+          </span>{' '}
+          ·
+        </span>
+      )}
+      <span className="text-lg font-bold text-primary tabular-nums">
+        R$ {subtotal.toFixed(2)}
+      </span>
+    </div>
+  );
+
+  /* ─────────────────── Modal layout ─────────────────── */
+
+  if (isModal) {
+    return (
+      <>
+        {/* Scrollable body */}
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
+          {section1}
+          {section2}
+          {section3}
+          {section4}
+          {section5}
+        </div>
+
+        {/* Sticky footer */}
+        <div className="border-t border-border/50 px-6 py-4 shrink-0 bg-muted/20">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            {financialSummary}
+            <div className="flex gap-2 ml-auto">
+              <Button variant="outline" onClick={onCancel} className="h-9 px-5">
+                Cancelar
+              </Button>
+              <Button onClick={handleSubmit} className="h-9 px-6 font-semibold">
+                {isEditing ? 'Salvar alterações' : 'Salvar O.S.'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  /* ─────────────────── Page layout ─────────────────── */
+
+  return (
+    <div className="max-w-3xl mx-auto pb-12">
+      {/* Page header */}
+      <div className="flex items-center gap-3 mb-8">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onCancel}
+          className="rounded-lg shrink-0"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </Button>
+        <div>
+          <h1 className="text-xl font-display font-bold tracking-tight">
+            {isEditing ? `Editar ${editingNote?.number}` : 'Nova Ordem de Serviço'}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {isEditing
+              ? 'Atualize os dados da ordem de serviço.'
+              : 'Preencha os dados abaixo para registrar a O.S.'}
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-8">
+        {section1}
+        {section2}
+        {section3}
+        {section4}
+        {section5}
+
+        {/* Sticky financial */}
+        <div className="sticky bottom-4 z-10">
+          <div className="bg-card border border-border/60 rounded-xl shadow-md px-5 py-4">
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-primary" />
+                <span className="text-sm font-semibold text-muted-foreground">
+                  Resumo Financeiro
+                </span>
+              </div>
+              <div className="flex items-center gap-5 text-sm">
+                {totalDiscount > 0 && (
+                  <>
+                    <div className="text-right">
+                      <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">
+                        Subtotal
+                      </p>
+                      <p className="font-semibold tabular-nums">
+                        R$ {(subtotal + totalDiscount).toFixed(2)}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">
+                        Descontos
+                      </p>
+                      <p className="font-semibold text-destructive tabular-nums">
+                        −&nbsp;R$ {totalDiscount.toFixed(2)}
+                      </p>
+                    </div>
+                  </>
+                )}
+                <div className="text-right">
+                  <p className="text-[10px] uppercase text-muted-foreground font-semibold tracking-wider">
+                    Total Geral
+                  </p>
+                  <p className="text-xl font-bold text-primary tabular-nums">
+                    R$ {subtotal.toFixed(2)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex justify-end gap-3">
+          <Button variant="outline" onClick={onCancel} className="px-8">
+            Cancelar
+          </Button>
+          <Button onClick={handleSubmit} className="px-8 font-semibold">
+            {isEditing ? 'Salvar alterações' : 'Salvar O.S.'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
