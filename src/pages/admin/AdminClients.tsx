@@ -1,0 +1,522 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { motion } from 'framer-motion';
+import {
+  ChevronDown,
+  KeyRound,
+  LayoutGrid,
+  Mail,
+  Phone,
+  Power,
+  Search,
+  Shield,
+  UserPlus,
+  Users,
+} from 'lucide-react';
+import { AppModuleKey, SystemUser, UserRole, UserModuleOverrides } from '@/types';
+import { useSystemUsersQuery } from '@/hooks/useSystemUsersQuery';
+import { useRoleModuleConfig, useUserModuleOverrides } from '@/hooks/useRoleModuleConfig';
+import { saveSystemUsers } from '@/services/auth/systemUsers';
+import { saveUserModuleOverrides } from '@/services/auth/moduleAccess';
+import { cn } from '@/lib/utils';
+import { useToast } from '@/hooks/use-toast';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
+import { LoadingScreen } from '@/components/ui/loading-screen';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+
+const ALL_MODULES: { key: AppModuleKey; label: string }[] = [
+  { key: 'dashboard', label: 'Dashboard' },
+  { key: 'clients', label: 'Clientes' },
+  { key: 'notes', label: 'Notas de Entrada' },
+  { key: 'kanban', label: 'Kanban' },
+  { key: 'closing', label: 'Fechamento' },
+  { key: 'invoices', label: 'Nota Fiscal' },
+  { key: 'settings', label: 'Configurações' },
+];
+
+const ROLE_LABELS: Record<UserRole, string> = {
+  ADMIN: 'Administrador',
+  FINANCEIRO: 'Financeiro',
+  PRODUCAO: 'Produção',
+  RECEPCAO: 'Recepção',
+};
+
+function buildUserId() {
+  return `user-local-${Date.now()}`;
+}
+
+export default function AdminClients() {
+  const { data: systemUsersData = [], isLoading } = useSystemUsersQuery();
+  const roleModuleConfig = useRoleModuleConfig();
+  const storedOverrides = useUserModuleOverrides();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const [systemUsers, setSystemUsers] = useState<SystemUser[]>(systemUsersData);
+  const [userModuleOverrides, setUserModuleOverrides] = useState<UserModuleOverrides>(storedOverrides);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showModulesDialog, setShowModulesDialog] = useState<string | null>(null);
+  const [showResetDialog, setShowResetDialog] = useState<string | null>(null);
+  const [newName, setNewName] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [newRole, setNewRole] = useState<UserRole>('RECEPCAO');
+
+  useEffect(() => {
+    setSystemUsers(systemUsersData);
+  }, [systemUsersData]);
+
+  useEffect(() => {
+    setUserModuleOverrides(storedOverrides);
+  }, [storedOverrides]);
+
+  const persistSystemUsers = (nextUsers: SystemUser[]) => {
+    setSystemUsers(nextUsers);
+    saveSystemUsers(nextUsers);
+    queryClient.invalidateQueries({ queryKey: ['auth', 'system-users'] });
+  };
+
+  const persistUserOverrides = (nextOverrides: UserModuleOverrides) => {
+    setUserModuleOverrides(nextOverrides);
+    saveUserModuleOverrides(nextOverrides);
+  };
+
+  const filteredUsers = useMemo(() => {
+    let list = systemUsers;
+    if (search) {
+      const query = search.toLowerCase();
+      list = list.filter((user) => user.name.toLowerCase().includes(query) || user.email.toLowerCase().includes(query));
+    }
+    if (statusFilter === 'active') {
+      list = list.filter((user) => user.isActive);
+    }
+    if (statusFilter === 'inactive') {
+      list = list.filter((user) => !user.isActive);
+    }
+    return list;
+  }, [search, statusFilter, systemUsers]);
+
+  const activeCount = systemUsers.filter((user) => user.isActive).length;
+  const inactiveCount = systemUsers.filter((user) => !user.isActive).length;
+
+  const getEffectiveModules = (user: SystemUser) => {
+    return ALL_MODULES.reduce<Record<AppModuleKey, boolean>>((accumulator, module) => {
+      const roleAllowsModule = roleModuleConfig[user.role]?.[module.key] !== false;
+      const userAllowsModule = userModuleOverrides[user.id]?.[module.key] !== false;
+      accumulator[module.key] = roleAllowsModule && userAllowsModule;
+      return accumulator;
+    }, {} as Record<AppModuleKey, boolean>);
+  };
+
+  const handleToggleActive = (userId: string) => {
+    const nextUsers = systemUsers.map((user) =>
+      user.id === userId ? { ...user, isActive: !user.isActive } : user,
+    );
+    const updatedUser = nextUsers.find((user) => user.id === userId);
+    persistSystemUsers(nextUsers);
+    toast({
+      title: updatedUser?.isActive ? 'Usuário ativado' : 'Usuário desativado',
+      description: updatedUser ? `${updatedUser.name} teve o acesso atualizado.` : undefined,
+    });
+  };
+
+  const handleResetPassword = (userId: string) => {
+    const user = systemUsers.find((candidate) => candidate.id === userId);
+    toast({
+      title: 'Reset de senha pendente de integração',
+      description: user ? `${user.name} continua usando a senha de desenvolvimento demo123 até a API de autenticação entrar.` : 'A API de autenticação ainda não foi integrada.',
+    });
+    setShowResetDialog(null);
+  };
+
+  const handleCreateUser = () => {
+    const normalizedEmail = newEmail.trim().toLowerCase();
+    if (!newName.trim() || !normalizedEmail) {
+      toast({ title: 'Preencha nome e e-mail', variant: 'destructive' });
+      return;
+    }
+
+    if (systemUsers.some((user) => user.email.toLowerCase() === normalizedEmail)) {
+      toast({ title: 'E-mail já cadastrado', variant: 'destructive' });
+      return;
+    }
+
+    const newUser: SystemUser = {
+      id: buildUserId(),
+      name: newName.trim(),
+      email: normalizedEmail,
+      phone: newPhone.trim() || undefined,
+      role: newRole,
+      isActive: true,
+      createdAt: new Date().toISOString(),
+    };
+
+    persistSystemUsers([newUser, ...systemUsers]);
+    toast({
+      title: 'Usuário do sistema criado',
+      description: `${newUser.name} já pode acessar o ambiente de desenvolvimento com a senha demo123.`,
+    });
+    setShowCreateDialog(false);
+    setNewName('');
+    setNewEmail('');
+    setNewPhone('');
+    setNewRole('RECEPCAO');
+  };
+
+  const toggleUserModule = (user: SystemUser, moduleKey: AppModuleKey) => {
+    if (roleModuleConfig[user.role]?.[moduleKey] === false) {
+      return;
+    }
+
+    const currentUserOverrides = userModuleOverrides[user.id] ?? {};
+    const isCurrentlyEnabled = currentUserOverrides[moduleKey] !== false;
+    const nextUserOverrides = {
+      ...currentUserOverrides,
+      [moduleKey]: isCurrentlyEnabled ? false : true,
+    };
+
+    if (nextUserOverrides[moduleKey] === true) {
+      delete nextUserOverrides[moduleKey];
+    }
+
+    const nextOverrides = {
+      ...userModuleOverrides,
+      [user.id]: nextUserOverrides,
+    };
+
+    if (Object.keys(nextUserOverrides).length === 0) {
+      delete nextOverrides[user.id];
+    }
+
+    persistUserOverrides(nextOverrides);
+  };
+
+  if (isLoading) {
+    return (
+      <LoadingScreen
+        compact
+        className="min-h-[48vh]"
+        label="Carregando usuários"
+        description="Buscando permissões, status e acessos do sistema."
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-display font-bold text-foreground">Usuários do Sistema</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Gerencie contas internas, status de acesso e restrições adicionais por usuário.
+          </p>
+        </div>
+        <Button onClick={() => setShowCreateDialog(true)} className="gap-2 rounded-xl h-11 px-5 shadow-lg shadow-primary/20">
+          <UserPlus className="w-4 h-4" /> Novo Usuário
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        {[
+          { label: 'Total', value: systemUsers.length, color: 'text-foreground' },
+          { label: 'Ativos', value: activeCount, color: 'text-success' },
+          { label: 'Inativos', value: inactiveCount, color: 'text-destructive' },
+        ].map((stat) => (
+          <Card key={stat.label}>
+            <CardContent className="p-4 text-center">
+              <p className="text-xs text-muted-foreground font-medium">{stat.label}</p>
+              <p className={`text-2xl font-display font-bold ${stat.color}`}>{stat.value}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar por nome ou e-mail..."
+            className="pl-10 h-11 rounded-xl"
+          />
+        </div>
+        <div className="flex gap-2">
+          {(['all', 'active', 'inactive'] as const).map((filter) => (
+            <Button
+              key={filter}
+              variant={statusFilter === filter ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setStatusFilter(filter)}
+              className="rounded-xl"
+            >
+              {filter === 'all' ? 'Todos' : filter === 'active' ? 'Ativos' : 'Inativos'}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {filteredUsers.map((user, index) => {
+          const modules = getEffectiveModules(user);
+          const activeModules = Object.values(modules).filter(Boolean).length;
+          const isExpanded = expandedId === user.id;
+
+          return (
+            <motion.div
+              key={user.id}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.03 }}
+            >
+              <Card className={cn('transition-all duration-200 hover:shadow-md', !user.isActive && 'opacity-60')}>
+                <CardContent className="p-0">
+                  <div className="flex items-center gap-4 p-4">
+                    <div
+                      className={cn(
+                        'w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0',
+                        user.isActive ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground',
+                      )}
+                    >
+                      {user.name.split(' ').map((word) => word[0]).join('').slice(0, 2)}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-foreground truncate">{user.name}</p>
+                        <Badge variant={user.isActive ? 'default' : 'secondary'} className="text-[10px] h-5">
+                          {user.isActive ? 'Ativo' : 'Inativo'}
+                        </Badge>
+                        <Badge variant="outline" className="text-[10px]">
+                          {ROLE_LABELS[user.role]}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                    </div>
+
+                    <div className="hidden sm:flex items-center gap-1.5">
+                      <Badge variant="outline" className="text-[10px] gap-1">
+                        <LayoutGrid className="w-3 h-3" />
+                        {activeModules} módulos
+                      </Badge>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowModulesDialog(user.id)}>
+                            <LayoutGrid className="w-4 h-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Módulos</TooltipContent>
+                      </Tooltip>
+
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowResetDialog(user.id)}>
+                            <KeyRound className="w-4 h-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Resetar Senha</TooltipContent>
+                      </Tooltip>
+
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className={cn('h-8 w-8', !user.isActive && 'text-success')}
+                            onClick={() => handleToggleActive(user.id)}
+                          >
+                            <Power className="w-4 h-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>{user.isActive ? 'Desativar' : 'Ativar'}</TooltipContent>
+                      </Tooltip>
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => setExpandedId(isExpanded ? null : user.id)}
+                      >
+                        <ChevronDown className={cn('w-4 h-4 transition-transform', isExpanded && 'rotate-180')} />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      className="border-t px-4 py-4 bg-muted/20"
+                    >
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Mail className="w-4 h-4" /> {user.email}
+                        </div>
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Phone className="w-4 h-4" /> {user.phone || 'Não informado'}
+                        </div>
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Shield className="w-4 h-4" /> Criado em: {new Date(user.createdAt).toLocaleDateString('pt-BR')}
+                        </div>
+                      </div>
+                      <Separator className="my-3" />
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground mb-2">MÓDULOS EFETIVOS</p>
+                        <div className="flex flex-wrap gap-2">
+                          {ALL_MODULES.map((module) => (
+                            <Badge
+                              key={module.key}
+                              variant={modules[module.key] ? 'default' : 'outline'}
+                              className={cn('text-xs', !modules[module.key] && 'opacity-50')}
+                            >
+                              {module.label}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          );
+        })}
+
+        {filteredUsers.length === 0 && (
+          <div className="text-center py-16">
+            <Users className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+            <p className="text-muted-foreground">Nenhum usuário encontrado</p>
+          </div>
+        )}
+      </div>
+
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="w-5 h-5" /> Novo Usuário do Sistema
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Nome completo</Label>
+              <Input value={newName} onChange={(event) => setNewName(event.target.value)} placeholder="Nome do usuário" className="h-11 rounded-xl" />
+            </div>
+            <div className="space-y-2">
+              <Label>E-mail</Label>
+              <Input type="email" value={newEmail} onChange={(event) => setNewEmail(event.target.value)} placeholder="email@exemplo.com" className="h-11 rounded-xl" />
+            </div>
+            <div className="space-y-2">
+              <Label>Telefone</Label>
+              <Input value={newPhone} onChange={(event) => setNewPhone(event.target.value)} placeholder="(00) 00000-0000" className="h-11 rounded-xl" />
+            </div>
+            <div className="space-y-2">
+              <Label>Perfil de Acesso</Label>
+              <Select value={newRole} onValueChange={(value) => setNewRole(value as UserRole)}>
+                <SelectTrigger className="h-11 rounded-xl">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="RECEPCAO">Recepção</SelectItem>
+                  <SelectItem value="PRODUCAO">Produção</SelectItem>
+                  <SelectItem value="FINANCEIRO">Financeiro</SelectItem>
+                  <SelectItem value="ADMIN">Administrador</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>Cancelar</Button>
+            <Button onClick={handleCreateUser} className="gap-2">
+              <UserPlus className="w-4 h-4" /> Criar Usuário
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!showModulesDialog} onOpenChange={() => setShowModulesDialog(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <LayoutGrid className="w-5 h-5" /> Restrições por Usuário
+            </DialogTitle>
+          </DialogHeader>
+          {showModulesDialog && (() => {
+            const user = systemUsers.find((candidate) => candidate.id === showModulesDialog);
+            if (!user) {
+              return null;
+            }
+
+            return (
+              <div className="space-y-4 py-2">
+                <p className="text-sm text-muted-foreground">
+                  Ajuste restrições adicionais para <strong>{user.name}</strong>. Módulos desligados no perfil base continuam bloqueados aqui.
+                </p>
+                <div className="space-y-3">
+                  {ALL_MODULES.map((module) => {
+                    const roleAllowsModule = roleModuleConfig[user.role]?.[module.key] !== false;
+                    const isEnabled = roleAllowsModule && userModuleOverrides[user.id]?.[module.key] !== false;
+
+                    return (
+                      <div key={module.key} className="flex items-center justify-between p-3 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors">
+                        <div>
+                          <span className="text-sm font-medium">{module.label}</span>
+                          {!roleAllowsModule && (
+                            <p className="text-[10px] text-muted-foreground mt-0.5">Bloqueado pelo perfil {ROLE_LABELS[user.role].toLowerCase()}</p>
+                          )}
+                        </div>
+                        <Switch
+                          checked={isEnabled}
+                          disabled={!roleAllowsModule}
+                          onCheckedChange={() => toggleUserModule(user, module.key)}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+          <DialogFooter>
+            <Button onClick={() => { setShowModulesDialog(null); toast({ title: 'Restrições atualizadas!' }); }}>
+              Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!showResetDialog} onOpenChange={() => setShowResetDialog(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="w-5 h-5" /> Resetar Senha
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground py-2">
+            Tem certeza que deseja resetar a senha de <strong>{systemUsers.find((user) => user.id === showResetDialog)?.name}</strong>?
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowResetDialog(null)}>Cancelar</Button>
+            <Button variant="destructive" onClick={() => showResetDialog && handleResetPassword(showResetDialog)}>
+              Resetar Senha
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
