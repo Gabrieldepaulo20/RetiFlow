@@ -1,0 +1,134 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 20% 98%;
+    --foreground: 215 28% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 215 28% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 28% 15%;
+    --primary: 192 70% 38%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 18% 93%;
+    --secondary-foreground: 215 28% 25%;
+    --muted: 210 15% 95%;
+    --muted-foreground: 215 12% 50%;
+    --accent: 165 55% 40%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 18% 90%;
+    --input: 214 18% 88%;
+    --ring: 192 70% 38%;
+    --radius: 0.625rem;
+
+    --success: 160 60% 40%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --info: 210 80% 55%;
+    --info-foreground: 0 0% 100%;
+
+    --chart-1: 192 70% 38%;
+    --chart-2: 165 55% 40%;
+    --chart-3: 38 92% 50%;
+    --chart-4: 280 55% 55%;
+    --chart-5: 0 72% 51%;
+
+    --sidebar-background: 215 32% 13%;
+    --sidebar-foreground: 210 15% 80%;
+    --sidebar-primary: 192 70% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 215 28% 19%;
+    --sidebar-accent-foreground: 210 15% 92%;
+    --sidebar-border: 215 25% 20%;
+    --sidebar-ring: 192 70% 50%;
+  }
+
+  .dark {
+    --background: 215 32% 10%;
+    --foreground: 210 20% 92%;
+    --card: 215 28% 14%;
+    --card-foreground: 210 20% 92%;
+    --popover: 215 28% 14%;
+    --popover-foreground: 210 20% 92%;
+    --primary: 192 70% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 215 25% 20%;
+    --secondary-foreground: 210 15% 85%;
+    --muted: 215 20% 18%;
+    --muted-foreground: 215 12% 55%;
+    --accent: 165 55% 45%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 215 20% 22%;
+    --input: 215 20% 22%;
+    --ring: 192 70% 50%;
+    --sidebar-background: 215 35% 8%;
+    --sidebar-foreground: 210 15% 80%;
+    --sidebar-primary: 192 70% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 215 28% 14%;
+    --sidebar-accent-foreground: 210 15% 90%;
+    --sidebar-border: 215 25% 15%;
+    --sidebar-ring: 192 70% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', sans-serif;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+}
+
+/* ── Fluid modal/popup animations ───────────────────────────────────────────
+ * Override tailwindcss-animate defaults with a spring-like easing curve
+ * that feels natural and fluid rather than mechanical.
+ */
+@layer base {
+  /* Default open: spring curve (fast start, soft settle) */
+  [data-state="open"].animate-in,
+  [data-state="open"] > .animate-in {
+    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1) !important;
+    animation-duration: 280ms !important;
+  }
+
+  /* Default close: quick ease-in (feels intentional, not sluggish) */
+  [data-state="closed"].animate-out,
+  [data-state="closed"] > .animate-out {
+    animation-timing-function: cubic-bezier(0.55, 0, 0.45, 1) !important;
+    animation-duration: 180ms !important;
+  }
+
+  /* Overlay: slightly faster fade */
+  [data-radix-dialog-overlay],
+  [data-radix-alert-dialog-overlay] {
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1) !important;
+  }
+}
