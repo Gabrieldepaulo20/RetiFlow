@@ -1,0 +1,22 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="256" height="256" rx="64" fill="url(#bg)"/>
+  <circle cx="128" cy="128" r="78" fill="#FFF7ED" fill-opacity="0.12"/>
+  <path d="M128 54L142 66L160 62L168 79L186 82L186 100L202 110L194 128L202 146L186 156L186 174L168 177L160 194L142 190L128 202L114 190L96 194L88 177L70 174L70 156L54 146L62 128L54 110L70 100L70 82L88 79L96 62L114 66L128 54Z" fill="url(#gear)"/>
+  <circle cx="128" cy="128" r="44" fill="#0F172A"/>
+  <path d="M103 96H139C154.464 96 167 108.536 167 124C167 139.464 154.464 152 139 152H103V96Z" fill="#F97316"/>
+  <path d="M103 106H136C145.941 106 154 114.059 154 124C154 133.941 145.941 142 136 142H103V106Z" fill="#FDBA74"/>
+  <path d="M95 90H109V166H95V90Z" fill="#E2E8F0"/>
+  <path d="M109 114H136C141.523 114 146 118.477 146 124C146 129.523 141.523 134 136 134H109V114Z" fill="#FFF7ED"/>
+  <circle cx="167" cy="86" r="14" fill="#22C55E"/>
+  <path d="M162 86L166 90L173 82" stroke="#052E16" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <defs>
+    <linearGradient id="bg" x1="24" y1="20" x2="232" y2="236" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#111827"/>
+      <stop offset="1" stop-color="#1E293B"/>
+    </linearGradient>
+    <linearGradient id="gear" x1="73" y1="68" x2="182" y2="188" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FB923C"/>
+      <stop offset="1" stop-color="#EA580C"/>
+    </linearGradient>
+  </defs>
+</svg>
