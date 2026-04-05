@@ -91,22 +91,29 @@ export function FormSection({ children }: { children: React.ReactNode }) {
 const numberInputClassName =
   '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none';
 
-/* ─── Item type ─── */
+/* ─── Item types ─── */
+
+interface SubLine {
+  id: string;
+  text: string;
+}
 
 interface ServiceItem {
   id: string;
   description: string;
   quantity: number;
-  unitPrice: number;
-  discount: number;
+  unitPrice: string;
+  discount: string;
+  subLines: SubLine[];
 }
 
 const newItem = (): ServiceItem => ({
   id: generateId('item'),
   description: '',
   quantity: 1,
-  unitPrice: 0,
-  discount: 0,
+  unitPrice: '',
+  discount: '',
+  subLines: [],
 });
 
 /* ─── NoteFormCore ─── */
@@ -203,15 +210,17 @@ export default function NoteFormCore({
             id: `svc-${s.id}`,
             description: s.name || s.description,
             quantity: s.quantity,
-            unitPrice: s.price,
-            discount: 0,
+            unitPrice: String(s.price ?? 0),
+            discount: '0',
+            subLines: [] as SubLine[],
           }))
         : getProductsForNote(editingNote.id).map((p) => ({
             id: `prd-${p.id}`,
             description: p.name,
             quantity: p.quantity,
-            unitPrice: p.unitPrice,
-            discount: 0,
+            unitPrice: String(p.unitPrice ?? 0),
+            discount: '0',
+            subLines: [] as SubLine[],
           }));
 
     setItems(existingItems.length > 0 ? existingItems : [newItem()]);
@@ -300,11 +309,40 @@ export default function NoteFormCore({
     setItems((prev) => prev.filter((item) => item.id !== id));
   };
 
+  const addSubLine = (itemId: string) =>
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === itemId
+          ? { ...item, subLines: [...item.subLines, { id: generateId('sub'), text: '' }] }
+          : item,
+      ),
+    );
+
+  const updateSubLine = (itemId: string, subId: string, text: string) =>
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === itemId
+          ? { ...item, subLines: item.subLines.map((s) => (s.id === subId ? { ...s, text } : s)) }
+          : item,
+      ),
+    );
+
+  const removeSubLine = (itemId: string, subId: string) =>
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === itemId
+          ? { ...item, subLines: item.subLines.filter((s) => s.id !== subId) }
+          : item,
+      ),
+    );
+
   const itemTotals = useMemo(
     () =>
       items.map((item) => {
-        const sub = item.quantity * item.unitPrice;
-        return sub - sub * (item.discount / 100);
+        const price = parseFloat(item.unitPrice) || 0;
+        const disc = parseFloat(item.discount) || 0;
+        const sub = item.quantity * price;
+        return sub - sub * (disc / 100);
       }),
     [items],
   );
@@ -312,10 +350,11 @@ export default function NoteFormCore({
   const subtotal = useMemo(() => itemTotals.reduce((a, b) => a + b, 0), [itemTotals]);
   const totalDiscount = useMemo(
     () =>
-      items.reduce(
-        (acc, item) => acc + (item.quantity * item.unitPrice * item.discount) / 100,
-        0,
-      ),
+      items.reduce((acc, item) => {
+        const price = parseFloat(item.unitPrice) || 0;
+        const disc = parseFloat(item.discount) || 0;
+        return acc + (item.quantity * price * disc) / 100;
+      }, 0),
     [items],
   );
 
@@ -330,10 +369,12 @@ export default function NoteFormCore({
       return;
     }
 
-    const validItems = items.filter((i) => i.description && i.unitPrice > 0);
+    const validItems = items.filter((i) => i.description && (parseFloat(i.unitPrice) || 0) > 0);
     const totalAmount = validItems.reduce((acc, item) => {
-      const sub = item.quantity * item.unitPrice;
-      return acc + sub - (sub * item.discount) / 100;
+      const price = parseFloat(item.unitPrice) || 0;
+      const disc = parseFloat(item.discount) || 0;
+      const sub = item.quantity * price;
+      return acc + sub - (sub * disc) / 100;
     }, 0);
 
     const payload = {
@@ -354,14 +395,18 @@ export default function NoteFormCore({
     };
 
     const itemPayload = validItems.map((item) => {
-      const sub = item.quantity * item.unitPrice;
+      const price = parseFloat(item.unitPrice) || 0;
+      const disc = parseFloat(item.discount) || 0;
+      const sub = item.quantity * price;
+      const subText = item.subLines.map((s) => s.text).filter(Boolean).join('\n');
+      const fullDescription = subText ? `${item.description}\n${subText}` : item.description;
       return {
         name: item.description,
-        description: item.description,
+        description: fullDescription,
         quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        price: item.unitPrice,
-        subtotal: sub - sub * (item.discount / 100),
+        unitPrice: price,
+        price,
+        subtotal: sub - sub * (disc / 100),
       };
     });
 
@@ -436,7 +481,7 @@ export default function NoteFormCore({
   const section1 = (
     <FormSection>
       <SectionHeader step={1} icon={<CalendarDays className="w-3.5 h-3.5" />} title="Dados da O.S." />
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Field label="Número da O.S." required>
           <div className="flex items-center gap-1.5">
             <span className="text-sm font-mono text-muted-foreground shrink-0">OS-</span>
@@ -628,7 +673,7 @@ export default function NoteFormCore({
     <FormSection>
       <SectionHeader step={3} icon={<Car className="w-3.5 h-3.5" />} title="Veículo" />
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <Field label="Modelo / Veículo" className="col-span-2">
+        <Field label="Modelo / Veículo">
           <Input
             value={vehicleModel}
             onChange={(e) => setVehicleModel(e.target.value)}
@@ -698,140 +743,104 @@ export default function NoteFormCore({
         </Button>
       </div>
 
-      <div className="space-y-2">
-        <div className="hidden sm:grid sm:grid-cols-[1fr_64px_100px_64px_88px_32px] gap-2 px-1 text-[10px] uppercase font-semibold text-muted-foreground tracking-wider">
-          <span>Descrição</span>
-          <span className="text-center">Qtd</span>
-          <span className="text-right">Valor Unit.</span>
-          <span className="text-center">Desc.%</span>
-          <span className="text-right">Total</span>
-          <span />
-        </div>
-        <Separator className="hidden sm:block" />
-
+      <div className="space-y-3">
         {items.map((item, i) => (
-          <div key={item.id}>
-            {/* Desktop row */}
-            <div className="hidden sm:grid sm:grid-cols-[1fr_64px_100px_64px_88px_32px] gap-2 items-center">
-              <Input
+          <div key={item.id} className="rounded-xl border border-border/60 bg-card shadow-sm overflow-hidden">
+            {/* ── Description row ── */}
+            <div className="flex items-start gap-2 p-3 pb-2">
+              <Textarea
                 value={item.description}
                 onChange={(e) => updateItem(item.id, 'description', e.target.value)}
-                placeholder={
-                  noteType === 'COMPRA' ? 'Nome da peça/produto' : 'Descrição do serviço'
-                }
-                className="h-9 text-sm"
+                placeholder={noteType === 'COMPRA' ? 'Nome da peça / produto' : 'Descrição do serviço'}
+                className="min-h-[52px] resize-none text-sm flex-1 leading-snug"
+                rows={2}
               />
-              <Input
-                type="number"
-                min="1"
-                value={item.quantity}
-                onChange={(e) =>
-                  updateItem(item.id, 'quantity', Math.max(1, +e.target.value))
-                }
-                className={cn('h-9 text-sm text-center', numberInputClassName)}
-              />
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                value={item.unitPrice || ''}
-                onChange={(e) => updateItem(item.id, 'unitPrice', +e.target.value)}
-                placeholder="0,00"
-                className={cn('h-9 text-sm text-right', numberInputClassName)}
-              />
-              <Input
-                type="number"
-                min="0"
-                max="100"
-                value={item.discount || ''}
-                onChange={(e) =>
-                  updateItem(item.id, 'discount', Math.min(100, +e.target.value))
-                }
-                placeholder="0"
-                className={cn('h-9 text-sm text-center', numberInputClassName)}
-              />
-              <div className="text-right text-sm font-semibold tabular-nums pr-1">
-                R$ {itemTotals[i]?.toFixed(2) ?? '0.00'}
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="w-8 h-8 text-muted-foreground hover:text-destructive"
-                onClick={() => removeItem(item.id)}
-                disabled={items.length <= 1}
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </Button>
-            </div>
-
-            {/* Mobile card */}
-            <div className={cn('sm:hidden rounded-lg border border-border/50 p-3 space-y-3 bg-muted/10')}>
-              <div className="flex items-start justify-between gap-2">
-                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                  Item {i + 1}
-                </span>
+              <div className="flex flex-col gap-1 shrink-0 pt-0.5">
                 <Button
+                  type="button"
                   variant="ghost"
                   size="icon"
-                  className="w-6 h-6 -mr-1 -mt-1 text-muted-foreground hover:text-destructive"
+                  title="Adicionar sub-item"
+                  className="w-7 h-7 text-muted-foreground hover:text-primary"
+                  onClick={() => addSubLine(item.id)}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="w-7 h-7 text-muted-foreground hover:text-destructive"
                   onClick={() => removeItem(item.id)}
                   disabled={items.length <= 1}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </Button>
               </div>
-              <Input
-                value={item.description}
-                onChange={(e) => updateItem(item.id, 'description', e.target.value)}
-                placeholder={
-                  noteType === 'COMPRA' ? 'Nome da peça/produto' : 'Descrição do serviço'
-                }
-                className="h-9 text-sm"
-              />
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <p className="text-[10px] text-muted-foreground mb-1">Qtd</p>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={item.quantity}
-                    onChange={(e) =>
-                      updateItem(item.id, 'quantity', Math.max(1, +e.target.value))
-                    }
-                    className={cn('h-9 text-sm text-center', numberInputClassName)}
-                  />
-                </div>
-                <div>
-                  <p className="text-[10px] text-muted-foreground mb-1">Valor</p>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={item.unitPrice || ''}
-                    onChange={(e) => updateItem(item.id, 'unitPrice', +e.target.value)}
-                    placeholder="0,00"
-                    className={cn('h-9 text-sm', numberInputClassName)}
-                  />
-                </div>
-                <div>
-                  <p className="text-[10px] text-muted-foreground mb-1">Desc.%</p>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={item.discount || ''}
-                    onChange={(e) =>
-                      updateItem(item.id, 'discount', Math.min(100, +e.target.value))
-                    }
-                    placeholder="0"
-                    className={cn('h-9 text-sm', numberInputClassName)}
-                  />
-                </div>
+            </div>
+
+            {/* ── Numeric fields row ── */}
+            <div className="flex items-center gap-3 px-3 pb-3 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-muted-foreground whitespace-nowrap">Qtd</span>
+                <Input
+                  type="number"
+                  min="1"
+                  value={item.quantity}
+                  onChange={(e) => updateItem(item.id, 'quantity', Math.max(1, +e.target.value))}
+                  className={cn('w-16 h-8 text-sm text-center', numberInputClassName)}
+                />
               </div>
-              <div className="text-right text-sm font-semibold tabular-nums text-foreground/80">
-                Total: R$ {itemTotals[i]?.toFixed(2) ?? '0.00'}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-muted-foreground whitespace-nowrap">Valor unit.</span>
+                <Input
+                  inputMode="decimal"
+                  value={item.unitPrice}
+                  onChange={(e) => updateItem(item.id, 'unitPrice', e.target.value)}
+                  placeholder="0,00"
+                  className={cn('w-28 h-8 text-sm text-right', numberInputClassName)}
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-muted-foreground whitespace-nowrap">Desc.%</span>
+                <Input
+                  inputMode="decimal"
+                  value={item.discount}
+                  onChange={(e) => updateItem(item.id, 'discount', e.target.value)}
+                  placeholder="0"
+                  className={cn('w-16 h-8 text-sm text-center', numberInputClassName)}
+                />
+              </div>
+              <div className="ml-auto text-sm font-semibold tabular-nums text-right">
+                <span className="text-[11px] font-normal text-muted-foreground">Total </span>
+                R$ {itemTotals[i]?.toFixed(2) ?? '0.00'}
               </div>
             </div>
+
+            {/* ── Sub-lines ── */}
+            {item.subLines.length > 0 && (
+              <div className="border-t border-border/30 bg-muted/20 px-3 py-2 space-y-1.5">
+                {item.subLines.map((sub) => (
+                  <div key={sub.id} className="flex items-center gap-2 pl-4 border-l-2 border-border/40">
+                    <Input
+                      value={sub.text}
+                      onChange={(e) => updateSubLine(item.id, sub.id, e.target.value)}
+                      placeholder="Detalhe adicional..."
+                      className="h-7 text-xs flex-1 bg-transparent"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="w-6 h-6 shrink-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => removeSubLine(item.id, sub.id)}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>
