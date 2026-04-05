@@ -286,11 +286,16 @@ export function ClientFormCore({ onSuccess, onCancel }: ClientFormCoreProps) {
         <div className="px-6 py-5 space-y-6">
 
           {/* ── IDENTIFICAÇÃO ── */}
-          <div className="space-y-4 rounded-2xl border border-border/60 bg-card px-4 py-4 shadow-sm sm:px-5">
+          <div className="space-y-3 rounded-2xl border border-border/60 bg-card px-4 py-4 shadow-sm sm:px-5">
             <SectionLabel label="Identificação" />
 
-            {/* Tipo + Documento */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[160px_1fr]">
+            {/* Row 1: Tipo + Documento + Nome (tudo na mesma linha) */}
+            <div className={cn(
+              'grid gap-3',
+              isCompany
+                ? 'grid-cols-1 sm:grid-cols-[130px_230px_1fr]'
+                : 'grid-cols-1 sm:grid-cols-[130px_170px_1fr]',
+            )}>
               <Field label="Tipo de pessoa">
                 <Select
                   value={form.docType}
@@ -328,10 +333,7 @@ export function ClientFormCore({ onSuccess, onCancel }: ClientFormCoreProps) {
                   )}
                 </div>
               </Field>
-            </div>
 
-            {/* Nome + Nome fantasia (CNPJ) */}
-            <div className={cn('grid gap-3', isCompany ? 'sm:grid-cols-2' : 'grid-cols-1')}>
               <Field
                 label={isCompany ? 'Razão social' : 'Nome completo'}
                 required
@@ -347,6 +349,13 @@ export function ClientFormCore({ onSuccess, onCancel }: ClientFormCoreProps) {
                   placeholder={isCompany ? 'Razão social da empresa' : 'Nome completo do cliente'}
                 />
               </Field>
+            </div>
+
+            {/* Row 2: Nome fantasia (CNPJ) + Telefone + E-mail */}
+            <div className={cn(
+              'grid gap-3',
+              isCompany ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2',
+            )}>
               {isCompany && (
                 <Field
                   label="Nome fantasia"
@@ -362,10 +371,6 @@ export function ClientFormCore({ onSuccess, onCancel }: ClientFormCoreProps) {
                   />
                 </Field>
               )}
-            </div>
-
-            {/* Telefone + E-mail */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Telefone / WhatsApp">
                 <div className="relative">
                   <Phone className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/55" />
@@ -396,11 +401,11 @@ export function ClientFormCore({ onSuccess, onCancel }: ClientFormCoreProps) {
           </div>
 
           {/* ── ENDEREÇO ── */}
-          <div className="space-y-4 rounded-2xl border border-border/60 bg-card px-4 py-4 shadow-sm sm:px-5">
+          <div className="space-y-3 rounded-2xl border border-border/60 bg-card px-4 py-4 shadow-sm sm:px-5">
             <SectionLabel label="Endereço" />
 
-            {/* CEP + Número */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_112px]">
+            {/* Row 1: CEP + Número + Logradouro (tudo na mesma linha) */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[200px_88px_1fr]">
               <Field label="CEP" required>
                 <div className="flex gap-1.5">
                   <div className="relative flex-1">
@@ -432,20 +437,19 @@ export function ClientFormCore({ onSuccess, onCancel }: ClientFormCoreProps) {
                   placeholder="142"
                 />
               </Field>
+
+              <Field label="Logradouro" required>
+                <Input
+                  className={readOnly}
+                  value={form.address}
+                  readOnly
+                  placeholder="Preenchido pelo CEP"
+                />
+              </Field>
             </div>
 
-            {/* Logradouro (readonly) */}
-            <Field label="Logradouro" required>
-              <Input
-                className={readOnly}
-                value={form.address}
-                readOnly
-                placeholder="Preenchido automaticamente pelo CEP"
-              />
-            </Field>
-
-            {/* Bairro + Cidade + UF */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_80px]">
+            {/* Row 2: Bairro + Cidade + UF */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_72px]">
               <Field label="Bairro">
                 <Input
                   className={readOnly}
