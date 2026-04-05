@@ -413,7 +413,20 @@ export function ClientFormCore({ onSuccess, onCancel }: ClientFormCoreProps) {
                     <Input
                       className={cn(inputBase, 'pl-9 font-mono text-sm tracking-wide')}
                       value={form.cep || ''}
-                      onChange={(e) => set('cep', formatCep(e.target.value))}
+                      onChange={(e) => {
+                        const formatted = formatCep(e.target.value);
+                        const digits = stripDigits(formatted);
+                        setForm((p) => ({
+                          ...p,
+                          cep: formatted,
+                          ...(digits.length < 8 && {
+                            address: '',
+                            district: '',
+                            city: '',
+                            state: '',
+                          }),
+                        }));
+                      }}
                       onBlur={() => { if (canLookupCep) void handleCepLookup(); }}
                       maxLength={CUSTOMER_FIELD_LIMITS.cep}
                       placeholder=""
