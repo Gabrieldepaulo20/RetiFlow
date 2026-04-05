@@ -319,7 +319,7 @@ export function ClientFormCore({ onSuccess, onCancel }: ClientFormCoreProps) {
                     onChange={(e) =>
                       set('docNumber', formatCpfCnpj(e.target.value, form.docType))
                     }
-                    onBlur={() => { if (canLookupCnpj) void handleCnpjLookup(); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (canLookupCnpj) void handleCnpjLookup(); } }}
                     maxLength={CUSTOMER_FIELD_LIMITS.docNumber}
                     placeholder=""
                   />
@@ -427,7 +427,7 @@ export function ClientFormCore({ onSuccess, onCancel }: ClientFormCoreProps) {
                           }),
                         }));
                       }}
-                      onBlur={() => { if (canLookupCep) void handleCepLookup(); }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (canLookupCep) void handleCepLookup(); } }}
                       maxLength={CUSTOMER_FIELD_LIMITS.cep}
                       placeholder=""
                     />
