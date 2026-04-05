@@ -31,6 +31,7 @@ export interface ClientFormCoreProps {
   onSuccess: (client: Client) => void;
   onCancel: () => void;
   isModal?: boolean;
+  editingClient?: Client;
 }
 
 const INITIAL_FORM: Omit<Client, 'id' | 'createdAt'> = {
@@ -127,11 +128,30 @@ function LookupButton({
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export function ClientFormCore({ onSuccess, onCancel }: ClientFormCoreProps) {
-  const { addClient } = useData();
+export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFormCoreProps) {
+  const { addClient, updateClient } = useData();
   const { toast } = useToast();
 
-  const [form, setForm] = useState<Omit<Client, 'id' | 'createdAt'>>(INITIAL_FORM);
+  const [form, setForm] = useState<Omit<Client, 'id' | 'createdAt'>>(() =>
+    editingClient
+      ? {
+          name: editingClient.name,
+          tradeName: editingClient.tradeName || '',
+          docType: editingClient.docType,
+          docNumber: editingClient.docNumber,
+          phone: editingClient.phone,
+          email: editingClient.email,
+          cep: editingClient.cep || '',
+          address: editingClient.address,
+          addressNumber: editingClient.addressNumber || '',
+          district: editingClient.district || '',
+          city: editingClient.city,
+          state: editingClient.state,
+          notes: editingClient.notes,
+          isActive: editingClient.isActive,
+        }
+      : INITIAL_FORM,
+  );
   const [cepLoading, setCepLoading] = useState(false);
   const [cnpjLoading, setCnpjLoading] = useState(false);
   const nameLimitToastLockedRef = useRef(false);
@@ -252,6 +272,12 @@ export function ClientFormCore({ onSuccess, onCancel }: ClientFormCoreProps) {
         description: 'Nome, documento, CEP, endereço, número, cidade e estado são obrigatórios.',
         variant: 'destructive',
       });
+      return;
+    }
+    if (editingClient) {
+      updateClient(editingClient.id, payload);
+      toast({ title: 'Cliente atualizado com sucesso!' });
+      onSuccess({ ...editingClient, ...payload });
       return;
     }
     const created = addClient(payload);
@@ -547,7 +573,7 @@ export function ClientFormCore({ onSuccess, onCancel }: ClientFormCoreProps) {
             className="gap-1.5 px-4 h-9 font-medium"
           >
             <Save className="h-3.5 w-3.5" />
-            Salvar cliente
+            {editingClient ? 'Salvar alterações' : 'Salvar cliente'}
           </Button>
         </div>
       </div>

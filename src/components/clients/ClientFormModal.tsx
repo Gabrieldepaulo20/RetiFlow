@@ -7,14 +7,15 @@ interface ClientFormModalProps {
   open: boolean;
   onClose: () => void;
   onSuccess?: (client: Client) => void;
+  editingClient?: Client;
 }
 
 /**
- * Modal de cadastro de cliente.
+ * Modal de cadastro/edição de cliente.
  * Usa DialogPrimitive diretamente para controle total:
  * header fixo → body scroll → footer fixo.
  */
-export function ClientFormModal({ open, onClose, onSuccess }: ClientFormModalProps) {
+export function ClientFormModal({ open, onClose, onSuccess, editingClient }: ClientFormModalProps) {
   const handleSuccess = (client: Client) => {
     onSuccess?.(client);
     onClose();
@@ -60,10 +61,13 @@ export function ClientFormModal({ open, onClose, onSuccess }: ClientFormModalPro
               </div>
               <div className="space-y-1 min-w-0">
                 <DialogPrimitive.Title className="font-display text-lg font-bold tracking-tight text-foreground leading-snug">
-                  Novo cliente
+                  {editingClient ? `Editar — ${editingClient.name}` : 'Novo cliente'}
                 </DialogPrimitive.Title>
                 <DialogPrimitive.Description className="text-sm text-foreground/72 leading-snug">
-                  Preencha os dados abaixo. Campos com <span className="font-semibold text-destructive">*</span> são obrigatórios.
+                  {editingClient
+                    ? 'Altere os dados abaixo e salve para atualizar o cadastro.'
+                    : <>Preencha os dados abaixo. Campos com <span className="font-semibold text-destructive">*</span> são obrigatórios.</>
+                  }
                 </DialogPrimitive.Description>
               </div>
             </div>
@@ -78,7 +82,7 @@ export function ClientFormModal({ open, onClose, onSuccess }: ClientFormModalPro
           </div>
 
           {/* ── Form ── */}
-          <ClientFormCore isModal onSuccess={handleSuccess} onCancel={onClose} />
+          <ClientFormCore isModal onSuccess={handleSuccess} onCancel={onClose} editingClient={editingClient} />
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
