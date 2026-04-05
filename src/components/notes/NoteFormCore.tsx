@@ -743,106 +743,177 @@ export default function NoteFormCore({
         </Button>
       </div>
 
-      <div className="space-y-3">
-        {items.map((item, i) => (
-          <div key={item.id} className="rounded-xl border border-border/60 bg-card shadow-sm overflow-hidden">
-            {/* ── Description row ── */}
-            <div className="flex items-start gap-2 p-3 pb-2">
-              <Textarea
-                value={item.description}
-                onChange={(e) => updateItem(item.id, 'description', e.target.value)}
-                placeholder={noteType === 'COMPRA' ? 'Nome da peça / produto' : 'Descrição do serviço'}
-                className="min-h-[52px] resize-none text-sm flex-1 leading-snug"
-                rows={2}
-              />
-              <div className="flex flex-col gap-1 shrink-0 pt-0.5">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  title="Adicionar sub-item"
-                  className="w-7 h-7 text-muted-foreground hover:text-primary"
-                  onClick={() => addSubLine(item.id)}
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="w-7 h-7 text-muted-foreground hover:text-destructive"
-                  onClick={() => removeItem(item.id)}
-                  disabled={items.length <= 1}
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </Button>
-              </div>
-            </div>
+      {/* ── Column headers (desktop) ── */}
+      <div className="hidden sm:grid sm:grid-cols-[1fr_52px_108px_60px_96px_60px] gap-2 px-1 text-[10px] uppercase font-semibold text-muted-foreground tracking-wider mb-1">
+        <span>Descrição</span>
+        <span className="text-center">Qtd</span>
+        <span className="text-right">Valor unit.</span>
+        <span className="text-center">Desc.%</span>
+        <span className="text-right">Total</span>
+        <span />
+      </div>
+      <Separator className="hidden sm:block mb-2" />
 
-            {/* ── Numeric fields row ── */}
-            <div className="flex items-center gap-3 px-3 pb-3 flex-wrap">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] text-muted-foreground whitespace-nowrap">Qtd</span>
+      <div className="space-y-2">
+        {items.map((item) => {
+          const price = parseFloat(item.unitPrice.replace(',', '.')) || 0;
+          const disc  = parseFloat(item.discount.replace(',', '.'))  || 0;
+          const rowTotal = item.quantity * price * (1 - disc / 100);
+
+          return (
+            <div key={item.id}>
+              {/* ── Desktop row ── */}
+              <div className="hidden sm:grid sm:grid-cols-[1fr_52px_108px_60px_96px_60px] gap-2 items-start">
+                <Textarea
+                  value={item.description}
+                  onChange={(e) => updateItem(item.id, 'description', e.target.value)}
+                  placeholder={noteType === 'COMPRA' ? 'Nome da peça / produto' : 'Descrição do serviço'}
+                  className="min-h-[36px] resize-none text-sm py-2 leading-snug"
+                  rows={1}
+                />
                 <Input
                   type="number"
                   min="1"
                   value={item.quantity}
                   onChange={(e) => updateItem(item.id, 'quantity', Math.max(1, +e.target.value))}
-                  className={cn('w-16 h-8 text-sm text-center', numberInputClassName)}
+                  className={cn('h-9 text-sm text-center', numberInputClassName)}
                 />
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] text-muted-foreground whitespace-nowrap">Valor unit.</span>
                 <Input
                   inputMode="decimal"
                   value={item.unitPrice}
                   onChange={(e) => updateItem(item.id, 'unitPrice', e.target.value)}
                   placeholder="0,00"
-                  className={cn('w-28 h-8 text-sm text-right', numberInputClassName)}
+                  className={cn('h-9 text-sm text-right', numberInputClassName)}
                 />
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] text-muted-foreground whitespace-nowrap">Desc.%</span>
                 <Input
                   inputMode="decimal"
                   value={item.discount}
                   onChange={(e) => updateItem(item.id, 'discount', e.target.value)}
                   placeholder="0"
-                  className={cn('w-16 h-8 text-sm text-center', numberInputClassName)}
+                  className={cn('h-9 text-sm text-center', numberInputClassName)}
                 />
+                <div className="text-right text-sm font-semibold tabular-nums pt-2 pr-1">
+                  R$ {rowTotal.toFixed(2)}
+                </div>
+                <div className="flex items-center gap-0.5">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    title="Adicionar sub-item"
+                    className="w-7 h-7 text-muted-foreground hover:text-primary"
+                    onClick={() => addSubLine(item.id)}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="w-7 h-7 text-muted-foreground hover:text-destructive"
+                    onClick={() => removeItem(item.id)}
+                    disabled={items.length <= 1}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
               </div>
-              <div className="ml-auto text-sm font-semibold tabular-nums text-right">
-                <span className="text-[11px] font-normal text-muted-foreground">Total </span>
-                R$ {itemTotals[i]?.toFixed(2) ?? '0.00'}
-              </div>
-            </div>
 
-            {/* ── Sub-lines ── */}
-            {item.subLines.length > 0 && (
-              <div className="border-t border-border/30 bg-muted/20 px-3 py-2 space-y-1.5">
-                {item.subLines.map((sub) => (
-                  <div key={sub.id} className="flex items-center gap-2 pl-4 border-l-2 border-border/40">
+              {/* ── Mobile card ── */}
+              <div className="sm:hidden rounded-lg border border-border/50 p-3 space-y-3 bg-muted/10">
+                <div className="flex items-start justify-between gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="w-6 h-6 -mr-1 -mt-1 shrink-0 text-muted-foreground hover:text-primary ml-auto"
+                    title="Adicionar sub-item"
+                    onClick={() => addSubLine(item.id)}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="w-6 h-6 -mr-1 -mt-1 shrink-0 text-muted-foreground hover:text-destructive"
+                    onClick={() => removeItem(item.id)}
+                    disabled={items.length <= 1}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+                <Textarea
+                  value={item.description}
+                  onChange={(e) => updateItem(item.id, 'description', e.target.value)}
+                  placeholder={noteType === 'COMPRA' ? 'Nome da peça / produto' : 'Descrição do serviço'}
+                  className="min-h-[36px] resize-none text-sm"
+                  rows={1}
+                />
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <p className="text-[10px] text-muted-foreground mb-1">Qtd</p>
                     <Input
-                      value={sub.text}
-                      onChange={(e) => updateSubLine(item.id, sub.id, e.target.value)}
-                      placeholder="Detalhe adicional..."
-                      className="h-7 text-xs flex-1 bg-transparent"
+                      type="number"
+                      min="1"
+                      value={item.quantity}
+                      onChange={(e) => updateItem(item.id, 'quantity', Math.max(1, +e.target.value))}
+                      className={cn('h-9 text-sm text-center', numberInputClassName)}
                     />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="w-6 h-6 shrink-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => removeSubLine(item.id, sub.id)}
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
                   </div>
-                ))}
+                  <div>
+                    <p className="text-[10px] text-muted-foreground mb-1">Valor unit.</p>
+                    <Input
+                      inputMode="decimal"
+                      value={item.unitPrice}
+                      onChange={(e) => updateItem(item.id, 'unitPrice', e.target.value)}
+                      placeholder="0,00"
+                      className={cn('h-9 text-sm text-right', numberInputClassName)}
+                    />
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-muted-foreground mb-1">Desc.%</p>
+                    <Input
+                      inputMode="decimal"
+                      value={item.discount}
+                      onChange={(e) => updateItem(item.id, 'discount', e.target.value)}
+                      placeholder="0"
+                      className={cn('h-9 text-sm text-center', numberInputClassName)}
+                    />
+                  </div>
+                </div>
+                <div className="text-right text-sm font-semibold tabular-nums">
+                  Total: R$ {rowTotal.toFixed(2)}
+                </div>
               </div>
-            )}
-          </div>
-        ))}
+
+              {/* ── Sub-lines ── */}
+              {item.subLines.length > 0 && (
+                <div className="mt-1 space-y-1 pl-3 border-l-2 border-border/30 ml-2">
+                  {item.subLines.map((sub) => (
+                    <div key={sub.id} className="flex items-center gap-2">
+                      <Input
+                        value={sub.text}
+                        onChange={(e) => updateSubLine(item.id, sub.id, e.target.value)}
+                        placeholder="Detalhe adicional..."
+                        className="h-7 text-xs flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="w-6 h-6 shrink-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => removeSubLine(item.id, sub.id)}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </FormSection>
   );
