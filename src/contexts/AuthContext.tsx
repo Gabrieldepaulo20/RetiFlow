@@ -2,7 +2,6 @@ import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, 
 import { AuthMode, AuthSession, LoginCredentials, Permission, SystemUser } from '@/types';
 import { getAuthProvider } from '@/services/auth/authProvider';
 import { getModulePermission, hasPermission } from '@/services/auth/permissions';
-import { loadSystemUsers } from '@/services/auth/systemUsers';
 import {
   isRoleModuleEnabled,
   isUserModuleEnabled,
@@ -13,8 +12,18 @@ import {
   removeStorageItem,
   writeJsonStorage,
 } from '@/services/storage/browserStorage';
+import { loadSystemUsers } from '@/services/auth/systemUsers';
+import { supabase } from '@/lib/supabase';
 
 const AUTH_SESSION_STORAGE_KEY = 'auth.session';
+const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
+
+const ACESSO_PARA_ROLE: Record<string, SystemUser['role']> = {
+  administrador: 'ADMIN',
+  financeiro:    'FINANCEIRO',
+  'produção':    'PRODUCAO',
+  'recepção':    'RECEPCAO',
+};
 
 interface LoginResult {
   success: boolean;
@@ -49,20 +58,87 @@ function loadStoredSession() {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(() => loadStoredSession());
   const [moduleAccessVersion, setModuleAccessVersion] = useState(0);
-  const authMode: AuthMode = 'development';
 
-  useEffect(() => subscribeToModuleAccessChanges(() => setModuleAccessVersion((value) => value + 1)), []);
+  const authMode: AuthMode = IS_REAL_AUTH ? 'real' : 'development';
+
+  useEffect(() => subscribeToModuleAccessChanges(() => setModuleAccessVersion((v) => v + 1)), []);
+
+  // Modo mock: valida que o usuário ainda existe nos dados de seed
   useEffect(() => {
-    if (!session?.user) {
-      return;
-    }
+    if (IS_REAL_AUTH || !session?.user) return;
 
-    const currentUser = loadSystemUsers().find((candidate) => candidate.id === session.user.id);
+    const currentUser = loadSystemUsers().find((u) => u.id === session.user.id);
     if (!currentUser || !currentUser.isActive) {
       removeStorageItem(AUTH_SESSION_STORAGE_KEY);
       setSession(null);
     }
   }, [session]);
+
+  // Modo real: restaura sessão Supabase existente ao montar e escuta mudanças de auth
+  useEffect(() => {
+    if (!IS_REAL_AUTH) return;
+
+    // Restaura sessão se Supabase tiver token válido mas app session não existir
+    supabase.auth.getSession().then(async ({ data: { session: sbSession } }) => {
+      if (!sbSession || session) return;
+
+      const { data: envelope } = await supabase.rpc('get_usuario_por_auth_id');
+      if (!envelope || envelope.status !== 200) return;
+
+      const perfil = envelope.dados;
+      const role = ACESSO_PARA_ROLE[perfil.acesso] ?? 'RECEPCAO';
+
+      const restored: AuthSession = {
+        user: {
+          id: perfil.id_usuarios, name: perfil.nome, email: perfil.email,
+          role, isActive: perfil.status, createdAt: new Date().toISOString(),
+          phone: perfil.telefone || undefined,
+        },
+        mode: 'real',
+        tokens: {
+          accessToken:  sbSession.access_token,
+          refreshToken: sbSession.refresh_token,
+          expiresAt: sbSession.expires_at
+            ? new Date(sbSession.expires_at * 1000).toISOString()
+            : null,
+        },
+        authenticatedAt: new Date().toISOString(),
+      };
+
+      setSession(restored);
+      writeJsonStorage(AUTH_SESSION_STORAGE_KEY, restored);
+    });
+
+    // Escuta token refresh e sign-out do Supabase
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, sbSession) => {
+      if (event === 'SIGNED_OUT') {
+        removeStorageItem(AUTH_SESSION_STORAGE_KEY);
+        setSession(null);
+        return;
+      }
+
+      if ((event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') && sbSession) {
+        setSession((prev) => {
+          if (!prev) return prev;
+          const updated: AuthSession = {
+            ...prev,
+            tokens: {
+              accessToken:  sbSession.access_token,
+              refreshToken: sbSession.refresh_token,
+              expiresAt: sbSession.expires_at
+                ? new Date(sbSession.expires_at * 1000).toISOString()
+                : null,
+            },
+          };
+          writeJsonStorage(AUTH_SESSION_STORAGE_KEY, updated);
+          return updated;
+        });
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const user = session?.user ?? null;
 
@@ -72,12 +148,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       writeJsonStorage(AUTH_SESSION_STORAGE_KEY, nextSession);
       return;
     }
-
     removeStorageItem(AUTH_SESSION_STORAGE_KEY);
   }, []);
 
-  const login = useCallback(async (credentials: LoginCredentials, portal: LoginPortal = 'client'): Promise<LoginResult> => {
+  const login = useCallback(async (
+    credentials: LoginCredentials,
+    portal: LoginPortal = 'client',
+  ): Promise<LoginResult> => {
     const response = await getAuthProvider().authenticate(credentials);
+
     if (!response.success || !response.session) {
       return {
         success: false,
@@ -87,6 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const isAdminUser = response.session.user.role === 'ADMIN';
+
     if (portal === 'admin' && !isAdminUser) {
       return {
         success: false,
@@ -104,34 +184,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     commitSession(response.session);
-    return {
-      success: true,
-      redirect: getDefaultRedirect(response.session.user),
-    };
+    return { success: true, redirect: getDefaultRedirect(response.session.user) };
   }, [commitSession]);
 
-  const logout = useCallback(() => commitSession(null), [commitSession]);
+  const logout = useCallback(async () => {
+    if (IS_REAL_AUTH) await supabase.auth.signOut();
+    commitSession(null);
+  }, [commitSession]);
 
   const can = useCallback((permission: Permission) => hasPermission(user, permission), [user]);
 
   const canAccessModule = useCallback((moduleKey: Parameters<typeof getModulePermission>[0]) => {
-    if (!user) {
-      return false;
-    }
-
+    if (!user) return false;
     const permission = getModulePermission(moduleKey);
-    if (!can(permission)) {
-      return false;
-    }
-
-    if (!isRoleModuleEnabled(user.role, moduleKey)) {
-      return false;
-    }
-
-    if (!isUserModuleEnabled(user.id, moduleKey)) {
-      return false;
-    }
-
+    if (!can(permission)) return false;
+    if (!isRoleModuleEnabled(user.role, moduleKey)) return false;
+    if (!isUserModuleEnabled(user.id, moduleKey)) return false;
     return true;
   }, [can, user]);
 
@@ -147,7 +215,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canAccessModule,
       isAdmin: user?.role === 'ADMIN',
     }),
-    [authMode, can, canAccessModule, login, logout, session, user],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [authMode, can, canAccessModule, login, logout, session, user, moduleAccessVersion],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -155,9 +224,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error('useAuth must be within AuthProvider');
-  }
-
+  if (!ctx) throw new Error('useAuth must be within AuthProvider');
   return ctx;
 }
