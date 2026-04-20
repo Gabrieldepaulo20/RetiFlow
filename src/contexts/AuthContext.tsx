@@ -1,6 +1,6 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AuthMode, AuthSession, LoginCredentials, Permission, SystemUser } from '@/types';
-import { authenticateInDevelopment } from '@/services/auth/developmentAuthService';
+import { getAuthProvider } from '@/services/auth/authProvider';
 import { getModulePermission, hasPermission } from '@/services/auth/permissions';
 import { loadSystemUsers } from '@/services/auth/systemUsers';
 import {
@@ -77,7 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (credentials: LoginCredentials, portal: LoginPortal = 'client'): Promise<LoginResult> => {
-    const response = await authenticateInDevelopment(credentials);
+    const response = await getAuthProvider().authenticate(credentials);
     if (!response.success || !response.session) {
       return {
         success: false,

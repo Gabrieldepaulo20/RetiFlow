@@ -1,4 +1,6 @@
 import { Client, DocType } from '@/types';
+import { fetchCep, fetchCnpj } from '@/api/endpoints/brazilian';
+import { ApiError } from '@/api/errors';
 
 export const CUSTOMER_FIELD_LIMITS = {
   name: 80,
@@ -15,28 +17,6 @@ export const CUSTOMER_FIELD_LIMITS = {
   notes: 280,
 } as const;
 
-interface ViaCepResponse {
-  cep?: string;
-  logradouro?: string;
-  bairro?: string;
-  localidade?: string;
-  uf?: string;
-  erro?: boolean;
-}
-
-interface BrasilApiCnpjResponse {
-  razao_social?: string;
-  nome_fantasia?: string;
-  cep?: string;
-  logradouro?: string;
-  numero?: string;
-  bairro?: string;
-  municipio?: string;
-  uf?: string;
-  email?: string;
-  ddd_telefone_1?: string;
-  ddd_telefone_2?: string;
-}
 
 export interface CepLookupResult {
   cep: string;
@@ -145,55 +125,57 @@ export function sanitizeClientInput(client: Omit<Client, 'id' | 'createdAt'>): O
   };
 }
 
-export async function lookupCep(cep: string): Promise<CepLookupResult> {
+export async function lookupCep(cep: string, signal?: AbortSignal): Promise<CepLookupResult> {
   const digits = stripDigits(cep);
   if (digits.length !== 8) {
     throw new Error('Informe um CEP com 8 dígitos.');
   }
 
-  const response = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
-  if (!response.ok) {
-    throw new Error('Nao foi possivel consultar o CEP agora.');
+  try {
+    const data = await fetchCep(digits, signal);
+    if (data.erro) {
+      throw new Error('CEP não encontrado.');
+    }
+    return {
+      cep: formatCep(data.cep || digits),
+      address: data.logradouro || '',
+      district: data.bairro || '',
+      city: data.localidade || '',
+      state: (data.uf || '').toUpperCase(),
+    };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw new Error('Não foi possível consultar o CEP agora. Tente novamente.');
+    }
+    throw error;
   }
-
-  const data = (await response.json()) as ViaCepResponse;
-  if (data.erro) {
-    throw new Error('CEP nao encontrado.');
-  }
-
-  return {
-    cep: formatCep(data.cep || digits),
-    address: data.logradouro || '',
-    district: data.bairro || '',
-    city: data.localidade || '',
-    state: (data.uf || '').toUpperCase(),
-  };
 }
 
-export async function lookupCnpj(cnpj: string): Promise<CnpjLookupResult> {
+export async function lookupCnpj(cnpj: string, signal?: AbortSignal): Promise<CnpjLookupResult> {
   const digits = stripDigits(cnpj);
   if (digits.length !== 14) {
-    throw new Error('Informe um CNPJ com 14 digitos.');
+    throw new Error('Informe um CNPJ com 14 dígitos.');
   }
 
-  const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${digits}`);
-  if (!response.ok) {
-    throw new Error('Nao foi possivel consultar o CNPJ agora.');
+  try {
+    const data = await fetchCnpj(digits, signal);
+    const phone = formatPhone(data.ddd_telefone_1 || data.ddd_telefone_2 || '');
+    return {
+      name: clamp((data.nome_fantasia || data.razao_social || '').trim(), CUSTOMER_FIELD_LIMITS.name),
+      tradeName: clamp((data.nome_fantasia || '').trim(), CUSTOMER_FIELD_LIMITS.tradeName),
+      email: clamp((data.email || '').trim().toLowerCase(), CUSTOMER_FIELD_LIMITS.email),
+      phone,
+      cep: formatCep(data.cep || ''),
+      address: clamp((data.logradouro || '').trim(), CUSTOMER_FIELD_LIMITS.address),
+      addressNumber: clamp((data.numero || '').trim(), CUSTOMER_FIELD_LIMITS.addressNumber),
+      district: clamp((data.bairro || '').trim(), CUSTOMER_FIELD_LIMITS.district),
+      city: clamp((data.municipio || '').trim(), CUSTOMER_FIELD_LIMITS.city),
+      state: clamp((data.uf || '').trim().toUpperCase(), CUSTOMER_FIELD_LIMITS.state),
+    };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw new Error('Não foi possível consultar o CNPJ agora. Tente novamente.');
+    }
+    throw error;
   }
-
-  const data = (await response.json()) as BrasilApiCnpjResponse;
-  const phone = formatPhone(data.ddd_telefone_1 || data.ddd_telefone_2 || '');
-
-  return {
-    name: clamp((data.nome_fantasia || data.razao_social || '').trim(), CUSTOMER_FIELD_LIMITS.name),
-    tradeName: clamp((data.nome_fantasia || '').trim(), CUSTOMER_FIELD_LIMITS.tradeName),
-    email: clamp((data.email || '').trim().toLowerCase(), CUSTOMER_FIELD_LIMITS.email),
-    phone,
-    cep: formatCep(data.cep || ''),
-    address: clamp((data.logradouro || '').trim(), CUSTOMER_FIELD_LIMITS.address),
-    addressNumber: clamp((data.numero || '').trim(), CUSTOMER_FIELD_LIMITS.addressNumber),
-    district: clamp((data.bairro || '').trim(), CUSTOMER_FIELD_LIMITS.district),
-    city: clamp((data.municipio || '').trim(), CUSTOMER_FIELD_LIMITS.city),
-    state: clamp((data.uf || '').trim().toUpperCase(), CUSTOMER_FIELD_LIMITS.state),
-  };
 }

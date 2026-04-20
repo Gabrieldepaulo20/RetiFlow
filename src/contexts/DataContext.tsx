@@ -1,17 +1,24 @@
-import { createContext, ReactNode, useCallback, useContext, useMemo, useState } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AccountPayable,
   ActivityLog,
   Attachment,
   Client,
   Customer,
+  EmailSuggestion,
   FINAL_STATUSES,
   IntakeNote,
   IntakeProduct,
   IntakeService,
   Invoice,
   NoteStatus,
+  PayableAttachment,
+  PayableCategory,
+  PayableHistory,
+  PayableSupplier,
 } from '@/types';
 import * as seed from '@/data/seed';
+import { debouncedSaveToStorage, loadStateFromStorage, type PersistedData } from '@/services/storage/dataPersistence';
 import { generateId } from '@/lib/generateId';
 import { formatNoteNumber, getNextNoteCounter, parseNoteNumberValue } from '@/lib/noteNumbers';
 import { applyNoteStatusTransition } from '@/services/domain/intakeNotes';
@@ -56,6 +63,26 @@ interface DataCtx {
 
   noteCounter: number;
   dataVersion: number;
+
+  // ── Contas a Pagar ──────────────────────────────────────────────────────
+  payables: AccountPayable[];
+  payableCategories: PayableCategory[];
+  payableSuppliers: PayableSupplier[];
+  payableAttachments: PayableAttachment[];
+  payableHistory: PayableHistory[];
+  addPayable: (data: Omit<AccountPayable, 'id' | 'createdAt' | 'updatedAt'>) => AccountPayable;
+  updatePayable: (id: string, data: Partial<AccountPayable>) => void;
+  getPayable: (id: string) => AccountPayable | undefined;
+  addPayableAttachment: (data: Omit<PayableAttachment, 'id' | 'createdAt'>) => PayableAttachment;
+  addPayableHistoryEntry: (data: Omit<PayableHistory, 'id' | 'createdAt'>) => PayableHistory;
+  getAttachmentsForPayable: (payableId: string) => PayableAttachment[];
+  getHistoryForPayable: (payableId: string) => PayableHistory[];
+  getInstallmentSiblings: (payable: AccountPayable) => AccountPayable[];
+
+  // ── Sugestões de E-mail ──────────────────────────────────────────────────
+  emailSuggestions: EmailSuggestion[];
+  acceptEmailSuggestion: (id: string) => AccountPayable | null;
+  dismissEmailSuggestion: (id: string) => void;
 }
 
 const Ctx = createContext<DataCtx | null>(null);
@@ -63,15 +90,61 @@ const Ctx = createContext<DataCtx | null>(null);
 const uid = () => generateId();
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const [customers, setCustomers] = useState(seed.customers);
-  const [notes, setNotes] = useState(seed.notes);
-  const [services, setServices] = useState(seed.services);
-  const [products, setProducts] = useState(seed.products);
-  const [attachments, setAttachments] = useState(seed.attachments);
-  const [invoices, setInvoices] = useState(seed.invoices);
-  const [activities, setActivities] = useState(seed.activities);
-  const [noteCounter, setNoteCounter] = useState(() => getNextNoteCounter(seed.notes.map((note) => note.number)));
+  // Carrega estado do localStorage uma única vez na montagem.
+  // useRef garante execução única mesmo em StrictMode double-render.
+  const initRef = useRef<PersistedData | null>(null);
+  if (initRef.current === null) {
+    initRef.current = loadStateFromStorage({
+      customers: seed.customers,
+      notes: seed.notes,
+      services: seed.services,
+      products: seed.products,
+      attachments: seed.attachments,
+      invoices: seed.invoices,
+      activities: seed.activities,
+      payables: seed.payables,
+      payableAttachments: seed.payableAttachments,
+      payableHistory: seed.payableHistory,
+      emailSuggestions: seed.emailSuggestions,
+    });
+  }
+  const init = initRef.current;
+
+  const [customers, setCustomers] = useState<Customer[]>(init.customers);
+  const [notes, setNotes] = useState<IntakeNote[]>(init.notes);
+  const [services, setServices] = useState<IntakeService[]>(init.services);
+  const [products, setProducts] = useState<IntakeProduct[]>(init.products);
+  const [attachments, setAttachments] = useState<Attachment[]>(init.attachments);
+  const [invoices, setInvoices] = useState<Invoice[]>(init.invoices);
+  const [activities, setActivities] = useState<ActivityLog[]>(init.activities);
+  const [noteCounter, setNoteCounter] = useState(() => getNextNoteCounter(init.notes.map((note) => note.number)));
   const [dataVersion, setDataVersion] = useState(0);
+
+  // ── Contas a Pagar state ──────────────────────────────────────────────────
+  const [payables, setPayables] = useState<AccountPayable[]>(init.payables);
+  const [payableCategories] = useState(seed.payableCategories);
+  const [payableSuppliers] = useState(seed.payableSuppliers);
+  const [payableAttachments, setPayableAttachments] = useState<PayableAttachment[]>(init.payableAttachments);
+  const [payableHistory, setPayableHistory] = useState<PayableHistory[]>(init.payableHistory);
+  const [emailSuggestions, setEmailSuggestions] = useState<EmailSuggestion[]>(init.emailSuggestions);
+
+  // Grava estado relevante no localStorage após 400ms de inatividade.
+  // payableCategories/payableSuppliers são catálogos estáticos do seed — não precisam persistir.
+  useEffect(() => {
+    debouncedSaveToStorage({
+      customers,
+      notes,
+      services,
+      products,
+      attachments,
+      invoices,
+      activities,
+      payables,
+      payableAttachments,
+      payableHistory,
+      emailSuggestions,
+    });
+  }, [customers, notes, services, products, attachments, invoices, activities, payables, payableAttachments, payableHistory, emailSuggestions]);
 
   const bumpDataVersion = useCallback(() => {
     setDataVersion((value) => value + 1);
@@ -169,6 +242,35 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     return map;
   }, [attachments]);
+
+  // ── Contas a Pagar indexes ────────────────────────────────────────────────
+  const payableById = useMemo(() => new Map(payables.map((p) => [p.id, p])), [payables]);
+
+  const payableAttachmentsByPayableId = useMemo(() => {
+    const map = new Map<string, PayableAttachment[]>();
+    for (const att of payableAttachments) {
+      const bucket = map.get(att.payableId);
+      if (bucket) {
+        bucket.push(att);
+      } else {
+        map.set(att.payableId, [att]);
+      }
+    }
+    return map;
+  }, [payableAttachments]);
+
+  const payableHistoryByPayableId = useMemo(() => {
+    const map = new Map<string, PayableHistory[]>();
+    for (const entry of payableHistory) {
+      const bucket = map.get(entry.payableId);
+      if (bucket) {
+        bucket.push(entry);
+      } else {
+        map.set(entry.payableId, [entry]);
+      }
+    }
+    return map;
+  }, [payableHistory]);
 
   const updateClient = useCallback((id: string, data: Partial<Client>) => {
     setCustomers((previous) => previous.map((client) => (client.id === id ? { ...client, ...data } : client)));
@@ -360,6 +462,108 @@ export function DataProvider({ children }: { children: ReactNode }) {
     bumpDataVersion();
   }, [bumpDataVersion]);
 
+  // ── Contas a Pagar callbacks ──────────────────────────────────────────────
+
+  const addPayable = useCallback((data: Omit<AccountPayable, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const now = new Date().toISOString();
+    const competencyDate = data.competencyDate ?? `${data.dueDate.slice(0, 7)}-01`;
+    const newPayable: AccountPayable = {
+      ...data,
+      competencyDate,
+      entrySource: data.entrySource ?? 'MANUAL',
+      paymentExecutionStatus: data.paymentExecutionStatus ?? 'MANUAL',
+      reconciliationStatus: data.reconciliationStatus ?? 'PENDENTE',
+      id: uid(),
+      createdAt: now,
+      updatedAt: now,
+    };
+    setPayables((prev) => [newPayable, ...prev]);
+    bumpDataVersion();
+    addActivity(`Conta a pagar criada: ${newPayable.title}`);
+    return newPayable;
+  }, [addActivity, bumpDataVersion]);
+
+  const updatePayable = useCallback((id: string, data: Partial<AccountPayable>) => {
+    setPayables((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, ...data, updatedAt: new Date().toISOString() } : p)),
+    );
+    bumpDataVersion();
+  }, [bumpDataVersion]);
+
+  const getPayable = useCallback((id: string) => payableById.get(id), [payableById]);
+
+  const addPayableAttachment = useCallback((data: Omit<PayableAttachment, 'id' | 'createdAt'>) => {
+    const attachment: PayableAttachment = {
+      ...data,
+      id: uid(),
+      createdAt: new Date().toISOString(),
+    };
+
+    setPayableAttachments((previous) => [attachment, ...previous]);
+    bumpDataVersion();
+    return attachment;
+  }, [bumpDataVersion]);
+
+  const addPayableHistoryEntry = useCallback((data: Omit<PayableHistory, 'id' | 'createdAt'>) => {
+    const historyEntry: PayableHistory = {
+      ...data,
+      id: uid(),
+      createdAt: new Date().toISOString(),
+    };
+
+    setPayableHistory((previous) => [historyEntry, ...previous]);
+    bumpDataVersion();
+    return historyEntry;
+  }, [bumpDataVersion]);
+
+  const getAttachmentsForPayable = useCallback(
+    (payableId: string) => payableAttachmentsByPayableId.get(payableId) ?? [],
+    [payableAttachmentsByPayableId],
+  );
+
+  const getHistoryForPayable = useCallback(
+    (payableId: string) => payableHistoryByPayableId.get(payableId) ?? [],
+    [payableHistoryByPayableId],
+  );
+
+  const getInstallmentSiblings = useCallback((payable: AccountPayable): AccountPayable[] => {
+    const parentId = payable.recurrenceParentId ?? payable.id;
+    return payables.filter(
+      (p) => p.deletedAt == null && (p.id === parentId || p.recurrenceParentId === parentId),
+    ).sort((a, b) => (a.recurrenceIndex ?? 1) - (b.recurrenceIndex ?? 1));
+  }, [payables]);
+
+  const acceptEmailSuggestion = useCallback((id: string): AccountPayable | null => {
+    const suggestion = emailSuggestions.find((s) => s.id === id);
+    if (!suggestion) return null;
+    const now = new Date().toISOString();
+    const newPayable: AccountPayable = {
+      id: uid(),
+      title: suggestion.suggestedTitle,
+      supplierName: suggestion.suggestedSupplierName,
+      categoryId: suggestion.suggestedCategoryId,
+      dueDate: suggestion.suggestedDueDate,
+      originalAmount: suggestion.suggestedAmount,
+      finalAmount: suggestion.suggestedAmount,
+      status: 'PENDENTE',
+      paymentMethod: suggestion.suggestedPaymentMethod,
+      recurrence: 'NENHUMA',
+      isUrgent: false,
+      entrySource: 'EMAIL_IMPORT',
+      createdAt: now,
+      updatedAt: now,
+      createdByUserId: 'user-2',
+    };
+    setPayables((prev) => [newPayable, ...prev]);
+    setEmailSuggestions((prev) => prev.map((s) => s.id === id ? { ...s, status: 'ACCEPTED' } : s));
+    bumpDataVersion();
+    return newPayable;
+  }, [emailSuggestions, bumpDataVersion]);
+
+  const dismissEmailSuggestion = useCallback((id: string) => {
+    setEmailSuggestions((prev) => prev.map((s) => s.id === id ? { ...s, status: 'DISMISSED' } : s));
+  }, []);
+
   const value = useMemo<DataCtx>(() => ({
     customers,
     clients: customers,
@@ -393,6 +597,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addActivity,
     noteCounter,
     dataVersion,
+    payables,
+    payableCategories,
+    payableSuppliers,
+    payableAttachments,
+    payableHistory,
+    addPayable,
+    updatePayable,
+    getPayable,
+    addPayableAttachment,
+    addPayableHistoryEntry,
+    getAttachmentsForPayable,
+    getHistoryForPayable,
+    getInstallmentSiblings,
+    emailSuggestions,
+    acceptEmailSuggestion,
+    dismissEmailSuggestion,
   }), [
     customers,
     addClient,
@@ -425,6 +645,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addActivity,
     noteCounter,
     dataVersion,
+    payables,
+    payableCategories,
+    payableSuppliers,
+    payableAttachments,
+    payableHistory,
+    addPayable,
+    updatePayable,
+    getPayable,
+    addPayableAttachment,
+    addPayableHistoryEntry,
+    getAttachmentsForPayable,
+    getHistoryForPayable,
+    getInstallmentSiblings,
+    emailSuggestions,
+    acceptEmailSuggestion,
+    dismissEmailSuggestion,
   ]);
 
   return (

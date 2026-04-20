@@ -1,5 +1,33 @@
-# Logs
-logs
+# ── Dependências ──────────────────────────────────────────────────────────────
+node_modules/
+
+# ── Build ─────────────────────────────────────────────────────────────────────
+dist/
+dist-ssr/
+
+# ── Variáveis de ambiente — NUNCA versionadas ─────────────────────────────────
+# Apenas .env.example é seguro para o git
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+.env.staging
+.env.staging.local
+
+# ── AWS Amplify — arquivos com dados de conta e deploy ────────────────────────
+amplify/.config/local-*
+amplify/backend/amplify-meta.json
+amplify/backend/.temp/
+amplify/team-provider-info.json
+amplify/#current-cloud-backend/
+.amplify/
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,18 +35,25 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
+# ── Editores ──────────────────────────────────────────────────────────────────
 .vscode/*
 !.vscode/extensions.json
-.idea
-.DS_Store
+.idea/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+
+# ── Sistema operacional ───────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Testes e cobertura ────────────────────────────────────────────────────────
+coverage/
+.nyc_output/
+
+# ── Cache ─────────────────────────────────────────────────────────────────────
+.cache/
+.parcel-cache/
+.turbo/
