@@ -1,6 +1,6 @@
 export type UserRole = 'ADMIN' | 'FINANCEIRO' | 'PRODUCAO' | 'RECEPCAO';
 export type AuthMode = 'development' | 'real';
-export type AppModuleKey = 'dashboard' | 'clients' | 'notes' | 'kanban' | 'closing' | 'invoices' | 'settings' | 'admin';
+export type AppModuleKey = 'dashboard' | 'clients' | 'notes' | 'kanban' | 'closing' | 'invoices' | 'payables' | 'settings' | 'admin';
 export type Permission =
   | 'dashboard.view'
   | 'clients.view'
@@ -13,6 +13,8 @@ export type Permission =
   | 'kanban.manage'
   | 'closing.view'
   | 'invoices.view'
+  | 'payables.view'
+  | 'payables.manage'
   | 'settings.view'
   | 'admin.access';
 
@@ -289,4 +291,283 @@ export interface ClosingRecord {
   editCount: number;
   downloadCount: number;
   logs: ClosingLogEntry[];
+}
+
+// ─── Contas a Pagar ──────────────────────────────────────────────────────────
+
+export type PayableStatus =
+  | 'PENDENTE'
+  | 'PAGO'
+  | 'PARCIAL'
+  | 'CANCELADO'
+  | 'AGENDADO';
+
+/**
+ * Status derivado — NÃO é armazenado.
+ * Calculado em runtime: status === 'PENDENTE' && dueDate < hoje → 'VENCIDO'.
+ */
+export type PayableDisplayStatus = PayableStatus | 'VENCIDO';
+
+export type PaymentMethod =
+  | 'PIX'
+  | 'BOLETO'
+  | 'TRANSFERENCIA'
+  | 'CARTAO_CREDITO'
+  | 'CARTAO_DEBITO'
+  | 'DINHEIRO'
+  | 'CHEQUE'
+  | 'DEBITO_AUTOMATICO';
+
+export type RecurrenceType =
+  | 'NENHUMA'
+  | 'SEMANAL'
+  | 'QUINZENAL'
+  | 'MENSAL'
+  | 'BIMESTRAL'
+  | 'TRIMESTRAL'
+  | 'SEMESTRAL'
+  | 'ANUAL';
+
+/** Tipo do arquivo anexado a uma conta a pagar */
+export type PayableAttachmentFileType =
+  | 'BOLETO'
+  | 'NOTA_FISCAL'
+  | 'COMPROVANTE'
+  | 'CONTRATO'
+  | 'OUTRO';
+
+export type PayableEntrySource =
+  | 'MANUAL'
+  | 'IA_IMPORT'
+  | 'CAMERA_CAPTURE'
+  | 'AUTO_SERIES'
+  | 'EMAIL_IMPORT';
+
+export type PayableExecutionStatus =
+  | 'MANUAL'
+  | 'SCHEDULED'
+  | 'PROCESSING'
+  | 'FAILED'
+  | 'CANCELLED';
+
+export type PayableReconciliationStatus =
+  | 'PENDENTE'
+  | 'CONCILIADO'
+  | 'DIVERGENTE';
+
+export type PayableHistoryAction =
+  | 'CREATED'
+  | 'UPDATED'
+  | 'PAID'
+  | 'PARTIAL_PAID'
+  | 'CANCELLED'
+  | 'DELETED'
+  | 'ATTACHMENT_ADDED';
+
+export interface AccountPayable {
+  id: string;
+  /** Descrição da despesa. Ex: "Água Março", "Boleto Distribuidora X" */
+  title: string;
+  /** ID do fornecedor cadastrado — opcional */
+  supplierId?: string;
+  /** Nome livre do fornecedor quando não há cadastro formal */
+  supplierName?: string;
+  /** ID da PayableCategory associada */
+  categoryId: string;
+
+  /** Número do documento (boleto, NF, guia tributária) */
+  docNumber?: string;
+  /** Data de emissão do documento (ISO string) */
+  issueDate?: string;
+  /** Data de vencimento (ISO string) — campo obrigatório */
+  dueDate: string;
+
+  /** Valor base da despesa (R$) */
+  originalAmount: number;
+  /** Juros adicionais em R$ — somados ao finalAmount */
+  interest?: number;
+  /** Desconto em R$ — subtraído do finalAmount */
+  discount?: number;
+  /**
+   * Valor final calculado: originalAmount + (interest ?? 0) - (discount ?? 0).
+   * Sempre >= 0. Calculado e persistido para facilitar consultas.
+   */
+  finalAmount: number;
+  /** Valor efetivamente pago — pode ser menor que finalAmount em pagamento parcial */
+  paidAmount?: number;
+
+  status: PayableStatus;
+  /** Forma de pagamento prevista ao cadastrar */
+  paymentMethod?: PaymentMethod;
+  /** Data do pagamento efetivo (ISO string) */
+  paidAt?: string;
+  /** Forma de pagamento real — pode diferir da prevista */
+  paidWith?: PaymentMethod;
+  /** Observações livres sobre o pagamento */
+  paymentNotes?: string;
+  /** Origem do lançamento para filtros e rastreabilidade */
+  entrySource?: PayableEntrySource;
+  /** Competência financeira para leitura mensal */
+  competencyDate?: string;
+
+  /** Planejamento para integração bancária futura */
+  paymentExecutionStatus?: PayableExecutionStatus;
+  paymentProvider?: string;
+  paymentProviderReference?: string;
+  scheduledFor?: string;
+  receiptUrl?: string;
+  failureReason?: string;
+  reconciliationStatus?: PayableReconciliationStatus;
+
+  /** Tipo de recorrência. 'NENHUMA' = sem recorrência */
+  recurrence: RecurrenceType;
+  /** ID da primeira conta da série (recorrência ou parcelamento) */
+  recurrenceParentId?: string;
+  /** Posição desta ocorrência na série (ex: 2 para "parcela 2/6") */
+  recurrenceIndex?: number;
+  /** Total de ocorrências na série */
+  totalInstallments?: number;
+
+  /** Observações livres sobre a conta */
+  observations?: string;
+  /** Sinalizador de urgência operacional — realce visual na listagem */
+  isUrgent: boolean;
+
+  /** Timestamp de exclusão lógica (ausente = conta ativa) */
+  deletedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  createdByUserId: string;
+}
+
+export interface PayableCategory {
+  id: string;
+  name: string;
+  /** Classes Tailwind de cor. Ex: "bg-blue-100 text-blue-800" */
+  color: string;
+  /** Nome do ícone Lucide (string). Ex: "Wrench", "Zap" */
+  icon: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface PayableSupplier {
+  id: string;
+  name: string;
+  tradeName?: string;
+  docType?: DocType;
+  docNumber?: string;
+  phone?: string;
+  email?: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface PayableAttachment {
+  id: string;
+  payableId: string;
+  type: PayableAttachmentFileType;
+  filename: string;
+  url: string;
+  createdAt: string;
+  createdByUserId: string;
+}
+
+export interface PayableHistory {
+  id: string;
+  payableId: string;
+  action: PayableHistoryAction;
+  /** Texto legível do evento. Ex: "Status alterado de Pendente para Pago" */
+  description: string;
+  /** Campos alterados — presente apenas em action === 'UPDATED' */
+  fieldChanges?: Array<{
+    field: string;
+    oldValue: string;
+    newValue: string;
+  }>;
+  userId: string;
+  createdAt: string;
+}
+
+// ─── Labels e cores — Contas a Pagar ────────────────────────────────────────
+
+export const PAYABLE_STATUS_LABELS: Record<PayableDisplayStatus, string> = {
+  PENDENTE:  'Pendente',
+  VENCIDO:   'Vencido',
+  PAGO:      'Pago',
+  PARCIAL:   'Parcial',
+  CANCELADO: 'Cancelado',
+  AGENDADO:  'Agendado',
+};
+
+/** Segue o padrão de STATUS_COLORS do sistema — classes Tailwind semânticas */
+export const PAYABLE_STATUS_COLORS: Record<PayableDisplayStatus, string> = {
+  PENDENTE:  'bg-warning text-warning-foreground',
+  VENCIDO:   'bg-destructive text-destructive-foreground',
+  PAGO:      'bg-success text-success-foreground',
+  PARCIAL:   'bg-orange-100 text-orange-800',
+  CANCELADO: 'bg-zinc-200 text-zinc-700',
+  AGENDADO:  'bg-info text-info-foreground',
+};
+
+export const PAYABLE_ENTRY_SOURCE_LABELS: Record<PayableEntrySource, string> = {
+  MANUAL: 'Manual',
+  IA_IMPORT: 'Importada por IA',
+  CAMERA_CAPTURE: 'Foto / câmera',
+  AUTO_SERIES: 'Gerada em série',
+  EMAIL_IMPORT: 'Importada de e-mail',
+};
+
+export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  PIX:               'PIX',
+  BOLETO:            'Boleto',
+  TRANSFERENCIA:     'Transferência',
+  CARTAO_CREDITO:    'Cartão de Crédito',
+  CARTAO_DEBITO:     'Cartão de Débito',
+  DINHEIRO:          'Dinheiro',
+  CHEQUE:            'Cheque',
+  DEBITO_AUTOMATICO: 'Débito Automático',
+};
+
+export const RECURRENCE_TYPE_LABELS: Record<RecurrenceType, string> = {
+  NENHUMA:    'Sem recorrência',
+  SEMANAL:    'Semanal',
+  QUINZENAL:  'Quinzenal',
+  MENSAL:     'Mensal',
+  BIMESTRAL:  'Bimestral',
+  TRIMESTRAL: 'Trimestral',
+  SEMESTRAL:  'Semestral',
+  ANUAL:      'Anual',
+};
+
+export const PAYABLE_HISTORY_ACTION_LABELS: Record<PayableHistoryAction, string> = {
+  CREATED:          'Conta criada',
+  UPDATED:          'Conta editada',
+  PAID:             'Pagamento registrado',
+  PARTIAL_PAID:     'Pagamento parcial registrado',
+  CANCELLED:        'Conta cancelada',
+  DELETED:          'Conta excluída',
+  ATTACHMENT_ADDED: 'Anexo adicionado',
+};
+
+// ─── Sugestões de E-mail ─────────────────────────────────────────────────────
+
+export type EmailSuggestionStatus = 'PENDING' | 'ACCEPTED' | 'DISMISSED';
+
+export interface EmailSuggestion {
+  id: string;
+  subject: string;
+  senderName: string;
+  senderEmail: string;
+  receivedAt: string;
+  suggestedTitle: string;
+  suggestedAmount: number;
+  suggestedDueDate: string;
+  suggestedCategoryId: string;
+  suggestedSupplierName: string;
+  suggestedPaymentMethod: PaymentMethod;
+  confidence: number;
+  status: EmailSuggestionStatus;
+  emailSnippet?: string;
+  createdAt: string;
 }

@@ -11,6 +11,9 @@ export const loadKanbanPage = () => import('@/pages/Kanban');
 export const loadMonthlyClosingPage = () => import('@/pages/MonthlyClosing');
 export const loadInvoicesPage = () => import('@/pages/Invoices');
 export const loadSettingsPage = () => import('@/pages/Settings');
+export const loadContasAPagarPage = () => import('@/pages/ContasAPagar');
+export const loadContaPagarFormPage = () => import('@/pages/ContaPagarForm');
+export const loadImportarContaPagarPage = () => import('@/pages/ImportarContaPagar');
 export const loadAdminDashboardPage = () => import('@/pages/admin/AdminDashboard');
 export const loadAdminUsersPage = () => import('@/pages/admin/AdminClients');
 export const loadAccessDeniedPage = () => import('@/pages/AccessDenied');
@@ -49,6 +52,9 @@ const routeLoaderEntries: RouteLoaderEntry[] = [
   { matches: (pathname) => pathname === '/kanban', load: loadKanbanPage },
   { matches: (pathname) => pathname === '/fechamento', load: loadMonthlyClosingPage },
   { matches: (pathname) => pathname === '/nota-fiscal', load: loadInvoicesPage },
+  { matches: (pathname) => pathname === '/contas-a-pagar', load: loadContasAPagarPage },
+  { matches: (pathname) => pathname === '/contas-a-pagar/nova', load: loadContaPagarFormPage },
+  { matches: (pathname) => pathname === '/contas-a-pagar/importar', load: loadImportarContaPagarPage },
   { matches: (pathname) => pathname === '/configuracoes', load: loadSettingsPage },
   { matches: (pathname) => pathname === '/admin', load: loadAdminDashboardPage },
   { matches: (pathname) => pathname === '/admin/clientes', load: loadAdminUsersPage },

@@ -2,7 +2,7 @@ import { AppModuleKey, Permission, SystemUser, UserRole } from '@/types';
 
 export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   ADMIN: ['admin.access'],
-  FINANCEIRO: ['dashboard.view', 'clients.view', 'notes.view', 'kanban.view', 'closing.view', 'invoices.view'],
+  FINANCEIRO: ['dashboard.view', 'clients.view', 'notes.view', 'kanban.view', 'closing.view', 'invoices.view', 'payables.view', 'payables.manage'],
   PRODUCAO: ['dashboard.view', 'notes.view', 'notes.status.manage', 'notes.attachments.view', 'kanban.view', 'kanban.manage'],
   RECEPCAO: ['dashboard.view', 'clients.view', 'clients.manage', 'notes.view', 'notes.manage', 'kanban.view'],
 };
@@ -19,6 +19,8 @@ const IMPLIED_PERMISSIONS: Record<Permission, Permission[]> = {
   'kanban.manage': ['kanban.view', 'notes.view'],
   'closing.view': [],
   'invoices.view': [],
+  'payables.view': [],
+  'payables.manage': ['payables.view'],
   'settings.view': [],
   'admin.access': [
     'dashboard.view',
@@ -32,6 +34,8 @@ const IMPLIED_PERMISSIONS: Record<Permission, Permission[]> = {
     'kanban.manage',
     'closing.view',
     'invoices.view',
+    'payables.view',
+    'payables.manage',
     'settings.view',
   ],
 };
@@ -44,6 +48,7 @@ export const MODULE_PERMISSIONS: Record<AppModuleKey, Permission> = {
   kanban: 'kanban.view',
   closing: 'closing.view',
   invoices: 'invoices.view',
+  payables: 'payables.view',
   settings: 'settings.view',
 };
 
