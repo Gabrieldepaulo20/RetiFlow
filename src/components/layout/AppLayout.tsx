@@ -22,7 +22,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { preloadRouteModule, preloadRouteModules } from '@/routes/routeModules';
 import {
-  LayoutDashboard, Users, FileText, KanbanSquare, Calendar, Receipt, Settings,
+  LayoutDashboard, Users, FileText, KanbanSquare, Calendar, Receipt, Settings, Wallet,
   Menu, Search, Bell, LogOut, ChevronLeft, ChevronRight, MoreHorizontal, Wrench, ChevronDown, MessageSquarePlus,
   CheckCircle2, AlertCircle, PlusCircle, ArrowRightLeft, Paperclip, BellOff,
 } from 'lucide-react';
@@ -70,6 +70,7 @@ const navItems = [
   { label: 'Kanban', icon: KanbanSquare, path: '/kanban', moduleKey: 'kanban' },
   { label: 'Fechamento', icon: Calendar, path: '/fechamento', moduleKey: 'closing' },
   { label: 'Nota Fiscal', icon: Receipt, path: '/nota-fiscal', moduleKey: 'invoices' },
+  { label: 'Contas a Pagar', icon: Wallet, path: '/contas-a-pagar', moduleKey: 'payables' },
   { label: 'Configurações', icon: Settings, path: '/configuracoes', moduleKey: 'settings' },
 ] as const;
 

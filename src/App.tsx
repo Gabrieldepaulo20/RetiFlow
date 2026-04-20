@@ -19,6 +19,9 @@ import {
   loadClientDetailPage,
   loadClientFormPage,
   loadClientsPage,
+  loadContasAPagarPage,
+  loadContaPagarFormPage,
+  loadImportarContaPagarPage,
   loadDashboardPage,
   loadIntakeNoteDetailPage,
   loadIntakeNoteFormPage,
@@ -43,6 +46,9 @@ const IntakeNoteDetail = lazy(loadIntakeNoteDetailPage);
 const Kanban = lazy(loadKanbanPage);
 const MonthlyClosing = lazy(loadMonthlyClosingPage);
 const Invoices = lazy(loadInvoicesPage);
+const ContasAPagar = lazy(loadContasAPagarPage);
+const ContaPagarForm = lazy(loadContaPagarFormPage);
+const ImportarContaPagar = lazy(loadImportarContaPagarPage);
 const SettingsPage = lazy(loadSettingsPage);
 const AdminDashboard = lazy(loadAdminDashboardPage);
 const AdminUsers = lazy(loadAdminUsersPage);
@@ -132,6 +138,11 @@ const App = () => (
                     </Route>
                     <Route element={<ProtectedRoute moduleKey="invoices" />}>
                       <Route path="/nota-fiscal" element={<SuspendedPage><Invoices /></SuspendedPage>} />
+                    </Route>
+                    <Route element={<ProtectedRoute moduleKey="payables" />}>
+                      <Route path="/contas-a-pagar" element={<SuspendedPage><ContasAPagar /></SuspendedPage>} />
+                      <Route path="/contas-a-pagar/nova" element={<SuspendedPage><ContaPagarForm /></SuspendedPage>} />
+                      <Route path="/contas-a-pagar/importar" element={<SuspendedPage><ImportarContaPagar /></SuspendedPage>} />
                     </Route>
                     <Route element={<ProtectedRoute moduleKey="settings" />}>
                       <Route path="/configuracoes" element={<SuspendedPage><SettingsPage /></SuspendedPage>} />

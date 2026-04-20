@@ -67,10 +67,7 @@ describe('App routes', () => {
 
   it('redirects / to /login', async () => {
     renderAt('/');
-
-    await waitFor(() => {
-      expect(window.location.pathname).toBe('/login');
-    });
+    await waitFor(() => expect(window.location.pathname).toBe('/login'));
     expect(await screen.findByText('Entrar na área do cliente')).toBeInTheDocument();
   });
 
@@ -86,16 +83,29 @@ describe('App routes', () => {
     ['/kanban', async () => screen.findByRole('heading', { name: 'Produção' })],
     ['/fechamento', async () => screen.findByRole('heading', { name: 'Fechamento' })],
     ['/nota-fiscal', async () => screen.findByRole('heading', { name: 'Notas Fiscais' })],
+    ['/contas-a-pagar', async () => screen.findByRole('heading', { name: 'Contas a Pagar' })],
   ])('renders operational route %s', async (path, findElement) => {
     authenticateAs('FINANCEIRO');
     renderAt(path);
     expect(await findElement()).toBeInTheDocument();
   });
 
+  it.each([
+    ['/contas-a-pagar/nova', 'modal=new', /Nova conta a pagar/i],
+    ['/contas-a-pagar/importar', 'modal=import', /Importar conta com IA/i],
+  ])('redirects payable compatibility route %s', async (path, search, modalTitle) => {
+    authenticateAs('FINANCEIRO');
+    renderAt(path);
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/contas-a-pagar');
+      expect(window.location.search).toContain(search);
+    });
+    expect(await screen.findByRole('heading', { name: modalTitle })).toBeInTheDocument();
+  });
+
   it('blocks /configuracoes for financeiro when the module is disabled for that role', async () => {
     authenticateAs('FINANCEIRO');
     renderAt('/configuracoes');
-
     expect(await screen.findByRole('heading', { name: 'Acesso negado' })).toBeInTheDocument();
     expect(screen.getByText(/origem: \/configuracoes/i)).toBeInTheDocument();
   });
@@ -113,10 +123,7 @@ describe('App routes', () => {
   it('redirects /admin/clientes to /admin/usuarios', async () => {
     authenticateAs('ADMIN');
     renderAt('/admin/clientes');
-
-    await waitFor(() => {
-      expect(window.location.pathname).toBe('/admin/usuarios');
-    });
+    await waitFor(() => expect(window.location.pathname).toBe('/admin/usuarios'));
     expect(await screen.findByRole('heading', { name: 'Usuários do Sistema' })).toBeInTheDocument();
   });
 });

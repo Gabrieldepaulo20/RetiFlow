@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { useSearchParams } from "react-router-dom";
 import { useData } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -395,6 +396,7 @@ export default function Kanban() {
       </div>
 
       {/* Kanban board */}
+      <ErrorBoundary>
       <DragDropContext onDragEnd={onDragEnd}>
         <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-thin -mx-1 px-1">
           {columns.map((col) => (
@@ -572,6 +574,8 @@ export default function Kanban() {
           ))}
         </div>
       </DragDropContext>
+
+      </ErrorBoundary>
 
       {/* Detail modal */}
       <NoteDetailModal
