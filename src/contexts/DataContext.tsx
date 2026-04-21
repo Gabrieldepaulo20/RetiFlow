@@ -105,23 +105,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // useRef garante execução única mesmo em StrictMode double-render.
   const initRef = useRef<PersistedData | null>(null);
   if (initRef.current === null) {
-    initRef.current = loadStateFromStorage({
-      customers: seed.customers,
-      notes: seed.notes,
-      services: seed.services,
-      products: seed.products,
-      attachments: seed.attachments,
-      invoices: seed.invoices,
-      activities: seed.activities,
-      payables: seed.payables,
-      payableAttachments: seed.payableAttachments,
-      payableHistory: seed.payableHistory,
-      emailSuggestions: seed.emailSuggestions,
-    });
+    initRef.current = IS_REAL_AUTH
+      ? { customers: [], notes: [], services: [], products: [], attachments: [], invoices: [], activities: [], payables: [], payableAttachments: [], payableHistory: [], emailSuggestions: [] }
+      : loadStateFromStorage({
+          customers: seed.customers,
+          notes: seed.notes,
+          services: seed.services,
+          products: seed.products,
+          attachments: seed.attachments,
+          invoices: seed.invoices,
+          activities: seed.activities,
+          payables: seed.payables,
+          payableAttachments: seed.payableAttachments,
+          payableHistory: seed.payableHistory,
+          emailSuggestions: seed.emailSuggestions,
+        });
   }
   const init = initRef.current;
 
-  const [customers, setCustomers] = useState<Customer[]>(IS_REAL_AUTH ? [] : init.customers);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [notes, setNotes] = useState<IntakeNote[]>(init.notes);
   const [services, setServices] = useState<IntakeService[]>(init.services);
   const [products, setProducts] = useState<IntakeProduct[]>(init.products);
