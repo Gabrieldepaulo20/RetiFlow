@@ -22,12 +22,23 @@ import { debouncedSaveToStorage, loadStateFromStorage, type PersistedData } from
 import { generateId } from '@/lib/generateId';
 import { formatNoteNumber, getNextNoteCounter, parseNoteNumberValue } from '@/lib/noteNumbers';
 import { applyNoteStatusTransition } from '@/services/domain/intakeNotes';
+import {
+  getClientes,
+  novoCliente,
+  updateCliente as updateClienteApi,
+  inativarCliente,
+  reativarCliente,
+  supabaseToClient,
+  clientToNovoClientePayload,
+} from '@/api/supabase/clientes';
+
+const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
 interface DataCtx {
   customers: Customer[];
   clients: Client[];
-  addClient: (c: Omit<Client, 'id' | 'createdAt'>) => Client;
-  updateClient: (id: string, d: Partial<Client>) => void;
+  addClient: (c: Omit<Client, 'id' | 'createdAt'>) => Promise<Client>;
+  updateClient: (id: string, d: Partial<Client>) => Promise<void>;
   getClient: (id: string) => Client | undefined;
 
   notes: IntakeNote[];
@@ -110,7 +121,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }
   const init = initRef.current;
 
-  const [customers, setCustomers] = useState<Customer[]>(init.customers);
+  const [customers, setCustomers] = useState<Customer[]>(IS_REAL_AUTH ? [] : init.customers);
   const [notes, setNotes] = useState<IntakeNote[]>(init.notes);
   const [services, setServices] = useState<IntakeService[]>(init.services);
   const [products, setProducts] = useState<IntakeProduct[]>(init.products);
@@ -128,11 +139,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [payableHistory, setPayableHistory] = useState<PayableHistory[]>(init.payableHistory);
   const [emailSuggestions, setEmailSuggestions] = useState<EmailSuggestion[]>(init.emailSuggestions);
 
+  // Em modo real, carrega clientes do Supabase na montagem.
+  useEffect(() => {
+    if (!IS_REAL_AUTH) return;
+    getClientes({ p_limite: 500 }).then(({ dados }) => {
+      setCustomers(dados.map(supabaseToClient));
+    }).catch(() => {});
+  }, []);
+
   // Grava estado relevante no localStorage após 400ms de inatividade.
   // payableCategories/payableSuppliers são catálogos estáticos do seed — não precisam persistir.
+  // customers são persistidos apenas no modo mock (em modo real vêm do Supabase).
   useEffect(() => {
     debouncedSaveToStorage({
-      customers,
+      customers: IS_REAL_AUTH ? [] : customers,
       notes,
       services,
       products,
@@ -163,17 +183,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
     ]);
   }, []);
 
-  const addClient = useCallback((client: Omit<Client, 'id' | 'createdAt'>) => {
-    const newClient: Client = {
-      ...client,
-      id: uid(),
-      createdAt: new Date().toISOString(),
-    };
-
+  const addClient = useCallback(async (client: Omit<Client, 'id' | 'createdAt'>): Promise<Client> => {
+    if (IS_REAL_AUTH) {
+      const payload = clientToNovoClientePayload(client);
+      const id = await novoCliente(payload);
+      const newClient: Client = { ...client, id, createdAt: new Date().toISOString() };
+      setCustomers((previous) => [newClient, ...previous]);
+      bumpDataVersion();
+      return newClient;
+    }
+    const newClient: Client = { ...client, id: uid(), createdAt: new Date().toISOString() };
     setCustomers((previous) => [newClient, ...previous]);
     bumpDataVersion();
     addActivity(`Novo cliente cadastrado: ${newClient.name}`);
-
     return newClient;
   }, [addActivity, bumpDataVersion]);
 
@@ -272,7 +294,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return map;
   }, [payableHistory]);
 
-  const updateClient = useCallback((id: string, data: Partial<Client>) => {
+  const updateClient = useCallback(async (id: string, data: Partial<Client>): Promise<void> => {
+    if (IS_REAL_AUTH) {
+      if ('isActive' in data) {
+        if (data.isActive) {
+          await reativarCliente(id);
+        } else {
+          await inativarCliente(id);
+        }
+      }
+      const { isActive: _ia, ...rest } = data;
+      const supabaseData: Parameters<typeof updateClienteApi>[1] = {};
+      if (rest.name      !== undefined) supabaseData.nome           = rest.name;
+      if (rest.tradeName !== undefined) supabaseData.nome_fantasia   = rest.tradeName;
+      if (rest.docNumber !== undefined) supabaseData.documento       = rest.docNumber;
+      if (rest.docType   !== undefined) supabaseData.tipo_documento  = rest.docType;
+      if (rest.notes     !== undefined) supabaseData.observacao      = rest.notes;
+      if (Object.keys(supabaseData).length > 0) {
+        await updateClienteApi(id, supabaseData);
+      }
+    }
     setCustomers((previous) => previous.map((client) => (client.id === id ? { ...client, ...data } : client)));
     bumpDataVersion();
   }, [bumpDataVersion]);

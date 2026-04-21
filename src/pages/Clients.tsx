@@ -112,7 +112,7 @@ export default function Clients() {
                       size="sm"
                       variant="ghost"
                       onClick={() => {
-                        updateClient(client.id, { isActive: !client.isActive });
+                        void updateClient(client.id, { isActive: !client.isActive });
                         toast({ title: client.isActive ? 'Cliente desativado' : 'Cliente ativado' });
                       }}
                     >
@@ -157,7 +157,7 @@ export default function Clients() {
                     <TableCell className="text-right">
                       <div className="flex gap-1 justify-end">
                         <Button size="sm" variant="ghost" onClick={() => setSelectedClientId(c.id)}>Ver</Button>
-                        <Button size="sm" variant="ghost" onClick={() => { updateClient(c.id, { isActive: !c.isActive }); toast({ title: c.isActive ? 'Cliente desativado' : 'Cliente ativado' }); }}>
+                        <Button size="sm" variant="ghost" onClick={() => { void updateClient(c.id, { isActive: !c.isActive }); toast({ title: c.isActive ? 'Cliente desativado' : 'Cliente ativado' }); }}>
                           {c.isActive ? 'Desativar' : 'Ativar'}
                         </Button>
                       </div>

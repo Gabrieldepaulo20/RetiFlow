@@ -72,7 +72,7 @@ export default function ClientDetailModal({ clientId, onClose }: ClientDetailMod
 
   const saveObs = () => {
     if (!client) return;
-    updateClient(client.id, { notes: obsValue });
+    void updateClient(client.id, { notes: obsValue });
     setEditingObs(false);
     toast({ title: 'Observações salvas' });
   };

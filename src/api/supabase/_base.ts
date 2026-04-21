@@ -19,7 +19,7 @@ export async function callRPC<T = unknown>(
   rpcName: string,
   params?: Record<string, unknown>,
 ): Promise<RPCEnvelope<T>> {
-  const { data, error } = await supabase.rpc(rpcName, params ?? {});
+  const { data, error } = await supabase.schema('RetificaPremium').rpc(rpcName, params ?? {});
 
   if (error) {
     const err = new Error(`[${rpcName}] ${error.message}`);

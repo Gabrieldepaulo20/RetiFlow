@@ -28,7 +28,7 @@ export const realAuthProvider: IAuthProvider = {
 
       // 2. Busca perfil completo no banco via RPC
       const { data: envelope, error: rpcError } =
-        await supabase.rpc('get_usuario_por_auth_id');
+        await supabase.schema('RetificaPremium').rpc('get_usuario_por_auth_id');
 
       if (rpcError || !envelope || envelope.status !== 200) {
         await supabase.auth.signOut();

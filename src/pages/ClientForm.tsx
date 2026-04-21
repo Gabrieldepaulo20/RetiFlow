@@ -235,7 +235,7 @@ export default function ClientForm() {
     }
   };
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
 
     const payload = sanitizeClientInput(form);
@@ -248,9 +248,13 @@ export default function ClientForm() {
       return;
     }
 
-    const createdClient = addClient(payload);
-    toast({ title: 'Cliente criado com sucesso!' });
-    navigate(`/clientes/${createdClient.id}`);
+    try {
+      const createdClient = await addClient(payload);
+      toast({ title: 'Cliente criado com sucesso!' });
+      navigate(`/clientes/${createdClient.id}`);
+    } catch {
+      toast({ title: 'Erro ao salvar cliente', variant: 'destructive' });
+    }
   };
 
   return (

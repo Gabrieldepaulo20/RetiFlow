@@ -82,7 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     supabase.auth.getSession().then(async ({ data: { session: sbSession } }) => {
       if (!sbSession || session) return;
 
-      const { data: envelope } = await supabase.rpc('get_usuario_por_auth_id');
+      const { data: envelope } = await supabase.schema('RetificaPremium').rpc('get_usuario_por_auth_id');
       if (!envelope || envelope.status !== 200) return;
 
       const perfil = envelope.dados;
