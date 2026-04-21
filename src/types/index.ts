@@ -103,6 +103,7 @@ export interface IntakeNote {
   pdfFormat?: PdfFormat;
   finalizedAt?: string;
   updatedAt: string;
+  deadline?: string;
 }
 
 export interface IntakeService {

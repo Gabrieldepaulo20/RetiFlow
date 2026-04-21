@@ -31,6 +31,22 @@ import {
   supabaseToClient,
   clientToNovoClientePayload,
 } from '@/api/supabase/clientes';
+import {
+  getNotasServico,
+  getStatusNotas,
+  novaNota,
+  updateNotaServico as updateNotaServicoDB,
+  supabaseToIntakeNote,
+  buildStatusIdMap,
+} from '@/api/supabase/notas';
+
+export interface NotaItemDB {
+  descricao: string;
+  quantidade: number;
+  valor: number;
+  desconto?: number;
+  detalhes?: string;
+}
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
@@ -42,11 +58,11 @@ interface DataCtx {
   getClient: (id: string) => Client | undefined;
 
   notes: IntakeNote[];
-  addNote: (n: Omit<IntakeNote, 'id' | 'number' | 'createdAt' | 'updatedAt'> & { number?: string }) => IntakeNote;
-  updateNote: (id: string, d: Partial<IntakeNote>) => void;
+  addNote: (n: Omit<IntakeNote, 'id' | 'number' | 'createdAt' | 'updatedAt'> & { number?: string }, itens?: NotaItemDB[]) => Promise<IntakeNote>;
+  updateNote: (id: string, d: Partial<IntakeNote>) => Promise<void>;
   getNote: (id: string) => IntakeNote | undefined;
   updateNoteStatus: (id: string, status: NoteStatus) => void;
-  createPurchaseNote: (parentNoteId: string) => IntakeNote;
+  createPurchaseNote: (parentNoteId: string) => Promise<IntakeNote>;
   getChildNotes: (parentNoteId: string) => IntakeNote[];
 
   services: IntakeService[];
@@ -105,21 +121,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // useRef garante execução única mesmo em StrictMode double-render.
   const initRef = useRef<PersistedData | null>(null);
   if (initRef.current === null) {
+    const fullState = loadStateFromStorage({
+      customers: seed.customers,
+      notes: seed.notes,
+      services: seed.services,
+      products: seed.products,
+      attachments: seed.attachments,
+      invoices: seed.invoices,
+      activities: seed.activities,
+      payables: seed.payables,
+      payableAttachments: seed.payableAttachments,
+      payableHistory: seed.payableHistory,
+      emailSuggestions: seed.emailSuggestions,
+    });
     initRef.current = IS_REAL_AUTH
-      ? { customers: [], notes: [], services: [], products: [], attachments: [], invoices: [], activities: [], payables: [], payableAttachments: [], payableHistory: [], emailSuggestions: [] }
-      : loadStateFromStorage({
-          customers: seed.customers,
-          notes: seed.notes,
-          services: seed.services,
-          products: seed.products,
-          attachments: seed.attachments,
-          invoices: seed.invoices,
-          activities: seed.activities,
-          payables: seed.payables,
-          payableAttachments: seed.payableAttachments,
-          payableHistory: seed.payableHistory,
-          emailSuggestions: seed.emailSuggestions,
-        });
+      ? {
+          ...fullState,
+          customers: [],
+          notes: [],
+        }
+      : fullState;
   }
   const init = initRef.current;
 
@@ -141,11 +162,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [payableHistory, setPayableHistory] = useState<PayableHistory[]>(init.payableHistory);
   const [emailSuggestions, setEmailSuggestions] = useState<EmailSuggestion[]>(init.emailSuggestions);
 
-  // Em modo real, carrega clientes do Supabase na montagem.
+  const statusDbIdRef = useRef<Map<NoteStatus, number>>(new Map());
+
+  // Em modo real, carrega clientes, notas e mapa de status do Supabase na montagem.
   useEffect(() => {
     if (!IS_REAL_AUTH) return;
     getClientes({ p_limite: 500 }).then(({ dados }) => {
       setCustomers(dados.map(supabaseToClient));
+    }).catch(() => {});
+    getNotasServico({ p_limite: 500 }).then(({ dados }) => {
+      const loaded = dados.map(supabaseToIntakeNote);
+      setNotes(loaded);
+      setNoteCounter(getNextNoteCounter(loaded.map((n) => n.number)));
+    }).catch(() => {});
+    getStatusNotas({ p_tipo_nota: 'Serviço' }).then((statuses) => {
+      statusDbIdRef.current = buildStatusIdMap(statuses);
     }).catch(() => {});
   }, []);
 
@@ -155,7 +186,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     debouncedSaveToStorage({
       customers: IS_REAL_AUTH ? [] : customers,
-      notes,
+      notes: IS_REAL_AUTH ? [] : notes,
       services,
       products,
       attachments,
@@ -322,10 +353,46 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const getClient = useCallback((id: string) => clientById.get(id), [clientById]);
 
-  const addNote = useCallback((note: Omit<IntakeNote, 'id' | 'number' | 'createdAt' | 'updatedAt'> & { number?: string }) => {
+  const addNote = useCallback(async (
+    note: Omit<IntakeNote, 'id' | 'number' | 'createdAt' | 'updatedAt'> & { number?: string },
+    itens?: NotaItemDB[],
+  ): Promise<IntakeNote> => {
     const now = new Date().toISOString();
     const resolvedNumber = note.number ?? formatNoteNumber(noteCounter);
     const { number: _number, ...noteWithoutNumber } = note;
+
+    if (IS_REAL_AUTH) {
+      const result = await novaNota({
+        tipo_nota: note.type === 'SERVICO' ? 'Serviço' : 'Compra',
+        numero_nota: resolvedNumber,
+        prazo: note.deadline ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        defeito: note.complaint || '-',
+        fk_clientes: note.type === 'SERVICO' ? note.clientId : undefined,
+        fk_notas_servico: note.type === 'COMPRA' ? note.parentNoteId : undefined,
+        observacoes: note.observations || undefined,
+        total_servicos: note.totalServices,
+        total_produtos: note.totalProducts,
+        total: note.totalAmount,
+        veiculo: note.type === 'SERVICO' ? {
+          modelo: note.vehicleModel || 'Não Identificado',
+          placa: note.plate || 'XXX0000',
+          km: note.km ?? 0,
+          motor: note.engineType || 'Não Identificado',
+        } : undefined,
+        itens,
+      });
+      const newNote: IntakeNote = {
+        ...noteWithoutNumber,
+        id: result.id_nota,
+        number: resolvedNumber,
+        createdAt: now,
+        updatedAt: now,
+      };
+      setNotes((previous) => [newNote, ...previous]);
+      bumpDataVersion();
+      return newNote;
+    }
+
     const newNote: IntakeNote = {
       ...noteWithoutNumber,
       id: uid(),
@@ -347,7 +414,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return newNote;
   }, [addActivity, bumpDataVersion, noteCounter]);
 
-  const updateNote = useCallback((id: string, data: Partial<IntakeNote>) => {
+  const updateNote = useCallback(async (id: string, data: Partial<IntakeNote>): Promise<void> => {
+    if (IS_REAL_AUTH) {
+      const payload: Record<string, unknown> = { id_notas_servico: id };
+      if (data.complaint   !== undefined) payload.defeito     = data.complaint;
+      if (data.observations !== undefined) payload.observacoes = data.observations;
+      if (data.clientId    !== undefined) payload.fk_clientes = data.clientId;
+      if (data.deadline    !== undefined) payload.prazo        = data.deadline;
+      if (data.vehicleModel !== undefined || data.plate !== undefined || data.km !== undefined || data.engineType !== undefined) {
+        payload.veiculo = {
+          modelo: data.vehicleModel,
+          placa:  data.plate,
+          km:     data.km,
+          motor:  data.engineType,
+        };
+      }
+      await updateNotaServicoDB(payload as { id_notas_servico: string } & Record<string, unknown>);
+    }
     setNotes((previous) =>
       previous.map((note) => (note.id === id ? { ...note, ...data, updatedAt: new Date().toISOString() } : note)),
     );
@@ -358,6 +441,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const updateNoteStatus = useCallback((id: string, status: NoteStatus) => {
     const changedAt = new Date().toISOString();
+
+    if (IS_REAL_AUTH) {
+      const statusId = statusDbIdRef.current.get(status);
+      if (statusId !== undefined) {
+        updateNotaServicoDB({ id_notas_servico: id, fk_status: statusId }).catch(() => {});
+      }
+    }
 
     setNotes((previous) => {
       let updatedNotes = previous.map((note) =>
@@ -402,7 +492,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [addActivity, bumpDataVersion, notes]);
 
-  const createPurchaseNote = useCallback((parentId: string) => {
+  const createPurchaseNote = useCallback(async (parentId: string): Promise<IntakeNote> => {
     const parentNote = notes.find((note) => note.id === parentId);
     if (!parentNote) {
       throw new Error('Nota pai não encontrada');

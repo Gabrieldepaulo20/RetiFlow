@@ -1,4 +1,5 @@
 import { callRPC } from './_base';
+import { NoteStatus, NoteType, IntakeNote, STATUS_LABELS } from '@/types';
 
 export interface NotaServico {
   id_notas_servico: string;
@@ -105,4 +106,42 @@ export async function novaNota(payload: NovaNotaPayload) {
 
 export async function updateNotaServico(payload: { id_notas_servico: string } & Record<string, unknown>) {
   await callRPC('update_nota_servico', { p_payload: payload });
+}
+
+// ── Adapters ─────────────────────────────────────────────────────────────────
+
+const NOME_TO_STATUS = Object.fromEntries(
+  Object.entries(STATUS_LABELS).map(([k, v]) => [v, k as NoteStatus]),
+) as Record<string, NoteStatus>;
+
+export function supabaseToIntakeNote(row: NotaServico): IntakeNote {
+  return {
+    id:               row.id_notas_servico,
+    number:           row.os,
+    clientId:         row.cliente.id,
+    createdAt:        row.created_at,
+    updatedAt:        row.created_at,
+    createdByUserId:  '',
+    status:           NOME_TO_STATUS[row.status.nome] ?? 'ABERTO',
+    type:             'SERVICO' as NoteType,
+    vehicleModel:     row.veiculo.modelo,
+    plate:            row.veiculo.placa,
+    km:               row.veiculo.km,
+    engineType:       '',
+    complaint:        row.defeito,
+    observations:     row.observacoes ?? '',
+    totalServices:    row.total_servicos,
+    totalProducts:    row.total_produtos,
+    totalAmount:      row.total,
+    finalizedAt:      row.finalizado_em ?? undefined,
+  };
+}
+
+export function buildStatusIdMap(statuses: StatusNota[]): Map<NoteStatus, number> {
+  const map = new Map<NoteStatus, number>();
+  for (const s of statuses) {
+    const enumKey = NOME_TO_STATUS[s.nome];
+    if (enumKey) map.set(enumKey, s.id_status_notas);
+  }
+  return map;
 }

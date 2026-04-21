@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useData } from '@/contexts/DataContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,7 +15,6 @@ import type { Client } from '@/types';
 
 export default function Clients() {
   const { clients, notes, updateClient } = useData();
-  const navigate = useNavigate();
   const { toast } = useToast();
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -113,7 +111,6 @@ export default function Clients() {
                       variant="ghost"
                       onClick={() => {
                         void updateClient(client.id, { isActive: !client.isActive });
-                        toast({ title: client.isActive ? 'Cliente desativado' : 'Cliente ativado' });
                       }}
                     >
                       {client.isActive ? 'Desativar' : 'Ativar'}
@@ -157,7 +154,7 @@ export default function Clients() {
                     <TableCell className="text-right">
                       <div className="flex gap-1 justify-end">
                         <Button size="sm" variant="ghost" onClick={() => setSelectedClientId(c.id)}>Ver</Button>
-                        <Button size="sm" variant="ghost" onClick={() => { void updateClient(c.id, { isActive: !c.isActive }); toast({ title: c.isActive ? 'Cliente desativado' : 'Cliente ativado' }); }}>
+                        <Button size="sm" variant="ghost" onClick={() => { void updateClient(c.id, { isActive: !c.isActive }); }}>
                           {c.isActive ? 'Desativar' : 'Ativar'}
                         </Button>
                       </div>
@@ -181,7 +178,7 @@ export default function Clients() {
       <ClientFormModal
         open={newClientOpen}
         onClose={() => setNewClientOpen(false)}
-        onSuccess={(client: Client) => navigate(`/clientes/${client.id}`)}
+        onSuccess={() => setNewClientOpen(false)}
       />
     </div>
   );

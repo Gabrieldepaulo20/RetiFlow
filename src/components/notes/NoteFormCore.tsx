@@ -359,7 +359,7 @@ export default function NoteFormCore({
   );
 
   /* ── Submit ── */
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!clientId || !data) {
       toast({ title: 'Preencha cliente e data', variant: 'destructive' });
       return;
@@ -405,13 +405,14 @@ export default function NoteFormCore({
         description: fullDescription,
         quantity: item.quantity,
         unitPrice: price,
+        discount: disc,
         price,
         subtotal: sub - sub * (disc / 100),
       };
     });
 
     if (editingNote) {
-      updateNote(editingNote.id, payload);
+      await updateNote(editingNote.id, { ...payload, deadline: prazo || undefined });
       if (noteType === 'SERVICO') {
         replaceServicesForNote(
           editingNote.id,
@@ -443,7 +444,18 @@ export default function NoteFormCore({
       return;
     }
 
-    const note = addNote({ ...payload, number: normalizeNoteNumber(osNumber) });
+    const dbItens = itemPayload.map((item) => ({
+      descricao: item.name,
+      quantidade: item.quantity,
+      valor: item.unitPrice,
+      desconto: item.discount,
+      detalhes: item.description !== item.name ? item.description : undefined,
+    }));
+
+    const note = await addNote(
+      { ...payload, number: normalizeNoteNumber(osNumber), deadline: prazo || undefined },
+      dbItens,
+    );
     itemPayload.forEach((item) => {
       if (noteType === 'SERVICO') {
         addService({
@@ -468,7 +480,7 @@ export default function NoteFormCore({
     if (parentNoteId) {
       const parent = notes.find((n) => n.id === parentNoteId);
       if (parent && parent.status !== 'AGUARDANDO_COMPRA') {
-        updateNote(parentNoteId, { previousStatus: parent.status, status: 'AGUARDANDO_COMPRA' });
+        void updateNote(parentNoteId, { previousStatus: parent.status, status: 'AGUARDANDO_COMPRA' });
       }
     }
 

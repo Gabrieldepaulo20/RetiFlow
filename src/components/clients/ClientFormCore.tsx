@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useMemo, useRef, useState } from 'react';
+import { FormEvent, ReactNode, useMemo, useRef, useState, useCallback } from 'react';
 import { useData } from '@/contexts/DataContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,6 +24,38 @@ import {
 } from '@/services/domain/customers';
 import { Loader2, Mail, MapPin, Phone, Save, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+// ── Validadores de documento ──────────────────────────────────────────────────
+
+function validarCPF(cpf: string): boolean {
+  const d = cpf.replace(/\D/g, '');
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += parseInt(d[i]) * (10 - i);
+  let r = (sum * 10) % 11;
+  if (r >= 10) r = 0;
+  if (r !== parseInt(d[9])) return false;
+  sum = 0;
+  for (let i = 0; i < 10; i++) sum += parseInt(d[i]) * (11 - i);
+  r = (sum * 10) % 11;
+  if (r >= 10) r = 0;
+  return r === parseInt(d[10]);
+}
+
+function validarCNPJ(cnpj: string): boolean {
+  const d = cnpj.replace(/\D/g, '');
+  if (d.length !== 14 || /^(\d)\1{13}$/.test(d)) return false;
+  const calc = (s: string, n: number) => {
+    let sum = 0, pos = n - 7;
+    for (let i = n; i >= 1; i--) {
+      sum += parseInt(s[n - i]) * pos--;
+      if (pos < 2) pos = 9;
+    }
+    const rem = sum % 11;
+    return rem < 2 ? 0 : 11 - rem;
+  };
+  return calc(d, 12) === parseInt(d[12]) && calc(d, 13) === parseInt(d[13]);
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -255,9 +287,12 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
     }
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = useCallback(async (e: FormEvent) => {
     e.preventDefault();
     const payload = sanitizeClientInput(form);
+
     if (
       !payload.name ||
       !payload.docNumber ||
@@ -274,16 +309,33 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
       });
       return;
     }
-    if (editingClient) {
-      updateClient(editingClient.id, payload);
-      toast({ title: 'Cliente atualizado com sucesso!' });
-      onSuccess({ ...editingClient, ...payload });
+
+    const rawDoc = stripDigits(payload.docNumber);
+    if (payload.docType === 'CPF' && !validarCPF(rawDoc)) {
+      toast({ title: 'CPF inválido', description: 'Verifique os dígitos do CPF informado.', variant: 'destructive' });
       return;
     }
-    const created = addClient(payload);
-    toast({ title: 'Cliente criado com sucesso!' });
-    onSuccess(created);
-  };
+    if (payload.docType === 'CNPJ' && !validarCNPJ(rawDoc)) {
+      toast({ title: 'CNPJ inválido', description: 'Verifique os dígitos do CNPJ informado.', variant: 'destructive' });
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      if (editingClient) {
+        await updateClient(editingClient.id, payload);
+        toast({ title: 'Cliente atualizado com sucesso!' });
+        onSuccess({ ...editingClient, ...payload });
+        return;
+      }
+      const created = await addClient(payload);
+      onSuccess(created);
+    } catch {
+      toast({ title: 'Erro ao salvar cliente', description: 'Tente novamente.', variant: 'destructive' });
+    } finally {
+      setSubmitting(false);
+    }
+  }, [form, editingClient, addClient, updateClient, onSuccess, toast]);
 
   // ── Shared class names ──────────────────────────────────────────────────
   const inputBase = cn(
@@ -570,9 +622,13 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
           <Button
             type="submit"
             size="sm"
+            disabled={submitting}
             className="gap-1.5 px-4 h-9 font-medium"
           >
-            <Save className="h-3.5 w-3.5" />
+            {submitting
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <Save className="h-3.5 w-3.5" />
+            }
             {editingClient ? 'Salvar alterações' : 'Salvar cliente'}
           </Button>
         </div>
