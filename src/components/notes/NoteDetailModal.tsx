@@ -8,7 +8,9 @@ import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { getNotaServicoDetalhes, type NotaServicoDetalhesItem } from '@/api/supabase/notas';
+import { getNotaServicoDetalhes, type NotaServicoDetalhesItem, type NotaServicoDetalhes } from '@/api/supabase/notas';
+import { PDFViewer, pdf } from '@react-pdf/renderer';
+import { NotaPDFTemplate } from '@/components/notes/NotaPDFTemplate';
 import {
   Dialog,
   DialogContent,
@@ -56,6 +58,8 @@ import {
   Truck,
   Archive,
   Hammer,
+  Printer,
+  X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -159,6 +163,8 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
   const { toast } = useToast();
 
   const [realItens, setRealItens] = useState<NotaServicoDetalhesItem[]>([]);
+  const [realDetalhes, setRealDetalhes] = useState<NotaServicoDetalhes | null>(null);
+  const [showPDF, setShowPDF] = useState(false);
 
   const note = noteId ? getNote(noteId) : undefined;
   const client = note ? getClient(note.clientId) : undefined;
@@ -167,6 +173,7 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
     if (!noteId || !IS_REAL_AUTH) { setRealItens([]); return; }
     getNotaServicoDetalhes(noteId).then((res) => {
       setRealItens(res?.itens_servico ?? []);
+      setRealDetalhes(res);
     });
   }, [noteId]);
 
@@ -708,6 +715,17 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
                 <ExternalLink className="w-3.5 h-3.5" />
                 Ver O.S. completa
               </Button>
+              {IS_REAL_AUTH && realDetalhes && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowPDF(true)}
+                  title="Imprimir / PDF"
+                >
+                  <Printer className="w-4 h-4" />
+                </Button>
+              )}
               {canAdvance && (
                 <Button className="h-9 shrink-0 gap-1.5 px-4 text-sm font-semibold" onClick={advance}>
                   Avançar
@@ -837,5 +855,43 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* PDF Preview overlay */}
+    {showPDF && realDetalhes && (
+      <Dialog open={showPDF} onOpenChange={setShowPDF}>
+        <DialogContent className="max-w-5xl h-[90vh] p-0 flex flex-col gap-0">
+          <div className="flex items-center justify-between px-4 py-2.5 border-b shrink-0">
+            <DialogTitle className="text-sm font-semibold">
+              Notinha — O.S. {realDetalhes.cabecalho.os_numero}
+            </DialogTitle>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5 text-xs"
+                onClick={async () => {
+                  const blob = await pdf(<NotaPDFTemplate dados={realDetalhes} />).toBlob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `OS-${realDetalhes.cabecalho.os_numero}.pdf`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+              >
+                <Printer className="w-3.5 h-3.5" />
+                Baixar PDF
+              </Button>
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setShowPDF(false)}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+          <PDFViewer width="100%" height="100%" style={{ border: 'none', flex: 1 }}>
+            <NotaPDFTemplate dados={realDetalhes} />
+          </PDFViewer>
+        </DialogContent>
+      </Dialog>
+    )}
   );
 }

@@ -95,7 +95,16 @@ export interface NotaServicoDetalhes {
     total_servicos: number;
     total_produtos: number;
     criado_por_usuario: string | null;
-    cliente: { id: string; nome: string; documento: string };
+    cliente: {
+      id: string;
+      nome: string;
+      documento: string;
+      endereco: string | null;
+      cep: string | null;
+      cidade: string | null;
+      telefone: string | null;
+      email: string | null;
+    };
     veiculo: { id: string; modelo: string; placa: string; km: number; motor: string };
     status: { id: number; nome: string; index: number; tipo_status: string };
   };
