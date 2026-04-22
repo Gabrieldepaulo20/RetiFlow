@@ -170,6 +170,7 @@ export default function NoteFormCore({
   const { toast } = useToast();
 
   const isEditing = Boolean(editingNote);
+  const isLocked = editingNote?.status === 'FINALIZADO';
 
   /* ── Form state ── */
   const [noteType, setNoteType] = useState<NoteType>(
@@ -1019,6 +1020,12 @@ export default function NoteFormCore({
       <>
         {/* Scrollable body */}
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
+          {isLocked && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              O.S. finalizada — somente leitura. Reabra a nota para editar.
+            </div>
+          )}
           {section1}
           {section2}
           {section3}
@@ -1032,11 +1039,13 @@ export default function NoteFormCore({
             {financialSummary}
             <div className="flex gap-2 ml-auto">
               <Button variant="outline" onClick={onCancel} className="h-9 px-5">
-                Cancelar
+                {isLocked ? 'Fechar' : 'Cancelar'}
               </Button>
-              <Button onClick={handleSubmit} className="h-9 px-6 font-semibold">
-                {isEditing ? 'Salvar alterações' : 'Salvar O.S.'}
-              </Button>
+              {!isLocked && (
+                <Button onClick={handleSubmit} className="h-9 px-6 font-semibold">
+                  {isEditing ? 'Salvar alterações' : 'Salvar O.S.'}
+                </Button>
+              )}
             </div>
           </div>
         </div>

@@ -5,8 +5,10 @@
  */
 
 import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { getNotaServicoDetalhes, type NotaServicoDetalhesItem } from '@/api/supabase/notas';
 import {
   Dialog,
   DialogContent,
@@ -138,6 +140,8 @@ interface NoteDetailModalProps {
   onClose: () => void;
 }
 
+const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
+
 export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProps) {
   const {
     notes,
@@ -154,9 +158,30 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  const [realItens, setRealItens] = useState<NotaServicoDetalhesItem[]>([]);
+
   const note = noteId ? getNote(noteId) : undefined;
   const client = note ? getClient(note.clientId) : undefined;
-  const svcs = note ? getServicesForNote(note.id) : [];
+
+  useEffect(() => {
+    if (!noteId || !IS_REAL_AUTH) { setRealItens([]); return; }
+    getNotaServicoDetalhes(noteId).then((res) => {
+      setRealItens(res?.itens_servico ?? []);
+    });
+  }, [noteId]);
+
+  const localSvcs = note ? getServicesForNote(note.id) : [];
+  const svcs = IS_REAL_AUTH
+    ? realItens.map((i) => ({
+        id: i.id_rel,
+        noteId: noteId ?? '',
+        name: i.descricao,
+        description: i.detalhes ?? i.descricao,
+        price: i.preco_unitario,
+        quantity: i.quantidade,
+        subtotal: i.subtotal_item,
+      }))
+    : localSvcs;
   const prds = note ? getProductsForNote(note.id) : [];
   const atts = note ? getAttachmentsForNote(note.id) : [];
   const noteInvoices = note

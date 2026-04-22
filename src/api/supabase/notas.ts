@@ -71,9 +71,52 @@ export async function getNotasServico(params?: {
   return { dados: env.dados ?? [], total: env.total ?? 0 };
 }
 
-export async function getNotaServicoDetalhes(idNota: string) {
-  const env = await callRPC('get_nota_servico_detalhes', { p_id_nota_servico: idNota });
-  return env as unknown as Record<string, unknown>;
+export interface NotaServicoDetalhesItem {
+  id_rel: string;
+  sku: number;
+  descricao: string;
+  detalhes: string | null;
+  quantidade: number;
+  preco_unitario: number;
+  desconto_porcentagem: number;
+  subtotal_item: number;
+}
+
+export interface NotaServicoDetalhes {
+  cabecalho: {
+    id_nota: string;
+    os_numero: string;
+    prazo: string;
+    defeito: string;
+    observacoes: string | null;
+    data_criacao: string;
+    finalizado_em: string | null;
+    total: number;
+    total_servicos: number;
+    total_produtos: number;
+    criado_por_usuario: string | null;
+    cliente: { id: string; nome: string; documento: string };
+    veiculo: { id: string; modelo: string; placa: string; km: number; motor: string };
+    status: { id: number; nome: string; index: number; tipo_status: string };
+  };
+  itens_servico: NotaServicoDetalhesItem[];
+  notas_compra_vinculadas: Array<{
+    id_nota_compra: string;
+    oc_numero: string;
+    status_nome: string;
+    status_tipo: string;
+  }>;
+  financeiro_servicos: { total_bruto: number; total_liquido: number };
+}
+
+export async function getNotaServicoDetalhes(idNota: string): Promise<NotaServicoDetalhes | null> {
+  try {
+    const env = await callRPC('get_nota_servico_detalhes', { p_id_nota_servico: idNota });
+    if ((env as Record<string, unknown>).status !== 200) return null;
+    return env as unknown as NotaServicoDetalhes;
+  } catch {
+    return null;
+  }
 }
 
 export async function getNotasCompra(params?: {
