@@ -293,6 +293,7 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
   const hasItems = svcs.length > 0 || prds.length > 0 || atts.length > 0;
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={(v) => !v && onClose()}>
       {/*
        * Override DialogContent defaults:
@@ -937,5 +938,6 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
         </DialogContent>
       </Dialog>
     )}
+    </>
   );
 }
