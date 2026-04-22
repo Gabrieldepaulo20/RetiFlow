@@ -96,6 +96,7 @@ export interface IntakeNote {
   km?: number;
   complaint: string;
   observations: string;
+  responsavel?: string;
   totalServices: number;
   totalProducts: number;
   totalAmount: number;

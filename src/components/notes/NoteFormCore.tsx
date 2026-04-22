@@ -91,6 +91,11 @@ export function FormSection({ children }: { children: React.ReactNode }) {
 const numberInputClassName =
   '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none';
 
+const validarPlaca = (p: string): boolean => {
+  const s = p.replace(/[-\s]/g, '').toUpperCase();
+  return /^[A-Z]{3}\d{4}$/.test(s) || /^[A-Z]{3}\d[A-Z]\d{2}$/.test(s);
+};
+
 /* ─── Item types ─── */
 
 interface SubLine {
@@ -101,7 +106,7 @@ interface SubLine {
 interface ServiceItem {
   id: string;
   description: string;
-  quantity: number;
+  quantity: string;
   unitPrice: string;
   discount: string;
   subLines: SubLine[];
@@ -110,7 +115,7 @@ interface ServiceItem {
 const newItem = (): ServiceItem => ({
   id: generateId('item'),
   description: '',
-  quantity: 1,
+  quantity: '',
   unitPrice: '',
   discount: '',
   subLines: [],
@@ -182,6 +187,8 @@ export default function NoteFormCore({
   const [km, setKm] = useState('');
   const [complaint, setComplaint] = useState('');
   const [observations, setObservations] = useState('');
+  const [responsavel, setResponsavel] = useState('');
+  const [noteTab, setNoteTab] = useState<'defeito' | 'obs'>('defeito');
   const [items, setItems] = useState<ServiceItem[]>([newItem()]);
   const [clientSearch, setClientSearch] = useState('');
   const [clientResultsOpen, setClientResultsOpen] = useState(false);
@@ -203,13 +210,14 @@ export default function NoteFormCore({
     setKm(editingNote.km ? String(editingNote.km) : '');
     setComplaint(editingNote.complaint);
     setObservations(editingNote.observations);
+    setResponsavel(editingNote.responsavel || '');
 
     const existingItems =
       editingNote.type === 'SERVICO'
         ? getServicesForNote(editingNote.id).map((s) => ({
             id: `svc-${s.id}`,
             description: s.name || s.description,
-            quantity: s.quantity,
+            quantity: String(s.quantity),
             unitPrice: String(s.price ?? 0),
             discount: '0',
             subLines: [] as SubLine[],
@@ -217,7 +225,7 @@ export default function NoteFormCore({
         : getProductsForNote(editingNote.id).map((p) => ({
             id: `prd-${p.id}`,
             description: p.name,
-            quantity: p.quantity,
+            quantity: String(p.quantity),
             unitPrice: String(p.unitPrice ?? 0),
             discount: '0',
             subLines: [] as SubLine[],
@@ -341,7 +349,8 @@ export default function NoteFormCore({
       items.map((item) => {
         const price = parseFloat(item.unitPrice) || 0;
         const disc = parseFloat(item.discount) || 0;
-        const sub = item.quantity * price;
+        const qty = parseFloat(item.quantity) || 0;
+        const sub = qty * price;
         return sub - sub * (disc / 100);
       }),
     [items],
@@ -353,7 +362,8 @@ export default function NoteFormCore({
       items.reduce((acc, item) => {
         const price = parseFloat(item.unitPrice) || 0;
         const disc = parseFloat(item.discount) || 0;
-        return acc + (item.quantity * price * disc) / 100;
+        const qty = parseFloat(item.quantity) || 0;
+        return acc + (qty * price * disc) / 100;
       }, 0),
     [items],
   );
@@ -362,6 +372,10 @@ export default function NoteFormCore({
   const handleSubmit = async () => {
     if (!clientId || !data) {
       toast({ title: 'Preencha cliente e data', variant: 'destructive' });
+      return;
+    }
+    if (plate && !validarPlaca(plate)) {
+      toast({ title: 'Placa inválida', description: 'Use o formato ABC-1234 ou ABC1D23 (Mercosul)', variant: 'destructive' });
       return;
     }
     if (items.every((i) => !i.description)) {
@@ -373,7 +387,8 @@ export default function NoteFormCore({
     const totalAmount = validItems.reduce((acc, item) => {
       const price = parseFloat(item.unitPrice) || 0;
       const disc = parseFloat(item.discount) || 0;
-      const sub = item.quantity * price;
+      const qty = parseFloat(item.quantity) || 1;
+      const sub = qty * price;
       return acc + sub - (sub * disc) / 100;
     }, 0);
 
@@ -388,6 +403,7 @@ export default function NoteFormCore({
       km: km ? parseInt(km) : undefined,
       complaint: complaint.trim() || validItems.map((i) => i.description).join('; '),
       observations,
+      responsavel: responsavel.trim() || undefined,
       createdByUserId: editingNote?.createdByUserId || user!.id,
       totalServices: noteType === 'SERVICO' ? totalAmount : 0,
       totalProducts: noteType === 'COMPRA' ? totalAmount : 0,
@@ -397,13 +413,14 @@ export default function NoteFormCore({
     const itemPayload = validItems.map((item) => {
       const price = parseFloat(item.unitPrice) || 0;
       const disc = parseFloat(item.discount) || 0;
-      const sub = item.quantity * price;
+      const qty = parseFloat(item.quantity) || 1;
+      const sub = qty * price;
       const subText = item.subLines.map((s) => s.text).filter(Boolean).join('\n');
       const fullDescription = subText ? `${item.description}\n${subText}` : item.description;
       return {
         name: item.description,
         description: fullDescription,
-        quantity: item.quantity,
+        quantity: qty,
         unitPrice: price,
         discount: disc,
         price,
@@ -678,6 +695,15 @@ export default function NoteFormCore({
           </div>
         </div>
       )}
+      <div className="mt-4">
+        <Field label="Responsável / Contato">
+          <Input
+            value={responsavel}
+            onChange={(e) => setResponsavel(e.target.value)}
+            placeholder="Quem trouxe o veículo (funcionário, familiar...)"
+          />
+        </Field>
+      </div>
     </FormSection>
   );
 
@@ -715,16 +741,6 @@ export default function NoteFormCore({
             placeholder="0"
             min={0}
             className={numberInputClassName}
-          />
-        </Field>
-      </div>
-      <div className="mt-4">
-        <Field label="Reclamação / Defeito relatado pelo cliente">
-          <Textarea
-            value={complaint}
-            onChange={(e) => setComplaint(e.target.value)}
-            placeholder="Descreva o defeito ou problema relatado pelo cliente..."
-            className="min-h-[80px] resize-y text-sm"
           />
         </Field>
       </div>
@@ -770,7 +786,7 @@ export default function NoteFormCore({
         {items.map((item) => {
           const price = parseFloat(item.unitPrice.replace(',', '.')) || 0;
           const disc  = parseFloat(item.discount.replace(',', '.'))  || 0;
-          const rowTotal = item.quantity * price * (1 - disc / 100);
+          const rowTotal = (parseFloat(item.quantity) || 0) * price * (1 - disc / 100);
 
           return (
             <div key={item.id}>
@@ -785,9 +801,9 @@ export default function NoteFormCore({
                 />
                 <Input
                   type="number"
-                  min="1"
+                  min="0"
                   value={item.quantity}
-                  onChange={(e) => updateItem(item.id, 'quantity', Math.max(1, +e.target.value))}
+                  onChange={(e) => updateItem(item.id, 'quantity', e.target.value)}
                   className={cn('h-9 text-sm text-center', numberInputClassName)}
                 />
                 <Input
@@ -869,7 +885,7 @@ export default function NoteFormCore({
                       type="number"
                       min="1"
                       value={item.quantity}
-                      onChange={(e) => updateItem(item.id, 'quantity', Math.max(1, +e.target.value))}
+                      onChange={(e) => updateItem(item.id, 'quantity', e.target.value)}
                       className={cn('h-9 text-sm text-center', numberInputClassName)}
                     />
                   </div>
@@ -932,13 +948,44 @@ export default function NoteFormCore({
 
   const section5 = (
     <FormSection>
-      <SectionHeader step={5} icon={<FileText className="w-3.5 h-3.5" />} title="Observações Internas" />
-      <Textarea
-        value={observations}
-        onChange={(e) => setObservations(e.target.value)}
-        placeholder="Anotações internas sobre esta O.S. (não visíveis para o cliente)..."
-        className="min-h-[80px] resize-y text-sm"
-      />
+      <SectionHeader step={5} icon={<FileText className="w-3.5 h-3.5" />} title="Defeito / Observações" />
+      <div className="flex border border-border/50 rounded-lg overflow-hidden mb-3 w-fit">
+        <button
+          type="button"
+          onClick={() => setNoteTab('defeito')}
+          className={cn(
+            'px-4 py-1.5 text-xs font-medium transition-colors',
+            noteTab === 'defeito' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/50',
+          )}
+        >
+          Defeito
+        </button>
+        <button
+          type="button"
+          onClick={() => setNoteTab('obs')}
+          className={cn(
+            'px-4 py-1.5 text-xs font-medium transition-colors',
+            noteTab === 'obs' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/50',
+          )}
+        >
+          Observações
+        </button>
+      </div>
+      {noteTab === 'defeito' ? (
+        <Textarea
+          value={complaint}
+          onChange={(e) => setComplaint(e.target.value)}
+          placeholder="Descreva o defeito ou problema relatado pelo cliente..."
+          className="min-h-[80px] resize-y text-sm"
+        />
+      ) : (
+        <Textarea
+          value={observations}
+          onChange={(e) => setObservations(e.target.value)}
+          placeholder="Anotações internas sobre esta O.S. (não visíveis para o cliente)..."
+          className="min-h-[80px] resize-y text-sm"
+        />
+      )}
     </FormSection>
   );
 
