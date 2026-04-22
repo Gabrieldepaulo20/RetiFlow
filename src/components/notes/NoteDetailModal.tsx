@@ -195,6 +195,7 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
       total_servicos: note.totalServices,
       total_produtos: note.totalProducts,
       criado_por_usuario: null,
+      pdf_url: null,
       cliente: { id: client.id, nome: client.name, documento: client.document ?? '', endereco: null, cep: null, cidade: null, telefone: null, email: null },
       veiculo: { id: '', modelo: note.vehicleModel, placa: note.plate ?? '', km: note.km ?? 0, motor: note.engineType ?? '' },
       status: { id: 0, nome: note.status, index: 0, tipo_status: 'ativo' },
@@ -904,13 +905,22 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
                 variant="outline"
                 className="h-8 gap-1.5 text-xs"
                 onClick={async () => {
-                  const blob = await pdf(<NotaPDFTemplate dados={pdfDados} />).toBlob();
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `OS-${pdfDados.cabecalho.os_numero}.pdf`;
-                  a.click();
-                  URL.revokeObjectURL(url);
+                  const storedUrl = pdfDados.cabecalho.pdf_url;
+                  if (storedUrl) {
+                    const a = document.createElement('a');
+                    a.href = storedUrl;
+                    a.download = `OS-${pdfDados.cabecalho.os_numero}.pdf`;
+                    a.target = '_blank';
+                    a.click();
+                  } else {
+                    const blob = await pdf(<NotaPDFTemplate dados={pdfDados} />).toBlob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `OS-${pdfDados.cabecalho.os_numero}.pdf`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }
                 }}
               >
                 <Printer className="w-3.5 h-3.5" />

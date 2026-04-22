@@ -95,6 +95,7 @@ export interface NotaServicoDetalhes {
     total_servicos: number;
     total_produtos: number;
     criado_por_usuario: string | null;
+    pdf_url: string | null;
     cliente: {
       id: string;
       nome: string;
@@ -126,6 +127,25 @@ export async function getNotaServicoDetalhes(idNota: string): Promise<NotaServic
   } catch {
     return null;
   }
+}
+
+export async function updateNotaPdfUrl(idNota: string, pdfUrl: string): Promise<void> {
+  await callRPC('update_nota_pdf_url', { p_id_nota: idNota, p_pdf_url: pdfUrl });
+}
+
+export async function uploadNotaPDF(blob: Blob, osNumero: string): Promise<string> {
+  const { supabase } = await import('@/lib/supabase');
+  const now = new Date();
+  const ano = now.getFullYear();
+  const mes = String(now.getMonth() + 1).padStart(2, '0');
+  const path = `notas/${ano}/${mes}/OS-${osNumero}.pdf`;
+  const { error } = await supabase.storage.from('notas').upload(path, blob, {
+    contentType: 'application/pdf',
+    upsert: true,
+  });
+  if (error) throw new Error(`[uploadNotaPDF] ${error.message}`);
+  const { data } = supabase.storage.from('notas').getPublicUrl(path);
+  return data.publicUrl;
 }
 
 export async function getNotasCompra(params?: {

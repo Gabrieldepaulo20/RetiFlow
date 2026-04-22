@@ -33,6 +33,11 @@ import { generateId } from '@/lib/generateId';
 import { cn } from '@/lib/utils';
 import { buildCustomerAddressLabel } from '@/services/domain/customers';
 import { formatNoteNumber, normalizeNoteNumber } from '@/lib/noteNumbers';
+import { pdf } from '@react-pdf/renderer';
+import { NotaPDFTemplate } from '@/components/notes/NotaPDFTemplate';
+import { getNotaServicoDetalhes, uploadNotaPDF, updateNotaPdfUrl } from '@/api/supabase/notas';
+
+const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
 /* ─── Shared micro-components ─── */
 
@@ -195,6 +200,7 @@ export default function NoteFormCore({
   const [clientResultsOpen, setClientResultsOpen] = useState(false);
   const clientSearchRef = useRef<HTMLDivElement | null>(null);
   const [osNumber, setOsNumber] = useState(() => formatNoteNumber(noteCounter));
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
   /* ── Populate form when editing an existing note ── */
   useEffect(() => {
@@ -499,6 +505,23 @@ export default function NoteFormCore({
       const parent = notes.find((n) => n.id === parentNoteId);
       if (parent && parent.status !== 'AGUARDANDO_COMPRA') {
         void updateNote(parentNoteId, { previousStatus: parent.status, status: 'AGUARDANDO_COMPRA' });
+      }
+    }
+
+    // Generate and persist PDF (real mode only; non-blocking on failure)
+    if (IS_REAL_AUTH) {
+      setIsGeneratingPDF(true);
+      try {
+        const detalhes = await getNotaServicoDetalhes(note.id);
+        if (detalhes) {
+          const blob = await pdf(<NotaPDFTemplate dados={detalhes} />).toBlob();
+          const url = await uploadNotaPDF(blob, note.number);
+          await updateNotaPdfUrl(note.id, url);
+        }
+      } catch {
+        // PDF generation is best-effort — note was already created
+      } finally {
+        setIsGeneratingPDF(false);
       }
     }
 
@@ -1017,7 +1040,7 @@ export default function NoteFormCore({
 
   if (isModal) {
     return (
-      <>
+      <div className="relative flex flex-col flex-1 overflow-hidden">
         {/* Scrollable body */}
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
           {isLocked && (
@@ -1033,23 +1056,39 @@ export default function NoteFormCore({
           {section5}
         </div>
 
+        {/* Generating PDF overlay */}
+        {isGeneratingPDF && (
+          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-background/80 backdrop-blur-sm rounded-lg">
+            <div className="relative w-10 h-10">
+              <svg className="animate-spin w-10 h-10 text-primary" viewBox="0 0 40 40" fill="none">
+                <circle cx="20" cy="20" r="17" stroke="currentColor" strokeWidth="3" strokeDasharray="80 26" strokeLinecap="round" />
+              </svg>
+              <svg className="absolute inset-0 w-10 h-10 text-primary/30" viewBox="0 0 40 40" fill="none" style={{ animation: 'spin-ccw 1.2s linear infinite' }}>
+                <circle cx="20" cy="20" r="11" stroke="currentColor" strokeWidth="2.5" strokeDasharray="40 29" strokeLinecap="round" />
+              </svg>
+            </div>
+            <p className="text-sm font-medium text-foreground">Gerando nota de serviço...</p>
+            <style>{`@keyframes spin-ccw { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }`}</style>
+          </div>
+        )}
+
         {/* Sticky footer */}
         <div className="border-t border-border/50 px-6 py-4 shrink-0 bg-muted/20">
           <div className="flex items-center justify-between flex-wrap gap-3">
             {financialSummary}
             <div className="flex gap-2 ml-auto">
-              <Button variant="outline" onClick={onCancel} className="h-9 px-5">
+              <Button variant="outline" onClick={onCancel} className="h-9 px-5" disabled={isGeneratingPDF}>
                 {isLocked ? 'Fechar' : 'Cancelar'}
               </Button>
               {!isLocked && (
-                <Button onClick={handleSubmit} className="h-9 px-6 font-semibold">
+                <Button onClick={handleSubmit} className="h-9 px-6 font-semibold" disabled={isGeneratingPDF}>
                   {isEditing ? 'Salvar alterações' : 'Salvar O.S.'}
                 </Button>
               )}
             </div>
           </div>
         </div>
-      </>
+      </div>
     );
   }
 
