@@ -170,14 +170,48 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
   const client = note ? getClient(note.clientId) : undefined;
 
   useEffect(() => {
-    if (!noteId || !IS_REAL_AUTH) { setRealItens([]); return; }
-    getNotaServicoDetalhes(noteId).then((res) => {
-      setRealItens(res?.itens_servico ?? []);
-      setRealDetalhes(res);
-    });
+    if (!noteId) { setRealItens([]); setRealDetalhes(null); return; }
+    if (IS_REAL_AUTH) {
+      getNotaServicoDetalhes(noteId).then((res) => {
+        setRealItens(res?.itens_servico ?? []);
+        setRealDetalhes(res);
+      });
+    }
   }, [noteId]);
 
   const localSvcs = note ? getServicesForNote(note.id) : [];
+
+  // Build PDF data from real RPC or fall back to local mock data
+  const pdfDados: NotaServicoDetalhes | null = realDetalhes ?? (note && client ? {
+    cabecalho: {
+      id_nota: note.id,
+      os_numero: note.number,
+      prazo: note.dueDate ?? '',
+      defeito: note.complaint,
+      observacoes: note.observations ?? null,
+      data_criacao: note.createdAt,
+      finalizado_em: note.finalizedAt ?? null,
+      total: note.totalAmount,
+      total_servicos: note.totalServices,
+      total_produtos: note.totalProducts,
+      criado_por_usuario: null,
+      cliente: { id: client.id, nome: client.name, documento: client.document ?? '', endereco: null, cep: null, cidade: null, telefone: null, email: null },
+      veiculo: { id: '', modelo: note.vehicleModel, placa: note.plate ?? '', km: note.km ?? 0, motor: note.engineType ?? '' },
+      status: { id: 0, nome: note.status, index: 0, tipo_status: 'ativo' },
+    },
+    itens_servico: localSvcs.map((s, i) => ({
+      id_rel: s.id,
+      sku: i,
+      descricao: s.name,
+      detalhes: s.description !== s.name ? s.description : null,
+      quantidade: s.quantity,
+      preco_unitario: s.price,
+      desconto_porcentagem: 0,
+      subtotal_item: s.subtotal,
+    })),
+    notas_compra_vinculadas: [],
+    financeiro_servicos: { total_bruto: note.totalServices, total_liquido: note.totalServices },
+  } : null);
   const svcs = IS_REAL_AUTH
     ? realItens.map((i) => ({
         id: i.id_rel,
@@ -715,7 +749,7 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
                 <ExternalLink className="w-3.5 h-3.5" />
                 Ver O.S. completa
               </Button>
-              {IS_REAL_AUTH && realDetalhes && (
+              {pdfDados && (
                 <Button
                   variant="outline"
                   size="icon"
@@ -857,12 +891,12 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
     </Dialog>
 
     {/* PDF Preview overlay */}
-    {showPDF && realDetalhes && (
+    {showPDF && pdfDados && (
       <Dialog open={showPDF} onOpenChange={setShowPDF}>
         <DialogContent className="max-w-5xl h-[90vh] p-0 flex flex-col gap-0">
           <div className="flex items-center justify-between px-4 py-2.5 border-b shrink-0">
             <DialogTitle className="text-sm font-semibold">
-              Notinha — O.S. {realDetalhes.cabecalho.os_numero}
+              Notinha — O.S. {pdfDados.cabecalho.os_numero}
             </DialogTitle>
             <div className="flex items-center gap-2">
               <Button
@@ -870,11 +904,11 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
                 variant="outline"
                 className="h-8 gap-1.5 text-xs"
                 onClick={async () => {
-                  const blob = await pdf(<NotaPDFTemplate dados={realDetalhes} />).toBlob();
+                  const blob = await pdf(<NotaPDFTemplate dados={pdfDados} />).toBlob();
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement('a');
                   a.href = url;
-                  a.download = `OS-${realDetalhes.cabecalho.os_numero}.pdf`;
+                  a.download = `OS-${pdfDados.cabecalho.os_numero}.pdf`;
                   a.click();
                   URL.revokeObjectURL(url);
                 }}
@@ -888,7 +922,7 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
             </div>
           </div>
           <PDFViewer width="100%" height="100%" style={{ border: 'none', flex: 1 }}>
-            <NotaPDFTemplate dados={realDetalhes} />
+            <NotaPDFTemplate dados={pdfDados} />
           </PDFViewer>
         </DialogContent>
       </Dialog>
