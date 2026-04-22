@@ -463,6 +463,22 @@ export default function NoteFormCore({
         );
         replaceServicesForNote(editingNote.id, []);
       }
+      if (IS_REAL_AUTH) {
+        setIsGeneratingPDF(true);
+        try {
+          const detalhes = await getNotaServicoDetalhes(editingNote.id);
+          if (detalhes) {
+            const blob = await pdf(<NotaPDFTemplate dados={detalhes} />).toBlob();
+            const url = await uploadNotaPDF(blob, editingNote.number);
+            await updateNotaPdfUrl(editingNote.id, url);
+          }
+        } catch {
+          // non-blocking
+        } finally {
+          setIsGeneratingPDF(false);
+        }
+      }
+
       toast({ title: `O.S. ${editingNote.number} atualizada com sucesso!` });
       onSuccess(editingNote);
       return;
