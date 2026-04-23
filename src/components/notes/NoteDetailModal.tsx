@@ -164,6 +164,7 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
 
   const [realItens, setRealItens] = useState<NotaServicoDetalhesItem[]>([]);
   const [realDetalhes, setRealDetalhes] = useState<NotaServicoDetalhes | null>(null);
+  const [realDetalhesLoading, setRealDetalhesLoading] = useState(false);
   const [showPDF, setShowPDF] = useState(false);
 
   const note = noteId ? getNote(noteId) : undefined;
@@ -172,10 +173,11 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
   useEffect(() => {
     if (!noteId) { setRealItens([]); setRealDetalhes(null); return; }
     if (IS_REAL_AUTH) {
+      setRealDetalhesLoading(true);
       getNotaServicoDetalhes(noteId).then((res) => {
         setRealItens(res?.itens_servico ?? []);
         setRealDetalhes(res);
-      });
+      }).finally(() => setRealDetalhesLoading(false));
     }
   }, [noteId]);
 
@@ -751,15 +753,28 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
                 <ExternalLink className="w-3.5 h-3.5" />
                 Ver O.S. completa
               </Button>
-              {pdfDados && (
+              {(pdfDados || IS_REAL_AUTH) && noteId && (
                 <Button
                   variant="outline"
                   size="icon"
                   className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
-                  onClick={() => setShowPDF(true)}
+                  disabled={IS_REAL_AUTH && realDetalhesLoading}
+                  onClick={async () => {
+                    if (IS_REAL_AUTH && !realDetalhes && noteId) {
+                      setRealDetalhesLoading(true);
+                      const res = await getNotaServicoDetalhes(noteId);
+                      setRealItens(res?.itens_servico ?? []);
+                      setRealDetalhes(res);
+                      setRealDetalhesLoading(false);
+                    }
+                    setShowPDF(true);
+                  }}
                   title="Imprimir / PDF"
                 >
-                  <Printer className="w-4 h-4" />
+                  {IS_REAL_AUTH && realDetalhesLoading
+                    ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    : <Printer className="w-4 h-4" />
+                  }
                 </Button>
               )}
               {canAdvance && (
