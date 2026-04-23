@@ -436,7 +436,14 @@ export default function NoteFormCore({
     });
 
     if (editingNote) {
-      await updateNote(editingNote.id, { ...payload, deadline: prazo || undefined });
+      const dbItensEdit = itemPayload.map((item) => ({
+        descricao: item.name,
+        quantidade: item.quantity,
+        valor: item.unitPrice,
+        desconto: item.discount,
+        detalhes: item.description !== item.name ? item.description : undefined,
+      }));
+      await updateNote(editingNote.id, { ...payload, deadline: prazo || undefined }, dbItensEdit);
       if (noteType === 'SERVICO') {
         replaceServicesForNote(
           editingNote.id,
@@ -471,9 +478,13 @@ export default function NoteFormCore({
             const blob = await pdf(<NotaPDFTemplate dados={detalhes} />).toBlob();
             const url = await uploadNotaPDF(blob, editingNote.number);
             await updateNotaPdfUrl(editingNote.id, url);
+          } else {
+            console.error('[PDF] getNotaServicoDetalhes retornou null para', editingNote.id);
+            toast({ title: 'Aviso: PDF não gerado', description: 'Detalhes da OS não encontrados.', variant: 'destructive' });
           }
-        } catch {
-          // non-blocking
+        } catch (err) {
+          console.error('[PDF] Erro ao gerar/salvar PDF na edição:', err);
+          toast({ title: 'Aviso: PDF não gerado', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
         } finally {
           setIsGeneratingPDF(false);
         }
@@ -533,9 +544,13 @@ export default function NoteFormCore({
           const blob = await pdf(<NotaPDFTemplate dados={detalhes} />).toBlob();
           const url = await uploadNotaPDF(blob, note.number);
           await updateNotaPdfUrl(note.id, url);
+        } else {
+          console.error('[PDF] getNotaServicoDetalhes retornou null para', note.id);
+          toast({ title: 'Aviso: PDF não gerado', description: 'Detalhes da OS não encontrados.', variant: 'destructive' });
         }
-      } catch {
-        // PDF generation is best-effort — note was already created
+      } catch (err) {
+        console.error('[PDF] Erro ao gerar/salvar PDF na criação:', err);
+        toast({ title: 'Aviso: PDF não gerado', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
       } finally {
         setIsGeneratingPDF(false);
       }

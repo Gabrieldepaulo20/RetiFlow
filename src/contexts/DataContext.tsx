@@ -59,7 +59,7 @@ interface DataCtx {
 
   notes: IntakeNote[];
   addNote: (n: Omit<IntakeNote, 'id' | 'number' | 'createdAt' | 'updatedAt'> & { number?: string }, itens?: NotaItemDB[]) => Promise<IntakeNote>;
-  updateNote: (id: string, d: Partial<IntakeNote>) => Promise<void>;
+  updateNote: (id: string, d: Partial<IntakeNote>, itens?: NotaItemDB[]) => Promise<void>;
   getNote: (id: string) => IntakeNote | undefined;
   updateNoteStatus: (id: string, status: NoteStatus) => void;
   createPurchaseNote: (parentNoteId: string) => Promise<IntakeNote>;
@@ -414,13 +414,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return newNote;
   }, [addActivity, bumpDataVersion, noteCounter]);
 
-  const updateNote = useCallback(async (id: string, data: Partial<IntakeNote>): Promise<void> => {
+  const updateNote = useCallback(async (id: string, data: Partial<IntakeNote>, itens?: NotaItemDB[]): Promise<void> => {
     if (IS_REAL_AUTH) {
       const payload: Record<string, unknown> = { id_notas_servico: id };
-      if (data.complaint   !== undefined) payload.defeito     = data.complaint;
-      if (data.observations !== undefined) payload.observacoes = data.observations;
-      if (data.clientId    !== undefined) payload.fk_clientes = data.clientId;
-      if (data.deadline    !== undefined) payload.prazo        = data.deadline;
+      if (data.complaint    !== undefined) payload.defeito          = data.complaint;
+      if (data.observations !== undefined) payload.observacoes      = data.observations;
+      if (data.clientId     !== undefined) payload.fk_clientes      = data.clientId;
+      if (data.deadline     !== undefined) payload.prazo            = data.deadline;
+      if (data.totalServices !== undefined) payload.total_servicos  = data.totalServices;
+      if (data.totalProducts !== undefined) payload.total_produtos  = data.totalProducts;
+      if (data.totalAmount  !== undefined) payload.total            = data.totalAmount;
       if (data.vehicleModel !== undefined || data.plate !== undefined || data.km !== undefined || data.engineType !== undefined) {
         payload.veiculo = {
           modelo: data.vehicleModel,
@@ -429,6 +432,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           motor:  data.engineType,
         };
       }
+      if (itens !== undefined) payload.itens = itens;
       await updateNotaServicoDB(payload as { id_notas_servico: string } & Record<string, unknown>);
     }
     setNotes((previous) =>
