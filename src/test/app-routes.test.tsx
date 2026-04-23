@@ -59,7 +59,7 @@ describe('App routes', () => {
     ['/login', async () => screen.findByText('Entrar na área do cliente')],
     ['/admin/login', async () => screen.findByText('Entrar como administrador')],
     ['/acesso-negado', async () => screen.findByRole('heading', { name: 'Acesso negado' })],
-    ['/rota-inexistente', async () => screen.findByText('Oops! Page not found')],
+    ['/rota-inexistente', async () => screen.findByRole('heading', { name: 'Página não encontrada' })],
   ])('renders public route %s', async (path, findElement) => {
     renderAt(path);
     expect(await findElement()).toBeInTheDocument();

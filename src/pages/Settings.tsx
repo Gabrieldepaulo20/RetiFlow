@@ -7,10 +7,11 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useAuth } from '@/contexts/AuthContext';
 import { users } from '@/data/seed';
 import { DEFAULT_ROLE_MODULE_CONFIG, loadRoleModuleConfig, saveRoleModuleConfig } from '@/services/auth/moduleAccess';
-import { Wrench, Building2, Users, Palette, Lock, Upload, Check, FileText, Eye, LayoutGrid, LayoutDashboard, KanbanSquare, Calendar, Receipt, Settings as SettingsIcon } from 'lucide-react';
+import { Wrench, Building2, Users, Palette, Lock, Upload, Check, FileText, Eye, LayoutGrid, LayoutDashboard, KanbanSquare, Calendar, Receipt, Settings as SettingsIcon, Info } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import OSPreviewModal from '@/components/OSPreviewModal';
 import type { IntakeNote, IntakeService, Client, RoleModuleConfig, UserRole } from '@/types';
@@ -68,6 +69,9 @@ const CONFIGURABLE_ROLES: { key: UserRole; label: string }[] = [
   { key: 'PRODUCAO', label: 'Produção' },
   { key: 'RECEPCAO', label: 'Recepção' },
 ];
+
+const COMPANY_SETTINGS_CONNECTED = false;
+const SECURITY_SETTINGS_CONNECTED = false;
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -144,14 +148,22 @@ export default function SettingsPage() {
     <div className="max-w-4xl mx-auto space-y-6">
       <h1 className="text-2xl font-display font-bold">Configurações</h1>
 
+      <Alert>
+        <Info className="h-4 w-4" />
+        <AlertTitle>Algumas seções ainda são locais</AlertTitle>
+        <AlertDescription>
+          Permissões por perfil já são salvas no navegador. Dados da empresa, segurança e parte das prévias abaixo ainda não persistem no backend.
+        </AlertDescription>
+      </Alert>
+
       <Tabs defaultValue="empresa" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-6">
-          <TabsTrigger value="empresa" className="text-xs sm:text-sm"><Building2 className="w-4 h-4 mr-1.5 hidden sm:inline" /> Empresa</TabsTrigger>
-          <TabsTrigger value="modulos" className="text-xs sm:text-sm"><LayoutGrid className="w-4 h-4 mr-1.5 hidden sm:inline" /> Módulos</TabsTrigger>
-          <TabsTrigger value="aparencia" className="text-xs sm:text-sm"><Palette className="w-4 h-4 mr-1.5 hidden sm:inline" /> Aparência</TabsTrigger>
-          <TabsTrigger value="modelos" className="text-xs sm:text-sm"><FileText className="w-4 h-4 mr-1.5 hidden sm:inline" /> Modelos</TabsTrigger>
-          <TabsTrigger value="seguranca" className="text-xs sm:text-sm"><Lock className="w-4 h-4 mr-1.5 hidden sm:inline" /> Segurança</TabsTrigger>
-          <TabsTrigger value="usuarios" className="text-xs sm:text-sm"><Users className="w-4 h-4 mr-1.5 hidden sm:inline" /> Usuários</TabsTrigger>
+        <TabsList className="flex w-full flex-nowrap justify-start gap-1 overflow-x-auto">
+          <TabsTrigger value="empresa" className="shrink-0 text-xs sm:text-sm"><Building2 className="w-4 h-4 mr-1.5 hidden sm:inline" /> Empresa</TabsTrigger>
+          <TabsTrigger value="modulos" className="shrink-0 text-xs sm:text-sm"><LayoutGrid className="w-4 h-4 mr-1.5 hidden sm:inline" /> Módulos</TabsTrigger>
+          <TabsTrigger value="aparencia" className="shrink-0 text-xs sm:text-sm"><Palette className="w-4 h-4 mr-1.5 hidden sm:inline" /> Aparência</TabsTrigger>
+          <TabsTrigger value="modelos" className="shrink-0 text-xs sm:text-sm"><FileText className="w-4 h-4 mr-1.5 hidden sm:inline" /> Modelos</TabsTrigger>
+          <TabsTrigger value="seguranca" className="shrink-0 text-xs sm:text-sm"><Lock className="w-4 h-4 mr-1.5 hidden sm:inline" /> Segurança</TabsTrigger>
+          <TabsTrigger value="usuarios" className="shrink-0 text-xs sm:text-sm"><Users className="w-4 h-4 mr-1.5 hidden sm:inline" /> Usuários</TabsTrigger>
         </TabsList>
 
         {/* EMPRESA */}
@@ -159,6 +171,15 @@ export default function SettingsPage() {
           <Card>
             <CardHeader><CardTitle className="flex items-center gap-2"><Building2 className="w-5 h-5" /> Dados da Empresa</CardTitle></CardHeader>
             <CardContent className="space-y-5">
+              {!COMPANY_SETTINGS_CONNECTED && (
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertTitle>Prévia local</AlertTitle>
+                  <AlertDescription>
+                    Esta seção ainda serve apenas para pré-visualização no navegador atual. O botão de salvar fica desabilitado até a persistência real ser conectada.
+                  </AlertDescription>
+                </Alert>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div><Label>Razão Social</Label><Input value={companyName} onChange={e => setCompanyName(e.target.value)} className="mt-1.5" /></div>
                 <div><Label>Nome Fantasia</Label><Input value={fantasyName} onChange={e => setFantasyName(e.target.value)} className="mt-1.5" /></div>
@@ -202,7 +223,9 @@ export default function SettingsPage() {
                   </div>
                 </div>
               </div>
-              <Button onClick={() => toast({ title: 'Configurações salvas!' })}>Salvar Alterações</Button>
+              <Button disabled={!COMPANY_SETTINGS_CONNECTED}>
+                {COMPANY_SETTINGS_CONNECTED ? 'Salvar Alterações' : 'Persistência em implementação'}
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -361,10 +384,21 @@ export default function SettingsPage() {
           <Card>
             <CardHeader><CardTitle className="flex items-center gap-2"><Lock className="w-5 h-5" /> Alterar Senha</CardTitle></CardHeader>
             <CardContent className="space-y-4 max-w-md">
-              <div><Label>Senha Atual</Label><Input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} className="mt-1.5" placeholder="••••••••" /></div>
-              <div><Label>Nova Senha</Label><Input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="mt-1.5" placeholder="Mínimo 6 caracteres" /></div>
-              <div><Label>Confirmar Nova Senha</Label><Input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="mt-1.5" placeholder="Repita a nova senha" /></div>
-              <Button onClick={handlePasswordChange}>Alterar Senha</Button>
+              {!SECURITY_SETTINGS_CONNECTED && (
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertTitle>Fluxo ainda indisponível</AlertTitle>
+                  <AlertDescription>
+                    A troca de senha nesta tela ainda não conversa com o provedor real de autenticação. Para evitar falso positivo, o formulário fica somente informativo.
+                  </AlertDescription>
+                </Alert>
+              )}
+              <div><Label>Senha Atual</Label><Input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} className="mt-1.5" placeholder="••••••••" disabled={!SECURITY_SETTINGS_CONNECTED} /></div>
+              <div><Label>Nova Senha</Label><Input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="mt-1.5" placeholder="Mínimo 6 caracteres" disabled={!SECURITY_SETTINGS_CONNECTED} /></div>
+              <div><Label>Confirmar Nova Senha</Label><Input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="mt-1.5" placeholder="Repita a nova senha" disabled={!SECURITY_SETTINGS_CONNECTED} /></div>
+              <Button onClick={handlePasswordChange} disabled={!SECURITY_SETTINGS_CONNECTED}>
+                {SECURITY_SETTINGS_CONNECTED ? 'Alterar Senha' : 'Integração em implementação'}
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>

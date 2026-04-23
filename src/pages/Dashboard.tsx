@@ -23,6 +23,7 @@ import {
   AreaChart, Area,
 } from 'recharts';
 import { motion } from 'framer-motion';
+import { useReducedMotion } from 'framer-motion';
 import {
   format, subMonths, startOfMonth, endOfMonth,
   startOfDay, differenceInDays, parseISO,
@@ -30,6 +31,7 @@ import {
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { formatPayableRecurrenceLabel, isPayableOverdue } from '@/services/domain/payables';
+import { SectionEmptyState, SectionErrorState } from '@/components/ui/section-state';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -75,6 +77,7 @@ const ACTIVE_STATUSES_PARAM = 'ABERTO,EM_ANALISE,ORCAMENTO,APROVADO,EM_EXECUCAO,
 export default function Dashboard() {
   const { notes, clients, invoices, services, products, activities, payables, payableCategories } = useData();
   const navigate = useNavigate();
+  const prefersReducedMotion = useReducedMotion();
 
   const now = useMemo(() => new Date(), []);
   const startCurrent = startOfMonth(now).getTime();
@@ -529,6 +532,19 @@ export default function Dashboard() {
     },
   ];
 
+  const revealProps = (delay: number) => ({
+    initial: prefersReducedMotion ? false : { opacity: 0, y: 10 },
+    animate: { opacity: 1, y: 0 },
+    transition: prefersReducedMotion
+      ? { duration: 0 }
+      : { delay, duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] as const },
+  });
+
+  const hasStatusData = statusData.length > 0;
+  const hasRevenueHistory = monthlyData.some((item) => item.valor > 0);
+  const hasTypeDistribution = byType.some((item) => item.value > 0);
+  const hasFinancialHistory = financialMonthlyData.some((item) => item.revenue > 0 || item.expenses > 0);
+
   return (
     <div className="space-y-5">
       {/* Page header */}
@@ -548,9 +564,7 @@ export default function Dashboard() {
             {row.map((kpi, i) => (
               <motion.div
                 key={kpi.label}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: (rowIdx * 0.24) + i * 0.06, duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] }}
+                {...revealProps((rowIdx * 0.24) + i * 0.06)}
               >
                 <Card
                   className="overflow-hidden cursor-pointer transition-all duration-150 hover:shadow-md hover:-translate-y-px hover:border-border/70 group"
@@ -599,28 +613,43 @@ export default function Dashboard() {
       </TooltipProvider>
 
       {/* Charts row 1: status bar + area chart */}
-      <ErrorBoundary>
+      <ErrorBoundary
+        fallback={(
+          <SectionErrorState
+            title="Falha ao carregar os gráficos operacionais"
+            description="Essa parte do dashboard pode ser recarregada depois sem afetar o restante da página."
+          />
+        )}
+      >
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         <Card className="lg:col-span-3">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-semibold">Distribuição por Status</CardTitle>
           </CardHeader>
           <CardContent className="pt-0 px-2">
-            <ResponsiveContainer width="100%" height={210}>
-              <BarChart data={statusData} barCategoryGap="28%">
-                <XAxis dataKey="name" tick={{ fontSize: 9.5 }} interval={0} angle={-18} textAnchor="end" height={46} />
-                <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                <RechartsTooltip
-                  formatter={(v: number) => [`${v} nota${v !== 1 ? 's' : ''}`, 'Quantidade']}
-                  contentStyle={{ fontSize: 12 }}
-                />
-                <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                  {statusData.map((entry, idx) => (
-                    <Cell key={idx} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            {hasStatusData ? (
+              <ResponsiveContainer width="100%" height={210}>
+                <BarChart data={statusData} barCategoryGap="28%">
+                  <XAxis dataKey="name" tick={{ fontSize: 9.5 }} interval={0} angle={-18} textAnchor="end" height={46} />
+                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                  <RechartsTooltip
+                    formatter={(v: number) => [`${v} nota${v !== 1 ? 's' : ''}`, 'Quantidade']}
+                    contentStyle={{ fontSize: 12 }}
+                  />
+                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                    {statusData.map((entry, idx) => (
+                      <Cell key={idx} fill={entry.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <SectionEmptyState
+                title="Sem notas para distribuir"
+                description="Assim que as ordens de serviço começarem a circular, este gráfico passa a mostrar a fila por status."
+                className="min-h-[210px] border-0 bg-transparent px-2"
+              />
+            )}
           </CardContent>
         </Card>
 
@@ -632,32 +661,40 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent className="pt-0 px-2">
-            <ResponsiveContainer width="100%" height={210}>
-              <AreaChart data={monthlyData}>
-                <defs>
-                  <linearGradient id="colorValor" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
-                <RechartsTooltip
-                  formatter={(v: number) => [`R$ ${v.toLocaleString('pt-BR')}`, 'Faturamento']}
-                  contentStyle={{ fontSize: 12 }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="valor"
-                  stroke="hsl(var(--primary))"
-                  strokeWidth={2.5}
-                  fill="url(#colorValor)"
-                  dot={{ r: 4, fill: 'hsl(var(--primary))', strokeWidth: 0 }}
-                  activeDot={{ r: 6 }}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            {hasRevenueHistory ? (
+              <ResponsiveContainer width="100%" height={210}>
+                <AreaChart data={monthlyData}>
+                  <defs>
+                    <linearGradient id="colorValor" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.15} />
+                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+                  <RechartsTooltip
+                    formatter={(v: number) => [`R$ ${v.toLocaleString('pt-BR')}`, 'Faturamento']}
+                    contentStyle={{ fontSize: 12 }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="valor"
+                    stroke="hsl(var(--primary))"
+                    strokeWidth={2.5}
+                    fill="url(#colorValor)"
+                    dot={{ r: 4, fill: 'hsl(var(--primary))', strokeWidth: 0 }}
+                    activeDot={{ r: 6 }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <SectionEmptyState
+                title="Sem histórico de faturamento"
+                description="O gráfico mensal começa a preencher depois das primeiras O.S. finalizadas."
+                className="min-h-[210px] border-0 bg-transparent px-2"
+              />
+            )}
           </CardContent>
         </Card>
       </div>
@@ -665,7 +702,14 @@ export default function Dashboard() {
       </ErrorBoundary>
 
       {/* Analysis row: top clients + top services + type donut */}
-      <ErrorBoundary>
+      <ErrorBoundary
+        fallback={(
+          <SectionErrorState
+            title="Falha ao montar os painéis de análise"
+            description="Os rankings e distribuições podem ser recarregados depois sem interromper a operação do dashboard."
+          />
+        )}
+      >
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {/* Top 5 clientes */}
         <Card className="lg:col-span-2">
@@ -768,41 +812,51 @@ export default function Dashboard() {
             <CardTitle className="text-sm font-semibold">Por Tipo</CardTitle>
           </CardHeader>
           <CardContent className="pt-0 px-2 pb-2 flex flex-col items-center justify-center">
-            <ResponsiveContainer width="100%" height={140}>
-              <PieChart>
-                <Pie
-                  data={byType}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={36}
-                  outerRadius={56}
-                  paddingAngle={3}
-                  dataKey="value"
-                >
-                  {byType.map((_, idx) => (
-                    <Cell key={idx} fill={TYPE_COLORS[idx % TYPE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <RechartsTooltip
-                  formatter={(v: number) => [`${v} notas`, '']}
-                  contentStyle={{ fontSize: 12 }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="flex flex-col gap-1 w-full px-2">
-              {byType.map((item, idx) => (
-                <div key={item.name} className="flex items-center justify-between text-[12px]">
-                  <span className="flex items-center gap-1.5">
-                    <span
-                      className="w-2 h-2 rounded-full shrink-0"
-                      style={{ background: TYPE_COLORS[idx % TYPE_COLORS.length] }}
+            {hasTypeDistribution ? (
+              <>
+                <ResponsiveContainer width="100%" height={140}>
+                  <PieChart>
+                    <Pie
+                      data={byType}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={36}
+                      outerRadius={56}
+                      paddingAngle={3}
+                      dataKey="value"
+                    >
+                      {byType.map((_, idx) => (
+                        <Cell key={idx} fill={TYPE_COLORS[idx % TYPE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip
+                      formatter={(v: number) => [`${v} notas`, '']}
+                      contentStyle={{ fontSize: 12 }}
                     />
-                    {item.name}
-                  </span>
-                  <span className="font-semibold tabular-nums">{item.value}</span>
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="flex flex-col gap-1 w-full px-2">
+                  {byType.map((item, idx) => (
+                    <div key={item.name} className="flex items-center justify-between text-[12px]">
+                      <span className="flex items-center gap-1.5">
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ background: TYPE_COLORS[idx % TYPE_COLORS.length] }}
+                        />
+                        {item.name}
+                      </span>
+                      <span className="font-semibold tabular-nums">{item.value}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            ) : (
+              <SectionEmptyState
+                title="Sem tipos para comparar"
+                description="Quando houver notas cadastradas, esta visão separa serviço e compra automaticamente."
+                className="min-h-[180px] border-0 bg-transparent px-2"
+              />
+            )}
           </CardContent>
         </Card>
       </div>
@@ -845,14 +899,19 @@ export default function Dashboard() {
       </Card>
 
       {/* Finance row: contas a pagar */}
-      <ErrorBoundary>
+      <ErrorBoundary
+        fallback={(
+          <SectionErrorState
+            title="Falha ao carregar o resumo financeiro"
+            description="Os indicadores de contas a pagar podem ser recarregados depois sem afetar o restante do app."
+          />
+        )}
+      >
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         {financeKpis.map((kpi, i) => (
           <motion.div
             key={kpi.label}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.12 + i * 0.05, duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] }}
+            {...revealProps(0.12 + i * 0.05)}
           >
             <Card
               className="overflow-hidden cursor-pointer transition-all duration-150 hover:shadow-md hover:-translate-y-px hover:border-border/70"
@@ -882,23 +941,31 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent className="pt-0 px-2">
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={financialMonthlyData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
-                <RechartsTooltip
-                  formatter={(v: number, name: string) => [
-                    `R$ ${v.toLocaleString('pt-BR')}`,
-                    name === 'revenue' ? 'Faturamento' : name === 'expenses' ? 'Despesas pagas' : 'Saldo',
-                  ]}
-                  contentStyle={{ fontSize: 12 }}
-                />
-                <Line type="monotone" dataKey="revenue" name="revenue" stroke="hsl(var(--primary))" strokeWidth={2.5} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="expenses" name="expenses" stroke="#ef4444" strokeWidth={2.5} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="balance" name="balance" stroke="#14b8a6" strokeWidth={2.5} dot={{ r: 3 }} />
-              </LineChart>
-            </ResponsiveContainer>
+            {hasFinancialHistory ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={financialMonthlyData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+                  <RechartsTooltip
+                    formatter={(v: number, name: string) => [
+                      `R$ ${v.toLocaleString('pt-BR')}`,
+                      name === 'revenue' ? 'Faturamento' : name === 'expenses' ? 'Despesas pagas' : 'Saldo',
+                    ]}
+                    contentStyle={{ fontSize: 12 }}
+                  />
+                  <Line type="monotone" dataKey="revenue" name="revenue" stroke="hsl(var(--primary))" strokeWidth={2.5} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="expenses" name="expenses" stroke="#ef4444" strokeWidth={2.5} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="balance" name="balance" stroke="#14b8a6" strokeWidth={2.5} dot={{ r: 3 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <SectionEmptyState
+                title="Sem histórico financeiro suficiente"
+                description="Quando entradas e saídas começarem a ser registradas, este comparativo mensal aparece aqui."
+                className="min-h-[220px] border-0 bg-transparent px-2"
+              />
+            )}
           </CardContent>
         </Card>
 
