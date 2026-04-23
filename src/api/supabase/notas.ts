@@ -138,7 +138,8 @@ export async function uploadNotaPDF(blob: Blob, osNumero: string): Promise<strin
   const now = new Date();
   const ano = now.getFullYear();
   const mes = String(now.getMonth() + 1).padStart(2, '0');
-  const path = `notas/${ano}/${mes}/OS-${osNumero}.pdf`;
+  const numeroNormalizado = osNumero.replace(/^OS-/i, '').replace(/[^\dA-Za-z-]/g, '') || osNumero;
+  const path = `notas/${ano}/${mes}/OS-${numeroNormalizado}.pdf`;
   const { error } = await supabase.storage.from('notas').upload(path, blob, {
     contentType: 'application/pdf',
     upsert: true,
