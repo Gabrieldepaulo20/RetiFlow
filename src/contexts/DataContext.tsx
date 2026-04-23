@@ -25,9 +25,9 @@ import { applyNoteStatusTransition } from '@/services/domain/intakeNotes';
 import {
   getClientes,
   novoCliente,
-  updateCliente as updateClienteApi,
   inativarCliente,
   reativarCliente,
+  salvarClienteCompleto,
   supabaseToClient,
   clientToNovoClientePayload,
 } from '@/api/supabase/clientes';
@@ -329,6 +329,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const updateClient = useCallback(async (id: string, data: Partial<Client>): Promise<void> => {
     if (IS_REAL_AUTH) {
+      // Status changes use dedicated lightweight RPCs
       if ('isActive' in data) {
         if (data.isActive) {
           await reativarCliente(id);
@@ -336,20 +337,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
           await inativarCliente(id);
         }
       }
-      const { isActive: _ia, ...rest } = data;
-      const supabaseData: Parameters<typeof updateClienteApi>[1] = {};
-      if (rest.name      !== undefined) supabaseData.nome           = rest.name;
-      if (rest.tradeName !== undefined) supabaseData.nome_fantasia   = rest.tradeName;
-      if (rest.docNumber !== undefined) supabaseData.documento       = rest.docNumber;
-      if (rest.docType   !== undefined) supabaseData.tipo_documento  = rest.docType;
-      if (rest.notes     !== undefined) supabaseData.observacao      = rest.notes;
-      if (Object.keys(supabaseData).length > 0) {
-        await updateClienteApi(id, supabaseData);
+      // Full upsert persists all fields including address and contacts
+      const current = clientById.get(id);
+      if (current) {
+        const merged = { ...current, ...data };
+        const payload = clientToNovoClientePayload(merged);
+        await salvarClienteCompleto({ ...payload, id_clientes: id });
       }
     }
     setCustomers((previous) => previous.map((client) => (client.id === id ? { ...client, ...data } : client)));
     bumpDataVersion();
-  }, [bumpDataVersion]);
+  }, [bumpDataVersion, clientById]);
 
   const getClient = useCallback((id: string) => clientById.get(id), [clientById]);
 
@@ -375,7 +373,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         total: note.totalAmount,
         veiculo: note.type === 'SERVICO' ? {
           modelo: note.vehicleModel || 'Não Identificado',
-          placa: note.plate || 'XXX0000',
+          placa: note.plate || '',
           km: note.km ?? 0,
           motor: note.engineType || 'Não Identificado',
         } : undefined,

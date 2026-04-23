@@ -193,6 +193,7 @@ export function supabaseToIntakeNote(row: NotaServico): IntakeNote {
     clientId:         row.cliente.id,
     createdAt:        row.created_at,
     updatedAt:        row.created_at,
+    deadline:         row.prazo || undefined,
     createdByUserId:  '',
     status:           NOME_TO_STATUS[row.status.nome] ?? 'ABERTO',
     type:             'SERVICO' as NoteType,

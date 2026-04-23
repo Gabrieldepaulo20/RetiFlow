@@ -201,6 +201,7 @@ export default function NoteFormCore({
   const clientSearchRef = useRef<HTMLDivElement | null>(null);
   const [osNumber, setOsNumber] = useState(() => formatNoteNumber(noteCounter));
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [itemsLoadingFromDB, setItemsLoadingFromDB] = useState(false);
 
   /* ── Populate form when editing an existing note ── */
   useEffect(() => {
@@ -209,7 +210,7 @@ export default function NoteFormCore({
     setNoteType(editingNote.type);
     setParentNoteId(editingNote.parentNoteId || '');
     setData(editingNote.createdAt.split('T')[0] || '');
-    setPrazo(editingNote.updatedAt.split('T')[0] || '');
+    setPrazo(editingNote.deadline?.split('T')[0] || '');
     setClientId(editingNote.clientId);
     setVehicleModel(editingNote.vehicleModel);
     setEngineType(editingNote.engineType || 'Cabeçote');
@@ -219,7 +220,8 @@ export default function NoteFormCore({
     setObservations(editingNote.observations);
     setResponsavel(editingNote.responsavel || '');
 
-    const existingItems =
+    // Seed items from local state as immediate fallback (real mode overwrites below)
+    const localItems =
       editingNote.type === 'SERVICO'
         ? getServicesForNote(editingNote.id).map((s) => ({
             id: `svc-${s.id}`,
@@ -238,8 +240,51 @@ export default function NoteFormCore({
             subLines: [] as SubLine[],
           }));
 
-    setItems(existingItems.length > 0 ? existingItems : [newItem()]);
+    if (!IS_REAL_AUTH) {
+      setItems(localItems.length > 0 ? localItems : [newItem()]);
+    } else if (localItems.length > 0) {
+      // Show cached items while Supabase fetch is in-flight
+      setItems(localItems);
+    }
   }, [editingNote, getServicesForNote, getProductsForNote]);
+
+  /* ── In real mode, always fetch items from Supabase when editing ── */
+  useEffect(() => {
+    if (!editingNote || !IS_REAL_AUTH) return;
+    let cancelled = false;
+    setItemsLoadingFromDB(true);
+    getNotaServicoDetalhes(editingNote.id)
+      .then((detalhes) => {
+        if (cancelled) return;
+        const dbItems = detalhes?.itens_servico ?? [];
+        if (dbItems.length > 0) {
+          setItems(
+            dbItems.map((item) => {
+              const subLines: SubLine[] = item.detalhes
+                ? item.detalhes
+                    .split('\n')
+                    .slice(1)
+                    .filter(Boolean)
+                    .map((text) => ({ id: generateId('sl'), text }))
+                : [];
+              return {
+                id: `db-${item.id_rel}`,
+                description: item.descricao,
+                quantity: String(item.quantidade),
+                unitPrice: String(item.preco_unitario),
+                discount: String(item.desconto_porcentagem),
+                subLines,
+              };
+            }),
+          );
+        } else {
+          setItems([newItem()]);
+        }
+      })
+      .catch(() => { if (!cancelled) setItems((prev) => prev.length > 0 ? prev : [newItem()]); })
+      .finally(() => { if (!cancelled) setItemsLoadingFromDB(false); });
+    return () => { cancelled = true; };
+  }, [editingNote?.id]);
 
   /* ── Keep osNumber in sync with noteCounter when not editing ── */
   useEffect(() => {
@@ -837,6 +882,16 @@ export default function NoteFormCore({
       </div>
       <Separator className="hidden sm:block mb-2" />
 
+      {itemsLoadingFromDB && (
+        <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
+          <svg className="animate-spin h-3.5 w-3.5 text-primary shrink-0" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+          </svg>
+          Carregando itens do servidor…
+        </div>
+      )}
+
       <div className="space-y-2">
         {items.map((item) => {
           const price = parseFloat(item.unitPrice.replace(',', '.')) || 0;
@@ -1108,11 +1163,11 @@ export default function NoteFormCore({
           <div className="flex items-center justify-between flex-wrap gap-3">
             {financialSummary}
             <div className="flex gap-2 ml-auto">
-              <Button variant="outline" onClick={onCancel} className="h-9 px-5" disabled={isGeneratingPDF}>
+              <Button variant="outline" onClick={onCancel} className="h-9 px-5" disabled={isGeneratingPDF || itemsLoadingFromDB}>
                 {isLocked ? 'Fechar' : 'Cancelar'}
               </Button>
               {!isLocked && (
-                <Button onClick={handleSubmit} className="h-9 px-6 font-semibold" disabled={isGeneratingPDF}>
+                <Button onClick={handleSubmit} className="h-9 px-6 font-semibold" disabled={isGeneratingPDF || itemsLoadingFromDB}>
                   {isEditing ? 'Salvar alterações' : 'Salvar O.S.'}
                 </Button>
               )}
