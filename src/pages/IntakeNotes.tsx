@@ -478,12 +478,20 @@ export default function IntakeNotes() {
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
-                              onClick={() =>
-                                toast({
-                                  title: 'PDF (mock)',
-                                  description: `Gerando download da ${n.number}.`,
-                                })
-                              }
+                              onClick={() => {
+                                if (n.pdfUrl) {
+                                  const a = document.createElement('a');
+                                  a.href = n.pdfUrl;
+                                  a.download = `OS-${n.number}.pdf`;
+                                  a.target = '_blank';
+                                  a.click();
+                                } else {
+                                  toast({
+                                    title: 'PDF ainda não gerado',
+                                    description: 'Abra e salve a O.S. para gerar o PDF.',
+                                  });
+                                }
+                              }}
                             >
                               <Download className="w-4 h-4 mr-2" /> Baixar nota
                             </DropdownMenuItem>

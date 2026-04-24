@@ -188,7 +188,7 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
     cabecalho: {
       id_nota: note.id,
       os_numero: note.number,
-      prazo: note.dueDate ?? '',
+      prazo: note.deadline ?? '',
       defeito: note.complaint,
       observacoes: note.observations ?? null,
       data_criacao: note.createdAt,
@@ -198,7 +198,7 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
       total_produtos: note.totalProducts,
       criado_por_usuario: null,
       pdf_url: null,
-      cliente: { id: client.id, nome: client.name, documento: client.document ?? '', endereco: null, cep: null, cidade: null, telefone: null, email: null },
+      cliente: { id: client.id, nome: client.name, documento: client.docNumber ?? '', endereco: null, cep: null, cidade: null, telefone: null, email: null },
       veiculo: { id: '', modelo: note.vehicleModel, placa: note.plate ?? '', km: note.km ?? 0, motor: note.engineType ?? '' },
       status: { id: 0, nome: note.status, index: 0, tipo_status: 'ativo' },
     },

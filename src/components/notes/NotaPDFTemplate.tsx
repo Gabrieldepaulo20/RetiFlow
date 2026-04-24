@@ -58,11 +58,12 @@ const styles = StyleSheet.create({
     marginBottom: 5,
   },
   headerTitle: {
-    fontSize: 16,
+    fontSize: 14.5,
     marginBottom: 2,
+    fontWeight: 700,
   },
   headerSubtitle: {
-    fontSize: 10,
+    fontSize: 8.5,
     color: '#333333',
     marginBottom: 2,
   },
@@ -73,7 +74,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   headerInfo: {
-    fontSize: 10,
+    fontSize: 8.5,
     color: '#333333',
     marginBottom: 4,
     textAlign: 'center',
@@ -131,8 +132,8 @@ const styles = StyleSheet.create({
     rowGap: 3,
   },
   fieldText: {
-    fontSize: 8,
-    lineHeight: 1.2,
+    fontSize: 8.1,
+    lineHeight: 1.25,
   },
   tableWrapper: {
     flexGrow: 1,
@@ -154,8 +155,9 @@ const styles = StyleSheet.create({
     borderStyle: 'solid',
     paddingVertical: 5,
     paddingHorizontal: 4,
-    fontSize: 7.5,
+    fontSize: 7.8,
     textAlign: 'center',
+    fontWeight: 700,
   },
   row: {
     flexDirection: 'row',
@@ -167,7 +169,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     paddingHorizontal: 4,
     minHeight: 21,
-    fontSize: 8,
+    fontSize: 8.3,
     justifyContent: 'center',
   },
   emptyRow: {
@@ -201,26 +203,21 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 10,
     textAlign: 'right',
-    fontSize: 8.5,
+    fontSize: 8.8,
+    fontWeight: 700,
   },
   totalValueCell: {
     width: '15%',
     paddingVertical: 4,
     paddingHorizontal: 5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  totalValue: {
-    width: '100%',
-    paddingVertical: 4,
-    paddingHorizontal: 5,
     textAlign: 'center',
-    fontSize: 9,
+    fontSize: 9.2,
     borderWidth: 1,
     borderColor: '#d0d0d0',
     borderStyle: 'solid',
     backgroundColor: '#efefef',
     borderRadius: 4,
+    fontWeight: 700,
   },
   observacoes: {
     backgroundColor: '#efefef',
@@ -260,6 +257,9 @@ const styles = StyleSheet.create({
   },
   assinaturaLabel: {
     fontSize: 8,
+  },
+  labelStrong: {
+    fontWeight: 700,
   },
 });
 
@@ -303,7 +303,7 @@ function FieldValue({
 }) {
   return (
     <Text style={styles.fieldText}>
-      <Text style={{ fontWeight: 700 }}>{label}: </Text>
+      <Text style={styles.labelStrong}>{label}: </Text>
       {value?.trim() ? value : '—'}
     </Text>
   );
@@ -405,9 +405,7 @@ function Via({
 
           <View style={styles.tableFooter}>
             <Text style={styles.totalLabel}>TOTAL GERAL</Text>
-            <View style={styles.totalValueCell}>
-              <Text style={styles.totalValue}>R$ {formatCurrency(financeiro_servicos.total_liquido)}</Text>
-            </View>
+            <Text style={styles.totalValueCell}>R$ {formatCurrency(financeiro_servicos.total_liquido)}</Text>
           </View>
         </View>
       </View>

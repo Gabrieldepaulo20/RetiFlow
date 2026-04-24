@@ -11,9 +11,11 @@ export interface NotaServico {
   total_servicos: number;
   total_produtos: number;
   created_at: string;
+  updated_at: string;
+  pdf_url: string | null;
   finalizado_em: string | null;
   cliente: { id: string; nome: string };
-  veiculo: { id: string; modelo: string; placa: string; km: number };
+  veiculo: { id: string; modelo: string; placa: string; km: number; motor: string };
   status: { id: number; nome: string; index: number; tipo_status: string };
 }
 
@@ -193,7 +195,7 @@ export function supabaseToIntakeNote(row: NotaServico): IntakeNote {
     number:           row.os,
     clientId:         row.cliente.id,
     createdAt:        row.created_at,
-    updatedAt:        row.created_at,
+    updatedAt:        row.updated_at,
     deadline:         row.prazo || undefined,
     createdByUserId:  '',
     status:           NOME_TO_STATUS[row.status.nome] ?? 'ABERTO',
@@ -201,13 +203,14 @@ export function supabaseToIntakeNote(row: NotaServico): IntakeNote {
     vehicleModel:     row.veiculo.modelo,
     plate:            row.veiculo.placa,
     km:               row.veiculo.km,
-    engineType:       '',
+    engineType:       row.veiculo.motor || '',
     complaint:        row.defeito,
     observations:     row.observacoes ?? '',
     totalServices:    row.total_servicos,
     totalProducts:    row.total_produtos,
     totalAmount:      row.total,
     finalizedAt:      row.finalizado_em ?? undefined,
+    pdfUrl:           row.pdf_url ?? undefined,
   };
 }
 

@@ -486,6 +486,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         updatedAt: now,
       };
       setNotes((previous) => [newNote, ...previous]);
+      const numericValue = parseNoteNumberValue(resolvedNumber);
+      if (numericValue !== null) {
+        setNoteCounter((prev) => numericValue >= prev ? (numericValue + 1) % 10001 : prev);
+      }
       bumpDataVersion();
       return newNote;
     }
