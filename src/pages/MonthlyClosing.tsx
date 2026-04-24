@@ -12,8 +12,9 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { pdf } from '@react-pdf/renderer';
+import { PDFViewer, pdf } from '@react-pdf/renderer';
 import { ClosingPDFTemplate } from '@/components/closing/ClosingPDFTemplate';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   getFechamentos,
   insertFechamento,
@@ -60,6 +61,21 @@ interface PreviewNote {
   }>;
 }
 
+interface ClosingDraft {
+  id: string;
+  clientId: string;
+  clientName: string;
+  month: string;
+  year: string;
+  periodLabel: string;
+  notes: PreviewNote[];
+  discounts: Record<string, number>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const DRAFTS_STORAGE_KEY = 'retiflow:monthly-closing-drafts:v1';
+
 const toMoney = (value: number) =>
   value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -72,6 +88,42 @@ const recalcItemSubtotal = (item: PreviewNote['itens'][number]) => {
 
 const recalcNoteTotal = (items: PreviewNote['itens']) =>
   items.reduce((sum, item) => sum + recalcItemSubtotal(item), 0);
+
+const computeDraftTotals = (draft: Pick<ClosingDraft, 'notes' | 'discounts'>) => {
+  const totalOriginal = draft.notes.reduce((sum, note) => sum + note.total, 0);
+  const totalComDesconto = draft.notes.reduce((sum, note) => {
+    const desconto = draft.discounts[note.id] ?? 0;
+    return sum + note.total * (1 - desconto / 100);
+  }, 0);
+  return { totalOriginal, totalComDesconto };
+};
+
+const buildDadosFromDraft = (draft: ClosingDraft): FechamentoDadosJson => {
+  const totals = computeDraftTotals(draft);
+  return {
+    gerado_em: new Date().toISOString(),
+    periodo: draft.periodLabel,
+    cliente: { id: draft.clientId, nome: draft.clientName },
+    notas: draft.notes.map((note) => {
+      const desconto = draft.discounts[note.id] ?? 0;
+      return {
+        id: note.id,
+        os: note.os,
+        veiculo: note.veiculo,
+        placa: note.placa,
+        itens: note.itens,
+        total_original: note.total,
+        desconto_nota: desconto,
+        total_com_desconto: note.total * (1 - desconto / 100),
+      };
+    }),
+    total_original: totals.totalOriginal,
+    total_com_desconto: totals.totalComDesconto,
+  };
+};
+
+const createDraftId = () =>
+  `draft-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 /* ── Dual-ring spinner ─────────────────────────────────────────────────── */
 function DualSpinner() {
@@ -108,9 +160,12 @@ export default function MonthlyClosing() {
   const { toast } = useToast();
 
   const now = new Date();
-  const [mode, setMode] = useState<'list' | 'preview'>('list');
   const [fechamentos, setFechamentos] = useState<FechamentoListItem[]>([]);
   const [loadingList, setLoadingList] = useState(false);
+  const [drafts, setDrafts] = useState<ClosingDraft[]>([]);
+  const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
+  const [draftModalOpen, setDraftModalOpen] = useState(false);
+  const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false);
 
   // Preview state
   const [selMonth, setSelMonth] = useState(String(now.getMonth() + 1));
@@ -123,7 +178,6 @@ export default function MonthlyClosing() {
 
   // Generation
   const [generating, setGenerating] = useState(false);
-  const [showPDFPreview, setShowPDFPreview] = useState(false);
   const [previewDados, setPreviewDados] = useState<FechamentoDadosJson | null>(null);
 
   /* ── Load fechamentos ── */
@@ -142,7 +196,52 @@ export default function MonthlyClosing() {
 
   useEffect(() => { void loadFechamentos(); }, [loadFechamentos]);
 
-  /* ── Build preview ── */
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(DRAFTS_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as ClosingDraft[];
+      if (Array.isArray(parsed)) {
+        setDrafts(parsed);
+      }
+    } catch {
+      // noop
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
+    } catch {
+      // noop
+    }
+  }, [drafts]);
+
+  const openDraft = useCallback((draft: ClosingDraft) => {
+    setActiveDraftId(draft.id);
+    setSelClientId(draft.clientId);
+    setSelMonth(draft.month);
+    setSelYear(draft.year);
+    setPreviewNotes(draft.notes);
+    setDescontos(draft.discounts);
+    setEditingItems({});
+    setDraftModalOpen(true);
+  }, []);
+
+  const closeDraftModal = useCallback(() => {
+    setDraftModalOpen(false);
+    setTemplatePreviewOpen(false);
+  }, []);
+
+  const removeDraft = useCallback((draftId: string) => {
+    setDrafts((current) => current.filter((draft) => draft.id !== draftId));
+    if (activeDraftId === draftId) {
+      setActiveDraftId(null);
+      closeDraftModal();
+    }
+  }, [activeDraftId, closeDraftModal]);
+
+  /* ── Build local draft ── */
   const handleBuildPreview = useCallback(async () => {
     if (!selClientId) { toast({ title: 'Selecione um cliente', variant: 'destructive' }); return; }
 
@@ -196,9 +295,26 @@ export default function MonthlyClosing() {
     setPreviewNotes(resultado);
     setDescontos({});
     setEditingItems({});
-    setMode('preview');
+    const draftClient = clients.find((entry) => entry.id === selClientId);
+    const periodLabel = `${MONTHS[mesNum - 1]} ${selYear}`;
+    const timestamp = new Date().toISOString();
+    const draft: ClosingDraft = {
+      id: createDraftId(),
+      clientId: selClientId,
+      clientName: draftClient?.name ?? 'Cliente',
+      month: selMonth,
+      year: selYear,
+      periodLabel,
+      notes: resultado,
+      discounts: {},
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    setDrafts((current) => [draft, ...current]);
+    openDraft(draft);
     setLoadingPreview(false);
-  }, [selClientId, selMonth, selYear, notes, toast]);
+    toast({ title: 'Rascunho gerado', description: 'Ele ficou salvo localmente e pode ser retomado depois.' });
+  }, [selClientId, selMonth, selYear, notes, toast, clients, openDraft]);
 
   /* ── Computed totals ── */
   const totals = useMemo(() => {
@@ -210,6 +326,32 @@ export default function MonthlyClosing() {
 
   const grandTotal = useMemo(() => totals.reduce((a, b) => a + b.totalComDesconto, 0), [totals]);
   const grandTotalOriginal = useMemo(() => totals.reduce((a, n) => a + n.totalBruto, 0), [totals]);
+  const activeDraft = useMemo(
+    () => drafts.find((draft) => draft.id === activeDraftId) ?? null,
+    [drafts, activeDraftId],
+  );
+  const modalPreviewDados = useMemo(
+    () => activeDraft ? buildDadosFromDraft({
+      ...activeDraft,
+      notes: previewNotes,
+      discounts: descontos,
+    }) : null,
+    [activeDraft, previewNotes, descontos],
+  );
+
+  useEffect(() => {
+    if (!draftModalOpen || !activeDraftId) return;
+    setDrafts((current) => current.map((draft) => (
+      draft.id === activeDraftId
+        ? {
+            ...draft,
+            notes: previewNotes,
+            discounts: descontos,
+            updatedAt: new Date().toISOString(),
+          }
+        : draft
+    )));
+  }, [draftModalOpen, activeDraftId, previewNotes, descontos]);
 
   const updatePreviewItem = useCallback((
     noteId: string,
@@ -237,57 +379,39 @@ export default function MonthlyClosing() {
   }, []);
 
   /* ── Gerar fechamento ── */
-  const handleGerar = useCallback(async () => {
-    const client = clients.find((c) => c.id === selClientId);
-    if (!client) return;
-
+  const generateDraft = useCallback(async (draft: ClosingDraft) => {
     setGenerating(true);
     try {
       const geradoEm = new Date().toISOString();
-      const mesNum = parseInt(selMonth);
-      const periodo = `${MONTHS[mesNum - 1]} ${selYear}`;
-
-      const notasDados: FechamentoNota[] = previewNotes.map((n) => {
-        const disc = descontos[n.id] ?? 0;
-        const totalOriginalNota = recalcNoteTotal(n.itens);
-        return {
-          id: n.id,
-          os: n.os,
-          veiculo: n.veiculo,
-          placa: n.placa,
-          itens: n.itens,
-          total_original: totalOriginalNota,
-          desconto_nota: disc,
-          total_com_desconto: totalOriginalNota * (1 - disc / 100),
-        };
-      });
-
-      const dados: FechamentoDadosJson = {
-        gerado_em: geradoEm,
-        periodo,
-        cliente: { id: client.id, nome: client.name },
-        notas: notasDados,
-        total_original: grandTotalOriginal,
-        total_com_desconto: grandTotal,
-      };
+      const mesNum = parseInt(draft.month);
+      const periodLabel = draft.periodLabel;
+      const dados = buildDadosFromDraft(draft);
+      const notasDados: FechamentoNota[] = dados.notas;
+      const totals = computeDraftTotals(draft);
 
       // 1. Insert fechamento header
       const idFechamento = await insertFechamento({
-        p_fk_clientes: client.id,
+        p_fk_clientes: draft.clientId,
         p_mes: MONTHS[mesNum - 1],
-        p_ano: parseInt(selYear),
-        p_periodo: periodo,
-        p_label: `Fechamento ${periodo} — ${client.name}`,
-        p_valor_total: grandTotal,
+        p_ano: parseInt(draft.year),
+        p_periodo: periodLabel,
+        p_label: `Fechamento ${periodLabel} — ${draft.clientName}`,
+        p_valor_total: totals.totalComDesconto,
       });
 
       // 2. Save snapshot
-      await updateFechamento(idFechamento, { p_dados_json: dados });
+      await updateFechamento(idFechamento, {
+        p_dados_json: {
+          ...dados,
+          gerado_em: geradoEm,
+          notas: notasDados,
+        },
+      });
 
       // 3. Generate PDF
       let pdfUrl: string | null = null;
       try {
-        const blob = await pdf(<ClosingPDFTemplate dados={dados} geradoEm={geradoEm} />).toBlob();
+        const blob = await pdf(<ClosingPDFTemplate dados={{ ...dados, gerado_em: geradoEm }} geradoEm={geradoEm} />).toBlob();
         pdfUrl = await uploadFechamentoPDF(idFechamento, blob);
         if (pdfUrl) {
           await updateFechamento(idFechamento, { p_pdf_url: pdfUrl });
@@ -301,20 +425,32 @@ export default function MonthlyClosing() {
         await registrarAcaoFechamento({
           p_id_fechamentos: idFechamento,
           p_tipo: 'pdf_gerado',
-          p_mensagem: `PDF gerado. Total: R$ ${grandTotal.toFixed(2)}`,
+          p_mensagem: `PDF gerado. Total: R$ ${totals.totalComDesconto.toFixed(2)}`,
         });
       } catch { /* non-blocking */ }
 
       toast({ title: 'Fechamento gerado com sucesso!' });
-      setPreviewDados(dados);
+      setPreviewDados({ ...dados, gerado_em: geradoEm });
+      removeDraft(draft.id);
       await loadFechamentos();
-      setMode('list');
+      closeDraftModal();
     } catch (err) {
       toast({ title: 'Erro ao gerar fechamento', description: String(err), variant: 'destructive' });
     } finally {
       setGenerating(false);
     }
-  }, [clients, selClientId, selMonth, selYear, previewNotes, descontos, grandTotal, grandTotalOriginal, toast, loadFechamentos]);
+  }, [toast, loadFechamentos, removeDraft, closeDraftModal]);
+
+  const handleGerar = useCallback(async () => {
+    if (!activeDraft) return;
+    const draftSnapshot: ClosingDraft = {
+      ...activeDraft,
+      notes: previewNotes,
+      discounts: descontos,
+      updatedAt: new Date().toISOString(),
+    };
+    await generateDraft(draftSnapshot);
+  }, [activeDraft, previewNotes, descontos, generateDraft]);
 
   /* ── Download PDF ── */
   const handleDownload = useCallback(async (fechamento: FechamentoListItem) => {
@@ -344,77 +480,145 @@ export default function MonthlyClosing() {
   }, []);
 
   const activeClients = useMemo(() => clients.filter((c) => c.isActive).sort((a, b) => a.name.localeCompare(b.name)), [clients]);
+  return (
+    <div className="space-y-5 overflow-x-hidden">
+      {generating && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex flex-col items-center justify-center gap-4">
+          <DualSpinner />
+          <p className="text-sm font-medium text-muted-foreground">Gerando fechamento e PDF...</p>
+        </div>
+      )}
 
-  /* ──────────────────── LIST VIEW ──────────────────── */
-  if (mode === 'list') {
-    return (
-      <div className="space-y-5 overflow-x-hidden">
-        {/* Page header */}
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-2xl font-display font-bold">Fechamento Mensal</h1>
-            <p className="text-muted-foreground text-sm">Gere e gerencie fechamentos por cliente e período</p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-display font-bold">Fechamento Mensal</h1>
+          <p className="text-muted-foreground text-sm">Crie rascunhos locais, revise em popup e só depois gere no banco.</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={loadFechamentos} disabled={loadingList}>
+            <RefreshCcw className={cn('w-4 h-4 mr-2', loadingList && 'animate-spin')} />
+            Atualizar
+          </Button>
+        </div>
+      </div>
+
+      <Alert>
+        <CalendarDays className="h-4 w-4" />
+        <AlertDescription>Fluxo sugerido: gerar rascunho, revisar em popup, visualizar o template final e só então gerar o fechamento definitivo.</AlertDescription>
+      </Alert>
+
+      <Card>
+        <CardContent className="p-4">
+          <p className="text-sm font-medium mb-3">Novo rascunho de fechamento</p>
+          <div className="flex flex-wrap gap-3 items-end">
+            <div className="flex-1 min-w-[180px]">
+              <p className="text-xs text-muted-foreground mb-1.5">Cliente</p>
+              <Select value={selClientId} onValueChange={setSelClientId}>
+                <SelectTrigger><SelectValue placeholder="Selecionar cliente" /></SelectTrigger>
+                <SelectContent>
+                  {activeClients.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1.5">Mês</p>
+              <Select value={selMonth} onValueChange={setSelMonth}>
+                <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {MONTHS.map((m, i) => <SelectItem key={i} value={String(i + 1)}>{m}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1.5">Ano</p>
+              <Select value={selYear} onValueChange={setSelYear}>
+                <SelectTrigger className="w-[100px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {years.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={handleBuildPreview} disabled={loadingPreview || !selClientId} className="min-w-[180px]">
+              {loadingPreview ? <RefreshCcw className="w-4 h-4 mr-2 animate-spin" /> : <PlusCircle className="w-4 h-4 mr-2" />}
+              Gerar rascunho
+            </Button>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={loadFechamentos} disabled={loadingList}>
-              <RefreshCcw className={cn('w-4 h-4 mr-2', loadingList && 'animate-spin')} />
-              Atualizar
-            </Button>
-            <Button onClick={() => setMode('preview')}>
-              <PlusCircle className="w-4 h-4 mr-2" />
-              Novo Fechamento
-            </Button>
+        </CardContent>
+      </Card>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">Rascunhos salvos</h2>
+            <p className="text-sm text-muted-foreground">Eles ficam aqui embaixo para você sair e voltar quando quiser.</p>
+          </div>
+          <Badge variant="secondary">{drafts.length}</Badge>
+        </div>
+
+        {drafts.length === 0 ? (
+          <div className="rounded-xl border border-dashed py-10 text-center text-muted-foreground text-sm">
+            Nenhum rascunho salvo ainda.
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            {drafts.map((draft, idx) => {
+              const palette = PALETTE[idx % PALETTE.length];
+              const totals = computeDraftTotals(draft);
+              const initials = draft.clientName.slice(0, 2).toUpperCase();
+              return (
+                <Card key={draft.id} className={cn('border-l-4 overflow-hidden', palette.border)}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start gap-3">
+                      <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0', palette.avatar)}>
+                        {initials}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-semibold text-sm truncate">{draft.clientName}</p>
+                          <Badge variant="secondary" className="text-xs">{draft.periodLabel}</Badge>
+                          <Badge variant="outline" className="text-xs">Rascunho</Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {draft.notes.length} OS · Total atual:
+                          <span className="font-semibold text-foreground ml-1">R$ {toMoney(totals.totalComDesconto)}</span>
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Salvo em {new Date(draft.updatedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                      <div className="flex gap-2 shrink-0 flex-wrap justify-end">
+                        <Button size="sm" variant="outline" onClick={() => openDraft(draft)}>
+                          <PencilLine className="w-3.5 h-3.5 mr-1.5" /> Editar
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => { openDraft(draft); setTemplatePreviewOpen(true); }}>
+                          <Eye className="w-3.5 h-3.5 mr-1.5" /> Visualizar
+                        </Button>
+                        <Button size="sm" onClick={() => void generateDraft(draft)} disabled={generating}>
+                          <ArrowUpFromLine className="w-3.5 h-3.5 mr-1.5" /> Gerar fechamento
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => removeDraft(draft.id)}>
+                          <EyeOff className="w-3.5 h-3.5 mr-1.5" /> Remover
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">Fechamentos gerados</h2>
+            <p className="text-sm text-muted-foreground">Aqui ficam os registros já gravados no banco.</p>
           </div>
         </div>
 
-        <Alert>
-          <CalendarDays className="h-4 w-4" />
-          <AlertDescription>O fechamento normalmente é realizado até o dia 10 do mês seguinte.</AlertDescription>
-        </Alert>
-
-        {/* Filters for new closing */}
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-sm font-medium mb-3">Novo fechamento rápido</p>
-            <div className="flex flex-wrap gap-3 items-end">
-              <div className="flex-1 min-w-[180px]">
-                <p className="text-xs text-muted-foreground mb-1.5">Cliente</p>
-                <Select value={selClientId} onValueChange={setSelClientId}>
-                  <SelectTrigger><SelectValue placeholder="Selecionar cliente" /></SelectTrigger>
-                  <SelectContent>
-                    {activeClients.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground mb-1.5">Mês</p>
-                <Select value={selMonth} onValueChange={setSelMonth}>
-                  <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {MONTHS.map((m, i) => <SelectItem key={i} value={String(i + 1)}>{m}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground mb-1.5">Ano</p>
-                <Select value={selYear} onValueChange={setSelYear}>
-                  <SelectTrigger className="w-[100px]"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {years.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button onClick={handleBuildPreview} disabled={loadingPreview || !selClientId}>
-                {loadingPreview ? <RefreshCcw className="w-4 h-4 mr-2 animate-spin" /> : <Eye className="w-4 h-4 mr-2" />}
-                Visualizar
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Fechamentos list */}
         {loadingList ? (
           <div className="flex justify-center py-12"><DualSpinner /></div>
         ) : fechamentos.length === 0 ? (
@@ -453,8 +657,6 @@ export default function MonthlyClosing() {
                           </span>
                           {f.total_downloads > 0 && ` · ${f.total_downloads} download${f.total_downloads > 1 ? 's' : ''}`}
                         </p>
-
-                        {/* Divergence alerts */}
                         {divs.length > 0 && (
                           <div className="mt-2 space-y-1">
                             {divs.map((d, i) => (
@@ -467,8 +669,6 @@ export default function MonthlyClosing() {
                           </div>
                         )}
                       </div>
-
-                      {/* Actions */}
                       <div className="flex gap-2 shrink-0">
                         <Button size="sm" variant="outline" onClick={() => handleDownload(f)}>
                           <Download className="w-3.5 h-3.5 mr-1.5" /> PDF
@@ -488,292 +688,153 @@ export default function MonthlyClosing() {
           </div>
         )}
       </div>
-    );
-  }
 
-  /* ──────────────────── PREVIEW / GENERATE VIEW ──────────────────── */
-  const client = clients.find((c) => c.id === selClientId);
-  const periodo = `${MONTHS[parseInt(selMonth) - 1]} ${selYear}`;
-
-  return (
-    <div className="max-w-6xl mx-auto pb-12 space-y-5 min-w-0">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => setMode('list')} className="shrink-0" disabled={generating}>
-          <ChevronLeft className="w-5 h-5" />
-        </Button>
-        <div>
-          <h1 className="text-xl font-display font-bold">Prévia do Fechamento</h1>
-          <p className="text-sm text-muted-foreground">{client?.name ?? '—'} · {periodo}</p>
-        </div>
-      </div>
-
-      {/* Generation spinner overlay */}
-      {generating && (
-        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex flex-col items-center justify-center gap-4">
-          <DualSpinner />
-          <p className="text-sm font-medium text-muted-foreground">Gerando fechamento e PDF...</p>
-        </div>
-      )}
-
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] min-w-0 items-start">
-        <div className="min-w-0 space-y-4">
-          <Card className="border-primary/20 bg-gradient-to-br from-primary/5 via-background to-background overflow-hidden">
-            <CardContent className="p-5 sm:p-6">
-              <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-                <div className="space-y-2 min-w-0">
-                  <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-background/80 px-3 py-1 text-xs font-medium text-primary">
-                    <Sparkles className="h-3.5 w-3.5" />
-                    Prévia local do fechamento
-                  </div>
-                  <h2 className="text-2xl font-display font-bold leading-tight">
-                    Revise, ajuste os serviços e gere quando estiver tudo certo
-                  </h2>
-                  <p className="text-sm text-muted-foreground max-w-2xl">
-                    A visualização abaixo ainda está só no front-end. Você pode editar valores, descontos e itens do fechamento antes de realmente gerar o registro.
-                  </p>
+      <Dialog open={draftModalOpen} onOpenChange={(open) => { if (!open) closeDraftModal(); else setDraftModalOpen(true); }}>
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] p-0 gap-0 sm:max-w-6xl">
+          <DialogTitle className="sr-only">Editar rascunho de fechamento</DialogTitle>
+          <div className="flex flex-col max-h-[92vh]">
+            <div className="border-b px-5 py-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Rascunho de fechamento</p>
+                  <h3 className="text-xl font-semibold mt-1">{activeDraft?.clientName ?? 'Cliente'}</h3>
+                  <p className="text-sm text-muted-foreground">{activeDraft?.periodLabel ?? '—'}</p>
                 </div>
-
-                <div className="rounded-2xl border bg-background/90 p-4 shadow-sm min-w-[260px]">
-                  <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Resumo</p>
-                  <p className="mt-2 text-sm text-muted-foreground">{previewNotes.length} O.S. · {periodo}</p>
-                  <p className="mt-1 text-3xl font-bold text-primary">R$ {toMoney(grandTotal)}</p>
-                  {grandTotalOriginal !== grandTotal && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Bruto: R$ {toMoney(grandTotalOriginal)} · Ajustes: −R$ {toMoney(grandTotalOriginal - grandTotal)}
-                    </p>
-                  )}
-                  <Button
-                    onClick={handleGerar}
-                    disabled={generating || previewNotes.length === 0}
-                    className="mt-4 h-12 w-full text-sm font-semibold"
-                    size="lg"
-                  >
-                    {generating ? (
-                      <RefreshCcw className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <ArrowUpFromLine className="mr-2 h-4 w-4" />
-                    )}
-                    Gerar Fechamento
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setTemplatePreviewOpen(true)} disabled={!modalPreviewDados}>
+                    <Eye className="w-4 h-4 mr-2" /> Visualizar
+                  </Button>
+                  <Button onClick={handleGerar} disabled={generating || !activeDraft}>
+                    {generating ? <RefreshCcw className="w-4 h-4 mr-2 animate-spin" /> : <ArrowUpFromLine className="w-4 h-4 mr-2" />}
+                    Gerar fechamento
                   </Button>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-
-          <Card className="overflow-hidden">
-            <div className="border-b bg-muted/30 px-4 py-3 sm:px-5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="font-semibold text-sm">Ordens de serviço incluídas</p>
-                  <p className="text-xs text-muted-foreground">
-                    Todas ficam listadas em sequência. Você pode rolar e editar serviço por serviço antes de gerar.
-                  </p>
-                </div>
-                <Badge variant="secondary" className="text-xs">{previewNotes.length} O.S.</Badge>
-              </div>
             </div>
 
-            <CardContent className="p-0">
-              <div className="max-h-[68vh] overflow-y-auto">
-                <div className="space-y-4 p-4 sm:p-5">
-                  {previewNotes.map((nota) => {
-                    const disc = descontos[nota.id] ?? 0;
-                    const totalBrutoNota = nota.total;
-                    const totalComDesc = totalBrutoNota * (1 - disc / 100);
-                    const editing = editingItems[nota.id] ?? true;
-
-                    return (
-                      <Card key={nota.id} className="overflow-hidden border-border/70">
-                        <div className="bg-muted/40 border-b border-border/50 px-4 py-3 flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className="font-semibold text-sm">{nota.os}</p>
-                              <Badge variant="outline" className="text-[10px]">Rascunho editável</Badge>
-                            </div>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {nota.veiculo}{nota.placa ? ` · ${nota.placa}` : ''} · Atualizada em {new Date(nota.updatedAt).toLocaleDateString('pt-BR')}
-                            </p>
+            <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_300px] min-h-0">
+              <div className="min-h-0 overflow-y-auto p-4 sm:p-5 space-y-4">
+                {previewNotes.map((nota) => {
+                  const disc = descontos[nota.id] ?? 0;
+                  const totalComDesc = nota.total * (1 - disc / 100);
+                  const editing = editingItems[nota.id] ?? true;
+                  return (
+                    <Card key={nota.id} className="overflow-hidden border-border/70">
+                      <div className="bg-muted/40 border-b border-border/50 px-4 py-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-semibold text-sm">{nota.os}</p>
+                            <Badge variant="outline" className="text-[10px]">Editável</Badge>
                           </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-8"
-                              onClick={() => setEditingItems((prev) => ({ ...prev, [nota.id]: !editing }))}
-                            >
-                              {editing ? <EyeOff className="mr-1.5 h-3.5 w-3.5" /> : <PencilLine className="mr-1.5 h-3.5 w-3.5" />}
-                              {editing ? 'Recolher edição' : 'Editar itens'}
-                            </Button>
-                            <div className="text-right">
-                              <p className="text-[11px] text-muted-foreground">Total da O.S.</p>
-                              <p className="font-bold text-primary text-sm">R$ {toMoney(totalComDesc)}</p>
-                            </div>
+                          <p className="text-xs text-muted-foreground truncate">{nota.veiculo}{nota.placa ? ` · ${nota.placa}` : ''}</p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Button variant="outline" size="sm" className="h-8" onClick={() => setEditingItems((prev) => ({ ...prev, [nota.id]: !editing }))}>
+                            {editing ? <EyeOff className="mr-1.5 h-3.5 w-3.5" /> : <PencilLine className="mr-1.5 h-3.5 w-3.5" />}
+                            {editing ? 'Recolher' : 'Editar'}
+                          </Button>
+                          <div className="text-right">
+                            <p className="text-[11px] text-muted-foreground">Total</p>
+                            <p className="font-bold text-primary text-sm">R$ {toMoney(totalComDesc)}</p>
                           </div>
                         </div>
-
-                        <CardContent className="p-0">
-                          <div className="overflow-x-auto">
-                            <table className="w-full min-w-[860px] text-xs">
-                              <thead>
-                                <tr className="border-b border-border/40 text-muted-foreground">
-                                  <th className="text-left px-4 py-2 font-medium">Descrição</th>
-                                  <th className="text-center px-3 py-2 font-medium w-[88px]">Qtd</th>
-                                  <th className="text-right px-3 py-2 font-medium w-[120px]">Unit.</th>
-                                  <th className="text-right px-3 py-2 font-medium w-[110px]">Desc. item</th>
-                                  <th className="text-right px-3 py-2 font-medium w-[120px]">Subtotal</th>
+                      </div>
+                      <CardContent className="p-0">
+                        <div className="overflow-x-auto">
+                          <table className="w-full min-w-[860px] text-xs">
+                            <thead>
+                              <tr className="border-b border-border/40 text-muted-foreground">
+                                <th className="text-left px-4 py-2 font-medium">Descrição</th>
+                                <th className="text-center px-3 py-2 font-medium w-[88px]">Qtd</th>
+                                <th className="text-right px-3 py-2 font-medium w-[120px]">Unit.</th>
+                                <th className="text-right px-3 py-2 font-medium w-[110px]">Desc. item</th>
+                                <th className="text-right px-3 py-2 font-medium w-[120px]">Subtotal</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {nota.itens.map((item) => (
+                                <tr key={item.id} className="border-b border-border/20 align-top hover:bg-muted/20">
+                                  <td className="px-4 py-2">
+                                    {editing ? <Input value={item.descricao} onChange={(e) => updatePreviewItem(nota.id, item.id, 'descricao', e.target.value)} className="h-8 text-xs" /> : <span>{item.descricao}</span>}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    {editing ? <Input type="number" min="0" step="1" value={item.quantidade} onChange={(e) => updatePreviewItem(nota.id, item.id, 'quantidade', e.target.value)} className="h-8 text-xs text-center" /> : <p className="text-center">{item.quantidade}</p>}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    {editing ? <Input type="number" min="0" step="0.01" value={item.preco_unitario} onChange={(e) => updatePreviewItem(nota.id, item.id, 'preco_unitario', e.target.value)} className="h-8 text-xs text-right" /> : <p className="text-right">R$ {toMoney(item.preco_unitario)}</p>}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    {editing ? <Input type="number" min="0" max="100" step="0.01" value={item.desconto_porcentagem} onChange={(e) => updatePreviewItem(nota.id, item.id, 'desconto_porcentagem', e.target.value)} className="h-8 text-xs text-right" /> : <p className="text-right">{item.desconto_porcentagem > 0 ? `${item.desconto_porcentagem}%` : '—'}</p>}
+                                  </td>
+                                  <td className="text-right px-3 py-2 font-medium">R$ {toMoney(item.subtotal)}</td>
                                 </tr>
-                              </thead>
-                              <tbody>
-                                {nota.itens.map((item, i) => (
-                                  <tr key={item.id} className="border-b border-border/20 align-top hover:bg-muted/20">
-                                    <td className="px-4 py-2">
-                                      {editing ? (
-                                        <Input
-                                          value={item.descricao}
-                                          onChange={(e) => updatePreviewItem(nota.id, item.id, 'descricao', e.target.value)}
-                                          className="h-8 text-xs"
-                                        />
-                                      ) : (
-                                        <span>{item.descricao}</span>
-                                      )}
-                                    </td>
-                                    <td className="px-3 py-2">
-                                      {editing ? (
-                                        <Input
-                                          type="number"
-                                          min="0"
-                                          step="1"
-                                          value={item.quantidade}
-                                          onChange={(e) => updatePreviewItem(nota.id, item.id, 'quantidade', e.target.value)}
-                                          className="h-8 text-xs text-center"
-                                        />
-                                      ) : (
-                                        <p className="text-center">{item.quantidade}</p>
-                                      )}
-                                    </td>
-                                    <td className="px-3 py-2">
-                                      {editing ? (
-                                        <Input
-                                          type="number"
-                                          min="0"
-                                          step="0.01"
-                                          value={item.preco_unitario}
-                                          onChange={(e) => updatePreviewItem(nota.id, item.id, 'preco_unitario', e.target.value)}
-                                          className="h-8 text-xs text-right"
-                                        />
-                                      ) : (
-                                        <p className="text-right">R$ {toMoney(item.preco_unitario)}</p>
-                                      )}
-                                    </td>
-                                    <td className="px-3 py-2">
-                                      {editing ? (
-                                        <Input
-                                          type="number"
-                                          min="0"
-                                          max="100"
-                                          step="0.01"
-                                          value={item.desconto_porcentagem}
-                                          onChange={(e) => updatePreviewItem(nota.id, item.id, 'desconto_porcentagem', e.target.value)}
-                                          className="h-8 text-xs text-right"
-                                        />
-                                      ) : (
-                                        <p className="text-right">{item.desconto_porcentagem > 0 ? `${item.desconto_porcentagem}%` : '—'}</p>
-                                      )}
-                                    </td>
-                                    <td className="text-right px-3 py-2 font-medium">R$ {toMoney(item.subtotal)}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div className="px-4 py-3 bg-muted/20 border-t border-border/30 flex items-center justify-between gap-4 flex-wrap">
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                            <span>Desconto final desta O.S.:</span>
+                            <Input type="number" min="0" max="100" step="1" value={descontos[nota.id] ?? ''} onChange={(e) => setDescontos((prev) => ({ ...prev, [nota.id]: parseFloat(e.target.value) || 0 }))} placeholder="0" className="w-20 h-8 text-xs text-center" />
+                            <span>%</span>
                           </div>
+                          <div className="text-right text-xs">
+                            <p className="font-bold">R$ {toMoney(totalComDesc)}</p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
 
-                          <div className="px-4 py-3 bg-muted/20 border-t border-border/30 flex items-center justify-between gap-4 flex-wrap">
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-                              <span>Desconto final desta O.S.:</span>
-                              <Input
-                                type="number"
-                                min="0"
-                                max="100"
-                                step="1"
-                                value={descontos[nota.id] ?? ''}
-                                onChange={(e) => setDescontos((prev) => ({ ...prev, [nota.id]: parseFloat(e.target.value) || 0 }))}
-                                placeholder="0"
-                                className="w-20 h-8 text-xs text-center"
-                              />
-                              <span>%</span>
-                            </div>
-                            <div className="text-right text-xs">
-                              {disc > 0 && (
-                                <p className="text-muted-foreground">
-                                  Base editada: R$ {toMoney(totalBrutoNota)} · −{disc}%
-                                </p>
-                              )}
-                              <p className="font-bold">R$ {toMoney(totalComDesc)}</p>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
+              <div className="border-t lg:border-t-0 lg:border-l bg-muted/20 p-5 space-y-4">
+                <div className="rounded-2xl border bg-background p-4 shadow-sm">
+                  <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Resumo do rascunho</p>
+                  <p className="mt-2 text-sm text-muted-foreground">{previewNotes.length} O.S. · {activeDraft?.periodLabel ?? '—'}</p>
+                  <p className="mt-1 text-3xl font-bold text-primary">R$ {toMoney(grandTotal)}</p>
+                  {grandTotalOriginal !== grandTotal && <p className="mt-1 text-xs text-muted-foreground">Bruto: R$ {toMoney(grandTotalOriginal)}</p>}
                 </div>
+                <div className="rounded-2xl border bg-background p-4 shadow-sm space-y-2 text-sm text-muted-foreground">
+                  <p>1. Este popup serve para edição e revisão das O.S.</p>
+                  <p>2. O botão visualizar mostra o template final em outro popup.</p>
+                  <p>3. Só o botão gerar fechamento grava no banco.</p>
+                </div>
+                <Button onClick={handleGerar} disabled={generating || !activeDraft} className="h-12 w-full text-sm font-semibold" size="lg">
+                  {generating ? <RefreshCcw className="mr-2 h-4 w-4 animate-spin" /> : <ArrowUpFromLine className="mr-2 h-4 w-4" />}
+                  Gerar fechamento
+                </Button>
               </div>
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-        <div className="lg:sticky lg:top-4 space-y-4">
-          <Card className="shadow-sm">
-            <CardContent className="p-5">
-              <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Ação final</p>
-              <h3 className="mt-2 text-lg font-semibold">Gerar fechamento definitivo</h3>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Quando clicar em gerar, o sistema usa exatamente os valores mostrados nesta prévia, inclusive os ajustes feitos nos serviços.
+      <Dialog open={templatePreviewOpen} onOpenChange={setTemplatePreviewOpen}>
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] h-[92vh] p-0 gap-0 sm:max-w-6xl">
+          <DialogTitle className="sr-only">Visualização do template do fechamento</DialogTitle>
+          <div className="flex h-full flex-col">
+            <div className="border-b px-5 py-4">
+              <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Visualização</p>
+              <h3 className="text-xl font-semibold mt-1">Template final do fechamento</h3>
+              <p className="text-sm text-muted-foreground">
+                Esta é a aparência de impressão e do PDF que ficará armazenado.
               </p>
-              <Button
-                onClick={handleGerar}
-                disabled={generating || previewNotes.length === 0}
-                className="mt-5 h-14 w-full text-base font-semibold"
-                size="lg"
-              >
-                {generating ? (
-                  <RefreshCcw className="mr-2 h-5 w-5 animate-spin" />
-                ) : (
-                  <ArrowUpFromLine className="mr-2 h-5 w-5" />
-                )}
-                Gerar
-              </Button>
-              <Button variant="outline" onClick={() => setMode('list')} disabled={generating} className="mt-2 w-full">
-                Voltar sem gerar
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-sm">
-            <CardContent className="p-5 space-y-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Resumo rápido</p>
-                <p className="mt-1 text-sm font-medium">{client?.name ?? '—'}</p>
-                <p className="text-sm text-muted-foreground">{periodo}</p>
-              </div>
-              <div className="rounded-xl bg-muted/30 p-4">
-                <p className="text-xs text-muted-foreground">{previewNotes.length} O.S. selecionadas</p>
-                <p className="mt-1 text-2xl font-bold text-primary">R$ {toMoney(grandTotal)}</p>
-                {grandTotalOriginal !== grandTotal && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Antes dos ajustes: R$ {toMoney(grandTotalOriginal)}
-                  </p>
-                )}
-              </div>
-              <div className="text-xs text-muted-foreground space-y-1">
-                <p>1. Visualizar só monta a prévia.</p>
-                <p>2. Editar itens aqui não altera o banco ainda.</p>
-                <p>3. Gerar usa o rascunho atual para montar o fechamento.</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+            </div>
+            <div className="flex-1 bg-muted/40">
+              {modalPreviewDados ? (
+                <PDFViewer width="100%" height="100%" style={{ border: 'none' }}>
+                  <ClosingPDFTemplate dados={modalPreviewDados} geradoEm={modalPreviewDados.gerado_em} />
+                </PDFViewer>
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                  Nenhum rascunho selecionado.
+                </div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
