@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { PDFViewer, pdf } from '@react-pdf/renderer';
+import { pdf } from '@react-pdf/renderer';
 import { ClosingPDFTemplate } from '@/components/closing/ClosingPDFTemplate';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
@@ -26,6 +26,7 @@ import {
   type FechamentoDadosJson,
   type FechamentoNota,
 } from '@/api/supabase/fechamentos';
+import { getNotasServico } from '@/api/supabase/notas';
 import type { IntakeNote } from '@/types';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
@@ -72,6 +73,14 @@ interface ClosingDraft {
   discounts: Record<string, number>;
   createdAt: string;
   updatedAt: string;
+}
+
+interface AvailableClosingPeriod {
+  key: string;
+  month: string;
+  year: string;
+  label: string;
+  noteCount: number;
 }
 
 const DRAFTS_STORAGE_KEY = 'retiflow:monthly-closing-drafts:v1';
@@ -125,6 +134,33 @@ const buildDadosFromDraft = (draft: ClosingDraft): FechamentoDadosJson => {
 const createDraftId = () =>
   `draft-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
+const normalizeAvailablePeriods = (dates: string[]) => {
+  const map = new Map<string, AvailableClosingPeriod>();
+  for (const rawDate of dates) {
+    const dt = new Date(rawDate);
+    if (Number.isNaN(dt.getTime())) continue;
+    const month = String(dt.getMonth() + 1);
+    const year = String(dt.getFullYear());
+    const key = `${year}-${month.padStart(2, '0')}`;
+    const current = map.get(key);
+    if (current) {
+      current.noteCount += 1;
+      continue;
+    }
+    map.set(key, {
+      key,
+      month,
+      year,
+      label: `${MONTHS[dt.getMonth()]} ${year}`,
+      noteCount: 1,
+    });
+  }
+  return [...map.values()].sort((a, b) => {
+    if (a.year !== b.year) return Number(b.year) - Number(a.year);
+    return Number(b.month) - Number(a.month);
+  });
+};
+
 /* ── Dual-ring spinner ─────────────────────────────────────────────────── */
 function DualSpinner() {
   return (
@@ -160,17 +196,24 @@ export default function MonthlyClosing() {
   const { toast } = useToast();
 
   const now = new Date();
+  const defaultMonth = String(now.getMonth() + 1);
+  const defaultYear = String(now.getFullYear());
   const [fechamentos, setFechamentos] = useState<FechamentoListItem[]>([]);
   const [loadingList, setLoadingList] = useState(false);
   const [drafts, setDrafts] = useState<ClosingDraft[]>([]);
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [draftModalOpen, setDraftModalOpen] = useState(false);
   const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false);
+  const [templatePreviewUrl, setTemplatePreviewUrl] = useState<string | null>(null);
+  const [templatePreviewLoading, setTemplatePreviewLoading] = useState(false);
+  const [templatePreviewError, setTemplatePreviewError] = useState<string | null>(null);
 
   // Preview state
-  const [selMonth, setSelMonth] = useState(String(now.getMonth() + 1));
-  const [selYear, setSelYear] = useState(String(now.getFullYear()));
+  const [selMonth, setSelMonth] = useState(defaultMonth);
+  const [selYear, setSelYear] = useState(defaultYear);
   const [selClientId, setSelClientId] = useState('');
+  const [availablePeriods, setAvailablePeriods] = useState<AvailableClosingPeriod[]>([]);
+  const [loadingPeriods, setLoadingPeriods] = useState(false);
   const [previewNotes, setPreviewNotes] = useState<PreviewNote[]>([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [descontos, setDescontos] = useState<Record<string, number>>({});
@@ -217,6 +260,63 @@ export default function MonthlyClosing() {
     }
   }, [drafts]);
 
+  useEffect(() => {
+    if (!selClientId) {
+      setAvailablePeriods([]);
+      setSelMonth(defaultMonth);
+      setSelYear(defaultYear);
+      return;
+    }
+
+    let cancelled = false;
+    const loadPeriods = async () => {
+      setLoadingPeriods(true);
+      try {
+        const fallback = normalizeAvailablePeriods(
+          notes
+            .filter((note) => note.clientId === selClientId && note.status === 'FINALIZADO' && (note.finalizedAt ?? note.updatedAt))
+            .map((note) => note.finalizedAt ?? note.updatedAt),
+        );
+
+        const periods = IS_REAL_AUTH
+          ? normalizeAvailablePeriods(
+              (await getNotasServico({ p_fk_clientes: selClientId, p_limite: 500, p_offset: 0 })).dados
+                .filter((note) => note.finalizado_em || note.status.tipo_status === 'fechado')
+                .map((note) => note.finalizado_em ?? note.created_at),
+            )
+          : fallback;
+
+        const nextPeriods = periods.length > 0 ? periods : fallback;
+        if (cancelled) return;
+
+        setAvailablePeriods(nextPeriods);
+        if (nextPeriods.length === 0) {
+          setSelMonth('');
+          return;
+        }
+
+        const selectedYear = nextPeriods.some((period) => period.year === selYear)
+          ? selYear
+          : nextPeriods[0].year;
+        setSelYear(selectedYear);
+        setSelMonth((current) => {
+          if (nextPeriods.some((period) => period.month === current && period.year === selectedYear)) return current;
+          return nextPeriods.find((period) => period.year === selectedYear)?.month ?? nextPeriods[0].month;
+        });
+      } catch {
+        if (cancelled) return;
+        setAvailablePeriods([]);
+        setSelMonth('');
+        toast({ title: 'Erro ao carregar períodos do cliente', variant: 'destructive' });
+      } finally {
+        if (!cancelled) setLoadingPeriods(false);
+      }
+    };
+
+    void loadPeriods();
+    return () => { cancelled = true; };
+  }, [selClientId, notes, defaultMonth, defaultYear, selYear, toast]);
+
   const openDraft = useCallback((draft: ClosingDraft) => {
     setActiveDraftId(draft.id);
     setSelClientId(draft.clientId);
@@ -228,10 +328,20 @@ export default function MonthlyClosing() {
     setDraftModalOpen(true);
   }, []);
 
+  const closeTemplatePreview = useCallback(() => {
+    setTemplatePreviewOpen(false);
+    setTemplatePreviewLoading(false);
+    setTemplatePreviewError(null);
+    setTemplatePreviewUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return null;
+    });
+  }, []);
+
   const closeDraftModal = useCallback(() => {
     setDraftModalOpen(false);
-    setTemplatePreviewOpen(false);
-  }, []);
+    closeTemplatePreview();
+  }, [closeTemplatePreview]);
 
   const removeDraft = useCallback((draftId: string) => {
     setDrafts((current) => current.filter((draft) => draft.id !== draftId));
@@ -244,76 +354,103 @@ export default function MonthlyClosing() {
   /* ── Build local draft ── */
   const handleBuildPreview = useCallback(async () => {
     if (!selClientId) { toast({ title: 'Selecione um cliente', variant: 'destructive' }); return; }
+    if (!selMonth || !selYear) { toast({ title: 'Selecione um período válido', variant: 'destructive' }); return; }
 
     const mesNum = parseInt(selMonth);
     const anoNum = parseInt(selYear);
     const inicio = new Date(anoNum, mesNum - 1, 1);
     const fim = new Date(anoNum, mesNum, 0, 23, 59, 59);
 
-    const notasFiltradas = notes.filter((n) => {
-      if (n.status !== 'FINALIZADO') return false;
-      if (n.clientId !== selClientId) return false;
-      const dt = new Date(n.finalizedAt ?? n.updatedAt);
-      return dt >= inicio && dt <= fim;
-    });
-
-    if (notasFiltradas.length === 0) {
-      toast({ title: 'Nenhuma nota finalizada neste período', variant: 'destructive' });
-      return;
-    }
-
     setLoadingPreview(true);
-    const resultado: PreviewNote[] = [];
+    try {
+      const notasFiltradas = IS_REAL_AUTH
+        ? (await getNotasServico({ p_fk_clientes: selClientId, p_limite: 500, p_offset: 0 })).dados.filter((note) => {
+            if (!(note.finalizado_em || note.status.tipo_status === 'fechado')) return false;
+            const dt = new Date(note.finalizado_em ?? note.created_at);
+            return dt >= inicio && dt <= fim;
+          }).map((note) => ({
+            id: note.id_notas_servico,
+            number: note.os,
+            vehicleModel: note.veiculo.modelo,
+            plate: note.veiculo.placa,
+            totalAmount: note.total,
+            updatedAt: note.finalizado_em ?? note.created_at,
+          }))
+        : notes.filter((n) => {
+            if (n.status !== 'FINALIZADO') return false;
+            if (n.clientId !== selClientId) return false;
+            const dt = new Date(n.finalizedAt ?? n.updatedAt);
+            return dt >= inicio && dt <= fim;
+          }).map((note) => ({
+            id: note.id,
+            number: note.number,
+            vehicleModel: note.vehicleModel,
+            plate: note.plate ?? '',
+            totalAmount: note.totalAmount,
+            updatedAt: note.updatedAt,
+          }));
 
-    for (const nota of notasFiltradas) {
-      const det = IS_REAL_AUTH ? await getNotaDetalhesParaFechamento(nota.id) : null;
-      resultado.push({
-        id: nota.id,
-        os: nota.number,
-        veiculo: nota.vehicleModel,
-        placa: nota.plate ?? '',
-        total: nota.totalAmount,
-        updatedAt: nota.updatedAt,
-        itens: det?.itens_servico.map((i) => ({
-          id: i.id_rel,
-          descricao: i.descricao,
-          quantidade: i.quantidade,
-          preco_unitario: i.preco_unitario,
-          desconto_porcentagem: i.desconto_porcentagem,
-          subtotal: i.subtotal_item,
-        })) ?? [{
-          id: `${nota.id}-fallback`,
-          descricao: 'Serviços realizados',
-          quantidade: 1,
-          preco_unitario: nota.totalAmount,
-          desconto_porcentagem: 0,
-          subtotal: nota.totalAmount,
-        }],
-      });
+      if (notasFiltradas.length === 0) {
+        toast({ title: 'Nenhuma nota finalizada neste período', variant: 'destructive' });
+        return;
+      }
+
+      const resultado: PreviewNote[] = [];
+
+      for (const nota of notasFiltradas) {
+        const det = IS_REAL_AUTH ? await getNotaDetalhesParaFechamento(nota.id) : null;
+        resultado.push({
+          id: nota.id,
+          os: nota.number,
+          veiculo: nota.vehicleModel,
+          placa: nota.plate ?? '',
+          total: nota.totalAmount,
+          updatedAt: nota.updatedAt,
+          itens: det?.itens_servico.map((i) => ({
+            id: i.id_rel,
+            descricao: i.descricao,
+            quantidade: i.quantidade,
+            preco_unitario: i.preco_unitario,
+            desconto_porcentagem: i.desconto_porcentagem,
+            subtotal: i.subtotal_item,
+          })) ?? [{
+            id: `${nota.id}-fallback`,
+            descricao: 'Serviços realizados',
+            quantidade: 1,
+            preco_unitario: nota.totalAmount,
+            desconto_porcentagem: 0,
+            subtotal: nota.totalAmount,
+          }],
+        });
+      }
+
+      setPreviewNotes(resultado);
+      setDescontos({});
+      setEditingItems({});
+      const draftClient = clients.find((entry) => entry.id === selClientId);
+      const periodLabel = `${MONTHS[mesNum - 1]} ${selYear}`;
+      const timestamp = new Date().toISOString();
+      const draft: ClosingDraft = {
+        id: createDraftId(),
+        clientId: selClientId,
+        clientName: draftClient?.name ?? 'Cliente',
+        month: selMonth,
+        year: selYear,
+        periodLabel,
+        notes: resultado,
+        discounts: {},
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+      setDrafts((current) => [draft, ...current]);
+      openDraft(draft);
+      toast({ title: 'Rascunho gerado', description: 'Ele ficou salvo localmente e pode ser retomado depois.' });
+    } catch (err) {
+      const description = err instanceof Error ? err.message : 'Tente novamente.';
+      toast({ title: 'Erro ao montar o rascunho', description, variant: 'destructive' });
+    } finally {
+      setLoadingPreview(false);
     }
-
-    setPreviewNotes(resultado);
-    setDescontos({});
-    setEditingItems({});
-    const draftClient = clients.find((entry) => entry.id === selClientId);
-    const periodLabel = `${MONTHS[mesNum - 1]} ${selYear}`;
-    const timestamp = new Date().toISOString();
-    const draft: ClosingDraft = {
-      id: createDraftId(),
-      clientId: selClientId,
-      clientName: draftClient?.name ?? 'Cliente',
-      month: selMonth,
-      year: selYear,
-      periodLabel,
-      notes: resultado,
-      discounts: {},
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    };
-    setDrafts((current) => [draft, ...current]);
-    openDraft(draft);
-    setLoadingPreview(false);
-    toast({ title: 'Rascunho gerado', description: 'Ele ficou salvo localmente e pode ser retomado depois.' });
   }, [selClientId, selMonth, selYear, notes, toast, clients, openDraft]);
 
   /* ── Computed totals ── */
@@ -353,6 +490,20 @@ export default function MonthlyClosing() {
     )));
   }, [draftModalOpen, activeDraftId, previewNotes, descontos]);
 
+  useEffect(() => {
+    if (!selYear || availablePeriods.length === 0) return;
+    const monthsForYear = availablePeriods.filter((period) => period.year === selYear);
+    if (monthsForYear.length === 0) return;
+    if (monthsForYear.some((period) => period.month === selMonth)) return;
+    setSelMonth(monthsForYear[0].month);
+  }, [availablePeriods, selYear, selMonth]);
+
+  useEffect(() => {
+    return () => {
+      if (templatePreviewUrl) URL.revokeObjectURL(templatePreviewUrl);
+    };
+  }, [templatePreviewUrl]);
+
   const updatePreviewItem = useCallback((
     noteId: string,
     itemId: string,
@@ -378,6 +529,45 @@ export default function MonthlyClosing() {
     }));
   }, []);
 
+  const renderClosingPdfBlob = useCallback(async (dados: FechamentoDadosJson, geradoEm: string) => {
+    return pdf(<ClosingPDFTemplate dados={dados} geradoEm={geradoEm} />).toBlob();
+  }, []);
+
+  useEffect(() => {
+    if (!templatePreviewOpen || !modalPreviewDados) {
+      setTemplatePreviewLoading(false);
+      setTemplatePreviewError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setTemplatePreviewLoading(true);
+    setTemplatePreviewError(null);
+
+    void renderClosingPdfBlob(modalPreviewDados, modalPreviewDados.gerado_em)
+      .then((blob) => {
+        if (cancelled) return;
+        const nextUrl = URL.createObjectURL(blob);
+        setTemplatePreviewUrl((current) => {
+          if (current) URL.revokeObjectURL(current);
+          return nextUrl;
+        });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setTemplatePreviewUrl((current) => {
+          if (current) URL.revokeObjectURL(current);
+          return null;
+        });
+        setTemplatePreviewError(err instanceof Error ? err.message : 'Não foi possível renderizar o template.');
+      })
+      .finally(() => {
+        if (!cancelled) setTemplatePreviewLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [templatePreviewOpen, modalPreviewDados, renderClosingPdfBlob]);
+
   /* ── Gerar fechamento ── */
   const generateDraft = useCallback(async (draft: ClosingDraft) => {
     setGenerating(true);
@@ -388,6 +578,7 @@ export default function MonthlyClosing() {
       const dados = buildDadosFromDraft(draft);
       const notasDados: FechamentoNota[] = dados.notas;
       const totals = computeDraftTotals(draft);
+      const pdfBlob = await renderClosingPdfBlob({ ...dados, gerado_em: geradoEm }, geradoEm);
 
       // 1. Insert fechamento header
       const idFechamento = await insertFechamento({
@@ -408,17 +599,12 @@ export default function MonthlyClosing() {
         },
       });
 
-      // 3. Generate PDF
-      let pdfUrl: string | null = null;
-      try {
-        const blob = await pdf(<ClosingPDFTemplate dados={{ ...dados, gerado_em: geradoEm }} geradoEm={geradoEm} />).toBlob();
-        pdfUrl = await uploadFechamentoPDF(idFechamento, blob);
-        if (pdfUrl) {
-          await updateFechamento(idFechamento, { p_pdf_url: pdfUrl });
-        }
-      } catch {
-        // PDF generation failure is non-blocking
+      // 3. Upload PDF
+      const pdfUrl = await uploadFechamentoPDF(idFechamento, pdfBlob);
+      if (!pdfUrl) {
+        throw new Error('O fechamento foi montado, mas o PDF não conseguiu ser salvo no storage.');
       }
+      await updateFechamento(idFechamento, { p_pdf_url: pdfUrl });
 
       // 4. Audit action
       try {
@@ -435,11 +621,12 @@ export default function MonthlyClosing() {
       await loadFechamentos();
       closeDraftModal();
     } catch (err) {
-      toast({ title: 'Erro ao gerar fechamento', description: String(err), variant: 'destructive' });
+      const description = err instanceof Error ? err.message : 'Tente novamente.';
+      toast({ title: 'Erro ao gerar fechamento', description, variant: 'destructive' });
     } finally {
       setGenerating(false);
     }
-  }, [toast, loadFechamentos, removeDraft, closeDraftModal]);
+  }, [toast, renderClosingPdfBlob, loadFechamentos, removeDraft, closeDraftModal]);
 
   const handleGerar = useCallback(async () => {
     if (!activeDraft) return;
@@ -461,7 +648,7 @@ export default function MonthlyClosing() {
     }
     if (!fechamento.dados_json) { toast({ title: 'PDF não disponível', variant: 'destructive' }); return; }
     try {
-      const blob = await pdf(<ClosingPDFTemplate dados={fechamento.dados_json} geradoEm={fechamento.created_at} />).toBlob();
+      const blob = await renderClosingPdfBlob(fechamento.dados_json, fechamento.created_at);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -472,12 +659,20 @@ export default function MonthlyClosing() {
     } catch {
       toast({ title: 'Erro ao gerar PDF', variant: 'destructive' });
     }
-  }, [toast]);
+  }, [toast, renderClosingPdfBlob]);
 
   const years = useMemo(() => {
-    const y = now.getFullYear();
+    const y = Number(defaultYear);
+    if (availablePeriods.length > 0) {
+      return [...new Set(availablePeriods.map((period) => period.year))];
+    }
     return [y - 1, y, y + 1].map(String);
-  }, []);
+  }, [availablePeriods, defaultYear]);
+
+  const availableMonthsForYear = useMemo(
+    () => availablePeriods.filter((period) => period.year === selYear),
+    [availablePeriods, selYear],
+  );
 
   const activeClients = useMemo(() => clients.filter((c) => c.isActive).sort((a, b) => a.name.localeCompare(b.name)), [clients]);
   return (
@@ -524,27 +719,40 @@ export default function MonthlyClosing() {
             </div>
             <div>
               <p className="text-xs text-muted-foreground mb-1.5">Mês</p>
-              <Select value={selMonth} onValueChange={setSelMonth}>
-                <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
+              <Select value={selMonth} onValueChange={setSelMonth} disabled={!selClientId || loadingPeriods || availableMonthsForYear.length === 0}>
+                <SelectTrigger className="w-[160px]"><SelectValue placeholder={loadingPeriods ? 'Carregando...' : 'Sem notas'} /></SelectTrigger>
                 <SelectContent>
-                  {MONTHS.map((m, i) => <SelectItem key={i} value={String(i + 1)}>{m}</SelectItem>)}
+                  {availableMonthsForYear.map((period) => (
+                    <SelectItem key={period.key} value={period.month}>
+                      {MONTHS[Number(period.month) - 1]} ({period.noteCount})
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div>
               <p className="text-xs text-muted-foreground mb-1.5">Ano</p>
-              <Select value={selYear} onValueChange={setSelYear}>
+              <Select value={selYear} onValueChange={setSelYear} disabled={!selClientId || loadingPeriods || years.length === 0}>
                 <SelectTrigger className="w-[100px]"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {years.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-            <Button onClick={handleBuildPreview} disabled={loadingPreview || !selClientId} className="min-w-[180px]">
-              {loadingPreview ? <RefreshCcw className="w-4 h-4 mr-2 animate-spin" /> : <PlusCircle className="w-4 h-4 mr-2" />}
+            <Button onClick={handleBuildPreview} disabled={loadingPreview || loadingPeriods || !selClientId || !selMonth || availablePeriods.length === 0} className="min-w-[180px]">
+              {loadingPreview || loadingPeriods ? <RefreshCcw className="w-4 h-4 mr-2 animate-spin" /> : <PlusCircle className="w-4 h-4 mr-2" />}
               Gerar rascunho
             </Button>
           </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            {selClientId
+              ? loadingPeriods
+                ? 'Buscando no banco os meses com O.S. finalizadas para este cliente...'
+                : availablePeriods.length > 0
+                  ? `Mostrando apenas períodos com notas finalizadas para ${clients.find((client) => client.id === selClientId)?.name ?? 'o cliente selecionado'}.`
+                  : 'Este cliente ainda não possui O.S. finalizadas para gerar fechamento.'
+              : 'Selecione um cliente para carregar no banco apenas os meses disponíveis para fechamento.'}
+          </p>
         </CardContent>
       </Card>
 
@@ -810,7 +1018,7 @@ export default function MonthlyClosing() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={templatePreviewOpen} onOpenChange={setTemplatePreviewOpen}>
+      <Dialog open={templatePreviewOpen} onOpenChange={(open) => { if (open) setTemplatePreviewOpen(true); else closeTemplatePreview(); }}>
         <DialogContent className="w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] h-[92vh] p-0 gap-0 sm:max-w-6xl">
           <DialogTitle className="sr-only">Visualização do template do fechamento</DialogTitle>
           <div className="flex h-full flex-col">
@@ -822,10 +1030,25 @@ export default function MonthlyClosing() {
               </p>
             </div>
             <div className="flex-1 bg-muted/40">
-              {modalPreviewDados ? (
-                <PDFViewer width="100%" height="100%" style={{ border: 'none' }}>
-                  <ClosingPDFTemplate dados={modalPreviewDados} geradoEm={modalPreviewDados.gerado_em} />
-                </PDFViewer>
+              {templatePreviewLoading ? (
+                <div className="flex h-full flex-col items-center justify-center gap-4 text-sm text-muted-foreground">
+                  <DualSpinner />
+                  <p>Montando o PDF de preview...</p>
+                </div>
+              ) : templatePreviewError ? (
+                <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+                  <FileText className="h-8 w-8 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium">Não foi possível visualizar o template.</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{templatePreviewError}</p>
+                  </div>
+                </div>
+              ) : templatePreviewUrl ? (
+                <iframe
+                  title="Preview do fechamento"
+                  src={templatePreviewUrl}
+                  className="h-full w-full border-0"
+                />
               ) : (
                 <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                   Nenhum rascunho selecionado.

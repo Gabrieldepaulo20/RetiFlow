@@ -1,20 +1,11 @@
-import { Document, Page, Text, View, StyleSheet, Font } from '@react-pdf/renderer';
+import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { FechamentoDadosJson } from '@/api/supabase/fechamentos';
-
-Font.register({
-  family: 'Inter',
-  fonts: [
-    { src: 'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiA.woff2', fontWeight: 400 },
-    { src: 'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuGKYAZ9hiA.woff2', fontWeight: 600 },
-    { src: 'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuFuYAZ9hiA.woff2', fontWeight: 700 },
-  ],
-});
 
 const brl = (v: number) =>
   v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const s = StyleSheet.create({
-  page: { fontFamily: 'Inter', fontSize: 9, color: '#111', padding: '14mm 12mm 12mm 12mm', backgroundColor: '#fff' },
+  page: { fontFamily: 'Helvetica', fontSize: 9, color: '#111', padding: '14mm 12mm 12mm 12mm', backgroundColor: '#fff' },
 
   // Header
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', borderBottomWidth: 2, borderBottomColor: '#111', paddingBottom: 8, marginBottom: 10 },
@@ -40,10 +31,12 @@ const s = StyleSheet.create({
   thText: { fontSize: 7, fontWeight: 600, color: '#555', textTransform: 'uppercase' },
 
   // OS footer
-  osFoot: { flexDirection: 'row', justifyContent: 'flex-end', gap: 16, paddingVertical: 5, paddingHorizontal: 8, backgroundColor: '#f9fafb' },
+  osFoot: { flexDirection: 'row', justifyContent: 'flex-end', paddingVertical: 5, paddingHorizontal: 8, backgroundColor: '#f9fafb' },
   footLabel: { fontSize: 8, color: '#555' },
   footValue: { fontSize: 8, fontWeight: 600 },
   footTotal: { fontSize: 9, fontWeight: 700 },
+  footGroup: { flexDirection: 'row', marginLeft: 16 },
+  footGroupFirst: { flexDirection: 'row' },
 
   // Grand total
   totalSection: { marginTop: 8, borderTopWidth: 2, borderTopColor: '#111', paddingTop: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
@@ -119,17 +112,17 @@ export function ClosingPDFTemplate({ dados, geradoEm }: Props) {
               <View style={s.osFoot}>
                 {temDesconto && (
                   <>
-                    <View style={{ flexDirection: 'row', gap: 4 }}>
+                    <View style={s.footGroupFirst}>
                       <Text style={s.footLabel}>Subtotal:</Text>
                       <Text style={s.footValue}>R$ {brl(nota.total_original)}</Text>
                     </View>
-                    <View style={{ flexDirection: 'row', gap: 4 }}>
+                    <View style={s.footGroup}>
                       <Text style={s.footLabel}>Desconto ({nota.desconto_nota}%):</Text>
                       <Text style={s.footValue}>−R$ {brl(nota.total_original * nota.desconto_nota / 100)}</Text>
                     </View>
                   </>
                 )}
-                <View style={{ flexDirection: 'row', gap: 4 }}>
+                <View style={temDesconto ? s.footGroup : s.footGroupFirst}>
                   <Text style={{ ...s.footLabel, fontWeight: 700 }}>Total {nota.os}:</Text>
                   <Text style={s.footTotal}>R$ {brl(nota.total_com_desconto)}</Text>
                 </View>

@@ -81,7 +81,7 @@ export function clientToNovoClientePayload(client: Omit<Client, 'id' | 'createdA
   const contatos: NonNullable<NovoClientePayload['contatos']> = [];
   if (client.phone) contatos.push({ contato: client.phone, tipo_contato: 'telefone' });
   if (client.email) contatos.push({ contato: client.email, tipo_contato: 'email' });
-  if (contatos.length > 0) payload.contatos = contatos;
+  payload.contatos = contatos;
 
   return payload;
 }
