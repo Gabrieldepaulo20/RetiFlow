@@ -1,276 +1,463 @@
-import { Document, Page, Text, View } from '@react-pdf/renderer';
-import type { NotaServicoDetalhes } from '@/api/supabase/notas';
+import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
+import type { NotaServicoDetalhes, NotaServicoDetalhesItem } from '@/api/supabase/notas';
 
-const ACCENT = '#1e6fa5';
-const ACCENT_LIGHT = '#e8f2fb';
+const MAX_ROWS = 7;
 
-const brl = (v: number) =>
-  v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmtDate = (d: string) =>
-  new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+const DEFAULT_OBSERVATIONS = [
+  '1. Este orçamento é válido por 30 dias a partir da data de emissão.',
+  '2. O prazo de entrega será combinado após aprovação do orçamento.',
+  '3. Em caso de desistência após início do serviço, será cobrado o valor proporcional.',
+];
 
-// ─── Via ─────────────────────────────────────────────────────────────────────
+const styles = StyleSheet.create({
+  page: {
+    backgroundColor: '#ffffff',
+    color: '#111111',
+    fontFamily: 'Helvetica',
+    fontSize: 8,
+    padding: 0,
+  },
+  notaContainer: {
+    flexDirection: 'row',
+    width: '100%',
+    height: '100%',
+  },
+  nota: {
+    width: '50%',
+    height: '100%',
+    padding: 20,
+    flexDirection: 'column',
+    boxSizing: 'border-box',
+  },
+  divider: {
+    width: 1,
+    marginVertical: 20,
+    borderLeftWidth: 1,
+    borderLeftColor: '#cccccc',
+    borderLeftStyle: 'dashed',
+  },
+  notaHeader: {
+    backgroundColor: '#e6e6e6',
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    padding: 5,
+  },
+  headerSide: {
+    width: '50%',
+    padding: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerRight: {
+    borderLeftWidth: 1,
+    borderLeftColor: '#cfcfcf',
+    borderLeftStyle: 'solid',
+  },
+  logoSpacer: {
+    height: 28,
+    marginBottom: 5,
+  },
+  headerTitle: {
+    fontSize: 16,
+    marginBottom: 2,
+  },
+  headerSubtitle: {
+    fontSize: 10,
+    color: '#333333',
+    marginBottom: 2,
+  },
+  headerAddress: {
+    fontSize: 8,
+    color: '#333333',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  headerInfo: {
+    fontSize: 10,
+    color: '#333333',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  clienteBox: {
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: '#dddddd',
+    borderStyle: 'solid',
+    paddingTop: 36,
+    paddingRight: 10,
+    paddingBottom: 6,
+    paddingLeft: 10,
+    marginTop: 15,
+    gap: 5,
+  },
+  notaInfos: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#dcdcdc',
+    color: '#333333',
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+  },
+  infoGroup: {
+    alignItems: 'center',
+  },
+  infoLabel: {
+    fontSize: 8,
+    marginBottom: 2,
+  },
+  infoValue: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#cccccc',
+    borderStyle: 'solid',
+    borderRadius: 20,
+    width: 90,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    textAlign: 'center',
+    fontSize: 8,
+  },
+  line: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    marginBottom: 3,
+    columnGap: 7,
+    rowGap: 3,
+  },
+  fieldText: {
+    fontSize: 8,
+    lineHeight: 1.2,
+  },
+  tableWrapper: {
+    flexGrow: 1,
+    marginVertical: 15,
+  },
+  table: {
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#dddddd',
+    borderStyle: 'solid',
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#efefef',
+  },
+  th: {
+    borderWidth: 1,
+    borderColor: '#d0d0d0',
+    borderStyle: 'solid',
+    paddingVertical: 5,
+    paddingHorizontal: 4,
+    fontSize: 7.5,
+    textAlign: 'center',
+  },
+  row: {
+    flexDirection: 'row',
+  },
+  td: {
+    borderWidth: 1,
+    borderColor: '#dddddd',
+    borderStyle: 'solid',
+    paddingVertical: 3,
+    paddingHorizontal: 4,
+    minHeight: 21,
+    fontSize: 8,
+    justifyContent: 'center',
+  },
+  emptyRow: {
+    color: '#ffffff',
+  },
+  qtyCol: {
+    width: '10%',
+    textAlign: 'center',
+  },
+  descCol: {
+    width: '57%',
+    textAlign: 'left',
+  },
+  unitCol: {
+    width: '18%',
+    textAlign: 'right',
+  },
+  totalCol: {
+    width: '15%',
+    textAlign: 'right',
+  },
+  tableFooter: {
+    flexDirection: 'row',
+    backgroundColor: '#f5f5f5',
+    borderTopWidth: 1,
+    borderTopColor: '#dddddd',
+    borderTopStyle: 'solid',
+  },
+  totalLabel: {
+    width: '85%',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    textAlign: 'right',
+    fontSize: 8.5,
+  },
+  totalValueCell: {
+    width: '15%',
+    paddingVertical: 4,
+    paddingHorizontal: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  totalValue: {
+    width: '100%',
+    paddingVertical: 4,
+    paddingHorizontal: 5,
+    textAlign: 'center',
+    fontSize: 9,
+    borderWidth: 1,
+    borderColor: '#d0d0d0',
+    borderStyle: 'solid',
+    backgroundColor: '#efefef',
+    borderRadius: 4,
+  },
+  observacoes: {
+    backgroundColor: '#efefef',
+    borderWidth: 1,
+    borderColor: '#dddddd',
+    borderStyle: 'solid',
+    padding: 10,
+    fontSize: 7,
+    color: '#333333',
+    marginBottom: 15,
+  },
+  observacoesTitle: {
+    fontSize: 7,
+    marginBottom: 4,
+  },
+  observacaoLinha: {
+    fontSize: 7,
+    marginBottom: 5,
+    color: '#333333',
+  },
+  assinaturas: {
+    flexDirection: 'row',
+    justifyContent: 'space-evenly',
+    paddingTop: 10,
+    gap: 20,
+  },
+  assinaturaBloco: {
+    width: 250,
+    alignItems: 'center',
+  },
+  assinaturaLinha: {
+    width: '100%',
+    borderTopWidth: 1,
+    borderTopColor: '#000000',
+    borderTopStyle: 'solid',
+    marginBottom: 5,
+  },
+  assinaturaLabel: {
+    fontSize: 8,
+  },
+});
 
-interface ViaProps {
-  dados: NotaServicoDetalhes;
-  maxRows: number;
-  isPortrait?: boolean;
+const formatCurrency = (value: number) =>
+  value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const formatDate = (value?: string | null) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+};
+
+const chunkItems = <T,>(items: T[], size: number) => {
+  if (items.length === 0) return [[]];
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+};
+
+const splitObservations = (observacoes: string | null) => {
+  const linhas = observacoes
+    ?.split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return linhas && linhas.length > 0 ? linhas : DEFAULT_OBSERVATIONS;
+};
+
+function FieldValue({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | null | undefined;
+}) {
+  return (
+    <Text style={styles.fieldText}>
+      <Text style={{ fontWeight: 700 }}>{label}: </Text>
+      {value?.trim() ? value : '—'}
+    </Text>
+  );
 }
 
-function Via({ dados, maxRows, isPortrait = false }: ViaProps) {
-  const cab = dados.cabecalho;
-  const cl = cab.cliente;
-  const v = cab.veiculo;
-  const items = dados.itens_servico;
-  const padding = Math.max(0, maxRows - items.length);
-  const fs = isPortrait ? 8 : 7.5;
-  const fsSmall = isPortrait ? 7.5 : 7;
-  const pad = isPortrait ? 16 : 12;
-
-  const enderecoFormatado = [cl.endereco, cl.cidade, cl.cep]
-    .filter(Boolean)
-    .join(' • ');
+function Via({
+  dados,
+  itens,
+}: {
+  dados: NotaServicoDetalhes;
+  itens: NotaServicoDetalhesItem[];
+}) {
+  const { cabecalho, financeiro_servicos } = dados;
+  const observacoes = splitObservations(cabecalho.observacoes);
+  const paddingRows = Math.max(0, MAX_ROWS - itens.length);
 
   return (
-    <View style={{ flex: 1, padding: pad, flexDirection: 'column' }}>
-
-      {/* ── Company header ── */}
-      <View style={{ alignItems: 'center', marginBottom: 4 }}>
-        <Text style={{ fontFamily: 'Helvetica', fontSize: isPortrait ? 15 : 13, fontWeight: 700, color: ACCENT, letterSpacing: 0.5 }}>
-          RETÍFICA PREMIUM
-        </Text>
-        <Text style={{ fontFamily: 'Helvetica', fontSize: fsSmall, color: '#555', marginTop: 1 }}>
-          RETÍFICA DE CABEÇOTE
-        </Text>
-        <Text style={{ fontFamily: 'Helvetica', fontSize: isPortrait ? 7 : 6.5, color: '#666', marginTop: 3, textAlign: 'center' }}>
-          Av. Fioravante Magro, 1059 — Jardim Boa Vista — Sertãozinho/SP — CEP 14177-578
-        </Text>
-        <Text style={{ fontFamily: 'Helvetica', fontSize: isPortrait ? 7 : 6.5, color: '#666', marginTop: 1 }}>
-          Tel: (16) 3524-4661
-        </Text>
-      </View>
-
-      {/* Blue separator */}
-      <View style={{ height: 1.5, backgroundColor: ACCENT, marginBottom: 6 }} />
-
-      {/* ── OS / Data / Prazo row ── */}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 5 }}>
-        <Text style={{ fontFamily: 'Helvetica', fontSize: isPortrait ? 10 : 9, fontWeight: 700, color: ACCENT }}>
-          O.S. {cab.os_numero}
-        </Text>
-        <View style={{ alignItems: 'flex-end' }}>
-          <Text style={{ fontFamily: 'Helvetica', fontSize: fsSmall }}>
-            <Text style={{ fontWeight: 700 }}>Data: </Text>{fmtDate(cab.data_criacao)}
-          </Text>
-          {cab.prazo && (
-            <Text style={{ fontFamily: 'Helvetica', fontSize: fsSmall, marginTop: 1 }}>
-              <Text style={{ fontWeight: 700 }}>Prazo: </Text>{fmtDate(cab.prazo)}
-            </Text>
-          )}
+    <View style={styles.nota}>
+      <View style={styles.notaHeader}>
+        <View style={styles.headerSide}>
+          <View style={styles.logoSpacer} />
+          <Text style={styles.headerTitle}>PREMIUM</Text>
+          <Text style={styles.headerSubtitle}>RETÍFICA DE CABEÇOTE</Text>
+        </View>
+        <View style={[styles.headerSide, styles.headerRight]}>
+          <Text style={styles.headerInfo}>Av: Fioravante Magro, 1059 – Jardim Boa Vista</Text>
+          <Text style={styles.headerInfo}>Sertãozinho - SP, 14177-578</Text>
+          <Text style={styles.headerInfo}>Contato: (16) 3524-4661</Text>
         </View>
       </View>
 
-      {/* ── Client section ── */}
-      <View style={{ borderWidth: 1, borderColor: '#ccc', borderStyle: 'solid', marginBottom: 5 }}>
-        {/* Section label */}
-        <View style={{ backgroundColor: ACCENT_LIGHT, paddingVertical: 3, paddingHorizontal: 6, borderBottomWidth: 1, borderBottomColor: '#ccc', borderBottomStyle: 'solid' }}>
-          <Text style={{ fontFamily: 'Helvetica', fontSize: 6.5, fontWeight: 700, color: ACCENT, letterSpacing: 0.4 }}>
-            DADOS DO CLIENTE
-          </Text>
+      <View style={styles.clienteBox}>
+        <View style={styles.notaInfos}>
+          <View style={styles.infoGroup}>
+            <Text style={styles.infoLabel}>O.S:</Text>
+            <Text style={styles.infoValue}>{cabecalho.os_numero}</Text>
+          </View>
+          <View style={styles.infoGroup}>
+            <Text style={styles.infoLabel}>Data:</Text>
+            <Text style={styles.infoValue}>{formatDate(cabecalho.data_criacao)}</Text>
+          </View>
+          <View style={styles.infoGroup}>
+            <Text style={styles.infoLabel}>Prazo:</Text>
+            <Text style={styles.infoValue}>{formatDate(cabecalho.prazo)}</Text>
+          </View>
         </View>
 
-        <View style={{ padding: 6 }}>
-          {/* Nome | Doc */}
-          <View style={{ flexDirection: 'row', marginBottom: 2.5 }}>
-            <Text style={{ fontFamily: 'Helvetica', flex: 1, fontSize: fs }}>
-              <Text style={{ fontWeight: 700 }}>Nome: </Text>{cl.nome}
-            </Text>
-            <Text style={{ fontFamily: 'Helvetica', fontSize: fs, marginLeft: 8 }}>
-              <Text style={{ fontWeight: 700 }}>Doc: </Text>{cl.documento ?? '—'}
-            </Text>
+        <View style={styles.line}>
+          <FieldValue label="Cliente" value={cabecalho.cliente.nome} />
+        </View>
+
+        <View style={styles.line}>
+          <FieldValue label="Documento" value={cabecalho.cliente.documento} />
+          <FieldValue label="Endereço" value={cabecalho.cliente.endereco} />
+        </View>
+
+        <View style={styles.line}>
+          <FieldValue label="CEP" value={cabecalho.cliente.cep} />
+          <FieldValue label="Cidade" value={cabecalho.cliente.cidade} />
+          <FieldValue label="Placa" value={cabecalho.veiculo.placa} />
+          <FieldValue label="Veículo" value={cabecalho.veiculo.modelo} />
+        </View>
+
+        <View style={styles.line}>
+          <FieldValue label="Email" value={cabecalho.cliente.email} />
+          <FieldValue label="Telefone" value={cabecalho.cliente.telefone} />
+        </View>
+      </View>
+
+      <View style={styles.tableWrapper}>
+        <View style={styles.table}>
+          <View style={styles.tableHeader}>
+            <Text style={[styles.th, styles.qtyCol]}>QTD.</Text>
+            <Text style={[styles.th, styles.descCol]}>DESCRIÇÃO DOS PRODUTOS</Text>
+            <Text style={[styles.th, styles.unitCol]}>VALOR UNI.</Text>
+            <Text style={[styles.th, styles.totalCol]}>TOTAL</Text>
           </View>
 
-          {/* Endereço | Cidade */}
-          {(cl.endereco || cl.cidade) && (
-            <View style={{ flexDirection: 'row', marginBottom: 2.5 }}>
-              <Text style={{ fontFamily: 'Helvetica', flex: 1, fontSize: fs }}>
-                <Text style={{ fontWeight: 700 }}>Endereço: </Text>{enderecoFormatado || '—'}
+          {itens.map((item) => (
+            <View key={item.id_rel} style={styles.row}>
+              <Text style={[styles.td, styles.qtyCol]}>{item.quantidade}</Text>
+              <Text style={[styles.td, styles.descCol]}>
+                {item.descricao}
+                {item.detalhes ? `\n${item.detalhes}` : ''}
               </Text>
-              {cl.cidade && (
-                <Text style={{ fontFamily: 'Helvetica', fontSize: fs, marginLeft: 8 }}>
-                  <Text style={{ fontWeight: 700 }}>Cidade: </Text>{cl.cidade}
-                </Text>
-              )}
+              <Text style={[styles.td, styles.unitCol]}>R$ {formatCurrency(item.preco_unitario)}</Text>
+              <Text style={[styles.td, styles.totalCol]}>R$ {formatCurrency(item.subtotal_item)}</Text>
             </View>
-          )}
+          ))}
 
-          {/* Tel | Email */}
-          {(cl.telefone || cl.email) && (
-            <View style={{ flexDirection: 'row', marginBottom: 2.5 }}>
-              <Text style={{ fontFamily: 'Helvetica', flex: 1, fontSize: fs }}>
-                <Text style={{ fontWeight: 700 }}>Tel: </Text>{cl.telefone ?? '—'}
-              </Text>
-              {cl.email && (
-                <Text style={{ fontFamily: 'Helvetica', flex: 1, fontSize: fs }}>
-                  <Text style={{ fontWeight: 700 }}>Email: </Text>{cl.email}
-                </Text>
-              )}
+          {Array.from({ length: paddingRows }).map((_, index) => (
+            <View key={`empty-${index}`} style={styles.row}>
+              <Text style={[styles.td, styles.qtyCol, styles.emptyRow]}>.</Text>
+              <Text style={[styles.td, styles.descCol, styles.emptyRow]}>.</Text>
+              <Text style={[styles.td, styles.unitCol, styles.emptyRow]}>.</Text>
+              <Text style={[styles.td, styles.totalCol, styles.emptyRow]}>.</Text>
             </View>
-          )}
+          ))}
 
-          {/* Placa | Veículo */}
-          <View style={{ flexDirection: 'row', marginBottom: cab.defeito ? 2.5 : 0 }}>
-            <Text style={{ fontFamily: 'Helvetica', flex: 1, fontSize: fs }}>
-              <Text style={{ fontWeight: 700 }}>Placa: </Text>{v.placa || '—'}
-            </Text>
-            <Text style={{ fontFamily: 'Helvetica', flex: 1, fontSize: fs }}>
-              <Text style={{ fontWeight: 700 }}>Veículo: </Text>{v.modelo}
-            </Text>
+          <View style={styles.tableFooter}>
+            <Text style={styles.totalLabel}>TOTAL GERAL</Text>
+            <View style={styles.totalValueCell}>
+              <Text style={styles.totalValue}>R$ {formatCurrency(financeiro_servicos.total_liquido)}</Text>
+            </View>
           </View>
-
-          {/* Defeito */}
-          {cab.defeito && (
-            <Text style={{ fontFamily: 'Helvetica', fontSize: fs }}>
-              <Text style={{ fontWeight: 700 }}>Defeito: </Text>{cab.defeito}
-            </Text>
-          )}
         </View>
       </View>
 
-      {/* ── Items table ── */}
-      <View style={{ borderWidth: 1, borderColor: '#ccc', borderStyle: 'solid', marginBottom: 5 }}>
-        {/* Header */}
-        <View style={{ flexDirection: 'row', backgroundColor: ACCENT, paddingVertical: 3.5, paddingHorizontal: 5 }}>
-          <Text style={{ fontFamily: 'Helvetica', width: '10%', fontSize: 6.5, fontWeight: 700, color: '#fff', textAlign: 'center' }}>QTD</Text>
-          <Text style={{ fontFamily: 'Helvetica', flex: 1, fontSize: 6.5, fontWeight: 700, color: '#fff' }}>DESCRIÇÃO DOS PRODUTOS</Text>
-          <Text style={{ fontFamily: 'Helvetica', width: '20%', fontSize: 6.5, fontWeight: 700, color: '#fff', textAlign: 'right' }}>VALOR UNI.</Text>
-          <Text style={{ fontFamily: 'Helvetica', width: '18%', fontSize: 6.5, fontWeight: 700, color: '#fff', textAlign: 'right' }}>TOTAL</Text>
-        </View>
-
-        {/* Rows */}
-        {items.map((item, i) => (
-          <View
-            key={item.id_rel}
-            style={{
-              flexDirection: 'row',
-              paddingVertical: 3,
-              paddingHorizontal: 5,
-              backgroundColor: i % 2 === 1 ? '#f9f9f9' : '#fff',
-              borderTopWidth: 0.5,
-              borderTopColor: '#e5e5e5',
-              borderTopStyle: 'solid',
-              minHeight: 18,
-            }}
-          >
-            <Text style={{ fontFamily: 'Helvetica', width: '10%', fontSize: fs, textAlign: 'center' }}>{item.quantidade}</Text>
-            <Text style={{ fontFamily: 'Helvetica', flex: 1, fontSize: fs }}>
-              {item.descricao}{item.detalhes ? `\n${item.detalhes}` : ''}
-            </Text>
-            <Text style={{ fontFamily: 'Helvetica', width: '20%', fontSize: fs, textAlign: 'right' }}>R$ {brl(item.preco_unitario)}</Text>
-            <Text style={{ fontFamily: 'Helvetica', width: '18%', fontSize: fs, fontWeight: 700, textAlign: 'right' }}>R$ {brl(item.subtotal_item)}</Text>
-          </View>
-        ))}
-
-        {/* Padding rows */}
-        {Array.from({ length: padding }).map((_, i) => (
-          <View
-            key={`pad-${i}`}
-            style={{
-              height: 18,
-              borderTopWidth: 0.5,
-              borderTopColor: '#eee',
-              borderTopStyle: 'solid',
-            }}
-          />
+      <View style={styles.observacoes}>
+        <Text style={styles.observacoesTitle}>OBSERVAÇÕES:</Text>
+        {observacoes.map((linha, index) => (
+          <Text key={`${linha}-${index}`} style={styles.observacaoLinha}>
+            {linha}
+          </Text>
         ))}
       </View>
 
-      {/* ── Total ── */}
-      <View style={{
-        borderWidth: 1.5,
-        borderColor: ACCENT,
-        borderStyle: 'solid',
-        paddingVertical: 5,
-        paddingHorizontal: 10,
-        alignItems: 'center',
-        marginBottom: 6,
-      }}>
-        <Text style={{ fontFamily: 'Helvetica', fontSize: isPortrait ? 11 : 9.5, fontWeight: 700, color: ACCENT }}>
-          TOTAL GERAL: R$ {brl(dados.financeiro_servicos.total_liquido)}
-        </Text>
-      </View>
-
-      {/* ── Observations ── */}
-      <View style={{ marginBottom: 8 }}>
-        <Text style={{ fontFamily: 'Helvetica', fontSize: fsSmall, fontWeight: 700, marginBottom: 2 }}>Observações:</Text>
-        {cab.observacoes ? (
-          <Text style={{ fontFamily: 'Helvetica', fontSize: isPortrait ? 7 : 6.5, color: '#444' }}>{cab.observacoes}</Text>
-        ) : (
-          <>
-            <Text style={{ fontFamily: 'Helvetica', fontSize: isPortrait ? 7 : 6.5, color: '#444', marginBottom: 1 }}>
-              1. O prazo de entrega poderá ser alterado caso seja necessário serviço adicional não previsto.
-            </Text>
-            <Text style={{ fontFamily: 'Helvetica', fontSize: isPortrait ? 7 : 6.5, color: '#444', marginBottom: 1 }}>
-              2. Peças substituídas ficam à disposição do cliente por até 30 dias após a retirada.
-            </Text>
-            <Text style={{ fontFamily: 'Helvetica', fontSize: isPortrait ? 7 : 6.5, color: '#444' }}>
-              3. Garantia de 6 meses para os serviços executados conforme contrato.
-            </Text>
-          </>
-        )}
-      </View>
-
-      {/* ── Signatures ── */}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-evenly' }}>
-        <View style={{ alignItems: 'center' }}>
-          <View style={{ borderTopWidth: 1, borderTopColor: '#111', borderTopStyle: 'solid', width: 110, marginBottom: 3 }} />
-          <Text style={{ fontFamily: 'Helvetica', fontSize: fsSmall }}>Assinatura Vendedor</Text>
+      <View style={styles.assinaturas}>
+        <View style={styles.assinaturaBloco}>
+          <View style={styles.assinaturaLinha} />
+          <Text style={styles.assinaturaLabel}>Assinatura Vendedor</Text>
         </View>
-        <View style={{ alignItems: 'center' }}>
-          <View style={{ borderTopWidth: 1, borderTopColor: '#111', borderTopStyle: 'solid', width: 110, marginBottom: 3 }} />
-          <Text style={{ fontFamily: 'Helvetica', fontSize: fsSmall }}>Assinatura Comprador</Text>
+        <View style={styles.assinaturaBloco}>
+          <View style={styles.assinaturaLinha} />
+          <Text style={styles.assinaturaLabel}>Assinatura Comprador</Text>
         </View>
       </View>
     </View>
   );
 }
 
-// ─── Main export ──────────────────────────────────────────────────────────────
-
-interface Props { dados: NotaServicoDetalhes }
-
-const MAX_A5_ROWS = 5;
+interface Props {
+  dados: NotaServicoDetalhes;
+}
 
 export function NotaPDFTemplate({ dados }: Props) {
-  const total = dados.itens_servico.length;
-  const useLandscape = total <= MAX_A5_ROWS;
-
-  if (useLandscape) {
-    return (
-      <Document title={`O.S. ${dados.cabecalho.os_numero} — ${dados.cabecalho.cliente.nome}`}>
-        <Page
-          size="A4"
-          orientation="landscape"
-          style={{ fontFamily: 'Helvetica', fontSize: 8, color: '#111', backgroundColor: '#fff', flexDirection: 'row' }}
-        >
-          <Via dados={dados} maxRows={MAX_A5_ROWS} />
-          {/* Dashed vertical divider */}
-          <View style={{ width: 1, borderLeftWidth: 1, borderLeftColor: '#bbb', borderLeftStyle: 'dashed' }} />
-          <Via dados={dados} maxRows={MAX_A5_ROWS} />
-        </Page>
-      </Document>
-    );
-  }
+  const paginas = chunkItems(dados.itens_servico, MAX_ROWS);
 
   return (
     <Document title={`O.S. ${dados.cabecalho.os_numero} — ${dados.cabecalho.cliente.nome}`}>
-      <Page
-        size="A4"
-        orientation="portrait"
-        style={{ fontFamily: 'Helvetica', fontSize: 8, color: '#111', backgroundColor: '#fff' }}
-      >
-        <Via dados={dados} maxRows={total} isPortrait />
-      </Page>
+      {paginas.map((itens, index) => (
+        <Page
+          key={`${dados.cabecalho.id_nota}-${index}`}
+          size="A4"
+          orientation="landscape"
+          style={styles.page}
+        >
+          <View style={styles.notaContainer}>
+            <Via dados={dados} itens={itens} />
+            <View style={styles.divider} />
+            <Via dados={dados} itens={itens} />
+          </View>
+        </Page>
+      ))}
     </Document>
   );
 }
