@@ -1,5 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { getNotaServicoDetalhes, type NotaServicoDetalhes } from '@/api/supabase/notas';
+import { pdf } from '@react-pdf/renderer';
+import { NotaPDFTemplate } from '@/components/notes/NotaPDFTemplate';
+
+const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -24,13 +29,31 @@ export default function IntakeNoteDetail() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [showPreview, setShowPreview] = useState(false);
+  const [realDetalhes, setRealDetalhes] = useState<NotaServicoDetalhes | null>(null);
+  const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
+
+  useEffect(() => {
+    if (!IS_REAL_AUTH || !id) return;
+    getNotaServicoDetalhes(id).then(setRealDetalhes).catch(() => {});
+  }, [id]);
 
   const note = getNote(id!);
   if (!note) return <div className="text-center py-20 text-muted-foreground">Nota não encontrada.</div>;
 
   const client = getClient(note.clientId);
-  const svcs = getServicesForNote(note.id);
+  const localSvcs = getServicesForNote(note.id);
   const prds = getProductsForNote(note.id);
+  const svcs = IS_REAL_AUTH && realDetalhes
+    ? realDetalhes.itens_servico.map((i) => ({
+        id: i.id_rel,
+        noteId: note.id,
+        name: i.descricao,
+        description: i.detalhes ?? i.descricao,
+        price: i.preco_unitario,
+        quantity: i.quantidade,
+        subtotal: i.subtotal_item,
+      }))
+    : localSvcs;
   const atts = getAttachmentsForNote(note.id);
   const noteInvoices = invoices.filter(inv => inv.noteId === note.id);
   const childNotes = getChildNotes(note.id);
@@ -91,8 +114,42 @@ export default function IntakeNoteDetail() {
           <Button variant="outline" size="sm" onClick={() => setShowPreview(true)} className="gap-1.5">
             <Eye className="w-4 h-4" /> Visualizar O.S.
           </Button>
-          <Button variant="outline" size="sm" onClick={() => toast({ title: 'Imprimir (mock)' })} className="gap-1.5">
-            <Printer className="w-4 h-4" /> Imprimir
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isDownloadingPDF || (IS_REAL_AUTH && !realDetalhes)}
+            className="gap-1.5"
+            onClick={async () => {
+              const source = IS_REAL_AUTH ? realDetalhes : null;
+              if (IS_REAL_AUTH && !source) { toast({ title: 'Dados ainda carregando' }); return; }
+              setIsDownloadingPDF(true);
+              try {
+                if (source?.cabecalho.pdf_url) {
+                  const a = document.createElement('a');
+                  a.href = source.cabecalho.pdf_url;
+                  a.download = `OS-${source.cabecalho.os_numero}.pdf`;
+                  a.target = '_blank';
+                  a.click();
+                } else if (source) {
+                  const blob = await pdf(<NotaPDFTemplate dados={source} />).toBlob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `OS-${note.number}.pdf`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                } else {
+                  toast({ title: 'Imprimir indisponível em modo demo' });
+                }
+              } finally {
+                setIsDownloadingPDF(false);
+              }
+            }}
+          >
+            {isDownloadingPDF
+              ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              : <Printer className="w-4 h-4" />}
+            Imprimir
           </Button>
           <Button variant="outline" size="sm" onClick={() => toast({ title: 'WhatsApp (mock)' })} className="gap-1.5">
             <Share2 className="w-4 h-4" /> WhatsApp

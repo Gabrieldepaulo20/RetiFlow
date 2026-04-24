@@ -212,11 +212,22 @@ export default function OSPreviewModal({ open, onClose, note, client, services, 
               </div>
             </div>
           ) : previewUrl ? (
-            <iframe
-              title={`Preview ${note.number}`}
-              src={previewUrl}
-              className="h-full w-full border-0"
-            />
+            <object
+              data={previewUrl}
+              type="application/pdf"
+              aria-label={`Preview ${note.number}`}
+              className="h-full w-full"
+            >
+              <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+                <FileText className="h-8 w-8 text-muted-foreground" />
+                <div>
+                  <p className="font-medium">O navegador não conseguiu embutir o PDF aqui.</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Use os botões acima para abrir ou baixar o arquivo.
+                  </p>
+                </div>
+              </div>
+            </object>
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               Nenhum PDF disponível para visualização.

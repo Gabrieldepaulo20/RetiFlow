@@ -428,8 +428,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const updateClient = useCallback(async (id: string, data: Partial<Client>): Promise<void> => {
     if (IS_REAL_AUTH) {
-      // Status changes use dedicated lightweight RPCs
-      if ('isActive' in data) {
+      const current = clientById.get(id);
+      // Status-only RPC when isActive actually flipped
+      if ('isActive' in data && current?.isActive !== data.isActive) {
         if (data.isActive) {
           await reativarCliente(id);
         } else {
@@ -437,7 +438,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       }
       // Full upsert persists all fields including address and contacts
-      const current = clientById.get(id);
       if (current) {
         const merged = { ...current, ...data };
         const payload = clientToNovoClientePayload(merged);

@@ -26,6 +26,8 @@ customHeaders:
           font-src 'self' https://fonts.gstatic.com;
           img-src 'self' data: blob: https:;
           connect-src 'self' https://*.supabase.co wss://*.supabase.co https://viacep.com.br https://brasilapi.com.br data: blob:;
+          frame-src 'self' blob: data:;
+          object-src 'self' blob: data:;
           frame-ancestors 'none';
           base-uri 'self';
           form-action 'self'
