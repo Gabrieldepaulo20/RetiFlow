@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   AlertTriangle, CalendarDays, Download, Building2,
-  PlusCircle, RefreshCcw, Share2, FileText, ChevronLeft, Eye, EyeOff,
+  PlusCircle, RefreshCcw, Share2, FileText, ChevronLeft, Eye, EyeOff, Sparkles, ArrowUpFromLine, PencilLine,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -51,6 +51,7 @@ interface PreviewNote {
   total: number;
   updatedAt: string;
   itens: Array<{
+    id: string;
     descricao: string;
     quantidade: number;
     preco_unitario: number;
@@ -58,6 +59,19 @@ interface PreviewNote {
     subtotal: number;
   }>;
 }
+
+const toMoney = (value: number) =>
+  value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const clampPercent = (value: number) => Math.min(100, Math.max(0, value));
+
+const recalcItemSubtotal = (item: PreviewNote['itens'][number]) => {
+  const bruto = Math.max(0, item.quantidade) * Math.max(0, item.preco_unitario);
+  return bruto * (1 - clampPercent(item.desconto_porcentagem) / 100);
+};
+
+const recalcNoteTotal = (items: PreviewNote['itens']) =>
+  items.reduce((sum, item) => sum + recalcItemSubtotal(item), 0);
 
 /* ── Dual-ring spinner ─────────────────────────────────────────────────── */
 function DualSpinner() {
@@ -105,6 +119,7 @@ export default function MonthlyClosing() {
   const [previewNotes, setPreviewNotes] = useState<PreviewNote[]>([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [descontos, setDescontos] = useState<Record<string, number>>({});
+  const [editingItems, setEditingItems] = useState<Record<string, boolean>>({});
 
   // Generation
   const [generating, setGenerating] = useState(false);
@@ -161,17 +176,26 @@ export default function MonthlyClosing() {
         total: nota.totalAmount,
         updatedAt: nota.updatedAt,
         itens: det?.itens_servico.map((i) => ({
+          id: i.id_rel,
           descricao: i.descricao,
           quantidade: i.quantidade,
           preco_unitario: i.preco_unitario,
           desconto_porcentagem: i.desconto_porcentagem,
           subtotal: i.subtotal_item,
-        })) ?? [{ descricao: 'Serviços realizados', quantidade: 1, preco_unitario: nota.totalAmount, desconto_porcentagem: 0, subtotal: nota.totalAmount }],
+        })) ?? [{
+          id: `${nota.id}-fallback`,
+          descricao: 'Serviços realizados',
+          quantidade: 1,
+          preco_unitario: nota.totalAmount,
+          desconto_porcentagem: 0,
+          subtotal: nota.totalAmount,
+        }],
       });
     }
 
     setPreviewNotes(resultado);
     setDescontos({});
+    setEditingItems({});
     setMode('preview');
     setLoadingPreview(false);
   }, [selClientId, selMonth, selYear, notes, toast]);
@@ -180,12 +204,37 @@ export default function MonthlyClosing() {
   const totals = useMemo(() => {
     return previewNotes.map((n) => {
       const disc = descontos[n.id] ?? 0;
-      return { id: n.id, totalComDesconto: n.total * (1 - disc / 100) };
+      return { id: n.id, totalBruto: n.total, totalComDesconto: n.total * (1 - disc / 100) };
     });
   }, [previewNotes, descontos]);
 
   const grandTotal = useMemo(() => totals.reduce((a, b) => a + b.totalComDesconto, 0), [totals]);
-  const grandTotalOriginal = useMemo(() => previewNotes.reduce((a, n) => a + n.total, 0), [previewNotes]);
+  const grandTotalOriginal = useMemo(() => totals.reduce((a, n) => a + n.totalBruto, 0), [totals]);
+
+  const updatePreviewItem = useCallback((
+    noteId: string,
+    itemId: string,
+    field: 'descricao' | 'quantidade' | 'preco_unitario' | 'desconto_porcentagem',
+    value: string,
+  ) => {
+    setPreviewNotes((current) => current.map((note) => {
+      if (note.id !== noteId) return note;
+      const itens = note.itens.map((item) => {
+        if (item.id !== itemId) return item;
+        if (field === 'descricao') {
+          return { ...item, descricao: value };
+        }
+        const numeric = parseFloat(value.replace(',', '.'));
+        const safe = Number.isFinite(numeric) ? numeric : 0;
+        const nextItem = {
+          ...item,
+          [field]: field === 'desconto_porcentagem' ? clampPercent(safe) : Math.max(0, safe),
+        };
+        return { ...nextItem, subtotal: recalcItemSubtotal(nextItem) };
+      });
+      return { ...note, itens, total: recalcNoteTotal(itens) };
+    }));
+  }, []);
 
   /* ── Gerar fechamento ── */
   const handleGerar = useCallback(async () => {
@@ -200,15 +249,16 @@ export default function MonthlyClosing() {
 
       const notasDados: FechamentoNota[] = previewNotes.map((n) => {
         const disc = descontos[n.id] ?? 0;
+        const totalOriginalNota = recalcNoteTotal(n.itens);
         return {
           id: n.id,
           os: n.os,
           veiculo: n.veiculo,
           placa: n.placa,
           itens: n.itens,
-          total_original: n.total,
+          total_original: totalOriginalNota,
           desconto_nota: disc,
-          total_com_desconto: n.total * (1 - disc / 100),
+          total_com_desconto: totalOriginalNota * (1 - disc / 100),
         };
       });
 
@@ -358,7 +408,7 @@ export default function MonthlyClosing() {
               </div>
               <Button onClick={handleBuildPreview} disabled={loadingPreview || !selClientId}>
                 {loadingPreview ? <RefreshCcw className="w-4 h-4 mr-2 animate-spin" /> : <Eye className="w-4 h-4 mr-2" />}
-                Visualizar e Gerar
+                Visualizar
               </Button>
             </div>
           </CardContent>
@@ -446,7 +496,7 @@ export default function MonthlyClosing() {
   const periodo = `${MONTHS[parseInt(selMonth) - 1]} ${selYear}`;
 
   return (
-    <div className="max-w-3xl mx-auto pb-12 space-y-5">
+    <div className="max-w-6xl mx-auto pb-12 space-y-5 min-w-0">
       {/* Header */}
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => setMode('list')} className="shrink-0" disabled={generating}>
@@ -466,98 +516,263 @@ export default function MonthlyClosing() {
         </div>
       )}
 
-      {/* Notes preview */}
-      {previewNotes.map((nota) => {
-        const disc = descontos[nota.id] ?? 0;
-        const totalComDesc = nota.total * (1 - disc / 100);
-        return (
-          <Card key={nota.id} className="overflow-hidden">
-            <div className="bg-muted/40 border-b border-border/50 px-4 py-3 flex items-center justify-between">
-              <div>
-                <p className="font-semibold text-sm">{nota.os}</p>
-                <p className="text-xs text-muted-foreground">{nota.veiculo}{nota.placa ? ` · ${nota.placa}` : ''}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-muted-foreground">Total</p>
-                <p className="font-bold text-primary text-sm">R$ {totalComDesc.toFixed(2)}</p>
-              </div>
-            </div>
-            <CardContent className="p-0">
-              {/* Items table */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-border/40 text-muted-foreground">
-                      <th className="text-left px-4 py-2 font-medium">Descrição</th>
-                      <th className="text-center px-3 py-2 font-medium w-12">Qtd</th>
-                      <th className="text-right px-3 py-2 font-medium w-20">Unit.</th>
-                      <th className="text-right px-3 py-2 font-medium w-20">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {nota.itens.map((item, i) => (
-                      <tr key={i} className="border-b border-border/20 hover:bg-muted/20">
-                        <td className="px-4 py-2">{item.descricao}</td>
-                        <td className="text-center px-3 py-2">{item.quantidade}</td>
-                        <td className="text-right px-3 py-2">R$ {item.preco_unitario.toFixed(2)}</td>
-                        <td className="text-right px-3 py-2 font-medium">R$ {item.subtotal.toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {/* Discount input */}
-              <div className="px-4 py-3 bg-muted/20 border-t border-border/30 flex items-center justify-between gap-4">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>Desconto aplicado nesta O.S. (%):</span>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="1"
-                    value={descontos[nota.id] ?? ''}
-                    onChange={(e) => setDescontos((prev) => ({ ...prev, [nota.id]: parseFloat(e.target.value) || 0 }))}
-                    placeholder="0"
-                    className="w-20 h-7 text-xs text-center"
-                  />
-                  <span>%</span>
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] min-w-0 items-start">
+        <div className="min-w-0 space-y-4">
+          <Card className="border-primary/20 bg-gradient-to-br from-primary/5 via-background to-background overflow-hidden">
+            <CardContent className="p-5 sm:p-6">
+              <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                <div className="space-y-2 min-w-0">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-background/80 px-3 py-1 text-xs font-medium text-primary">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Prévia local do fechamento
+                  </div>
+                  <h2 className="text-2xl font-display font-bold leading-tight">
+                    Revise, ajuste os serviços e gere quando estiver tudo certo
+                  </h2>
+                  <p className="text-sm text-muted-foreground max-w-2xl">
+                    A visualização abaixo ainda está só no front-end. Você pode editar valores, descontos e itens do fechamento antes de realmente gerar o registro.
+                  </p>
                 </div>
-                <div className="text-right text-xs">
-                  {disc > 0 && <p className="text-muted-foreground">Bruto: R$ {nota.total.toFixed(2)} · −{disc}%</p>}
-                  <p className="font-bold">R$ {totalComDesc.toFixed(2)}</p>
+
+                <div className="rounded-2xl border bg-background/90 p-4 shadow-sm min-w-[260px]">
+                  <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Resumo</p>
+                  <p className="mt-2 text-sm text-muted-foreground">{previewNotes.length} O.S. · {periodo}</p>
+                  <p className="mt-1 text-3xl font-bold text-primary">R$ {toMoney(grandTotal)}</p>
+                  {grandTotalOriginal !== grandTotal && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Bruto: R$ {toMoney(grandTotalOriginal)} · Ajustes: −R$ {toMoney(grandTotalOriginal - grandTotal)}
+                    </p>
+                  )}
+                  <Button
+                    onClick={handleGerar}
+                    disabled={generating || previewNotes.length === 0}
+                    className="mt-4 h-12 w-full text-sm font-semibold"
+                    size="lg"
+                  >
+                    {generating ? (
+                      <RefreshCcw className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <ArrowUpFromLine className="mr-2 h-4 w-4" />
+                    )}
+                    Gerar Fechamento
+                  </Button>
                 </div>
               </div>
             </CardContent>
           </Card>
-        );
-      })}
 
-      {/* Grand total + actions */}
-      <div className="sticky bottom-4 z-10">
-        <Card className="shadow-md">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <div>
-                <p className="text-xs text-muted-foreground">{previewNotes.length} O.S. · {periodo}</p>
-                {grandTotalOriginal !== grandTotal && (
+          <Card className="overflow-hidden">
+            <div className="border-b bg-muted/30 px-4 py-3 sm:px-5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="font-semibold text-sm">Ordens de serviço incluídas</p>
                   <p className="text-xs text-muted-foreground">
-                    Bruto: R$ {grandTotalOriginal.toFixed(2)} · Desc: −R$ {(grandTotalOriginal - grandTotal).toFixed(2)}
+                    Todas ficam listadas em sequência. Você pode rolar e editar serviço por serviço antes de gerar.
                   </p>
-                )}
-                <p className="text-xl font-bold text-primary">R$ {grandTotal.toFixed(2)}</p>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setMode('list')} disabled={generating}>
-                  Cancelar
-                </Button>
-                <Button onClick={handleGerar} disabled={generating} className="font-semibold px-6">
-                  {generating ? <RefreshCcw className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
-                  Gerar Fechamento
-                </Button>
+                </div>
+                <Badge variant="secondary" className="text-xs">{previewNotes.length} O.S.</Badge>
               </div>
             </div>
-          </CardContent>
-        </Card>
+
+            <CardContent className="p-0">
+              <div className="max-h-[68vh] overflow-y-auto">
+                <div className="space-y-4 p-4 sm:p-5">
+                  {previewNotes.map((nota) => {
+                    const disc = descontos[nota.id] ?? 0;
+                    const totalBrutoNota = nota.total;
+                    const totalComDesc = totalBrutoNota * (1 - disc / 100);
+                    const editing = editingItems[nota.id] ?? true;
+
+                    return (
+                      <Card key={nota.id} className="overflow-hidden border-border/70">
+                        <div className="bg-muted/40 border-b border-border/50 px-4 py-3 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-semibold text-sm">{nota.os}</p>
+                              <Badge variant="outline" className="text-[10px]">Rascunho editável</Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {nota.veiculo}{nota.placa ? ` · ${nota.placa}` : ''} · Atualizada em {new Date(nota.updatedAt).toLocaleDateString('pt-BR')}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8"
+                              onClick={() => setEditingItems((prev) => ({ ...prev, [nota.id]: !editing }))}
+                            >
+                              {editing ? <EyeOff className="mr-1.5 h-3.5 w-3.5" /> : <PencilLine className="mr-1.5 h-3.5 w-3.5" />}
+                              {editing ? 'Recolher edição' : 'Editar itens'}
+                            </Button>
+                            <div className="text-right">
+                              <p className="text-[11px] text-muted-foreground">Total da O.S.</p>
+                              <p className="font-bold text-primary text-sm">R$ {toMoney(totalComDesc)}</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <CardContent className="p-0">
+                          <div className="overflow-x-auto">
+                            <table className="w-full min-w-[860px] text-xs">
+                              <thead>
+                                <tr className="border-b border-border/40 text-muted-foreground">
+                                  <th className="text-left px-4 py-2 font-medium">Descrição</th>
+                                  <th className="text-center px-3 py-2 font-medium w-[88px]">Qtd</th>
+                                  <th className="text-right px-3 py-2 font-medium w-[120px]">Unit.</th>
+                                  <th className="text-right px-3 py-2 font-medium w-[110px]">Desc. item</th>
+                                  <th className="text-right px-3 py-2 font-medium w-[120px]">Subtotal</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {nota.itens.map((item, i) => (
+                                  <tr key={item.id} className="border-b border-border/20 align-top hover:bg-muted/20">
+                                    <td className="px-4 py-2">
+                                      {editing ? (
+                                        <Input
+                                          value={item.descricao}
+                                          onChange={(e) => updatePreviewItem(nota.id, item.id, 'descricao', e.target.value)}
+                                          className="h-8 text-xs"
+                                        />
+                                      ) : (
+                                        <span>{item.descricao}</span>
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      {editing ? (
+                                        <Input
+                                          type="number"
+                                          min="0"
+                                          step="1"
+                                          value={item.quantidade}
+                                          onChange={(e) => updatePreviewItem(nota.id, item.id, 'quantidade', e.target.value)}
+                                          className="h-8 text-xs text-center"
+                                        />
+                                      ) : (
+                                        <p className="text-center">{item.quantidade}</p>
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      {editing ? (
+                                        <Input
+                                          type="number"
+                                          min="0"
+                                          step="0.01"
+                                          value={item.preco_unitario}
+                                          onChange={(e) => updatePreviewItem(nota.id, item.id, 'preco_unitario', e.target.value)}
+                                          className="h-8 text-xs text-right"
+                                        />
+                                      ) : (
+                                        <p className="text-right">R$ {toMoney(item.preco_unitario)}</p>
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      {editing ? (
+                                        <Input
+                                          type="number"
+                                          min="0"
+                                          max="100"
+                                          step="0.01"
+                                          value={item.desconto_porcentagem}
+                                          onChange={(e) => updatePreviewItem(nota.id, item.id, 'desconto_porcentagem', e.target.value)}
+                                          className="h-8 text-xs text-right"
+                                        />
+                                      ) : (
+                                        <p className="text-right">{item.desconto_porcentagem > 0 ? `${item.desconto_porcentagem}%` : '—'}</p>
+                                      )}
+                                    </td>
+                                    <td className="text-right px-3 py-2 font-medium">R$ {toMoney(item.subtotal)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          <div className="px-4 py-3 bg-muted/20 border-t border-border/30 flex items-center justify-between gap-4 flex-wrap">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                              <span>Desconto final desta O.S.:</span>
+                              <Input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="1"
+                                value={descontos[nota.id] ?? ''}
+                                onChange={(e) => setDescontos((prev) => ({ ...prev, [nota.id]: parseFloat(e.target.value) || 0 }))}
+                                placeholder="0"
+                                className="w-20 h-8 text-xs text-center"
+                              />
+                              <span>%</span>
+                            </div>
+                            <div className="text-right text-xs">
+                              {disc > 0 && (
+                                <p className="text-muted-foreground">
+                                  Base editada: R$ {toMoney(totalBrutoNota)} · −{disc}%
+                                </p>
+                              )}
+                              <p className="font-bold">R$ {toMoney(totalComDesc)}</p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="lg:sticky lg:top-4 space-y-4">
+          <Card className="shadow-sm">
+            <CardContent className="p-5">
+              <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Ação final</p>
+              <h3 className="mt-2 text-lg font-semibold">Gerar fechamento definitivo</h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Quando clicar em gerar, o sistema usa exatamente os valores mostrados nesta prévia, inclusive os ajustes feitos nos serviços.
+              </p>
+              <Button
+                onClick={handleGerar}
+                disabled={generating || previewNotes.length === 0}
+                className="mt-5 h-14 w-full text-base font-semibold"
+                size="lg"
+              >
+                {generating ? (
+                  <RefreshCcw className="mr-2 h-5 w-5 animate-spin" />
+                ) : (
+                  <ArrowUpFromLine className="mr-2 h-5 w-5" />
+                )}
+                Gerar
+              </Button>
+              <Button variant="outline" onClick={() => setMode('list')} disabled={generating} className="mt-2 w-full">
+                Voltar sem gerar
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-sm">
+            <CardContent className="p-5 space-y-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Resumo rápido</p>
+                <p className="mt-1 text-sm font-medium">{client?.name ?? '—'}</p>
+                <p className="text-sm text-muted-foreground">{periodo}</p>
+              </div>
+              <div className="rounded-xl bg-muted/30 p-4">
+                <p className="text-xs text-muted-foreground">{previewNotes.length} O.S. selecionadas</p>
+                <p className="mt-1 text-2xl font-bold text-primary">R$ {toMoney(grandTotal)}</p>
+                {grandTotalOriginal !== grandTotal && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Antes dos ajustes: R$ {toMoney(grandTotalOriginal)}
+                  </p>
+                )}
+              </div>
+              <div className="text-xs text-muted-foreground space-y-1">
+                <p>1. Visualizar só monta a prévia.</p>
+                <p>2. Editar itens aqui não altera o banco ainda.</p>
+                <p>3. Gerar usa o rascunho atual para montar o fechamento.</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

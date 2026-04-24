@@ -155,7 +155,7 @@ export default function PayableQuickForm({
     setAttachment(event.target.files?.[0] ?? null);
   }
 
-  function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: FormEvent) {
     event.preventDefault();
 
     const title = form.title.trim();
@@ -200,7 +200,7 @@ export default function PayableQuickForm({
     const recurrenceIndex = form.isInstallment ? Math.max(1, Number(form.recurrenceIndex) || 1) : undefined;
     const recurrence = form.isInstallment && form.recurrence === 'NENHUMA' ? 'MENSAL' : form.recurrence;
 
-    const payable = addPayable({
+    const payable = await addPayable({
       title,
       supplierId: matchedSupplier?.id,
       supplierName,

@@ -14,8 +14,11 @@ import {
   NoteStatus,
   PayableAttachment,
   PayableCategory,
+  PayableEntrySource,
   PayableHistory,
   PayableSupplier,
+  PaymentMethod,
+  RecurrenceType,
 } from '@/types';
 import * as seed from '@/data/seed';
 import { debouncedSaveToStorage, loadStateFromStorage, type PersistedData } from '@/services/storage/dataPersistence';
@@ -39,6 +42,90 @@ import {
   supabaseToIntakeNote,
   buildStatusIdMap,
 } from '@/api/supabase/notas';
+import {
+  getContasPagar,
+  insertContaPagar,
+  updateContaPagar,
+  registrarPagamento,
+  cancelarContaPagar,
+  excluirContaPagar,
+  type ContaPagar,
+  type InsertContaPagarPayload,
+} from '@/api/supabase/contas-pagar';
+import { getCategorias, type Categoria } from '@/api/supabase/categorias';
+import { getFornecedores, type Fornecedor } from '@/api/supabase/fornecedores';
+import { getLogs, type LogAtividade } from '@/api/supabase/logs';
+
+// ── Supabase adapters ─────────────────────────────────────────────────────────
+
+function supabaseToAccountPayable(row: ContaPagar): AccountPayable {
+  return {
+    id: row.id_contas_pagar,
+    title: row.titulo,
+    supplierId: row.fornecedor?.id,
+    supplierName: row.nome_fornecedor ?? row.fornecedor?.nome ?? undefined,
+    categoryId: row.categoria.id,
+    docNumber: row.numero_documento ?? undefined,
+    issueDate: row.data_emissao ?? undefined,
+    dueDate: row.data_vencimento,
+    originalAmount: row.valor_original,
+    interest: row.juros > 0 ? row.juros : undefined,
+    discount: row.desconto > 0 ? row.desconto : undefined,
+    finalAmount: row.valor_final,
+    paidAmount: row.valor_pago ?? undefined,
+    status: row.status,
+    paymentMethod: (row.forma_pagamento_prevista as PaymentMethod) ?? undefined,
+    paidAt: row.pago_em ?? undefined,
+    paidWith: (row.pago_com as PaymentMethod) ?? undefined,
+    recurrence: (row.recorrencia as RecurrenceType) ?? 'NENHUMA',
+    recurrenceIndex: row.indice_recorrencia ?? undefined,
+    totalInstallments: row.total_parcelas ?? undefined,
+    isUrgent: row.urgente,
+    deletedAt: row.excluido_em ?? undefined,
+    entrySource: (row.origem_lancamento as PayableEntrySource) ?? 'MANUAL',
+    competencyDate: row.data_competencia ?? undefined,
+    paymentExecutionStatus: 'MANUAL',
+    reconciliationStatus: 'PENDENTE',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    createdByUserId: '',
+  };
+}
+
+function supabaseToPayableCategory(cat: Categoria): PayableCategory {
+  return {
+    id: cat.id_categorias,
+    name: cat.nome,
+    color: cat.cor,
+    icon: cat.icone,
+    isActive: cat.ativo,
+    createdAt: cat.created_at,
+  };
+}
+
+function supabaseToPayableSupplier(f: Fornecedor): PayableSupplier {
+  return {
+    id: f.id_fornecedores,
+    name: f.nome,
+    tradeName: f.nome_fantasia ?? undefined,
+    docType: f.tipo_documento ?? undefined,
+    docNumber: f.documento ?? undefined,
+    phone: f.telefone ?? undefined,
+    email: f.email ?? undefined,
+    isActive: f.ativo,
+    createdAt: f.created_at,
+  };
+}
+
+function supabaseToActivityLog(log: LogAtividade): ActivityLog {
+  return {
+    id: String(log.id_log),
+    noteId: log.entidade_id || undefined,
+    message: log.descricao,
+    userId: log.usuario?.id ?? '',
+    createdAt: log.created_at,
+  };
+}
 
 export interface NotaItemDB {
   descricao: string;
@@ -97,7 +184,7 @@ interface DataCtx {
   payableSuppliers: PayableSupplier[];
   payableAttachments: PayableAttachment[];
   payableHistory: PayableHistory[];
-  addPayable: (data: Omit<AccountPayable, 'id' | 'createdAt' | 'updatedAt'>) => AccountPayable;
+  addPayable: (data: Omit<AccountPayable, 'id' | 'createdAt' | 'updatedAt'>) => Promise<AccountPayable>;
   updatePayable: (id: string, data: Partial<AccountPayable>) => void;
   getPayable: (id: string) => AccountPayable | undefined;
   addPayableAttachment: (data: Omit<PayableAttachment, 'id' | 'createdAt'>) => PayableAttachment;
@@ -156,15 +243,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   // ── Contas a Pagar state ──────────────────────────────────────────────────
   const [payables, setPayables] = useState<AccountPayable[]>(init.payables);
-  const [payableCategories] = useState(seed.payableCategories);
-  const [payableSuppliers] = useState(seed.payableSuppliers);
+  const [payableCategories, setPayableCategories] = useState<PayableCategory[]>(seed.payableCategories);
+  const [payableSuppliers, setPayableSuppliers] = useState<PayableSupplier[]>(seed.payableSuppliers);
   const [payableAttachments, setPayableAttachments] = useState<PayableAttachment[]>(init.payableAttachments);
   const [payableHistory, setPayableHistory] = useState<PayableHistory[]>(init.payableHistory);
   const [emailSuggestions, setEmailSuggestions] = useState<EmailSuggestion[]>(init.emailSuggestions);
 
   const statusDbIdRef = useRef<Map<NoteStatus, number>>(new Map());
 
-  // Em modo real, carrega clientes, notas e mapa de status do Supabase na montagem.
+  // Em modo real, carrega dados do Supabase na montagem.
   useEffect(() => {
     if (!IS_REAL_AUTH) return;
     getClientes({ p_limite: 500 }).then(({ dados }) => {
@@ -177,6 +264,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }).catch(() => {});
     getStatusNotas({ p_tipo_nota: 'Serviço' }).then((statuses) => {
       statusDbIdRef.current = buildStatusIdMap(statuses);
+    }).catch(() => {});
+    getContasPagar({ p_limite: 500 }).then(({ dados }) => {
+      setPayables(dados.map(supabaseToAccountPayable));
+    }).catch(() => {});
+    getCategorias(true).then((cats) => {
+      if (cats.length > 0) setPayableCategories(cats.map(supabaseToPayableCategory));
+    }).catch(() => {});
+    getFornecedores({ p_ativo: true, p_limite: 200 }).then(({ dados }) => {
+      if (dados.length > 0) setPayableSuppliers(dados.map(supabaseToPayableSupplier));
+    }).catch(() => {});
+    getLogs({ p_limite: 50 }).then(({ dados }) => {
+      if (dados.length > 0) setActivities(dados.map(supabaseToActivityLog));
     }).catch(() => {});
   }, []);
 
@@ -599,7 +698,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   // ── Contas a Pagar callbacks ──────────────────────────────────────────────
 
-  const addPayable = useCallback((data: Omit<AccountPayable, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const addPayable = useCallback(async (data: Omit<AccountPayable, 'id' | 'createdAt' | 'updatedAt'>): Promise<AccountPayable> => {
     const now = new Date().toISOString();
     const competencyDate = data.competencyDate ?? `${data.dueDate.slice(0, 7)}-01`;
     const newPayable: AccountPayable = {
@@ -612,6 +711,40 @@ export function DataProvider({ children }: { children: ReactNode }) {
       createdAt: now,
       updatedAt: now,
     };
+    if (IS_REAL_AUTH) {
+      try {
+        const dbId = await insertContaPagar({
+          p_titulo: newPayable.title,
+          p_fk_categorias: newPayable.categoryId,
+          p_data_vencimento: newPayable.dueDate,
+          p_valor_original: newPayable.originalAmount,
+          p_fk_fornecedores: newPayable.supplierId,
+          p_nome_fornecedor: newPayable.supplierName,
+          p_numero_documento: newPayable.docNumber,
+          p_data_emissao: newPayable.issueDate,
+          p_juros: newPayable.interest,
+          p_desconto: newPayable.discount,
+          p_forma_pagamento_prevista: newPayable.paymentMethod,
+          p_origem_lancamento: newPayable.entrySource,
+          p_data_competencia: competencyDate,
+          p_recorrencia: newPayable.recurrence,
+          p_indice_recorrencia: newPayable.recurrenceIndex,
+          p_total_parcelas: newPayable.totalInstallments,
+          p_observacoes: newPayable.observations,
+          p_urgente: newPayable.isUrgent,
+        });
+        newPayable.id = dbId;
+        if (newPayable.status === 'PAGO' && newPayable.paidAmount) {
+          await registrarPagamento({
+            p_id_contas_pagar: dbId,
+            p_valor_pago: newPayable.paidAmount,
+            p_pago_com: newPayable.paidWith,
+          });
+        }
+      } catch (err) {
+        console.error('[addPayable]', err);
+      }
+    }
     setPayables((prev) => [newPayable, ...prev]);
     bumpDataVersion();
     addActivity(`Conta a pagar criada: ${newPayable.title}`);
@@ -619,11 +752,46 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [addActivity, bumpDataVersion]);
 
   const updatePayable = useCallback((id: string, data: Partial<AccountPayable>) => {
+    if (IS_REAL_AUTH) {
+      const current = payableById.get(id);
+      void (async () => {
+        try {
+          if ('deletedAt' in data) {
+            await excluirContaPagar(id);
+          } else if (data.status === 'CANCELADO') {
+            await cancelarContaPagar(id);
+          } else if (data.paidAmount !== undefined) {
+            const prevPaid = current?.paidAmount ?? 0;
+            const increment = Number((data.paidAmount - prevPaid).toFixed(2));
+            if (increment > 0) {
+              await registrarPagamento({
+                p_id_contas_pagar: id,
+                p_valor_pago: increment,
+                p_pago_com: data.paidWith,
+                p_observacoes_pagamento: data.paymentNotes,
+              });
+            }
+          } else {
+            const payload: Partial<InsertContaPagarPayload> = {};
+            if (data.title !== undefined) payload.p_titulo = data.title;
+            if (data.categoryId !== undefined) payload.p_fk_categorias = data.categoryId;
+            if (data.dueDate !== undefined) payload.p_data_vencimento = data.dueDate;
+            if (data.isUrgent !== undefined) payload.p_urgente = data.isUrgent;
+            if (data.observations !== undefined) payload.p_observacoes = data.observations;
+            if (Object.keys(payload).length > 0) {
+              await updateContaPagar(id, payload);
+            }
+          }
+        } catch (err) {
+          console.error('[updatePayable]', err);
+        }
+      })();
+    }
     setPayables((prev) =>
       prev.map((p) => (p.id === id ? { ...p, ...data, updatedAt: new Date().toISOString() } : p)),
     );
     bumpDataVersion();
-  }, [bumpDataVersion]);
+  }, [bumpDataVersion, payableById]);
 
   const getPayable = useCallback((id: string) => payableById.get(id), [payableById]);
 
@@ -672,8 +840,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const suggestion = emailSuggestions.find((s) => s.id === id);
     if (!suggestion) return null;
     const now = new Date().toISOString();
+    const localId = uid();
     const newPayable: AccountPayable = {
-      id: uid(),
+      id: localId,
       title: suggestion.suggestedTitle,
       supplierName: suggestion.suggestedSupplierName,
       categoryId: suggestion.suggestedCategoryId,
@@ -689,6 +858,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
       updatedAt: now,
       createdByUserId: 'user-2',
     };
+    if (IS_REAL_AUTH) {
+      insertContaPagar({
+        p_titulo: newPayable.title,
+        p_fk_categorias: newPayable.categoryId,
+        p_data_vencimento: newPayable.dueDate,
+        p_valor_original: newPayable.originalAmount,
+        p_nome_fornecedor: newPayable.supplierName,
+        p_forma_pagamento_prevista: newPayable.paymentMethod,
+        p_origem_lancamento: 'EMAIL_IMPORT',
+        p_recorrencia: 'NENHUMA',
+        p_urgente: false,
+      }).then((dbId) => {
+        setPayables((prev) => prev.map((p) => p.id === localId ? { ...p, id: dbId } : p));
+      }).catch((err) => console.error('[acceptEmailSuggestion]', err));
+    }
     setPayables((prev) => [newPayable, ...prev]);
     setEmailSuggestions((prev) => prev.map((s) => s.id === id ? { ...s, status: 'ACCEPTED' } : s));
     bumpDataVersion();

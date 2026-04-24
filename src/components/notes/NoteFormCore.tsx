@@ -36,6 +36,7 @@ import { formatNoteNumber, normalizeNoteNumber } from '@/lib/noteNumbers';
 import { pdf } from '@react-pdf/renderer';
 import { NotaPDFTemplate } from '@/components/notes/NotaPDFTemplate';
 import { getNotaServicoDetalhes, uploadNotaPDF, updateNotaPdfUrl } from '@/api/supabase/notas';
+import { getTiposDeMotor, getServicosItens } from '@/api/supabase/catalogo';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
@@ -202,6 +203,8 @@ export default function NoteFormCore({
   const [osNumber, setOsNumber] = useState(() => formatNoteNumber(noteCounter));
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [itemsLoadingFromDB, setItemsLoadingFromDB] = useState(false);
+  const [engineTypeCatalog, setEngineTypeCatalog] = useState<string[]>([]);
+  const [serviceCatalog, setServiceCatalog] = useState<string[]>([]);
 
   /* ── Populate form when editing an existing note ── */
   useEffect(() => {
@@ -285,6 +288,17 @@ export default function NoteFormCore({
       .finally(() => { if (!cancelled) setItemsLoadingFromDB(false); });
     return () => { cancelled = true; };
   }, [editingNote?.id]);
+
+  /* ── Load catalog from Supabase (real mode only) ── */
+  useEffect(() => {
+    if (!IS_REAL_AUTH) return;
+    getTiposDeMotor().then((tipos) => {
+      setEngineTypeCatalog(tipos.map((t) => t.tipo));
+    }).catch(() => {});
+    getServicosItens().then((itens) => {
+      setServiceCatalog(itens.map((i) => i.nome));
+    }).catch(() => {});
+  }, []);
 
   /* ── Keep osNumber in sync with noteCounter when not editing ── */
   useEffect(() => {
@@ -820,10 +834,14 @@ export default function NoteFormCore({
         </Field>
         <Field label="Tipo de Motor">
           <Input
+            list="engine-type-catalog"
             value={engineType}
             onChange={(e) => setEngineType(e.target.value)}
             placeholder="Ex: Cabeçote"
           />
+          <datalist id="engine-type-catalog">
+            {engineTypeCatalog.map((tipo) => <option key={tipo} value={tipo} />)}
+          </datalist>
         </Field>
         <Field label="Placa">
           <Input
@@ -871,6 +889,12 @@ export default function NoteFormCore({
         </Button>
       </div>
 
+      {serviceCatalog.length > 0 && (
+        <datalist id="service-catalog">
+          {serviceCatalog.map((nome) => <option key={nome} value={nome} />)}
+        </datalist>
+      )}
+
       {/* ── Column headers (desktop) ── */}
       <div className="hidden sm:grid sm:grid-cols-[1fr_52px_108px_60px_96px_60px] gap-2 px-1 text-[10px] uppercase font-semibold text-muted-foreground tracking-wider mb-1">
         <span>Descrição</span>
@@ -902,12 +926,12 @@ export default function NoteFormCore({
             <div key={item.id}>
               {/* ── Desktop row ── */}
               <div className="hidden sm:grid sm:grid-cols-[1fr_52px_108px_60px_96px_60px] gap-2 items-start">
-                <Textarea
+                <Input
+                  list={serviceCatalog.length > 0 ? 'service-catalog' : undefined}
                   value={item.description}
                   onChange={(e) => updateItem(item.id, 'description', e.target.value)}
                   placeholder={noteType === 'COMPRA' ? 'Nome da peça / produto' : 'Descrição do serviço'}
-                  className="min-h-[36px] resize-none text-sm py-2 leading-snug"
-                  rows={1}
+                  className="h-9 text-sm"
                 />
                 <Input
                   type="number"

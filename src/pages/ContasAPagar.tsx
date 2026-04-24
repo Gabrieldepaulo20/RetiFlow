@@ -190,8 +190,8 @@ export default function ContasAPagar() {
     setDialogMode('edit');
   }
 
-  function handleDuplicate(payable: AccountPayable) {
-    const created = addPayable({
+  async function handleDuplicate(payable: AccountPayable) {
+    const created = await addPayable({
       title: `${payable.title} (cópia)`,
       supplierId: payable.supplierId,
       supplierName: payable.supplierName,
