@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
-import { pdf } from '@react-pdf/renderer';
+import { useMemo, useState } from 'react';
+import { PDFViewer, pdf } from '@react-pdf/renderer';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { IntakeNote, IntakeService, IntakeProduct } from '@/types';
 import { Client } from '@/types';
-import { Printer, Download, Share2, X, FileText } from 'lucide-react';
+import { Printer, Download, Share2, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { buildCustomerAddressLabel } from '@/services/domain/customers';
 import { NotaPDFTemplate } from '@/components/notes/NotaPDFTemplate';
@@ -98,78 +98,59 @@ function buildPdfDados(
 
 export default function OSPreviewModal({ open, onClose, note, client, services, products }: OSPreviewModalProps) {
   const { toast } = useToast();
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [loadingPreview, setLoadingPreview] = useState(false);
-  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [busyAction, setBusyAction] = useState<'download' | 'print' | null>(null);
 
   const pdfDados = useMemo(
     () => buildPdfDados(note, client, services, products),
     [note, client, services, products],
   );
+  const documentNode = useMemo(() => <NotaPDFTemplate dados={pdfDados} />, [pdfDados]);
 
-  useEffect(() => {
-    if (!open) return;
-
-    let cancelled = false;
-    setLoadingPreview(true);
-    setPreviewError(null);
-
-    void pdf(<NotaPDFTemplate dados={pdfDados} />)
-      .toBlob()
-      .then((blob) => {
-        if (cancelled) return;
-        const nextUrl = URL.createObjectURL(blob);
-        setPreviewUrl((current) => {
-          if (current) URL.revokeObjectURL(current);
-          return nextUrl;
-        });
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setPreviewError(error instanceof Error ? error.message : 'Não foi possível montar o preview da O.S.');
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingPreview(false);
-      });
-
-    return () => { cancelled = true; };
-  }, [open, pdfDados]);
-
-  useEffect(() => {
-    if (!open && previewUrl) {
-      URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(null);
-    }
-  }, [open, previewUrl]);
-
-  useEffect(() => {
-    return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-    };
-  }, [previewUrl]);
-
-  const handleDownload = () => {
-    if (!previewUrl) {
-      toast({ title: 'PDF ainda não está pronto', variant: 'destructive' });
-      return;
-    }
-    const link = document.createElement('a');
-    link.href = previewUrl;
-    link.download = `nota-${note.number.replace(/\s+/g, '-').toLowerCase()}.pdf`;
-    link.click();
+  const buildBlobUrl = async () => {
+    const blob = await pdf(documentNode).toBlob();
+    return URL.createObjectURL(blob);
   };
 
-  const handlePrint = () => {
-    if (!previewUrl) {
-      toast({ title: 'PDF ainda não está pronto', variant: 'destructive' });
-      return;
+  const handleDownload = async () => {
+    setBusyAction('download');
+    try {
+      const url = await buildBlobUrl();
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `nota-${note.number.replace(/\s+/g, '-').toLowerCase()}.pdf`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      toast({
+        title: 'Não foi possível gerar o PDF',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setBusyAction(null);
     }
-    window.open(previewUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  const handlePrint = async () => {
+    setBusyAction('print');
+    try {
+      const url = await buildBlobUrl();
+      window.open(url, '_blank', 'noopener,noreferrer');
+      window.setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (error) {
+      toast({
+        title: 'Não foi possível abrir para impressão',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setBusyAction(null);
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={(value) => { if (!value) onClose(); }}>
-      <DialogContent className="max-w-[95vw] w-full h-[95vh] p-0 gap-0 bg-muted/50">
+      <DialogContent className="max-w-[96vw] w-full h-[96vh] p-0 gap-0 bg-background overflow-hidden">
         <DialogHeader className="px-6 py-4 border-b bg-card sticky top-0 z-10">
           <div className="flex items-center justify-between gap-4">
             <div>
@@ -181,10 +162,10 @@ export default function OSPreviewModal({ open, onClose, note, client, services, 
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={handlePrint} disabled={loadingPreview || !previewUrl}>
+              <Button variant="outline" size="sm" onClick={() => void handlePrint()} disabled={busyAction !== null}>
                 <Printer className="w-4 h-4 mr-1.5" /> Abrir para imprimir
               </Button>
-              <Button variant="outline" size="sm" onClick={handleDownload} disabled={loadingPreview || !previewUrl}>
+              <Button variant="outline" size="sm" onClick={() => void handleDownload()} disabled={busyAction !== null}>
                 <Download className="w-4 h-4 mr-1.5" /> Baixar PDF
               </Button>
               <Button variant="outline" size="sm" onClick={() => toast({ title: 'Compartilhamento em implementação' })}>
@@ -197,42 +178,15 @@ export default function OSPreviewModal({ open, onClose, note, client, services, 
           </div>
         </DialogHeader>
 
-        <div className="flex-1 min-h-0 bg-muted/40">
-          {loadingPreview ? (
-            <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
-              <FileText className="h-8 w-8" />
-              <p>Montando o template da O.S...</p>
-            </div>
-          ) : previewError ? (
-            <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-              <FileText className="h-8 w-8 text-muted-foreground" />
-              <div>
-                <p className="font-medium">Não foi possível renderizar o preview.</p>
-                <p className="mt-1 text-sm text-muted-foreground">{previewError}</p>
-              </div>
-            </div>
-          ) : previewUrl ? (
-            <object
-              data={previewUrl}
-              type="application/pdf"
-              aria-label={`Preview ${note.number}`}
-              className="h-full w-full"
-            >
-              <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-                <FileText className="h-8 w-8 text-muted-foreground" />
-                <div>
-                  <p className="font-medium">O navegador não conseguiu embutir o PDF aqui.</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Use os botões acima para abrir ou baixar o arquivo.
-                  </p>
-                </div>
-              </div>
-            </object>
-          ) : (
-            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-              Nenhum PDF disponível para visualização.
-            </div>
-          )}
+        <div className="flex-1 min-h-0 bg-zinc-100">
+          <PDFViewer
+            width="100%"
+            height="100%"
+            style={{ border: 'none' }}
+            showToolbar={false}
+          >
+            {documentNode}
+          </PDFViewer>
         </div>
       </DialogContent>
     </Dialog>
