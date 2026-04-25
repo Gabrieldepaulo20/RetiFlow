@@ -1,4 +1,4 @@
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { ChangeEvent, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -16,7 +16,7 @@ import {
   formatPayableRecurrenceLabel,
 } from '@/services/domain/payables';
 import { AccountPayable, PAYMENT_METHOD_LABELS, RECURRENCE_TYPE_LABELS } from '@/types';
-import { BadgeCheck, Bot, Camera, FileImage, FileScan, FileText, LoaderCircle, ShieldCheck, Sparkles, Upload, WandSparkles } from 'lucide-react';
+import { Bot, Camera, CheckCircle2, ChevronDown, FileScan, LoaderCircle, SendHorizontal, ShieldCheck, Sparkles, Trash2, Upload, XCircle } from 'lucide-react';
 import { analisarContaPagarComIA } from '@/api/supabase/contas-pagar';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
@@ -51,6 +51,21 @@ type AnalysisResult = {
   highlights: string[];
 };
 
+type ImportSource = 'arquivo' | 'camera';
+type ImportFileStatus = 'pending' | 'analyzing' | 'success' | 'error' | 'created';
+
+type ImportFileItem = {
+  id: string;
+  file: File;
+  source: ImportSource;
+  previewUrl: string | null;
+  status: ImportFileStatus;
+  progress: number;
+  analysis: AnalysisResult | null;
+  error?: string;
+  expanded: boolean;
+};
+
 function formatBytes(size: number) {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
@@ -59,6 +74,28 @@ function formatBytes(size: number) {
 
 function formatMoney(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function buildImportFileItem(file: File, source: ImportSource): ImportFileItem {
+  const shouldPreview = file.type.startsWith('image/') || file.type === 'application/pdf';
+  return {
+    id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID?.() ?? Date.now()}`,
+    file,
+    source,
+    previewUrl: shouldPreview ? URL.createObjectURL(file) : null,
+    status: 'pending',
+    progress: 0,
+    analysis: null,
+    expanded: false,
+  };
+}
+
+function getFileKind(file: File) {
+  const extension = file.name.split('.').pop()?.toUpperCase() || 'ARQ';
+  if (file.type.startsWith('image/')) return { extension, label: 'Imagem', tone: 'from-sky-50 to-blue-100 text-blue-700 border-blue-200' };
+  if (file.type === 'application/pdf') return { extension: 'PDF', label: 'PDF', tone: 'from-rose-50 to-red-100 text-red-700 border-red-200' };
+  if (file.name.toLowerCase().endsWith('.doc') || file.name.toLowerCase().endsWith('.docx')) return { extension: 'DOC', label: 'Word', tone: 'from-indigo-50 to-blue-100 text-indigo-700 border-indigo-200' };
+  return { extension, label: 'Arquivo', tone: 'from-slate-50 to-slate-100 text-slate-700 border-slate-200' };
 }
 
 function getSuggestedCategory(filename: string) {
@@ -160,132 +197,133 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
   const { addPayable, addPayableAttachment, addPayableHistoryEntry, payableCategories, payableSuppliers, payables } = useData();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const itemsRef = useRef<ImportFileItem[]>([]);
   const [selectedTab, setSelectedTab] = useState('arquivo');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [items, setItems] = useState<ImportFileItem[]>([]);
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   useEffect(() => () => {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-  }, [previewUrl]);
+    itemsRef.current.forEach((item) => {
+      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+    });
+  }, []);
 
-  const categoryName = useMemo(() => {
-    if (!analysis) return null;
-    return payableCategories.find((category) => category.id === analysis.draft.categoryId)?.name ?? 'Categoria sugerida';
-  }, [analysis, payableCategories]);
+  const isAnalyzing = items.some((item) => item.status === 'analyzing');
 
-  const recurrenceLabel = useMemo(() => {
-    if (!analysis) return null;
-    return formatPayableRecurrenceLabel(
-      {
-        id: 'preview',
-        title: analysis.draft.title,
-        categoryId: analysis.draft.categoryId,
-        dueDate: analysis.draft.dueDate,
-        originalAmount: analysis.draft.originalAmount,
-        finalAmount: analysis.draft.originalAmount,
-        status: 'PENDENTE',
-        recurrence: analysis.draft.recurrence,
-        isUrgent: analysis.draft.isUrgent,
-        createdAt: '',
-        updatedAt: '',
-        createdByUserId: user?.id ?? 'user-2',
-      },
-      RECURRENCE_TYPE_LABELS[analysis.draft.recurrence],
-    );
-  }, [analysis, user?.id]);
-
-  function resetImportState() {
-    setAnalysis(null);
-    setProgress(0);
-    setIsAnalyzing(false);
+  function updateItem(id: string, patch: Partial<ImportFileItem>) {
+    setItems((previous) => previous.map((item) => item.id === id ? { ...item, ...patch } : item));
   }
 
-  function handleFileSelection(file: File | null) {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setSelectedFile(file);
-    resetImportState();
+  function handleFileSelection(files: FileList | File[] | null, source: ImportSource) {
+    const selectedFiles = Array.from(files ?? []);
+    if (selectedFiles.length === 0) return;
 
-    if (!file) {
-      setPreviewUrl(null);
-      return;
-    }
-
-    if (file.type.startsWith('image/') || file.type === 'application/pdf') {
-      setPreviewUrl(URL.createObjectURL(file));
-      return;
-    }
-
-    setPreviewUrl(null);
+    setItems((previous) => [
+      ...previous,
+      ...selectedFiles.map((file) => buildImportFileItem(file, source)),
+    ]);
   }
 
-  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    handleFileSelection(event.target.files?.[0] ?? null);
+  function handleFileChange(event: ChangeEvent<HTMLInputElement>, source: ImportSource) {
+    handleFileSelection(event.target.files, source);
+    event.target.value = '';
   }
 
-  async function handleAnalyze() {
-    if (!selectedFile) {
-      toast({
-        title: 'Selecione um documento',
-        description: 'Envie um PDF, imagem ou arquivo da conta para iniciar a análise.',
-        variant: 'destructive',
-      });
-      return;
-    }
+  function removeItem(id: string) {
+    setItems((previous) => {
+      const item = previous.find((candidate) => candidate.id === id);
+      if (item?.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      return previous.filter((candidate) => candidate.id !== id);
+    });
+  }
 
-    setIsAnalyzing(true);
-    setProgress(12);
-    setAnalysis(null);
+  function clearItems() {
+    items.forEach((item) => {
+      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+    });
+    setItems([]);
+  }
+
+  async function analyzeItem(item: ImportFileItem) {
+    updateItem(item.id, { status: 'analyzing', progress: 12, error: undefined, expanded: true });
 
     try {
+      let result: AnalysisResult;
       if (!IS_REAL_AUTH) {
-        const checkpoints = [28, 49, 67, 82, 96];
-        checkpoints.forEach((value, index) => {
-          window.setTimeout(() => setProgress(value), 260 * (index + 1));
+        [28, 49, 67, 82, 96].forEach((value, index) => {
+          window.setTimeout(() => updateItem(item.id, { progress: value }), 260 * (index + 1));
         });
-
         await new Promise((resolve) => window.setTimeout(resolve, 1700));
-        setAnalysis(inferDraft(selectedFile));
+        result = inferDraft(item.file);
       } else {
-        setProgress(35);
-        const result = await analisarContaPagarComIA({
-          file: selectedFile,
+        updateItem(item.id, { progress: 35 });
+        result = await analisarContaPagarComIA({
+          file: item.file,
           categories: payableCategories.map((category) => ({ id: category.id, name: category.name })),
           suppliers: payableSuppliers.map((supplier) => ({ id: supplier.id, name: supplier.name })),
-        });
-        setProgress(88);
-        setAnalysis(result as AnalysisResult);
+        }) as AnalysisResult;
+        updateItem(item.id, { progress: 88 });
       }
 
-      setProgress(100);
-      toast({
-        title: 'Pré-análise concluída',
-        description: 'Revise os campos sugeridos antes de gerar a conta.',
+      updateItem(item.id, {
+        status: 'success',
+        progress: 100,
+        analysis: result,
+        error: undefined,
+        expanded: true,
       });
+      return true;
     } catch (error) {
-      setProgress(0);
-      toast({
-        title: 'Não foi possível analisar o documento',
-        description: error instanceof Error ? error.message : 'Verifique a função de IA e tente novamente.',
-        variant: 'destructive',
+      updateItem(item.id, {
+        status: 'error',
+        progress: 0,
+        error: error instanceof Error ? error.message : 'Erro desconhecido ao analisar documento.',
+        expanded: true,
       });
-    } finally {
-      setIsAnalyzing(false);
+      return false;
     }
   }
 
-  async function handleCreateDraft(mode: 'standard' | 'paid' | 'open-details') {
-    if (!selectedFile || !analysis) return;
+  async function handleAnalyzeAll(source: ImportSource) {
+    const targets = items.filter((item) => item.source === source && (item.status === 'pending' || item.status === 'error'));
+    if (targets.length === 0) {
+      toast({
+        title: 'Nenhum arquivo pendente',
+        description: 'Adicione novos arquivos ou remova os que já foram analisados.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    let successCount = 0;
+    for (const item of targets) {
+      const success = await analyzeItem(item);
+      if (success) {
+        successCount += 1;
+      }
+    }
+
+    toast({
+      title: 'Análise finalizada',
+      description: `${successCount} de ${targets.length} arquivo${targets.length === 1 ? '' : 's'} analisado${targets.length === 1 ? '' : 's'} com sucesso.`,
+      variant: successCount === 0 ? 'destructive' : undefined,
+    });
+  }
+
+  async function handleCreateDraft(itemId: string, mode: 'standard' | 'paid' | 'open-details') {
+    const item = items.find((candidate) => candidate.id === itemId);
+    if (!item?.analysis) return;
 
     const duplicate = findPayableDuplicate(
       {
-        supplierName: analysis.draft.supplierName,
+        supplierName: item.analysis.draft.supplierName,
         supplierId: undefined,
-        docNumber: analysis.draft.docNumber,
-        originalAmount: analysis.draft.originalAmount,
-        dueDate: analysis.draft.dueDate,
+        docNumber: item.analysis.draft.docNumber,
+        originalAmount: item.analysis.draft.originalAmount,
+        dueDate: item.analysis.draft.dueDate,
       },
       payables,
     );
@@ -299,37 +337,37 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
       return;
     }
 
-    const finalAmount = calculatePayableFinalAmount(analysis.draft.originalAmount);
-    const treatAsPaid = mode === 'paid' || analysis.draft.suggestedStatus === 'PAGO';
-    const source = selectedTab === 'camera' ? 'CAMERA_CAPTURE' : 'IA_IMPORT';
+    const finalAmount = calculatePayableFinalAmount(item.analysis.draft.originalAmount);
+    const treatAsPaid = mode === 'paid' || item.analysis.draft.suggestedStatus === 'PAGO';
+    const source = item.source === 'camera' ? 'CAMERA_CAPTURE' : 'IA_IMPORT';
 
     const payable = await addPayable({
-      title: analysis.draft.title,
-      supplierName: analysis.draft.supplierName,
-      categoryId: analysis.draft.categoryId,
-      docNumber: analysis.draft.docNumber,
-      issueDate: analysis.draft.issueDate,
-      dueDate: analysis.draft.dueDate,
-      originalAmount: analysis.draft.originalAmount,
+      title: item.analysis.draft.title,
+      supplierName: item.analysis.draft.supplierName,
+      categoryId: item.analysis.draft.categoryId,
+      docNumber: item.analysis.draft.docNumber,
+      issueDate: item.analysis.draft.issueDate,
+      dueDate: item.analysis.draft.dueDate,
+      originalAmount: item.analysis.draft.originalAmount,
       finalAmount,
-      status: treatAsPaid ? 'PAGO' : analysis.draft.suggestedStatus === 'AGENDADO' ? 'AGENDADO' : 'PENDENTE',
-      paymentMethod: analysis.draft.paymentMethod,
-      paidWith: treatAsPaid ? analysis.draft.paymentMethod : undefined,
+      status: treatAsPaid ? 'PAGO' : item.analysis.draft.suggestedStatus === 'AGENDADO' ? 'AGENDADO' : 'PENDENTE',
+      paymentMethod: item.analysis.draft.paymentMethod,
+      paidWith: treatAsPaid ? item.analysis.draft.paymentMethod : undefined,
       paidAmount: treatAsPaid ? finalAmount : undefined,
       paidAt: treatAsPaid ? new Date().toISOString() : undefined,
-      recurrence: analysis.draft.recurrence,
-      observations: analysis.draft.observations,
-      isUrgent: analysis.draft.isUrgent,
+      recurrence: item.analysis.draft.recurrence,
+      observations: item.analysis.draft.observations,
+      isUrgent: item.analysis.draft.isUrgent,
       entrySource: source,
-      paymentExecutionStatus: analysis.draft.suggestedStatus === 'AGENDADO' ? 'SCHEDULED' : 'MANUAL',
+      paymentExecutionStatus: item.analysis.draft.suggestedStatus === 'AGENDADO' ? 'SCHEDULED' : 'MANUAL',
       createdByUserId: user?.id ?? 'user-2',
     });
 
     addPayableAttachment({
       payableId: payable.id,
-      type: selectedFile.type === 'application/pdf' ? 'BOLETO' : selectedFile.type.startsWith('image/') ? 'COMPROVANTE' : 'OUTRO',
-      filename: selectedFile.name,
-      url: previewUrl ?? `local-upload://${selectedFile.name}`,
+      type: item.file.type === 'application/pdf' ? 'BOLETO' : item.file.type.startsWith('image/') ? 'COMPROVANTE' : 'OUTRO',
+      filename: item.file.name,
+      url: item.previewUrl ?? `local-upload://${item.file.name}`,
       createdByUserId: user?.id ?? 'user-2',
     });
 
@@ -338,7 +376,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
         payableId: payable.id,
         action: 'ATTACHMENT_ADDED',
         userId: user?.id ?? 'user-2',
-        extra: { filename: selectedFile.name },
+        extra: { filename: item.file.name },
       }),
     );
 
@@ -349,10 +387,9 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
         : 'A nova conta já está disponível na listagem para acompanhamento.',
     });
 
-    onOpenChange(false);
-    onCreated?.(payable);
+    updateItem(item.id, { status: 'created', expanded: false });
     if (mode === 'open-details') {
-      window.setTimeout(() => onCreated?.(payable), 50);
+      onCreated?.(payable);
     }
   }
 
@@ -381,24 +418,37 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
             </AlertDescription>
           </Alert>
 
-          <input ref={fileInputRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.webp" onChange={handleFileChange} className="hidden" />
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.webp"
+            onChange={(event) => handleFileChange(event, 'arquivo')}
+            className="hidden"
+          />
           <ImportBody
-            selectedFile={selectedFile}
-            previewUrl={previewUrl}
-            analysis={analysis}
+            items={items.filter((item) => item.source === 'arquivo')}
             isAnalyzing={isAnalyzing}
-            progress={progress}
-            categoryName={categoryName}
-            recurrenceLabel={recurrenceLabel}
+            analyzableCount={items.filter((item) => item.source === 'arquivo' && (item.status === 'pending' || item.status === 'error')).length}
+            payableCategories={payableCategories}
             onSelect={() => fileInputRef.current?.click()}
-            onAnalyze={handleAnalyze}
-            onClear={() => handleFileSelection(null)}
-            onCreateDraft={(mode) => void handleCreateDraft(mode)}
+            onAnalyze={() => void handleAnalyzeAll('arquivo')}
+            onClear={clearItems}
+            onRemove={removeItem}
+            onToggleExpanded={(id) => updateItem(id, { expanded: !items.find((item) => item.id === id)?.expanded })}
+            onCreateDraft={(id, mode) => void handleCreateDraft(id, mode)}
           />
         </TabsContent>
 
         <TabsContent value="camera" className="mt-0 space-y-5">
-          <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileChange} className="hidden" />
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={(event) => handleFileChange(event, 'camera')}
+            className="hidden"
+          />
           <Alert>
             <Camera className="h-4 w-4" />
             <AlertTitle>Capture a nota direto do celular</AlertTitle>
@@ -407,18 +457,17 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
             </AlertDescription>
           </Alert>
           <ImportBody
-            selectedFile={selectedFile}
-            previewUrl={previewUrl}
-            analysis={analysis}
+            items={items.filter((item) => item.source === 'camera')}
             isAnalyzing={isAnalyzing}
-            progress={progress}
-            categoryName={categoryName}
-            recurrenceLabel={recurrenceLabel}
+            analyzableCount={items.filter((item) => item.source === 'camera' && (item.status === 'pending' || item.status === 'error')).length}
+            payableCategories={payableCategories}
             cameraMode
             onSelect={() => cameraInputRef.current?.click()}
-            onAnalyze={handleAnalyze}
-            onClear={() => handleFileSelection(null)}
-            onCreateDraft={(mode) => void handleCreateDraft(mode)}
+            onAnalyze={() => void handleAnalyzeAll('camera')}
+            onClear={clearItems}
+            onRemove={removeItem}
+            onToggleExpanded={(id) => updateItem(id, { expanded: !items.find((item) => item.id === id)?.expanded })}
+            onCreateDraft={(id, mode) => void handleCreateDraft(id, mode)}
           />
         </TabsContent>
       </Tabs>
@@ -427,41 +476,42 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
 }
 
 type ImportBodyProps = {
-  selectedFile: File | null;
-  previewUrl: string | null;
-  analysis: AnalysisResult | null;
+  items: ImportFileItem[];
   isAnalyzing: boolean;
-  progress: number;
-  categoryName: string | null;
-  recurrenceLabel: string | null;
+  analyzableCount: number;
+  payableCategories: Array<{ id: string; name: string }>;
   cameraMode?: boolean;
   onSelect: () => void;
   onAnalyze: () => void;
   onClear: () => void;
-  onCreateDraft: (mode: 'standard' | 'paid' | 'open-details') => void;
+  onRemove: (id: string) => void;
+  onToggleExpanded: (id: string) => void;
+  onCreateDraft: (id: string, mode: 'standard' | 'paid' | 'open-details') => void;
 };
 
 function ImportBody({
-  selectedFile,
-  previewUrl,
-  analysis,
+  items,
   isAnalyzing,
-  progress,
-  categoryName,
-  recurrenceLabel,
+  analyzableCount,
+  payableCategories,
   cameraMode = false,
   onSelect,
   onAnalyze,
   onClear,
+  onRemove,
+  onToggleExpanded,
   onCreateDraft,
 }: ImportBodyProps) {
+  const successCount = items.filter((item) => item.status === 'success' || item.status === 'created').length;
+  const errorCount = items.filter((item) => item.status === 'error').length;
+
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="space-y-6">
         <button
           type="button"
           onClick={onSelect}
-          className="flex w-full flex-col items-center justify-center rounded-3xl border border-dashed border-primary/30 bg-gradient-to-br from-primary/5 via-background to-background px-6 py-12 text-center transition hover:border-primary/50 hover:bg-primary/10"
+          className="flex w-full flex-col items-center justify-center rounded-3xl border border-dashed border-primary/30 bg-gradient-to-br from-primary/5 via-background to-background px-6 py-8 text-center transition hover:border-primary/50 hover:bg-primary/10"
         >
           <div className="rounded-2xl bg-primary/10 p-4 text-primary">
             {cameraMode ? <Camera className="h-6 w-6" /> : <Upload className="h-6 w-6" />}
@@ -480,88 +530,65 @@ function ImportBody({
           </div>
         </button>
 
-        {selectedFile ? (
-          <Card className="border-border/60">
-            <CardContent className="space-y-4 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-3">
-                  <div className="rounded-xl bg-primary/10 p-3 text-primary">
-                    {selectedFile.type.startsWith('image/') ? <FileImage className="h-5 w-5" /> : selectedFile.type === 'application/pdf' ? <FileText className="h-5 w-5" /> : <FileScan className="h-5 w-5" />}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{selectedFile.name}</p>
-                    <p className="text-sm text-muted-foreground">{formatBytes(selectedFile.size)} • {selectedFile.type || 'Arquivo genérico'}</p>
-                  </div>
-                </div>
-                <Button variant="outline" size="sm" onClick={onClear}>Trocar</Button>
-              </div>
-
-              {previewUrl && selectedFile.type.startsWith('image/') ? (
-                <div className="overflow-hidden rounded-2xl border border-border/60 bg-muted/20">
-                  <img src={previewUrl} alt={selectedFile.name} className="max-h-[360px] w-full object-contain" />
-                </div>
-              ) : null}
-
-              {previewUrl && selectedFile.type === 'application/pdf' ? (
-                <div className="rounded-2xl border border-border/60 bg-muted/20 p-4 text-sm text-muted-foreground">
-                  Preview rápido disponível para PDF. Na fase seguinte, essa área pode exibir páginas e zonas extraídas.
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
-        ) : null}
-
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={onAnalyze} disabled={!selectedFile || isAnalyzing}>
-            {isAnalyzing ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <WandSparkles className="mr-2 h-4 w-4" />}
-            {isAnalyzing ? 'Analisando...' : 'Analisar com IA'}
-          </Button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold">Arquivos para análise</p>
+            <p className="text-xs text-muted-foreground">
+              {items.length === 0
+                ? 'Selecione um ou vários documentos para montar a fila.'
+                : `${items.length} arquivo${items.length === 1 ? '' : 's'} na fila • ${successCount} pronto${successCount === 1 ? '' : 's'} • ${errorCount} com erro`}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={onAnalyze} disabled={items.length === 0 || analyzableCount === 0 || isAnalyzing} className="gap-2">
+              {isAnalyzing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
+              {isAnalyzing ? 'Analisando...' : `Enviar para IA${analyzableCount > 0 ? ` (${analyzableCount})` : ''}`}
+            </Button>
+            {items.length > 0 ? (
+              <Button variant="outline" onClick={onClear} disabled={isAnalyzing}>
+                Limpar fila
+              </Button>
+            ) : null}
+          </div>
         </div>
 
-        {isAnalyzing || analysis ? (
-          <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
-            <div className="grid gap-2 sm:grid-cols-4 text-xs text-muted-foreground">
-              <span className={progress >= 15 ? 'font-medium text-foreground' : ''}>Arquivo recebido</span>
-              <span className={progress >= 40 ? 'font-medium text-foreground' : ''}>Texto identificado</span>
-              <span className={progress >= 70 ? 'font-medium text-foreground' : ''}>Campos sugeridos</span>
-              <span className={progress >= 100 ? 'font-medium text-foreground' : ''}>Revisão final</span>
+        <div className="space-y-3">
+          {items.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-border/70 bg-muted/20 px-6 py-10 text-center">
+              <FileScan className="mx-auto h-10 w-10 text-muted-foreground/40" />
+              <p className="mt-3 text-sm font-medium">Nenhum arquivo selecionado ainda</p>
+              <p className="mt-1 text-xs text-muted-foreground">Depois de anexar, eles aparecem aqui com status individual de análise.</p>
             </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Pipeline de extração e pré-preenchimento</span>
-              <span className="font-medium">{progress}%</span>
-            </div>
-            <Progress value={progress} />
-          </div>
-        ) : null}
+          ) : null}
 
-        {analysis ? (
-          <Card className="border-border/60">
-            <CardContent className="space-y-5 p-5">
-              <div className="flex items-center gap-2">
-                <BadgeCheck className="h-4 w-4 text-primary" />
-                <p className="text-sm font-semibold">Revisão do documento</p>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {analysis.fields.map((field) => (
-                  <div key={field.label} className="rounded-2xl border border-border/60 bg-background p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{field.label}</p>
-                      <Badge variant={field.confidence >= 85 ? 'default' : 'secondary'}>{field.confidence}%</Badge>
-                    </div>
-                    <p className="mt-3 text-sm font-medium leading-relaxed">{field.value}</p>
-                  </div>
-                ))}
-              </div>
-              <Alert>
-                <ShieldCheck className="h-4 w-4" />
-                <AlertTitle>Confirmação humana antes de salvar</AlertTitle>
-                <AlertDescription>
-                  Esse é o ponto que deixa o fluxo profissional: a IA acelera, mas o financeiro revisa antes de impactar o caixa.
-                </AlertDescription>
-              </Alert>
-            </CardContent>
-          </Card>
-        ) : null}
+          {items.map((item) => (
+            <ImportFileCard
+              key={item.id}
+              item={item}
+              categoryName={item.analysis ? payableCategories.find((category) => category.id === item.analysis?.draft.categoryId)?.name ?? 'Categoria sugerida' : null}
+              recurrenceLabel={item.analysis ? formatPayableRecurrenceLabel(
+                {
+                  id: 'preview',
+                  title: item.analysis.draft.title,
+                  categoryId: item.analysis.draft.categoryId,
+                  dueDate: item.analysis.draft.dueDate,
+                  originalAmount: item.analysis.draft.originalAmount,
+                  finalAmount: item.analysis.draft.originalAmount,
+                  status: 'PENDENTE',
+                  recurrence: item.analysis.draft.recurrence,
+                  isUrgent: item.analysis.draft.isUrgent,
+                  createdAt: '',
+                  updatedAt: '',
+                  createdByUserId: 'preview',
+                },
+                RECURRENCE_TYPE_LABELS[item.analysis.draft.recurrence],
+              ) : null}
+              onRemove={onRemove}
+              onToggleExpanded={onToggleExpanded}
+              onCreateDraft={onCreateDraft}
+            />
+          ))}
+        </div>
       </div>
 
       <div className="space-y-6">
@@ -569,37 +596,181 @@ function ImportBody({
           <CardContent className="space-y-4 p-5">
             <div className="flex items-center gap-2 text-sm font-medium">
               <Sparkles className="h-4 w-4 text-primary" />
-              Valor percebido para a cliente
+              Fluxo simples para o financeiro
             </div>
             <ul className="space-y-3 text-sm text-muted-foreground">
-              <li>Anexo sobe junto com a conta e fica vinculado ao lançamento.</li>
-              <li>IA sugere fornecedor, vencimento, categoria, valor e status inicial.</li>
-              <li>Serve tanto para boleto grande quanto para notinha rápida do dia a dia.</li>
-              <li>Preparado para OCR real e extração estruturada por API depois.</li>
+              <li>1. Anexe um ou vários arquivos.</li>
+              <li>2. Clique em enviar para IA uma única vez.</li>
+              <li>3. Revise cada resultado e crie as contas aprovadas.</li>
+              <li>4. Se algum arquivo falhar, expanda para ver o motivo e tente novamente.</li>
             </ul>
           </CardContent>
         </Card>
 
-        {analysis ? (
-          <Card className="border-primary/20 bg-primary/5">
-            <CardContent className="space-y-4 p-5">
-              <p className="text-sm font-semibold">Resumo pronto para virar conta</p>
-              <div className="space-y-2 text-sm text-muted-foreground">
-                <p><span className="font-medium text-foreground">Categoria:</span> {categoryName}</p>
-                <p><span className="font-medium text-foreground">Status sugerido:</span> {analysis.draft.suggestedStatus === 'PAGO' ? 'Já paga' : analysis.draft.suggestedStatus === 'AGENDADO' ? 'Agendada' : analysis.draft.suggestedStatus === 'PENDENTE' ? 'A pagar' : 'Não tenho certeza'}</p>
-                <p><span className="font-medium text-foreground">Urgência:</span> {analysis.draft.isUrgent ? 'Alta' : 'Normal'}</p>
-                <p><span className="font-medium text-foreground">Recorrência:</span> {recurrenceLabel ?? 'Sem recorrência'}</p>
-                <p><span className="font-medium text-foreground">Valor:</span> {formatMoney(analysis.draft.originalAmount)}</p>
+        <Card className="border-primary/20 bg-primary/5">
+          <CardContent className="space-y-4 p-5">
+            <p className="text-sm font-semibold">Resumo da fila</p>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-2xl bg-background p-3">
+                <p className="text-xs text-muted-foreground">Arquivos</p>
+                <p className="text-xl font-bold">{items.length}</p>
               </div>
-              <div className="grid gap-2">
-                <Button onClick={() => onCreateDraft('standard')}>Criar conta</Button>
-                <Button variant="outline" onClick={() => onCreateDraft('open-details')}>Criar e abrir detalhes</Button>
-                <Button variant="secondary" onClick={() => onCreateDraft('paid')}>Criar como já paga</Button>
+              <div className="rounded-2xl bg-background p-3">
+                <p className="text-xs text-muted-foreground">Prontos</p>
+                <p className="text-xl font-bold text-primary">{successCount}</p>
               </div>
-            </CardContent>
-          </Card>
-        ) : null}
+              <div className="rounded-2xl bg-background p-3">
+                <p className="text-xs text-muted-foreground">Pendentes</p>
+                <p className="text-xl font-bold">{items.filter((item) => item.status === 'pending').length}</p>
+              </div>
+              <div className="rounded-2xl bg-background p-3">
+                <p className="text-xs text-muted-foreground">Erros</p>
+                <p className="text-xl font-bold text-destructive">{errorCount}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
+  );
+}
+
+type ImportFileCardProps = {
+  item: ImportFileItem;
+  categoryName: string | null;
+  recurrenceLabel: string | null;
+  onRemove: (id: string) => void;
+  onToggleExpanded: (id: string) => void;
+  onCreateDraft: (id: string, mode: 'standard' | 'paid' | 'open-details') => void;
+};
+
+function FileTileIcon({ file }: { file: File }) {
+  const kind = getFileKind(file);
+  return (
+    <div className={`relative flex h-14 w-12 shrink-0 items-end justify-center rounded-lg border bg-gradient-to-br pb-1.5 shadow-sm ${kind.tone}`}>
+      <div className="absolute right-0 top-0 h-0 w-0 border-l-[13px] border-t-[13px] border-l-transparent border-t-white/80" />
+      <span className="text-[10px] font-black tracking-tight">{kind.extension.slice(0, 4)}</span>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: ImportFileStatus }) {
+  if (status === 'success') return <Badge className="gap-1 bg-success text-success-foreground"><CheckCircle2 className="h-3 w-3" /> Sucesso</Badge>;
+  if (status === 'created') return <Badge className="gap-1 bg-primary text-primary-foreground"><CheckCircle2 className="h-3 w-3" /> Conta criada</Badge>;
+  if (status === 'error') return <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" /> Erro</Badge>;
+  if (status === 'analyzing') return <Badge variant="secondary" className="gap-1"><LoaderCircle className="h-3 w-3 animate-spin" /> Analisando</Badge>;
+  return <Badge variant="outline">Pendente</Badge>;
+}
+
+function ImportFileCard({
+  item,
+  categoryName,
+  recurrenceLabel,
+  onRemove,
+  onToggleExpanded,
+  onCreateDraft,
+}: ImportFileCardProps) {
+  const kind = getFileKind(item.file);
+
+  return (
+    <Card className="overflow-hidden border-border/60">
+      <CardContent className="p-0">
+        <div className="flex items-start gap-3 p-4">
+          <FileTileIcon file={item.file} />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">{item.file.name}</p>
+                <p className="text-xs text-muted-foreground">{kind.label} • {formatBytes(item.file.size)} • {item.file.type || 'Tipo não informado'}</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <StatusBadge status={item.status} />
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onToggleExpanded(item.id)}>
+                  <ChevronDown className={`h-4 w-4 transition-transform ${item.expanded ? 'rotate-180' : ''}`} />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => onRemove(item.id)} disabled={item.status === 'analyzing'}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            {item.status === 'analyzing' ? (
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Lendo documento e extraindo campos</span>
+                  <span>{item.progress}%</span>
+                </div>
+                <Progress value={item.progress} />
+              </div>
+            ) : null}
+
+            {item.status === 'error' && !item.expanded ? (
+              <p className="mt-2 truncate text-xs text-destructive">{item.error}</p>
+            ) : null}
+          </div>
+        </div>
+
+        {item.expanded ? (
+          <div className="border-t bg-muted/20 p-4">
+            {item.error ? (
+              <Alert variant="destructive">
+                <XCircle className="h-4 w-4" />
+                <AlertTitle>Erro ao analisar este arquivo</AlertTitle>
+                <AlertDescription>{item.error}</AlertDescription>
+              </Alert>
+            ) : null}
+
+            {item.previewUrl && item.file.type.startsWith('image/') ? (
+              <div className="mb-4 overflow-hidden rounded-2xl border border-border/60 bg-background">
+                <img src={item.previewUrl} alt={item.file.name} className="max-h-[260px] w-full object-contain" />
+              </div>
+            ) : null}
+
+            {item.analysis ? (
+              <div className="space-y-4">
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {item.analysis.fields.map((field) => (
+                    <div key={field.label} className="rounded-2xl border border-border/60 bg-background p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{field.label}</p>
+                        <Badge variant={field.confidence >= 85 ? 'default' : 'secondary'}>{field.confidence}%</Badge>
+                      </div>
+                      <p className="mt-2 text-sm font-medium">{field.value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="rounded-2xl border border-primary/20 bg-background p-4">
+                  <p className="text-sm font-semibold">Resumo pronto para virar conta</p>
+                  <div className="mt-3 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+                    <p><span className="font-medium text-foreground">Categoria:</span> {categoryName}</p>
+                    <p><span className="font-medium text-foreground">Valor:</span> {formatMoney(item.analysis.draft.originalAmount)}</p>
+                    <p><span className="font-medium text-foreground">Status:</span> {item.analysis.draft.suggestedStatus === 'PAGO' ? 'Já paga' : item.analysis.draft.suggestedStatus === 'AGENDADO' ? 'Agendada' : item.analysis.draft.suggestedStatus === 'PENDENTE' ? 'A pagar' : 'Não tenho certeza'}</p>
+                    <p><span className="font-medium text-foreground">Recorrência:</span> {recurrenceLabel ?? 'Sem recorrência'}</p>
+                  </div>
+                  {item.status !== 'created' ? (
+                    <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                      <Button onClick={() => onCreateDraft(item.id, 'standard')}>Criar conta</Button>
+                      <Button variant="outline" onClick={() => onCreateDraft(item.id, 'open-details')}>Criar e abrir</Button>
+                      <Button variant="secondary" onClick={() => onCreateDraft(item.id, 'paid')}>Criar paga</Button>
+                    </div>
+                  ) : (
+                    <div className="mt-4 rounded-xl bg-success/10 px-3 py-2 text-sm font-medium text-success">
+                      Conta já criada a partir deste arquivo.
+                    </div>
+                  )}
+                </div>
+
+                <Alert>
+                  <ShieldCheck className="h-4 w-4" />
+                  <AlertTitle>Revise antes de salvar</AlertTitle>
+                  <AlertDescription>A IA acelera o cadastro, mas a confirmação humana continua sendo a etapa mais importante.</AlertDescription>
+                </Alert>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
