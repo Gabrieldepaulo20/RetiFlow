@@ -13,6 +13,34 @@ import ClientDetailModal from '@/components/clients/ClientDetailModal';
 import { ClientFormModal } from '@/components/clients/ClientFormModal';
 import type { Client } from '@/types';
 
+const escapeCsvCell = (value: unknown) => {
+  const text = String(value ?? '');
+  return `"${text.replace(/"/g, '""')}"`;
+};
+
+const downloadClientsCsv = (clients: Client[]) => {
+  const headers = ['Nome', 'Tipo documento', 'Documento', 'Telefone', 'Email', 'Endereco', 'Cidade', 'UF', 'Status'];
+  const rows = clients.map((client) => [
+    client.name,
+    client.docType,
+    client.docNumber,
+    client.phone,
+    client.email,
+    buildCustomerAddressLabel(client),
+    client.city,
+    client.state,
+    client.isActive ? 'Ativo' : 'Inativo',
+  ]);
+  const csv = [headers, ...rows].map((row) => row.map(escapeCsvCell).join(';')).join('\n');
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `clientes-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
 export default function Clients() {
   const { clients, notes, updateClient } = useData();
   const { toast } = useToast();
@@ -46,7 +74,16 @@ export default function Clients() {
           <p className="text-muted-foreground text-sm">{clients.length} cadastrados</p>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-          <Button variant="outline" onClick={() => toast({ title: 'Exportação (mock)', description: 'Arquivo CSV gerado com sucesso.' })}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              downloadClientsCsv(filtered);
+              toast({
+                title: 'Exportação concluída',
+                description: `${filtered.length} cliente${filtered.length === 1 ? '' : 's'} exportado${filtered.length === 1 ? '' : 's'} em CSV.`,
+              });
+            }}
+          >
             <Download className="w-4 h-4 mr-2" /> Exportar
           </Button>
           <Button onClick={() => setNewClientOpen(true)}><PlusCircle className="w-4 h-4 mr-2" /> Novo Cliente</Button>

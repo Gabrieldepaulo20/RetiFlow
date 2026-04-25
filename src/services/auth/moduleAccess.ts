@@ -6,14 +6,15 @@ export const USER_MODULE_OVERRIDES_STORAGE_KEY = 'systemUserModuleOverrides';
 
 export const DEFAULT_ROLE_MODULE_CONFIG: RoleModuleConfig = {
   ADMIN: {
-    admin: true,
     dashboard: true,
     clients: true,
     notes: true,
     kanban: true,
     closing: true,
     invoices: true,
+    payables: true,
     settings: true,
+    admin: true,
   },
   FINANCEIRO: {
     dashboard: true,
@@ -22,7 +23,9 @@ export const DEFAULT_ROLE_MODULE_CONFIG: RoleModuleConfig = {
     kanban: true,
     closing: true,
     invoices: true,
+    payables: true,
     settings: false,
+    admin: false,
   },
   PRODUCAO: {
     dashboard: true,
@@ -31,7 +34,9 @@ export const DEFAULT_ROLE_MODULE_CONFIG: RoleModuleConfig = {
     kanban: true,
     closing: false,
     invoices: false,
+    payables: false,
     settings: false,
+    admin: false,
   },
   RECEPCAO: {
     dashboard: true,
@@ -40,7 +45,9 @@ export const DEFAULT_ROLE_MODULE_CONFIG: RoleModuleConfig = {
     kanban: true,
     closing: false,
     invoices: false,
+    payables: false,
     settings: false,
+    admin: false,
   },
 };
 

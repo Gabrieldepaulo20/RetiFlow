@@ -1,13 +1,6 @@
 import { supabase } from '@/lib/supabase';
-import type { UserRole } from '@/types';
 import type { IAuthProvider, AuthResponse } from './authProvider';
-
-const ACESSO_PARA_ROLE: Record<string, UserRole> = {
-  administrador: 'ADMIN',
-  financeiro:    'FINANCEIRO',
-  'produção':    'PRODUCAO',
-  'recepção':    'RECEPCAO',
-};
+import { dbUserToSystemUser } from '@/services/auth/supabaseUserMapping';
 
 export const realAuthProvider: IAuthProvider = {
   async authenticate(credentials): Promise<AuthResponse> {
@@ -39,8 +32,6 @@ export const realAuthProvider: IAuthProvider = {
       }
 
       const perfil = envelope.dados;
-      const role: UserRole = ACESSO_PARA_ROLE[perfil.acesso] ?? 'RECEPCAO';
-
       if (!perfil.status) {
         await supabase.auth.signOut();
         return { success: false, error: 'Usuário inativo. Contate o administrador.' };
@@ -49,15 +40,7 @@ export const realAuthProvider: IAuthProvider = {
       return {
         success: true,
         session: {
-          user: {
-            id:        perfil.id_usuarios,
-            name:      perfil.nome,
-            email:     perfil.email,
-            role,
-            isActive:  perfil.status,
-            createdAt: new Date().toISOString(),
-            phone:     perfil.telefone || undefined,
-          },
+          user: dbUserToSystemUser(perfil),
           mode: 'real',
           tokens: {
             accessToken:  authData.session.access_token,

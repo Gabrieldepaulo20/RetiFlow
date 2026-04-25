@@ -19,6 +19,7 @@ import NoteDetailModal from '@/components/notes/NoteDetailModal';
 import NoteFormModal from '@/components/notes/NoteFormModal';
 import { noteMatchesNumericQuery } from '@/lib/noteNumbers';
 import { cn } from '@/lib/utils';
+import { buildWhatsAppUrl, openExternalUrl } from '@/lib/browserShare';
 import { format } from 'date-fns';
 
 function initStatusFilters(searchParams: URLSearchParams): Set<string> {
@@ -496,12 +497,27 @@ export default function IntakeNotes() {
                               <Download className="w-4 h-4 mr-2" /> Baixar nota
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              onClick={() =>
-                                toast({
-                                  title: 'WhatsApp (mock)',
-                                  description: `Enviando ${n.number} para ${client?.phone}`,
-                                })
-                              }
+                              onClick={() => {
+                                const url = buildWhatsAppUrl(
+                                  client?.phone,
+                                  [
+                                    `Olá, ${client?.name ?? 'cliente'}!`,
+                                    `Segue atualização da O.S. ${n.number}.`,
+                                    n.pdfUrl ? `PDF: ${n.pdfUrl}` : null,
+                                  ].filter(Boolean).join('\n'),
+                                );
+
+                                if (!url) {
+                                  toast({
+                                    title: 'Telefone não informado',
+                                    description: 'Cadastre um telefone/WhatsApp no cliente antes de compartilhar.',
+                                    variant: 'destructive',
+                                  });
+                                  return;
+                                }
+
+                                openExternalUrl(url);
+                              }}
                             >
                               <Share2 className="w-4 h-4 mr-2" /> Compartilhar
                             </DropdownMenuItem>

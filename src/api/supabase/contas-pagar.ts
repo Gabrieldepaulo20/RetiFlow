@@ -1,4 +1,5 @@
 import { callRPC } from './_base';
+import { supabase } from '@/lib/supabase';
 
 export interface ContaPagar {
   id_contas_pagar: string;
@@ -110,4 +111,49 @@ export async function insertAnexoContaPagar(params: {
 }) {
   const env = await callRPC('insert_anexo_conta_pagar', params);
   return env.id_anexo as string;
+}
+
+export type AnalisarContaPagarResultado = {
+  draft: {
+    title: string;
+    supplierName: string;
+    categoryId: string;
+    dueDate: string;
+    issueDate?: string;
+    originalAmount: number;
+    paymentMethod: string;
+    recurrence: string;
+    docNumber?: string;
+    observations?: string;
+    isUrgent: boolean;
+    suggestedStatus: 'PAGO' | 'PENDENTE' | 'AGENDADO' | 'INCERTO';
+  };
+  fields: Array<{ label: string; value: string; confidence: number }>;
+  warnings: string[];
+  highlights: string[];
+};
+
+export async function analisarContaPagarComIA(params: {
+  file: File;
+  categories: Array<{ id: string; name: string }>;
+  suppliers: Array<{ id: string; name: string }>;
+}) {
+  const body = new FormData();
+  body.append('file', params.file);
+  body.append('categories', JSON.stringify(params.categories));
+  body.append('suppliers', JSON.stringify(params.suppliers));
+
+  const { data, error } = await supabase.functions.invoke<AnalisarContaPagarResultado>('analisar-conta-pagar', {
+    body,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (!data) {
+    throw new Error('A análise por IA não retornou dados.');
+  }
+
+  return data;
 }

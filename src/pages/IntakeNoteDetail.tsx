@@ -18,6 +18,7 @@ import { ArrowLeft, Eye, Printer, Share2, ChevronRight, ChevronLeft, Paperclip, 
 import { useToast } from '@/hooks/use-toast';
 import OSPreviewModal from '@/components/OSPreviewModal';
 import { cn } from '@/lib/utils';
+import { buildWhatsAppUrl, openExternalUrl } from '@/lib/browserShare';
 
 /** Estágios do fluxo principal (sem os finais alternativos) para a timeline */
 const MAIN_FLOW: NoteStatus[] = ['ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'AGUARDANDO_COMPRA', 'PRONTO', 'ENTREGUE', 'FINALIZADO'];
@@ -89,6 +90,26 @@ export default function IntakeNoteDetail() {
     navigate(-1);
   };
 
+  const handleWhatsAppShare = () => {
+    const message = [
+      `Olá, ${client?.name ?? 'cliente'}!`,
+      `Segue atualização da O.S. ${note.number}.`,
+      note.pdfUrl ? `PDF: ${note.pdfUrl}` : null,
+    ].filter(Boolean).join('\n');
+    const url = buildWhatsAppUrl(client?.phone, message);
+
+    if (!url) {
+      toast({
+        title: 'Telefone não informado',
+        description: 'Cadastre um telefone/WhatsApp no cliente antes de compartilhar.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    openExternalUrl(url);
+  };
+
   // Timeline: mostra o fluxo principal + estágio final alternativo se aplicável
   const timelineStatuses = MAIN_FLOW.slice();
   const isAltFinal = isFinal && !MAIN_FLOW.includes(note.status);
@@ -151,7 +172,7 @@ export default function IntakeNoteDetail() {
               : <Printer className="w-4 h-4" />}
             Imprimir
           </Button>
-          <Button variant="outline" size="sm" onClick={() => toast({ title: 'WhatsApp (mock)' })} className="gap-1.5">
+          <Button variant="outline" size="sm" onClick={handleWhatsAppShare} className="gap-1.5">
             <Share2 className="w-4 h-4" /> WhatsApp
           </Button>
           {canGoBack && <Button variant="ghost" size="sm" onClick={goBack}><ChevronLeft className="w-4 h-4" /> Voltar etapa</Button>}

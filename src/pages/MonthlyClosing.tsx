@@ -932,10 +932,6 @@ export default function MonthlyClosing() {
                   <Button variant="outline" onClick={() => setTemplatePreviewOpen(true)} disabled={!modalPreviewDados}>
                     <Eye className="w-4 h-4 mr-2" /> Visualizar
                   </Button>
-                  <Button onClick={handleGerar} disabled={generating || !activeDraft}>
-                    <RefreshCcw className={cn('w-4 h-4 mr-2', generating && 'animate-spin')} />
-                    Gerar fechamento
-                  </Button>
                 </div>
               </div>
             </div>
@@ -1049,7 +1045,12 @@ export default function MonthlyClosing() {
                   <p>2. O botão visualizar mostra o template final em outro popup.</p>
                   <p>3. Só o botão gerar fechamento grava no banco.</p>
                 </div>
-                <Button onClick={handleGerar} disabled={generating || !activeDraft} className="h-12 w-full text-sm font-semibold" size="lg">
+                <Button
+                  onClick={handleGerar}
+                  disabled={generating || !activeDraft}
+                  className="h-12 w-full bg-destructive text-sm font-semibold text-destructive-foreground hover:bg-destructive/90"
+                  size="lg"
+                >
                   <RefreshCcw className={cn('mr-2 h-4 w-4', generating && 'animate-spin')} />
                   Gerar fechamento
                 </Button>

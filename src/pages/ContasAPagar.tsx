@@ -219,7 +219,7 @@ export default function ContasAPagar() {
     toast({ title: 'Conta duplicada', description: 'Criamos uma cópia pronta para ajustes rápidos.' });
   }
 
-  function handleSubmitPayment() {
+  async function handleSubmitPayment() {
     if (!selectedPayable) return;
     const paymentValue = parseMoneyInput(paymentAmountInput);
     const remaining = calculatePayableRemainingBalance(selectedPayable);
@@ -229,35 +229,85 @@ export default function ContasAPagar() {
     }
     const nextPaidAmount = Number(((selectedPayable.paidAmount ?? 0) + paymentValue).toFixed(2));
     const settled = nextPaidAmount >= selectedPayable.finalAmount;
-    updatePayable(selectedPayable.id, {
-      status: settled ? 'PAGO' : 'PARCIAL',
-      paidAmount: nextPaidAmount,
-      paidAt: new Date().toISOString(),
-      paidWith: paymentMethod,
-      paymentNotes: paymentNotes.trim() || undefined,
-    });
-    addPayableHistoryEntry(buildPayableHistoryDescription({ payableId: selectedPayable.id, action: settled ? 'PAID' : 'PARTIAL_PAID', userId: user?.id ?? 'user-2', extra: { paidAmount: paymentValue, finalAmount: remaining } }));
-    toast({ title: settled ? 'Pagamento registrado' : 'Pagamento parcial registrado', description: settled ? 'A conta foi marcada como paga.' : 'O saldo restante continua em aberto para acompanhamento.' });
-    setDialogMode(null);
-    window.setTimeout(clearDialogFields, 260);
+    try {
+      await updatePayable(selectedPayable.id, {
+        status: settled ? 'PAGO' : 'PARCIAL',
+        paidAmount: nextPaidAmount,
+        paidAt: new Date().toISOString(),
+        paidWith: paymentMethod,
+        paymentNotes: paymentNotes.trim() || undefined,
+      });
+      addPayableHistoryEntry(buildPayableHistoryDescription({ payableId: selectedPayable.id, action: settled ? 'PAID' : 'PARTIAL_PAID', userId: user?.id ?? 'user-2', extra: { paidAmount: paymentValue, finalAmount: remaining } }));
+      toast({ title: settled ? 'Pagamento registrado' : 'Pagamento parcial registrado', description: settled ? 'A conta foi marcada como paga.' : 'O saldo restante continua em aberto para acompanhamento.' });
+      setDialogMode(null);
+      window.setTimeout(clearDialogFields, 260);
+    } catch (error) {
+      toast({
+        title: 'Não foi possível registrar pagamento',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    }
   }
 
-  function handleSubmitEdit() {
+  async function handleSubmitEdit() {
     if (!selectedPayable || !editTitle.trim() || !editCategoryId || !editDueDate) {
       toast({ title: 'Campos obrigatórios', description: 'Título, categoria e vencimento precisam estar preenchidos.', variant: 'destructive' });
       return;
     }
-    updatePayable(selectedPayable.id, {
-      title: editTitle.trim(),
-      categoryId: editCategoryId,
-      dueDate: editDueDate,
-      observations: editObservations.trim() || undefined,
-      isUrgent: editUrgent,
-    });
-    addPayableHistoryEntry(buildPayableHistoryDescription({ payableId: selectedPayable.id, action: 'UPDATED', userId: user?.id ?? 'user-2' }));
-    toast({ title: 'Conta atualizada', description: 'As informações principais foram ajustadas com sucesso.' });
-    setDialogMode(null);
-    window.setTimeout(clearDialogFields, 260);
+    try {
+      await updatePayable(selectedPayable.id, {
+        title: editTitle.trim(),
+        categoryId: editCategoryId,
+        dueDate: editDueDate,
+        observations: editObservations.trim() || undefined,
+        isUrgent: editUrgent,
+      });
+      addPayableHistoryEntry(buildPayableHistoryDescription({ payableId: selectedPayable.id, action: 'UPDATED', userId: user?.id ?? 'user-2' }));
+      toast({ title: 'Conta atualizada', description: 'As informações principais foram ajustadas com sucesso.' });
+      setDialogMode(null);
+      window.setTimeout(clearDialogFields, 260);
+    } catch (error) {
+      toast({
+        title: 'Não foi possível atualizar a conta',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    }
+  }
+
+  async function handleCancelSelectedPayable() {
+    if (!selectedPayable) return;
+    try {
+      await updatePayable(selectedPayable.id, { status: 'CANCELADO' });
+      addPayableHistoryEntry(buildPayableHistoryDescription({ payableId: selectedPayable.id, action: 'CANCELLED', userId: user?.id ?? 'user-2' }));
+      toast({ title: 'Conta cancelada', description: 'Ela continua no histórico, mas sai do fluxo ativo.' });
+      setDialogMode(null);
+      window.setTimeout(clearDialogFields, 260);
+    } catch (error) {
+      toast({
+        title: 'Não foi possível cancelar a conta',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    }
+  }
+
+  async function handleDeleteSelectedPayable() {
+    if (!selectedPayable) return;
+    try {
+      await updatePayable(selectedPayable.id, { deletedAt: new Date().toISOString() });
+      addPayableHistoryEntry(buildPayableHistoryDescription({ payableId: selectedPayable.id, action: 'DELETED', userId: user?.id ?? 'user-2' }));
+      toast({ title: 'Conta removida da listagem', description: 'A exclusão foi lógica.' });
+      setDialogMode(null);
+      window.setTimeout(clearDialogFields, 260);
+    } catch (error) {
+      toast({
+        title: 'Não foi possível excluir a conta',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    }
   }
 
   function renderActions(payable: AccountPayable) {
@@ -391,7 +441,7 @@ export default function ContasAPagar() {
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>Registrar pagamento</DialogTitle><DialogDescription>Popup rápido para pagamento total ou parcial.</DialogDescription></DialogHeader>
           {selectedPayable ? <div className="space-y-4"><div className="rounded-xl border border-border/60 bg-muted/20 p-4 text-sm"><p className="font-medium">{selectedPayable.title}</p><p className="mt-1 text-muted-foreground">Saldo em aberto: {fmtBRL(calculatePayableRemainingBalance(selectedPayable))}</p></div><div className="space-y-2"><Label>Valor pago</Label><Input value={paymentAmountInput} onChange={(event) => setPaymentAmountInput(event.target.value)} placeholder="0,00" /></div><div className="space-y-2"><Label>Forma de pagamento</Label><Select value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as PaymentMethod)}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Observações</Label><Textarea value={paymentNotes} onChange={(event) => setPaymentNotes(event.target.value)} rows={4} placeholder="Ex.: pagamento feito via PIX do caixa do dia" /></div></div> : null}
-          <DialogFooter><Button variant="outline" onClick={resetDialogs}>Cancelar</Button><Button onClick={handleSubmitPayment}>Salvar pagamento</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={resetDialogs}>Cancelar</Button><Button onClick={() => void handleSubmitPayment()}>Salvar pagamento</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -399,16 +449,16 @@ export default function ContasAPagar() {
         <DialogContent className="max-w-2xl">
           <DialogHeader><DialogTitle>Editar conta</DialogTitle><DialogDescription>Edição rápida dos dados principais.</DialogDescription></DialogHeader>
           <div className="grid gap-4 md:grid-cols-2"><div className="space-y-2 md:col-span-2"><Label>Título</Label><Input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} /></div><div className="space-y-2"><Label>Categoria</Label><Select value={editCategoryId} onValueChange={setEditCategoryId}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{payableCategories.filter((category) => category.isActive).map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Vencimento</Label><Input type="date" value={editDueDate} onChange={(event) => setEditDueDate(event.target.value)} /></div><div className="space-y-2 md:col-span-2"><Label>Observações</Label><Textarea value={editObservations} onChange={(event) => setEditObservations(event.target.value)} rows={4} /></div><label className="flex items-center gap-3 rounded-xl border border-border/60 px-4 py-3 text-sm md:col-span-2"><input type="checkbox" checked={editUrgent} onChange={(event) => setEditUrgent(event.target.checked)} className="h-4 w-4 rounded border-input" />Marcar esta conta como urgente</label></div>
-          <DialogFooter><Button variant="outline" onClick={resetDialogs}>Cancelar</Button><Button onClick={handleSubmitEdit}>Salvar alterações</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={resetDialogs}>Cancelar</Button><Button onClick={() => void handleSubmitEdit()}>Salvar alterações</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={dialogMode === 'cancel'} onOpenChange={(open) => !open && resetDialogs()}>
-        <DialogContent className="max-w-md"><DialogHeader><DialogTitle>Cancelar conta</DialogTitle><DialogDescription>Ela sai do fluxo ativo, mas continua no histórico.</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={resetDialogs}>Voltar</Button><Button variant="secondary" onClick={() => { if (!selectedPayable) return; updatePayable(selectedPayable.id, { status: 'CANCELADO' }); addPayableHistoryEntry(buildPayableHistoryDescription({ payableId: selectedPayable.id, action: 'CANCELLED', userId: user?.id ?? 'user-2' })); toast({ title: 'Conta cancelada', description: 'Ela continua no histórico, mas sai do fluxo ativo.' }); setDialogMode(null); window.setTimeout(clearDialogFields, 260); }}>Confirmar cancelamento</Button></DialogFooter></DialogContent>
+        <DialogContent className="max-w-md"><DialogHeader><DialogTitle>Cancelar conta</DialogTitle><DialogDescription>Ela sai do fluxo ativo, mas continua no histórico.</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={resetDialogs}>Voltar</Button><Button variant="secondary" onClick={() => void handleCancelSelectedPayable()}>Confirmar cancelamento</Button></DialogFooter></DialogContent>
       </Dialog>
 
       <Dialog open={dialogMode === 'delete'} onOpenChange={(open) => !open && resetDialogs()}>
-        <DialogContent className="max-w-md"><DialogHeader><DialogTitle>Excluir conta da listagem</DialogTitle><DialogDescription>Exclusão lógica: some da tela, mas mantém auditoria.</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={resetDialogs}>Cancelar</Button><Button variant="destructive" onClick={() => { if (!selectedPayable) return; updatePayable(selectedPayable.id, { deletedAt: new Date().toISOString() }); addPayableHistoryEntry(buildPayableHistoryDescription({ payableId: selectedPayable.id, action: 'DELETED', userId: user?.id ?? 'user-2' })); toast({ title: 'Conta removida da listagem', description: 'A exclusão foi lógica.' }); setDialogMode(null); window.setTimeout(clearDialogFields, 260); }}>Confirmar exclusão</Button></DialogFooter></DialogContent>
+        <DialogContent className="max-w-md"><DialogHeader><DialogTitle>Excluir conta da listagem</DialogTitle><DialogDescription>Exclusão lógica: some da tela, mas mantém auditoria.</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={resetDialogs}>Cancelar</Button><Button variant="destructive" onClick={() => void handleDeleteSelectedPayable()}>Confirmar exclusão</Button></DialogFooter></DialogContent>
       </Dialog>
     </>
   );

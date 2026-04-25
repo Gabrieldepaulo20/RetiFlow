@@ -18,6 +18,8 @@ import { useSystemUsersQuery } from '@/hooks/useSystemUsersQuery';
 import { useRoleModuleConfig, useUserModuleOverrides } from '@/hooks/useRoleModuleConfig';
 import { saveSystemUsers } from '@/services/auth/systemUsers';
 import { saveUserModuleOverrides } from '@/services/auth/moduleAccess';
+import { inativarUsuario, insertUsuario, reativarUsuario, upsertModulo } from '@/api/supabase/usuarios';
+import { appModulesToRpcPayload, ROLE_PARA_ACESSO } from '@/services/auth/supabaseUserMapping';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -38,8 +40,10 @@ const ALL_MODULES: { key: AppModuleKey; label: string }[] = [
   { key: 'notes', label: 'Notas de Entrada' },
   { key: 'kanban', label: 'Kanban' },
   { key: 'closing', label: 'Fechamento' },
+  { key: 'payables', label: 'Contas a Pagar' },
   { key: 'invoices', label: 'Nota Fiscal' },
   { key: 'settings', label: 'Configurações' },
+  { key: 'admin', label: 'Admin' },
 ];
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -48,6 +52,8 @@ const ROLE_LABELS: Record<UserRole, string> = {
   PRODUCAO: 'Produção',
   RECEPCAO: 'Recepção',
 };
+
+const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
 function buildUserId() {
   return `user-local-${Date.now()}`;
@@ -83,7 +89,9 @@ export default function AdminClients() {
 
   const persistSystemUsers = (nextUsers: SystemUser[]) => {
     setSystemUsers(nextUsers);
-    saveSystemUsers(nextUsers);
+    if (!IS_REAL_AUTH) {
+      saveSystemUsers(nextUsers);
+    }
     queryClient.invalidateQueries({ queryKey: ['auth', 'system-users'] });
   };
 
@@ -113,34 +121,57 @@ export default function AdminClients() {
   const getEffectiveModules = (user: SystemUser) => {
     return ALL_MODULES.reduce<Record<AppModuleKey, boolean>>((accumulator, module) => {
       const roleAllowsModule = roleModuleConfig[user.role]?.[module.key] !== false;
-      const userAllowsModule = userModuleOverrides[user.id]?.[module.key] !== false;
+      const userAllowsModule = IS_REAL_AUTH && user.moduleAccess
+        ? user.moduleAccess[module.key] !== false
+        : userModuleOverrides[user.id]?.[module.key] !== false;
       accumulator[module.key] = roleAllowsModule && userAllowsModule;
       return accumulator;
     }, {} as Record<AppModuleKey, boolean>);
   };
 
-  const handleToggleActive = (userId: string) => {
-    const nextUsers = systemUsers.map((user) =>
-      user.id === userId ? { ...user, isActive: !user.isActive } : user,
-    );
-    const updatedUser = nextUsers.find((user) => user.id === userId);
-    persistSystemUsers(nextUsers);
-    toast({
-      title: updatedUser?.isActive ? 'Usuário ativado' : 'Usuário desativado',
-      description: updatedUser ? `${updatedUser.name} teve o acesso atualizado.` : undefined,
-    });
+  const handleToggleActive = async (userId: string) => {
+    const currentUser = systemUsers.find((user) => user.id === userId);
+    if (!currentUser) return;
+
+    try {
+      if (IS_REAL_AUTH) {
+        if (currentUser.isActive) {
+          await inativarUsuario(userId);
+        } else {
+          await reativarUsuario(userId);
+        }
+      }
+
+      const nextUsers = systemUsers.map((user) =>
+        user.id === userId ? { ...user, isActive: !user.isActive } : user,
+      );
+      const updatedUser = nextUsers.find((user) => user.id === userId);
+      persistSystemUsers(nextUsers);
+      toast({
+        title: updatedUser?.isActive ? 'Usuário ativado' : 'Usuário desativado',
+        description: updatedUser ? `${updatedUser.name} teve o acesso atualizado.` : undefined,
+      });
+    } catch (error) {
+      toast({
+        title: 'Não foi possível atualizar o usuário',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleResetPassword = (userId: string) => {
     const user = systemUsers.find((candidate) => candidate.id === userId);
     toast({
       title: 'Reset de senha pendente de integração',
-      description: user ? `${user.name} continua usando a senha de desenvolvimento demo123 até a API de autenticação entrar.` : 'A API de autenticação ainda não foi integrada.',
+      description: IS_REAL_AUTH
+        ? 'Reset seguro de senha precisa ser feito pelo Supabase Auth/Admin API, não pelo frontend.'
+        : user ? `${user.name} continua usando a senha de desenvolvimento demo123 até a API de autenticação entrar.` : 'A API de autenticação ainda não foi integrada.',
     });
     setShowResetDialog(null);
   };
 
-  const handleCreateUser = () => {
+  const handleCreateUser = async () => {
     const normalizedEmail = newEmail.trim().toLowerCase();
     if (!newName.trim() || !normalizedEmail) {
       toast({ title: 'Preencha nome e e-mail', variant: 'destructive' });
@@ -152,30 +183,80 @@ export default function AdminClients() {
       return;
     }
 
-    const newUser: SystemUser = {
-      id: buildUserId(),
-      name: newName.trim(),
-      email: normalizedEmail,
-      phone: newPhone.trim() || undefined,
-      role: newRole,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-    };
+    try {
+      const createdId = IS_REAL_AUTH
+        ? await insertUsuario({
+            p_nome: newName.trim(),
+            p_email: normalizedEmail,
+            p_telefone: newPhone.trim(),
+            p_acesso: ROLE_PARA_ACESSO[newRole],
+            p_status: true,
+          })
+        : buildUserId();
 
-    persistSystemUsers([newUser, ...systemUsers]);
-    toast({
-      title: 'Usuário do sistema criado',
-      description: `${newUser.name} já pode acessar o ambiente de desenvolvimento com a senha demo123.`,
-    });
-    setShowCreateDialog(false);
-    setNewName('');
-    setNewEmail('');
-    setNewPhone('');
-    setNewRole('RECEPCAO');
+      const newUser: SystemUser = {
+        id: createdId,
+        name: newName.trim(),
+        email: normalizedEmail,
+        phone: newPhone.trim() || undefined,
+        role: newRole,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        moduleAccess: IS_REAL_AUTH ? roleModuleConfig[newRole] : undefined,
+      };
+
+      if (IS_REAL_AUTH) {
+        await upsertModulo(createdId, appModulesToRpcPayload(roleModuleConfig[newRole]) as Parameters<typeof upsertModulo>[1]);
+      }
+
+      persistSystemUsers([newUser, ...systemUsers]);
+      toast({
+        title: 'Usuário do sistema criado',
+        description: IS_REAL_AUTH
+          ? `${newUser.name} foi cadastrado no perfil interno. O acesso ao login ainda depende da conta no Supabase Auth.`
+          : `${newUser.name} já pode acessar o ambiente de desenvolvimento com a senha demo123.`,
+      });
+      setShowCreateDialog(false);
+      setNewName('');
+      setNewEmail('');
+      setNewPhone('');
+      setNewRole('RECEPCAO');
+    } catch (error) {
+      toast({
+        title: 'Não foi possível criar o usuário',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const toggleUserModule = (user: SystemUser, moduleKey: AppModuleKey) => {
+  const toggleUserModule = async (user: SystemUser, moduleKey: AppModuleKey) => {
     if (roleModuleConfig[user.role]?.[moduleKey] === false) {
+      return;
+    }
+
+    if (IS_REAL_AUTH) {
+      const currentModules = getEffectiveModules(user);
+      const nextModuleAccess = {
+        ...currentModules,
+        [moduleKey]: !currentModules[moduleKey],
+      };
+
+      try {
+        await upsertModulo(user.id, appModulesToRpcPayload(nextModuleAccess) as Parameters<typeof upsertModulo>[1]);
+        setSystemUsers((previous) =>
+          previous.map((candidate) =>
+            candidate.id === user.id ? { ...candidate, moduleAccess: nextModuleAccess } : candidate,
+          ),
+        );
+        queryClient.invalidateQueries({ queryKey: ['auth', 'system-users'] });
+      } catch (error) {
+        toast({
+          title: 'Não foi possível salvar módulos',
+          description: error instanceof Error ? error.message : 'Tente novamente.',
+          variant: 'destructive',
+        });
+      }
       return;
     }
 
@@ -482,7 +563,7 @@ export default function AdminClients() {
                         <Switch
                           checked={isEnabled}
                           disabled={!roleAllowsModule}
-                          onCheckedChange={() => toggleUserModule(user, module.key)}
+                          onCheckedChange={() => void toggleUserModule(user, module.key)}
                         />
                       </div>
                     );

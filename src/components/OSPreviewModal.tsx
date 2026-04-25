@@ -12,6 +12,7 @@ import { NotaPDFTemplate } from '@/components/notes/NotaPDFTemplate';
 import type { NotaServicoDetalhes, NotaServicoDetalhesItem } from '@/api/supabase/notas';
 import { NOTA_PRINT_MAX_ROWS, NOTA_PRINT_OBSERVATIONS, NOTA_PRINT_PAGE } from '@/components/notes/notaPrintLayout';
 import { openPdfPrintDialog } from '@/lib/printPdf';
+import { shareOrCopyText } from '@/lib/browserShare';
 
 const MAX_ROWS = NOTA_PRINT_MAX_ROWS;
 
@@ -220,16 +221,16 @@ function PreviewVia({ dados, itens }: { dados: NotaServicoDetalhes; itens: NotaS
         <table className="h-full w-full table-fixed border-collapse border border-[#dddddd]">
           <colgroup>
             <col className="w-[10%]" />
-            <col className="w-[57%]" />
-            <col className="w-[18%]" />
-            <col className="w-[15%]" />
+            <col className="w-[52%]" />
+            <col className="w-[19%]" />
+            <col className="w-[19%]" />
           </colgroup>
           <thead>
             <tr className="bg-[#efefef]">
               <th className="border border-[#d0d0d0] px-1 py-[5px] text-center text-[12px] font-bold">QTD.</th>
               <th className="border border-[#d0d0d0] px-1 py-[5px] text-center text-[12px] font-bold">DESCRIÇÃO DOS PRODUTOS</th>
-              <th className="border border-[#d0d0d0] px-1 py-[5px] text-center text-[12px] font-bold">VALOR UNI.</th>
-              <th className="border border-[#d0d0d0] px-1 py-[5px] text-center text-[12px] font-bold">TOTAL</th>
+              <th className="border border-[#d0d0d0] px-1 py-[5px] text-center text-[11px] font-bold">VALOR UNI.</th>
+              <th className="border border-[#d0d0d0] px-1 py-[5px] text-center text-[11px] font-bold">TOTAL</th>
             </tr>
           </thead>
           <tbody>
@@ -237,8 +238,8 @@ function PreviewVia({ dados, itens }: { dados: NotaServicoDetalhes; itens: NotaS
               <tr key={item.id_rel}>
                 <td className="h-[21px] border border-[#dddddd] px-1 py-[3px] text-center">{item.quantidade}</td>
                 <td className="h-[21px] border border-[#dddddd] px-1 py-[3px]">{item.descricao}</td>
-                <td className="h-[21px] border border-[#dddddd] px-1 py-[3px] text-right">R$ {formatCurrency(item.preco_unitario)}</td>
-                <td className="h-[21px] border border-[#dddddd] px-1 py-[3px] text-right">R$ {formatCurrency(item.subtotal_item)}</td>
+                <td className="h-[21px] whitespace-nowrap border border-[#dddddd] px-1.5 py-[3px] text-right text-[12px]">R$ {formatCurrency(item.preco_unitario)}</td>
+                <td className="h-[21px] whitespace-nowrap border border-[#dddddd] px-1.5 py-[3px] text-right text-[12px]">R$ {formatCurrency(item.subtotal_item)}</td>
               </tr>
             ))}
             {Array.from({ length: paddingRows }).map((_, index) => (
@@ -255,7 +256,7 @@ function PreviewVia({ dados, itens }: { dados: NotaServicoDetalhes; itens: NotaS
               <td colSpan={3} className="border-t border-[#dddddd] px-[10px] py-1 text-right text-[13px]">
                 TOTAL GERAL
               </td>
-              <td className="rounded border border-[#d0d0d0] bg-[#efefef] px-1 py-1 text-center text-[13px]">
+              <td className="whitespace-nowrap rounded border border-[#d0d0d0] bg-[#efefef] px-1.5 py-1 text-center text-[12px]">
                 R$ {formatCurrency(financeiro_servicos.total_liquido)}
               </td>
             </tr>
@@ -374,10 +375,37 @@ export default function OSPreviewModal({ open, onClose, note, client, services, 
     }
   };
 
+  const handleShare = async () => {
+    try {
+      const result = await shareOrCopyText({
+        title: `O.S. ${note.number}`,
+        text: `O.S. ${note.number} - ${client?.name ?? 'cliente'} - Total R$ ${formatCurrency(note.totalAmount)}`,
+        url: window.location.href,
+      });
+
+      if (result === 'copied') {
+        toast({ title: 'Link copiado', description: 'As informações da O.S. foram copiadas para a área de transferência.' });
+      } else if (result === 'unsupported') {
+        toast({
+          title: 'Compartilhamento indisponível',
+          description: 'Este navegador não permite compartilhar nem copiar automaticamente.',
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      toast({
+        title: 'Não foi possível compartilhar',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={(value) => { if (!value) onClose(); }}>
       <DialogContent className="flex h-[96dvh] max-h-[96dvh] w-full max-w-[98vw] flex-col gap-0 overflow-hidden bg-background p-0 [&>button]:right-3 [&>button]:top-3">
-        <DialogHeader className="shrink-0 border-b bg-card px-4 py-2.5 pr-11 sm:px-5">
+        <DialogHeader className="shrink-0 border-b bg-card px-4 py-2.5 pr-14 sm:px-5 sm:pr-16">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div className="min-w-0">
               <DialogTitle className="text-lg font-bold">
@@ -394,7 +422,7 @@ export default function OSPreviewModal({ open, onClose, note, client, services, 
               <Button variant="outline" size="sm" onClick={() => void handleDownload()} disabled={busyAction !== null}>
                 <Download className="w-4 h-4 mr-1.5" /> Baixar PDF
               </Button>
-              <Button variant="outline" size="sm" onClick={() => toast({ title: 'Compartilhamento em implementação' })}>
+              <Button variant="outline" size="sm" onClick={() => void handleShare()}>
                 <Share2 className="w-4 h-4 mr-1.5" /> Compartilhar
               </Button>
             </div>

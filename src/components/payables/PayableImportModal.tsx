@@ -17,6 +17,9 @@ import {
 } from '@/services/domain/payables';
 import { AccountPayable, PAYMENT_METHOD_LABELS, RECURRENCE_TYPE_LABELS } from '@/types';
 import { BadgeCheck, Bot, Camera, FileImage, FileScan, FileText, LoaderCircle, ShieldCheck, Sparkles, Upload, WandSparkles } from 'lucide-react';
+import { analisarContaPagarComIA } from '@/api/supabase/contas-pagar';
+
+const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
 type ExtractedField = {
   label: string;
@@ -154,7 +157,7 @@ type PayableImportModalProps = {
 export default function PayableImportModal({ open, onOpenChange, onCreated }: PayableImportModalProps) {
   const { toast } = useToast();
   const { user } = useAuth();
-  const { addPayable, addPayableAttachment, addPayableHistoryEntry, payableCategories, payables } = useData();
+  const { addPayable, addPayableAttachment, addPayableHistoryEntry, payableCategories, payableSuppliers, payables } = useData();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const [selectedTab, setSelectedTab] = useState('arquivo');
@@ -222,7 +225,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     handleFileSelection(event.target.files?.[0] ?? null);
   }
 
-  function handleAnalyze() {
+  async function handleAnalyze() {
     if (!selectedFile) {
       toast({
         title: 'Selecione um documento',
@@ -236,23 +239,44 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     setProgress(12);
     setAnalysis(null);
 
-    const checkpoints = [28, 49, 67, 82, 96];
-    checkpoints.forEach((value, index) => {
-      window.setTimeout(() => setProgress(value), 260 * (index + 1));
-    });
+    try {
+      if (!IS_REAL_AUTH) {
+        const checkpoints = [28, 49, 67, 82, 96];
+        checkpoints.forEach((value, index) => {
+          window.setTimeout(() => setProgress(value), 260 * (index + 1));
+        });
 
-    window.setTimeout(() => {
-      setAnalysis(inferDraft(selectedFile));
+        await new Promise((resolve) => window.setTimeout(resolve, 1700));
+        setAnalysis(inferDraft(selectedFile));
+      } else {
+        setProgress(35);
+        const result = await analisarContaPagarComIA({
+          file: selectedFile,
+          categories: payableCategories.map((category) => ({ id: category.id, name: category.name })),
+          suppliers: payableSuppliers.map((supplier) => ({ id: supplier.id, name: supplier.name })),
+        });
+        setProgress(88);
+        setAnalysis(result as AnalysisResult);
+      }
+
       setProgress(100);
-      setIsAnalyzing(false);
       toast({
         title: 'Pré-análise concluída',
         description: 'Revise os campos sugeridos antes de gerar a conta.',
       });
-    }, 1700);
+    } catch (error) {
+      setProgress(0);
+      toast({
+        title: 'Não foi possível analisar o documento',
+        description: error instanceof Error ? error.message : 'Verifique a função de IA e tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
   }
 
-  function handleCreateDraft(mode: 'standard' | 'paid' | 'open-details') {
+  async function handleCreateDraft(mode: 'standard' | 'paid' | 'open-details') {
     if (!selectedFile || !analysis) return;
 
     const duplicate = findPayableDuplicate(
@@ -279,7 +303,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     const treatAsPaid = mode === 'paid' || analysis.draft.suggestedStatus === 'PAGO';
     const source = selectedTab === 'camera' ? 'CAMERA_CAPTURE' : 'IA_IMPORT';
 
-    const payable = addPayable({
+    const payable = await addPayable({
       title: analysis.draft.title,
       supplierName: analysis.draft.supplierName,
       categoryId: analysis.draft.categoryId,
@@ -349,9 +373,11 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
         <TabsContent value="arquivo" className="mt-0 space-y-5">
           <Alert>
             <Bot className="h-4 w-4" />
-            <AlertTitle>Importação assistida preparada para IA</AlertTitle>
+            <AlertTitle>{IS_REAL_AUTH ? 'Importação assistida com IA real' : 'Importação assistida em modo demonstração'}</AlertTitle>
             <AlertDescription>
-              A ideia profissional é essa: o usuário sobe o documento, a IA sugere os campos, o financeiro revisa e confirma antes de gerar a conta.
+              {IS_REAL_AUTH
+                ? 'O documento será enviado para uma Supabase Function, analisado com IA e revisado antes de virar conta.'
+                : 'Em desenvolvimento, a tela simula a análise sem chamar IA externa. Em produção, usa a função segura no backend.'}
             </AlertDescription>
           </Alert>
 
@@ -367,7 +393,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
             onSelect={() => fileInputRef.current?.click()}
             onAnalyze={handleAnalyze}
             onClear={() => handleFileSelection(null)}
-            onCreateDraft={handleCreateDraft}
+            onCreateDraft={(mode) => void handleCreateDraft(mode)}
           />
         </TabsContent>
 
@@ -392,7 +418,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
             onSelect={() => cameraInputRef.current?.click()}
             onAnalyze={handleAnalyze}
             onClear={() => handleFileSelection(null)}
-            onCreateDraft={handleCreateDraft}
+            onCreateDraft={(mode) => void handleCreateDraft(mode)}
           />
         </TabsContent>
       </Tabs>

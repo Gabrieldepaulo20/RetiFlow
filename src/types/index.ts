@@ -37,6 +37,7 @@ export interface SystemUser {
   createdAt: string;
   lastLogin?: string;
   phone?: string;
+  moduleAccess?: Partial<Record<AppModuleKey, boolean>>;
 }
 
 export type User = SystemUser;

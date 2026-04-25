@@ -175,15 +175,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   descCol: {
-    width: '57%',
+    width: '52%',
     textAlign: 'left',
   },
   unitCol: {
-    width: '18%',
+    width: '19%',
     textAlign: 'right',
   },
   totalCol: {
-    width: '15%',
+    width: '19%',
     textAlign: 'right',
   },
   tableFooter: {
@@ -194,7 +194,7 @@ const styles = StyleSheet.create({
     borderTopStyle: 'solid',
   },
   totalLabel: {
-    width: '85%',
+    width: '81%',
     paddingVertical: 4,
     paddingHorizontal: 10,
     textAlign: 'right',
@@ -202,11 +202,11 @@ const styles = StyleSheet.create({
     fontWeight: 700,
   },
   totalValueCell: {
-    width: '15%',
+    width: '19%',
     paddingVertical: 4,
-    paddingHorizontal: 5,
+    paddingHorizontal: 4,
     textAlign: 'center',
-    fontSize: 9.2,
+    fontSize: 8.6,
     borderWidth: 1,
     borderColor: '#d0d0d0',
     borderStyle: 'solid',

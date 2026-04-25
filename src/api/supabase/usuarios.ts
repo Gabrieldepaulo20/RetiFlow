@@ -9,6 +9,17 @@ export interface Usuario {
   status: boolean;
   created_at: string;
   ultimo_login: string | null;
+  modulos?: Partial<{
+    dashboard: boolean;
+    clientes: boolean;
+    notas_de_entrada: boolean;
+    kanban: boolean;
+    fechamento: boolean;
+    nota_fiscal: boolean;
+    configuracoes: boolean;
+    contas_a_pagar: boolean;
+    admin: boolean;
+  }> | null;
 }
 
 export async function getUsuarios(params?: {

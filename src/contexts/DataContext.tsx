@@ -185,7 +185,7 @@ interface DataCtx {
   payableAttachments: PayableAttachment[];
   payableHistory: PayableHistory[];
   addPayable: (data: Omit<AccountPayable, 'id' | 'createdAt' | 'updatedAt'>) => Promise<AccountPayable>;
-  updatePayable: (id: string, data: Partial<AccountPayable>) => void;
+  updatePayable: (id: string, data: Partial<AccountPayable>) => Promise<void>;
   getPayable: (id: string) => AccountPayable | undefined;
   addPayableAttachment: (data: Omit<PayableAttachment, 'id' | 'createdAt'>) => PayableAttachment;
   addPayableHistoryEntry: (data: Omit<PayableHistory, 'id' | 'createdAt'>) => PayableHistory;
@@ -747,6 +747,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       } catch (err) {
         console.error('[addPayable]', err);
+        throw err;
       }
     }
     setPayables((prev) => [newPayable, ...prev]);
@@ -755,41 +756,40 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return newPayable;
   }, [addActivity, bumpDataVersion]);
 
-  const updatePayable = useCallback((id: string, data: Partial<AccountPayable>) => {
+  const updatePayable = useCallback(async (id: string, data: Partial<AccountPayable>) => {
     if (IS_REAL_AUTH) {
       const current = payableById.get(id);
-      void (async () => {
-        try {
-          if ('deletedAt' in data) {
-            await excluirContaPagar(id);
-          } else if (data.status === 'CANCELADO') {
-            await cancelarContaPagar(id);
-          } else if (data.paidAmount !== undefined) {
-            const prevPaid = current?.paidAmount ?? 0;
-            const increment = Number((data.paidAmount - prevPaid).toFixed(2));
-            if (increment > 0) {
-              await registrarPagamento({
-                p_id_contas_pagar: id,
-                p_valor_pago: increment,
-                p_pago_com: data.paidWith,
-                p_observacoes_pagamento: data.paymentNotes,
-              });
-            }
-          } else {
-            const payload: Partial<InsertContaPagarPayload> = {};
-            if (data.title !== undefined) payload.p_titulo = data.title;
-            if (data.categoryId !== undefined) payload.p_fk_categorias = data.categoryId;
-            if (data.dueDate !== undefined) payload.p_data_vencimento = data.dueDate;
-            if (data.isUrgent !== undefined) payload.p_urgente = data.isUrgent;
-            if (data.observations !== undefined) payload.p_observacoes = data.observations;
-            if (Object.keys(payload).length > 0) {
-              await updateContaPagar(id, payload);
-            }
+      try {
+        if ('deletedAt' in data) {
+          await excluirContaPagar(id);
+        } else if (data.status === 'CANCELADO') {
+          await cancelarContaPagar(id);
+        } else if (data.paidAmount !== undefined) {
+          const prevPaid = current?.paidAmount ?? 0;
+          const increment = Number((data.paidAmount - prevPaid).toFixed(2));
+          if (increment > 0) {
+            await registrarPagamento({
+              p_id_contas_pagar: id,
+              p_valor_pago: increment,
+              p_pago_com: data.paidWith,
+              p_observacoes_pagamento: data.paymentNotes,
+            });
           }
-        } catch (err) {
-          console.error('[updatePayable]', err);
+        } else {
+          const payload: Partial<InsertContaPagarPayload> = {};
+          if (data.title !== undefined) payload.p_titulo = data.title;
+          if (data.categoryId !== undefined) payload.p_fk_categorias = data.categoryId;
+          if (data.dueDate !== undefined) payload.p_data_vencimento = data.dueDate;
+          if (data.isUrgent !== undefined) payload.p_urgente = data.isUrgent;
+          if (data.observations !== undefined) payload.p_observacoes = data.observations;
+          if (Object.keys(payload).length > 0) {
+            await updateContaPagar(id, payload);
+          }
         }
-      })();
+      } catch (err) {
+        console.error('[updatePayable]', err);
+        throw err;
+      }
     }
     setPayables((prev) =>
       prev.map((p) => (p.id === id ? { ...p, ...data, updatedAt: new Date().toISOString() } : p)),

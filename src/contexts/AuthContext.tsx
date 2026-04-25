@@ -14,16 +14,10 @@ import {
 } from '@/services/storage/browserStorage';
 import { loadSystemUsers } from '@/services/auth/systemUsers';
 import { supabase } from '@/lib/supabase';
+import { dbUserToSystemUser } from '@/services/auth/supabaseUserMapping';
 
 const AUTH_SESSION_STORAGE_KEY = 'auth.session';
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
-
-const ACESSO_PARA_ROLE: Record<string, SystemUser['role']> = {
-  administrador: 'ADMIN',
-  financeiro:    'FINANCEIRO',
-  'produção':    'PRODUCAO',
-  'recepção':    'RECEPCAO',
-};
 
 interface LoginResult {
   success: boolean;
@@ -86,14 +80,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!envelope || envelope.status !== 200) return;
 
       const perfil = envelope.dados;
-      const role = ACESSO_PARA_ROLE[perfil.acesso] ?? 'RECEPCAO';
 
       const restored: AuthSession = {
-        user: {
-          id: perfil.id_usuarios, name: perfil.nome, email: perfil.email,
-          role, isActive: perfil.status, createdAt: new Date().toISOString(),
-          phone: perfil.telefone || undefined,
-        },
+        user: dbUserToSystemUser(perfil),
         mode: 'real',
         tokens: {
           accessToken:  sbSession.access_token,
@@ -198,6 +187,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!user) return false;
     const permission = getModulePermission(moduleKey);
     if (!can(permission)) return false;
+    if (IS_REAL_AUTH && user.moduleAccess) {
+      return user.moduleAccess[moduleKey] !== false;
+    }
     if (!isRoleModuleEnabled(user.role, moduleKey)) return false;
     if (!isUserModuleEnabled(user.id, moduleKey)) return false;
     return true;
