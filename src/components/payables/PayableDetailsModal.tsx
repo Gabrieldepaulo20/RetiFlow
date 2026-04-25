@@ -199,7 +199,16 @@ export default function PayableDetailsModal({
                           <p className="truncate font-medium">{attachment.filename}</p>
                           <p className="mt-1 text-xs text-muted-foreground">{attachment.type} • {format(parseISO(attachment.createdAt), 'dd/MM/yyyy HH:mm')}</p>
                         </div>
-                        <Button variant="outline" size="sm" disabled>Preview</Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5"
+                          disabled={attachment.url.startsWith('local-upload://')}
+                          onClick={() => window.open(attachment.url, '_blank', 'noopener,noreferrer')}
+                        >
+                          Abrir
+                          <ArrowUpRight className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
                     ))}
                   </div>

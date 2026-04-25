@@ -113,6 +113,39 @@ export async function insertAnexoContaPagar(params: {
   return env.id_anexo as string;
 }
 
+function sanitizeStorageName(filename: string) {
+  const extension = filename.includes('.') ? `.${filename.split('.').pop()}` : '';
+  const basename = filename
+    .replace(/\.[^.]+$/, '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9-_]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'anexo';
+
+  return `${basename}${extension.toLowerCase()}`;
+}
+
+export async function uploadAnexoContaPagar(params: {
+  contaPagarId: string;
+  file: File;
+}) {
+  const bucket = import.meta.env.VITE_SUPABASE_PAYABLE_ATTACHMENTS_BUCKET || 'contas-pagar';
+  const safeName = sanitizeStorageName(params.file.name);
+  const path = `${params.contaPagarId}/${Date.now()}-${safeName}`;
+  const { error } = await supabase.storage.from(bucket).upload(path, params.file, {
+    contentType: params.file.type || 'application/octet-stream',
+    upsert: false,
+  });
+
+  if (error) {
+    throw new Error(`[uploadAnexoContaPagar] ${error.message}`);
+  }
+
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+  return data.publicUrl;
+}
+
 export type AnalisarContaPagarResultado = {
   draft: {
     title: string;
