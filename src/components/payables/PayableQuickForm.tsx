@@ -26,6 +26,9 @@ import {
   findPayableDuplicate,
   PAYABLE_FIELD_LIMITS,
 } from '@/services/domain/payables';
+import { insertAnexoContaPagar, uploadAnexoContaPagar } from '@/api/supabase/contas-pagar';
+
+const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
 type PayableQuickFormProps = {
   onCancel: () => void;
@@ -234,11 +237,28 @@ export default function PayableQuickForm({
     );
 
     if (attachment) {
+      const type = inferAttachmentType(attachment);
+      let url = `local-upload://${attachment.name}`;
+
+      if (IS_REAL_AUTH) {
+        try {
+          url = await uploadAnexoContaPagar({ contaPagarId: payable.id, file: attachment });
+          await insertAnexoContaPagar({
+            p_fk_contas_pagar: payable.id,
+            p_tipo: type,
+            p_nome_arquivo: attachment.name,
+            p_url: url,
+          });
+        } catch {
+          // storage indisponível — mantém referência local
+        }
+      }
+
       addPayableAttachment({
         payableId: payable.id,
-        type: inferAttachmentType(attachment),
+        type,
         filename: attachment.name,
-        url: `local-upload://${attachment.name}`,
+        url,
         createdByUserId: user?.id ?? 'user-2',
       });
       addPayableHistoryEntry(

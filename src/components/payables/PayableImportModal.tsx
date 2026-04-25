@@ -199,7 +199,7 @@ type PayableImportModalProps = {
   onCreated?: (payable: AccountPayable) => void;
 };
 
-export default function PayableImportModal({ open, onOpenChange }: PayableImportModalProps) {
+export default function PayableImportModal({ open, onOpenChange, onCreated }: PayableImportModalProps) {
   const { toast } = useToast();
   const { user } = useAuth();
   const { addPayable, addPayableAttachment, addPayableHistoryEntry, payableCategories, payableSuppliers, payables } = useData();
@@ -393,6 +393,7 @@ export default function PayableImportModal({ open, onOpenChange }: PayableImport
 
     let createdCount = 0;
     let failedCount = 0;
+    let lastCreated: AccountPayable | undefined;
 
     for (const item of targets) {
       const result = await analyzeItem(item);
@@ -402,8 +403,9 @@ export default function PayableImportModal({ open, onOpenChange }: PayableImport
       }
 
       try {
-        await createPayableFromAnalysis(item, result);
+        const created = await createPayableFromAnalysis(item, result);
         createdCount += 1;
+        lastCreated = created;
       } catch (error) {
         failedCount += 1;
         updateItem(item.id, {
@@ -423,6 +425,7 @@ export default function PayableImportModal({ open, onOpenChange }: PayableImport
 
     onOpenChange(false);
     window.setTimeout(clearItems, 250);
+    if (lastCreated) onCreated?.(lastCreated);
   }
 
   return (
