@@ -11,6 +11,7 @@ import { buildCustomerAddressLabel } from '@/services/domain/customers';
 import { NotaPDFTemplate } from '@/components/notes/NotaPDFTemplate';
 import type { NotaServicoDetalhes, NotaServicoDetalhesItem } from '@/api/supabase/notas';
 import { NOTA_PRINT_MAX_ROWS, NOTA_PRINT_OBSERVATIONS, NOTA_PRINT_PAGE } from '@/components/notes/notaPrintLayout';
+import { openPdfPrintDialog } from '@/lib/printPdf';
 
 const MAX_ROWS = NOTA_PRINT_MAX_ROWS;
 
@@ -360,7 +361,7 @@ export default function OSPreviewModal({ open, onClose, note, client, services, 
     setBusyAction('print');
     try {
       const url = await buildBlobUrl();
-      window.open(url, '_blank', 'noopener,noreferrer');
+      openPdfPrintDialog(url, `O.S. ${note.number}`);
       window.setTimeout(() => URL.revokeObjectURL(url), 5000);
     } catch (error) {
       toast({

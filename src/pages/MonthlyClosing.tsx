@@ -8,13 +8,14 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   AlertTriangle, CalendarDays, Download, Building2,
-  PlusCircle, RefreshCcw, Share2, FileText, ChevronLeft, Eye, EyeOff, Sparkles, ArrowUpFromLine, PencilLine,
+  PlusCircle, RefreshCcw, Share2, FileText, ChevronLeft, Eye, EyeOff, Sparkles, PencilLine, Printer,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { pdf } from '@react-pdf/renderer';
 import { ClosingPDFTemplate } from '@/components/closing/ClosingPDFTemplate';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { openPdfPrintDialog } from '@/lib/printPdf';
 import {
   getFechamentos,
   insertFechamento,
@@ -661,6 +662,25 @@ export default function MonthlyClosing() {
     }
   }, [toast, renderClosingPdfBlob]);
 
+  const handlePrintPreview = useCallback(async () => {
+    if (!modalPreviewDados) {
+      toast({ title: 'Nenhum fechamento selecionado', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      setTemplatePreviewLoading(true);
+      const blob = await renderClosingPdfBlob(modalPreviewDados, modalPreviewDados.gerado_em);
+      const url = URL.createObjectURL(blob);
+      openPdfPrintDialog(url, `Fechamento ${modalPreviewDados.periodo}`);
+      window.setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch {
+      toast({ title: 'Erro ao abrir impressão', variant: 'destructive' });
+    } finally {
+      setTemplatePreviewLoading(false);
+    }
+  }, [modalPreviewDados, renderClosingPdfBlob, toast]);
+
   const years = useMemo(() => {
     const y = Number(defaultYear);
     if (availablePeriods.length > 0) {
@@ -804,7 +824,7 @@ export default function MonthlyClosing() {
                           <Eye className="w-3.5 h-3.5 mr-1.5" /> Visualizar
                         </Button>
                         <Button size="sm" onClick={() => void generateDraft(draft)} disabled={generating}>
-                          <ArrowUpFromLine className="w-3.5 h-3.5 mr-1.5" /> Gerar fechamento
+                          <RefreshCcw className="w-3.5 h-3.5 mr-1.5" /> Gerar fechamento
                         </Button>
                         <Button size="sm" variant="ghost" onClick={() => removeDraft(draft.id)}>
                           <EyeOff className="w-3.5 h-3.5 mr-1.5" /> Remover
@@ -898,29 +918,29 @@ export default function MonthlyClosing() {
       </div>
 
       <Dialog open={draftModalOpen} onOpenChange={(open) => { if (!open) closeDraftModal(); else setDraftModalOpen(true); }}>
-        <DialogContent className="w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] p-0 gap-0 sm:max-w-6xl">
+        <DialogContent className="h-[94dvh] max-h-[94dvh] w-[calc(100vw-1rem)] max-w-[min(1380px,calc(100vw-1rem))] gap-0 overflow-hidden p-0 [&>button]:right-3 [&>button]:top-3">
           <DialogTitle className="sr-only">Editar rascunho de fechamento</DialogTitle>
-          <div className="flex flex-col max-h-[92vh]">
-            <div className="border-b px-5 py-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="shrink-0 border-b px-4 py-3 pr-12 sm:px-5">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div className="min-w-0">
                   <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Rascunho de fechamento</p>
                   <h3 className="text-xl font-semibold mt-1">{activeDraft?.clientName ?? 'Cliente'}</h3>
                   <p className="text-sm text-muted-foreground">{activeDraft?.periodLabel ?? '—'}</p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2 xl:justify-end">
                   <Button variant="outline" onClick={() => setTemplatePreviewOpen(true)} disabled={!modalPreviewDados}>
                     <Eye className="w-4 h-4 mr-2" /> Visualizar
                   </Button>
                   <Button onClick={handleGerar} disabled={generating || !activeDraft}>
-                    {generating ? <RefreshCcw className="w-4 h-4 mr-2 animate-spin" /> : <ArrowUpFromLine className="w-4 h-4 mr-2" />}
+                    <RefreshCcw className={cn('w-4 h-4 mr-2', generating && 'animate-spin')} />
                     Gerar fechamento
                   </Button>
                 </div>
               </div>
             </div>
 
-            <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_300px] min-h-0">
+            <div className="grid min-h-0 flex-1 gap-0 xl:grid-cols-[minmax(0,1fr)_280px]">
               <div className="min-h-0 overflow-y-auto p-4 sm:p-5 space-y-4">
                 {previewNotes.map((nota) => {
                   const disc = descontos[nota.id] ?? 0;
@@ -948,37 +968,57 @@ export default function MonthlyClosing() {
                         </div>
                       </div>
                       <CardContent className="p-0">
-                        <div className="overflow-x-auto">
-                          <table className="w-full min-w-[860px] text-xs">
-                            <thead>
-                              <tr className="border-b border-border/40 text-muted-foreground">
-                                <th className="text-left px-4 py-2 font-medium">Descrição</th>
-                                <th className="text-center px-3 py-2 font-medium w-[88px]">Qtd</th>
-                                <th className="text-right px-3 py-2 font-medium w-[120px]">Unit.</th>
-                                <th className="text-right px-3 py-2 font-medium w-[110px]">Desc. item</th>
-                                <th className="text-right px-3 py-2 font-medium w-[120px]">Subtotal</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {nota.itens.map((item) => (
-                                <tr key={item.id} className="border-b border-border/20 align-top hover:bg-muted/20">
-                                  <td className="px-4 py-2">
-                                    {editing ? <Input value={item.descricao} onChange={(e) => updatePreviewItem(nota.id, item.id, 'descricao', e.target.value)} className="h-8 text-xs" /> : <span>{item.descricao}</span>}
-                                  </td>
-                                  <td className="px-3 py-2">
-                                    {editing ? <Input type="number" min="0" step="1" value={item.quantidade} onChange={(e) => updatePreviewItem(nota.id, item.id, 'quantidade', e.target.value)} className="h-8 text-xs text-center" /> : <p className="text-center">{item.quantidade}</p>}
-                                  </td>
-                                  <td className="px-3 py-2">
-                                    {editing ? <Input type="number" min="0" step="0.01" value={item.preco_unitario} onChange={(e) => updatePreviewItem(nota.id, item.id, 'preco_unitario', e.target.value)} className="h-8 text-xs text-right" /> : <p className="text-right">R$ {toMoney(item.preco_unitario)}</p>}
-                                  </td>
-                                  <td className="px-3 py-2">
-                                    {editing ? <Input type="number" min="0" max="100" step="0.01" value={item.desconto_porcentagem} onChange={(e) => updatePreviewItem(nota.id, item.id, 'desconto_porcentagem', e.target.value)} className="h-8 text-xs text-right" /> : <p className="text-right">{item.desconto_porcentagem > 0 ? `${item.desconto_porcentagem}%` : '—'}</p>}
-                                  </td>
-                                  <td className="text-right px-3 py-2 font-medium">R$ {toMoney(item.subtotal)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                        <div className="divide-y divide-border/30">
+                          <div className="hidden grid-cols-[minmax(180px,1fr)_76px_104px_104px_112px] gap-3 px-4 py-2 text-xs font-medium text-muted-foreground lg:grid">
+                            <span>Descrição</span>
+                            <span className="text-center">Qtd</span>
+                            <span className="text-right">Unit.</span>
+                            <span className="text-right">Desc. item</span>
+                            <span className="text-right">Subtotal</span>
+                          </div>
+                          {nota.itens.map((item) => (
+                            <div
+                              key={item.id}
+                              className="grid gap-3 px-4 py-3 text-xs lg:grid-cols-[minmax(180px,1fr)_76px_104px_104px_112px] lg:items-center"
+                            >
+                              <div className="min-w-0">
+                                <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Descrição</p>
+                                {editing ? (
+                                  <Input value={item.descricao} onChange={(e) => updatePreviewItem(nota.id, item.id, 'descricao', e.target.value)} className="h-8 text-xs" />
+                                ) : (
+                                  <span className="break-words">{item.descricao}</span>
+                                )}
+                              </div>
+                              <div>
+                                <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Qtd</p>
+                                {editing ? (
+                                  <Input type="number" min="0" step="1" value={item.quantidade} onChange={(e) => updatePreviewItem(nota.id, item.id, 'quantidade', e.target.value)} className="h-8 text-xs text-center" />
+                                ) : (
+                                  <p className="lg:text-center">{item.quantidade}</p>
+                                )}
+                              </div>
+                              <div>
+                                <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Unit.</p>
+                                {editing ? (
+                                  <Input type="number" min="0" step="0.01" value={item.preco_unitario} onChange={(e) => updatePreviewItem(nota.id, item.id, 'preco_unitario', e.target.value)} className="h-8 text-xs lg:text-right" />
+                                ) : (
+                                  <p className="lg:text-right">R$ {toMoney(item.preco_unitario)}</p>
+                                )}
+                              </div>
+                              <div>
+                                <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Desc. item</p>
+                                {editing ? (
+                                  <Input type="number" min="0" max="100" step="0.01" value={item.desconto_porcentagem} onChange={(e) => updatePreviewItem(nota.id, item.id, 'desconto_porcentagem', e.target.value)} className="h-8 text-xs lg:text-right" />
+                                ) : (
+                                  <p className="lg:text-right">{item.desconto_porcentagem > 0 ? `${item.desconto_porcentagem}%` : '—'}</p>
+                                )}
+                              </div>
+                              <div>
+                                <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Subtotal</p>
+                                <p className="font-semibold lg:text-right">R$ {toMoney(item.subtotal)}</p>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                         <div className="px-4 py-3 bg-muted/20 border-t border-border/30 flex items-center justify-between gap-4 flex-wrap">
                           <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
@@ -996,7 +1036,8 @@ export default function MonthlyClosing() {
                 })}
               </div>
 
-              <div className="border-t lg:border-t-0 lg:border-l bg-muted/20 p-5 space-y-4">
+              <div className="border-t bg-muted/20 p-4 sm:p-5 xl:border-l xl:border-t-0">
+                <div className="space-y-4 xl:sticky xl:top-4">
                 <div className="rounded-2xl border bg-background p-4 shadow-sm">
                   <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Resumo do rascunho</p>
                   <p className="mt-2 text-sm text-muted-foreground">{previewNotes.length} O.S. · {activeDraft?.periodLabel ?? '—'}</p>
@@ -1009,9 +1050,10 @@ export default function MonthlyClosing() {
                   <p>3. Só o botão gerar fechamento grava no banco.</p>
                 </div>
                 <Button onClick={handleGerar} disabled={generating || !activeDraft} className="h-12 w-full text-sm font-semibold" size="lg">
-                  {generating ? <RefreshCcw className="mr-2 h-4 w-4 animate-spin" /> : <ArrowUpFromLine className="mr-2 h-4 w-4" />}
+                  <RefreshCcw className={cn('mr-2 h-4 w-4', generating && 'animate-spin')} />
                   Gerar fechamento
                 </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -1019,17 +1061,24 @@ export default function MonthlyClosing() {
       </Dialog>
 
       <Dialog open={templatePreviewOpen} onOpenChange={(open) => { if (open) setTemplatePreviewOpen(true); else closeTemplatePreview(); }}>
-        <DialogContent className="w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] h-[92vh] p-0 gap-0 sm:max-w-6xl">
+        <DialogContent className="h-[94dvh] max-h-[94dvh] w-[calc(100vw-1rem)] max-w-[min(1200px,calc(100vw-1rem))] gap-0 overflow-hidden p-0 [&>button]:right-3 [&>button]:top-3">
           <DialogTitle className="sr-only">Visualização do template do fechamento</DialogTitle>
           <div className="flex h-full flex-col">
-            <div className="border-b px-5 py-4">
-              <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Visualização</p>
-              <h3 className="text-xl font-semibold mt-1">Template final do fechamento</h3>
-              <p className="text-sm text-muted-foreground">
-                Esta é a aparência de impressão e do PDF que ficará armazenado.
-              </p>
+            <div className="shrink-0 border-b px-4 py-3 pr-12 sm:px-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Visualização</p>
+                  <h3 className="mt-1 text-lg font-semibold">Template final do fechamento</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Esta é a aparência de impressão e do PDF que ficará armazenado.
+                  </p>
+                </div>
+                <Button variant="outline" onClick={() => void handlePrintPreview()} disabled={templatePreviewLoading || !modalPreviewDados}>
+                  <Printer className="mr-2 h-4 w-4" /> Imprimir
+                </Button>
+              </div>
             </div>
-            <div className="flex-1 bg-muted/40">
+            <div className="min-h-0 flex-1 bg-muted/40">
               {templatePreviewLoading ? (
                 <div className="flex h-full flex-col items-center justify-center gap-4 text-sm text-muted-foreground">
                   <DualSpinner />
