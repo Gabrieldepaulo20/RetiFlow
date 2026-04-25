@@ -1082,7 +1082,7 @@ export default function NoteFormCore({
 
   const section5 = (
     <FormSection>
-      <SectionHeader step={5} icon={<FileText className="w-3.5 h-3.5" />} title="Defeito / Observações" />
+      <SectionHeader step={5} icon={<FileText className="w-3.5 h-3.5" />} title="Defeito / Observação interna" />
       <div className="flex border border-border/50 rounded-lg overflow-hidden mb-3 w-fit">
         <button
           type="button"
@@ -1102,7 +1102,7 @@ export default function NoteFormCore({
             noteTab === 'obs' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/50',
           )}
         >
-          Observações
+          Observação interna
         </button>
       </div>
       {noteTab === 'defeito' ? (

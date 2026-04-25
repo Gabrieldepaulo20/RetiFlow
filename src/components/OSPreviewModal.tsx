@@ -1,22 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { pdf } from '@react-pdf/renderer';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { IntakeNote, IntakeProduct, IntakeService } from '@/types';
 import { Client } from '@/types';
-import { Download, Printer, Share2, X } from 'lucide-react';
+import { Download, Printer, Share2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { buildCustomerAddressLabel } from '@/services/domain/customers';
 import { NotaPDFTemplate } from '@/components/notes/NotaPDFTemplate';
 import type { NotaServicoDetalhes, NotaServicoDetalhesItem } from '@/api/supabase/notas';
+import { NOTA_PRINT_MAX_ROWS, NOTA_PRINT_OBSERVATIONS, NOTA_PRINT_PAGE } from '@/components/notes/notaPrintLayout';
 
-const MAX_ROWS = 7;
-
-const DEFAULT_OBSERVATIONS = [
-  '1. Este orçamento é válido por 30 dias a partir da data de emissão.',
-  '2. O prazo de entrega será combinado após aprovação do orçamento.',
-  '3. Em caso de desistência após início do serviço, será cobrado o valor proporcional.',
-];
+const MAX_ROWS = NOTA_PRINT_MAX_ROWS;
 
 interface OSPreviewModalProps {
   open: boolean;
@@ -38,14 +34,6 @@ const formatDate = (value?: string | null) => {
   return date.toLocaleDateString('pt-BR');
 };
 
-const splitObservations = (observacoes: string | null) => {
-  const lines = observacoes
-    ?.split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  return lines && lines.length > 0 ? lines : DEFAULT_OBSERVATIONS;
-};
-
 const chunkItems = <T,>(items: T[], size: number) => {
   if (items.length === 0) return [[]];
   const chunks: T[][] = [];
@@ -54,6 +42,34 @@ const chunkItems = <T,>(items: T[], size: number) => {
   }
   return chunks;
 };
+
+function useElementSize<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return undefined;
+
+    const updateSize = () => {
+      const rect = element.getBoundingClientRect();
+      setSize({ width: rect.width, height: rect.height });
+    };
+
+    updateSize();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateSize);
+      return () => window.removeEventListener('resize', updateSize);
+    }
+
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  return [ref, size] as const;
+}
 
 function buildPdfDados(
   note: IntakeNote,
@@ -141,41 +157,40 @@ function PreviewField({ label, value }: { label: string; value?: string | null }
 
 function PreviewVia({ dados, itens }: { dados: NotaServicoDetalhes; itens: NotaServicoDetalhesItem[] }) {
   const { cabecalho, financeiro_servicos } = dados;
-  const observations = splitObservations(cabecalho.observacoes);
   const paddingRows = Math.max(0, MAX_ROWS - itens.length);
 
   return (
-    <section className="flex h-full w-1/2 flex-col p-5 font-sans text-[13px] leading-snug text-neutral-950">
-      <div className="flex shrink-0 items-stretch bg-[#e6e6e6] p-[5px]">
-        <div className="flex w-1/2 flex-col items-center justify-center p-[10px] text-center">
-          <div className="mb-[5px] h-[28px]" />
-          <h2 className="m-0 text-[22px] font-bold leading-tight">PREMIUM</h2>
+    <section className="flex h-full w-1/2 flex-col p-[18px] font-sans text-[13px] leading-snug text-neutral-950">
+      <div className="flex shrink-0 items-stretch bg-[#e6e6e6] p-1">
+        <div className="flex w-1/2 flex-col items-center justify-center p-2.5 text-center">
+          <div className="mb-1 h-5" />
+          <h2 className="m-0 text-[21px] font-bold leading-tight">PREMIUM</h2>
           <p className="m-0 text-[14px] text-neutral-700">RETÍFICA DE CABEÇOTE</p>
         </div>
-        <div className="flex w-1/2 flex-col items-center justify-center border-l border-[#cfcfcf] p-[10px] text-center text-[13px] text-neutral-700">
-          <p className="my-1">Av: Fioravante Magro, 1059 – Jardim Boa Vista</p>
-          <p className="my-1">Sertãozinho - SP, 14177-578</p>
-          <p className="my-1">Contato: (16) 3524-4661</p>
+        <div className="flex w-1/2 flex-col items-center justify-center border-l border-[#cfcfcf] p-2.5 text-center text-[13px] text-neutral-700">
+          <p className="my-0.5">Av: Fioravante Magro, 1059 – Jardim Boa Vista</p>
+          <p className="my-0.5">Sertãozinho - SP, 14177-578</p>
+          <p className="my-0.5">Contato: (16) 3524-4661</p>
         </div>
       </div>
 
-      <div className="relative mt-[15px] shrink-0 border border-[#dddddd] px-[10px] pb-[6px] pt-[36px]">
-        <div className="absolute inset-x-0 top-0 flex items-center justify-around bg-[#dcdcdc] px-[10px] py-1 text-center text-neutral-700">
-          <div>
-            <strong>O.S:</strong>
-            <span className="ml-2 inline-block w-[90px] rounded-full border border-[#cccccc] bg-white px-[10px] py-1 text-center font-bold">
+      <div className="relative mt-3 shrink-0 border border-[#dddddd] px-2.5 pb-1.5 pt-[34px]">
+        <div className="absolute inset-x-0 top-0 grid grid-cols-3 items-center bg-[#dcdcdc] px-2.5 py-1 text-center text-neutral-700">
+          <div className="whitespace-nowrap">
+            <strong className="mr-1.5">O.S:</strong>
+            <span className="inline-block min-w-[82px] rounded-full border border-[#cccccc] bg-white px-2.5 py-1 text-center font-bold">
               {cabecalho.os_numero}
             </span>
           </div>
-          <div>
-            <strong>Data:</strong>
-            <span className="ml-2 inline-block w-[90px] rounded-full border border-[#cccccc] bg-white px-[10px] py-1 text-center font-bold">
+          <div className="whitespace-nowrap">
+            <strong className="mr-1.5">Data:</strong>
+            <span className="inline-block min-w-[90px] rounded-full border border-[#cccccc] bg-white px-2.5 py-1 text-center font-bold">
               {formatDate(cabecalho.data_criacao)}
             </span>
           </div>
-          <div>
-            <strong>Prazo:</strong>
-            <span className="ml-2 inline-block w-[90px] rounded-full border border-[#cccccc] bg-white px-[10px] py-1 text-center font-bold">
+          <div className="whitespace-nowrap">
+            <strong className="mr-1.5">Prazo:</strong>
+            <span className="inline-block min-w-[90px] rounded-full border border-[#cccccc] bg-white px-2.5 py-1 text-center font-bold">
               {formatDate(cabecalho.prazo)}
             </span>
           </div>
@@ -200,7 +215,7 @@ function PreviewVia({ dados, itens }: { dados: NotaServicoDetalhes; itens: NotaS
         </div>
       </div>
 
-      <div className="my-[15px] flex-1 overflow-hidden">
+      <div className="my-3 flex-1 overflow-hidden">
         <table className="h-full w-full table-fixed border-collapse border border-[#dddddd]">
           <colgroup>
             <col className="w-[10%]" />
@@ -247,9 +262,9 @@ function PreviewVia({ dados, itens }: { dados: NotaServicoDetalhes; itens: NotaS
         </table>
       </div>
 
-      <div className="mb-[15px] shrink-0 border border-[#dddddd] bg-[#efefef] p-[10px] text-[11px] text-neutral-700">
+      <div className="mb-3 shrink-0 border border-[#dddddd] bg-[#efefef] p-2.5 text-[11px] text-neutral-700">
         <strong>OBSERVAÇÕES:</strong>
-        {observations.map((line, index) => (
+        {NOTA_PRINT_OBSERVATIONS.map((line, index) => (
           <p key={`${line}-${index}`} className="my-[5px]">
             {line}
           </p>
@@ -272,7 +287,13 @@ function PreviewVia({ dados, itens }: { dados: NotaServicoDetalhes; itens: NotaS
 
 function PreviewPage({ dados, itens }: { dados: NotaServicoDetalhes; itens: NotaServicoDetalhesItem[] }) {
   return (
-    <div className="mx-auto flex aspect-[297/210] w-[1122px] min-w-[1122px] shrink-0 overflow-hidden bg-white shadow-sm ring-1 ring-black/10">
+    <div
+      className="mx-auto flex shrink-0 overflow-hidden bg-white shadow-sm ring-1 ring-black/10"
+      style={{
+        width: NOTA_PRINT_PAGE.width,
+        height: NOTA_PRINT_PAGE.height,
+      }}
+    >
       <PreviewVia dados={dados} itens={itens} />
       <div className="my-5 w-px border-l border-dashed border-[#cccccc]" />
       <PreviewVia dados={dados} itens={itens} />
@@ -283,6 +304,7 @@ function PreviewPage({ dados, itens }: { dados: NotaServicoDetalhes; itens: Nota
 export default function OSPreviewModal({ open, onClose, note, client, services, products }: OSPreviewModalProps) {
   const { toast } = useToast();
   const [busyAction, setBusyAction] = useState<'download' | 'print' | null>(null);
+  const [previewViewportRef, previewViewportSize] = useElementSize<HTMLDivElement>();
 
   const pdfDados = useMemo(
     () => buildPdfDados(note, client, services, products),
@@ -290,6 +312,24 @@ export default function OSPreviewModal({ open, onClose, note, client, services, 
   );
   const documentNode = useMemo(() => <NotaPDFTemplate dados={pdfDados} />, [pdfDados]);
   const pages = useMemo(() => chunkItems(pdfDados.itens_servico, MAX_ROWS), [pdfDados.itens_servico]);
+  const previewScale = useMemo(() => {
+    if (!previewViewportSize.width || !previewViewportSize.height) return 1;
+
+    const availableWidth = previewViewportSize.width - NOTA_PRINT_PAGE.viewportPadding;
+    const availableHeight = previewViewportSize.height - NOTA_PRINT_PAGE.viewportPadding;
+    const scale = Math.min(
+      availableWidth / NOTA_PRINT_PAGE.width,
+      availableHeight / NOTA_PRINT_PAGE.height,
+      1,
+    );
+
+    return Math.max(NOTA_PRINT_PAGE.minScale, Number(scale.toFixed(3)));
+  }, [previewViewportSize.height, previewViewportSize.width]);
+
+  const scaledPageStyle = useMemo<CSSProperties>(() => ({
+    width: NOTA_PRINT_PAGE.width * previewScale,
+    height: NOTA_PRINT_PAGE.height * previewScale,
+  }), [previewScale]);
 
   const buildBlobUrl = async () => {
     const blob = await pdf(documentNode).toBlob();
@@ -335,18 +375,18 @@ export default function OSPreviewModal({ open, onClose, note, client, services, 
 
   return (
     <Dialog open={open} onOpenChange={(value) => { if (!value) onClose(); }}>
-      <DialogContent className="flex h-[96vh] w-full max-w-[96vw] flex-col gap-0 overflow-hidden bg-background p-0">
-        <DialogHeader className="shrink-0 border-b bg-card px-6 py-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
+      <DialogContent className="flex h-[96dvh] max-h-[96dvh] w-full max-w-[98vw] flex-col gap-0 overflow-hidden bg-background p-0 [&>button]:right-3 [&>button]:top-3">
+        <DialogHeader className="shrink-0 border-b bg-card px-4 py-2.5 pr-11 sm:px-5">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0">
               <DialogTitle className="text-lg font-bold">
                 Preview — {note.number}
               </DialogTitle>
-              <p className="text-sm text-muted-foreground mt-0.5">
+              <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">
                 Visualização rápida no formato final da O.S.
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2 md:justify-end">
               <Button variant="outline" size="sm" onClick={() => void handlePrint()} disabled={busyAction !== null}>
                 <Printer className="w-4 h-4 mr-1.5" /> Abrir para imprimir
               </Button>
@@ -356,17 +396,25 @@ export default function OSPreviewModal({ open, onClose, note, client, services, 
               <Button variant="outline" size="sm" onClick={() => toast({ title: 'Compartilhamento em implementação' })}>
                 <Share2 className="w-4 h-4 mr-1.5" /> Compartilhar
               </Button>
-              <Button variant="ghost" size="icon" onClick={onClose} className="ml-1">
-                <X className="w-4 h-4" />
-              </Button>
             </div>
           </div>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 overflow-auto bg-zinc-100 p-4">
-          <div className="flex min-h-full w-max min-w-full flex-col items-center justify-start gap-4">
+        <div ref={previewViewportRef} className="min-h-0 flex-1 overflow-auto bg-zinc-100 p-2 sm:p-3">
+          <div className="flex min-h-full w-full flex-col items-center justify-start gap-3">
             {pages.map((items, index) => (
-              <PreviewPage key={`${pdfDados.cabecalho.id_nota}-${index}`} dados={pdfDados} itens={items} />
+              <div key={`${pdfDados.cabecalho.id_nota}-${index}`} style={scaledPageStyle}>
+                <div
+                  className="origin-top-left"
+                  style={{
+                    transform: `scale(${previewScale})`,
+                    width: NOTA_PRINT_PAGE.width,
+                    height: NOTA_PRINT_PAGE.height,
+                  }}
+                >
+                  <PreviewPage dados={pdfDados} itens={items} />
+                </div>
+              </div>
             ))}
           </div>
         </div>

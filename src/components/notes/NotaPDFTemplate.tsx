@@ -1,13 +1,8 @@
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { NotaServicoDetalhes, NotaServicoDetalhesItem } from '@/api/supabase/notas';
+import { NOTA_PRINT_MAX_ROWS, NOTA_PRINT_OBSERVATIONS } from '@/components/notes/notaPrintLayout';
 
-const MAX_ROWS = 7;
-
-const DEFAULT_OBSERVATIONS = [
-  '1. Este orçamento é válido por 30 dias a partir da data de emissão.',
-  '2. O prazo de entrega será combinado após aprovação do orçamento.',
-  '3. Em caso de desistência após início do serviço, será cobrado o valor proporcional.',
-];
+const MAX_ROWS = NOTA_PRINT_MAX_ROWS;
 
 const styles = StyleSheet.create({
   page: {
@@ -286,14 +281,6 @@ const chunkItems = <T,>(items: T[], size: number) => {
   return chunks;
 };
 
-const splitObservations = (observacoes: string | null) => {
-  const linhas = observacoes
-    ?.split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  return linhas && linhas.length > 0 ? linhas : DEFAULT_OBSERVATIONS;
-};
-
 function FieldValue({
   label,
   value,
@@ -317,7 +304,6 @@ function Via({
   itens: NotaServicoDetalhesItem[];
 }) {
   const { cabecalho, financeiro_servicos } = dados;
-  const observacoes = splitObservations(cabecalho.observacoes);
   const paddingRows = Math.max(0, MAX_ROWS - itens.length);
 
   return (
@@ -412,7 +398,7 @@ function Via({
 
       <View style={styles.observacoes}>
         <Text style={styles.observacoesTitle}>OBSERVAÇÕES:</Text>
-        {observacoes.map((linha, index) => (
+        {NOTA_PRINT_OBSERVATIONS.map((linha, index) => (
           <Text key={`${linha}-${index}`} style={styles.observacaoLinha}>
             {linha}
           </Text>
