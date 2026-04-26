@@ -1,4 +1,4 @@
-import { callRPC } from './_base';
+import { callRPC, type RPCEnvelope } from './_base';
 import { supabase } from '@/lib/supabase';
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
@@ -83,6 +83,28 @@ export interface NotaDetalhesResult {
 
 /* ── API Functions ──────────────────────────────────────────────────────── */
 
+function rpcMessage(rpcName: string, message: string) {
+  const prefix = `[${rpcName}]`;
+  return message.startsWith(prefix) ? message : `${prefix} ${message}`;
+}
+
+async function callMutationRPC(rpcName: string, params: Record<string, unknown>) {
+  const { data, error } = await supabase.schema('RetificaPremium').rpc(rpcName, params);
+
+  if (error) {
+    throw new Error(rpcMessage(rpcName, error.message));
+  }
+
+  if (data === null || data === undefined) return;
+  if (typeof data !== 'object') return;
+
+  const envelope = data as Partial<RPCEnvelope>;
+  if (envelope.status === undefined) return;
+  if (envelope.status !== 200) {
+    throw new Error(rpcMessage(rpcName, envelope.mensagem ?? 'Erro desconhecido.'));
+  }
+}
+
 export async function getFechamentos(params?: {
   p_fk_clientes?: string;
   p_periodo?: string;
@@ -114,7 +136,7 @@ export async function updateFechamento(
     p_pdf_url: string;
   }>,
 ) {
-  await callRPC('update_fechamento', { p_id_fechamentos: idFechamentos, ...dados });
+  await callMutationRPC('update_fechamento', { p_id_fechamentos: idFechamentos, ...dados });
 }
 
 export async function registrarAcaoFechamento(params: {
@@ -122,7 +144,7 @@ export async function registrarAcaoFechamento(params: {
   p_tipo: string;
   p_mensagem?: string;
 }) {
-  await callRPC('registrar_acao_fechamento', params);
+  await callMutationRPC('registrar_acao_fechamento', params);
 }
 
 export async function getNotaDetalhesParaFechamento(idNota: string): Promise<NotaDetalhesResult | null> {
@@ -138,13 +160,15 @@ export async function getNotaDetalhesParaFechamento(idNota: string): Promise<Not
 export async function uploadFechamentoPDF(
   idFechamento: string,
   pdfBlob: Blob,
-): Promise<string | null> {
+): Promise<string> {
   const path = `${idFechamento}.pdf`;
   const { error } = await supabase.storage
     .from('fechamentos')
-    .upload(path, pdfBlob, { contentType: 'application/pdf', upsert: true });
+    .upload(path, pdfBlob, { contentType: 'application/pdf', cacheControl: '3600', upsert: true });
 
-  if (error) return null;
+  if (error) {
+    throw new Error(`[upload_fechamento_pdf] ${error.message}`);
+  }
 
   const { data } = supabase.storage.from('fechamentos').getPublicUrl(path);
   return data.publicUrl;

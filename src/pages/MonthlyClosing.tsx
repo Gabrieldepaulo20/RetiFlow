@@ -8,12 +8,13 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   AlertTriangle, CalendarDays, Download, Building2,
-  PlusCircle, RefreshCcw, Share2, FileText, ChevronLeft, Eye, EyeOff, Sparkles, PencilLine, Printer,
+  PlusCircle, RefreshCcw, Share2, ChevronLeft, Eye, EyeOff, Sparkles, PencilLine, Printer,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { pdf } from '@react-pdf/renderer';
 import { ClosingPDFTemplate } from '@/components/closing/ClosingPDFTemplate';
+import { ClosingHtmlPreview } from '@/components/closing/ClosingHtmlPreview';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { openPdfPrintDialog } from '@/lib/printPdf';
 import {
@@ -205,9 +206,7 @@ export default function MonthlyClosing() {
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [draftModalOpen, setDraftModalOpen] = useState(false);
   const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false);
-  const [templatePreviewUrl, setTemplatePreviewUrl] = useState<string | null>(null);
   const [templatePreviewLoading, setTemplatePreviewLoading] = useState(false);
-  const [templatePreviewError, setTemplatePreviewError] = useState<string | null>(null);
 
   // Preview state
   const [selMonth, setSelMonth] = useState(defaultMonth);
@@ -332,11 +331,6 @@ export default function MonthlyClosing() {
   const closeTemplatePreview = useCallback(() => {
     setTemplatePreviewOpen(false);
     setTemplatePreviewLoading(false);
-    setTemplatePreviewError(null);
-    setTemplatePreviewUrl((current) => {
-      if (current) URL.revokeObjectURL(current);
-      return null;
-    });
   }, []);
 
   const closeDraftModal = useCallback(() => {
@@ -499,12 +493,6 @@ export default function MonthlyClosing() {
     setSelMonth(monthsForYear[0].month);
   }, [availablePeriods, selYear, selMonth]);
 
-  useEffect(() => {
-    return () => {
-      if (templatePreviewUrl) URL.revokeObjectURL(templatePreviewUrl);
-    };
-  }, [templatePreviewUrl]);
-
   const updatePreviewItem = useCallback((
     noteId: string,
     itemId: string,
@@ -533,41 +521,6 @@ export default function MonthlyClosing() {
   const renderClosingPdfBlob = useCallback(async (dados: FechamentoDadosJson, geradoEm: string) => {
     return pdf(<ClosingPDFTemplate dados={dados} geradoEm={geradoEm} />).toBlob();
   }, []);
-
-  useEffect(() => {
-    if (!templatePreviewOpen || !modalPreviewDados) {
-      setTemplatePreviewLoading(false);
-      setTemplatePreviewError(null);
-      return;
-    }
-
-    let cancelled = false;
-    setTemplatePreviewLoading(true);
-    setTemplatePreviewError(null);
-
-    void renderClosingPdfBlob(modalPreviewDados, modalPreviewDados.gerado_em)
-      .then((blob) => {
-        if (cancelled) return;
-        const nextUrl = URL.createObjectURL(blob);
-        setTemplatePreviewUrl((current) => {
-          if (current) URL.revokeObjectURL(current);
-          return nextUrl;
-        });
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setTemplatePreviewUrl((current) => {
-          if (current) URL.revokeObjectURL(current);
-          return null;
-        });
-        setTemplatePreviewError(err instanceof Error ? err.message : 'Não foi possível renderizar o template.');
-      })
-      .finally(() => {
-        if (!cancelled) setTemplatePreviewLoading(false);
-      });
-
-    return () => { cancelled = true; };
-  }, [templatePreviewOpen, modalPreviewDados, renderClosingPdfBlob]);
 
   /* ── Gerar fechamento ── */
   const generateDraft = useCallback(async (draft: ClosingDraft) => {
@@ -616,7 +569,7 @@ export default function MonthlyClosing() {
         });
       } catch { /* non-blocking */ }
 
-      toast({ title: 'Fechamento gerado com sucesso!' });
+      toast({ title: 'Fechamento gerado com sucesso!', description: 'PDF salvo no Supabase Storage.' });
       setPreviewDados({ ...dados, gerado_em: geradoEm });
       removeDraft(draft.id);
       await loadFechamentos();
@@ -870,7 +823,6 @@ export default function MonthlyClosing() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-semibold text-sm truncate">{f.cliente?.nome ?? '—'}</p>
                           <Badge variant="secondary" className="text-xs">{f.periodo}</Badge>
-                          <Badge variant="outline" className="text-xs">v{f.versao}</Badge>
                           {divs.length > 0 && (
                             <Badge variant="destructive" className="text-xs gap-1">
                               <AlertTriangle className="w-3 h-3" />
@@ -1080,25 +1032,10 @@ export default function MonthlyClosing() {
               </div>
             </div>
             <div className="min-h-0 flex-1 bg-muted/40">
-              {templatePreviewLoading ? (
-                <div className="flex h-full flex-col items-center justify-center gap-4 text-sm text-muted-foreground">
-                  <DualSpinner />
-                  <p>Montando o PDF de preview...</p>
+              {modalPreviewDados ? (
+                <div className="h-full overflow-y-auto overscroll-contain scrollbar-thin">
+                  <ClosingHtmlPreview dados={modalPreviewDados} />
                 </div>
-              ) : templatePreviewError ? (
-                <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-                  <FileText className="h-8 w-8 text-muted-foreground" />
-                  <div>
-                    <p className="font-medium">Não foi possível visualizar o template.</p>
-                    <p className="mt-1 text-sm text-muted-foreground">{templatePreviewError}</p>
-                  </div>
-                </div>
-              ) : templatePreviewUrl ? (
-                <iframe
-                  title="Preview do fechamento"
-                  src={templatePreviewUrl}
-                  className="h-full w-full border-0"
-                />
               ) : (
                 <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                   Nenhum rascunho selecionado.
