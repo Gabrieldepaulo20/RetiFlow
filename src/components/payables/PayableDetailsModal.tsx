@@ -1,13 +1,16 @@
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import PayableModalShell from '@/components/payables/PayableModalShell';
 import { useData } from '@/contexts/DataContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import {
   AccountPayable,
+  PayableAttachmentFileType,
   PAYABLE_ENTRY_SOURCE_LABELS,
   PAYABLE_HISTORY_ACTION_LABELS,
   PAYABLE_STATUS_COLORS,
@@ -22,7 +25,15 @@ import {
   getPayableDisplayStatus,
   isPayableOverdue,
 } from '@/services/domain/payables';
-import { ArrowUpRight, CalendarRange, CheckCircle2, Circle, Clock, Landmark, Layers3, Paperclip, Sparkles, Wallet } from 'lucide-react';
+import {
+  type ContaPagarDetalhes,
+  getContaPagarDetalhes,
+  uploadAnexoContaPagar,
+  insertAnexoContaPagar,
+} from '@/api/supabase/contas-pagar';
+import { ArrowUpRight, CalendarRange, CheckCircle2, Circle, Clock, Landmark, Layers3, Loader2, Paperclip, PlusCircle, Sparkles, Wallet } from 'lucide-react';
+
+const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
 type PayableDetailsModalProps = {
   open: boolean;
@@ -36,6 +47,18 @@ function fmtBRL(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+function inferAttachmentType(filename: string): PayableAttachmentFileType {
+  const lower = filename.toLowerCase();
+  if (lower.includes('boleto')) return 'BOLETO';
+  if (lower.includes('nota') || lower.includes('nf')) return 'NOTA_FISCAL';
+  if (lower.includes('comp') || lower.includes('recibo')) return 'COMPROVANTE';
+  if (lower.includes('contrato')) return 'CONTRATO';
+  const ext = lower.split('.').pop();
+  if (ext === 'pdf') return 'BOLETO';
+  if (['jpg', 'jpeg', 'png', 'webp'].includes(ext ?? '')) return 'COMPROVANTE';
+  return 'OUTRO';
+}
+
 export default function PayableDetailsModal({
   open,
   payableId,
@@ -43,17 +66,39 @@ export default function PayableDetailsModal({
   onRequestPayment,
   onRequestEdit,
 }: PayableDetailsModalProps) {
-  const { getPayable, getAttachmentsForPayable, getHistoryForPayable, payableCategories, getInstallmentSiblings } = useData();
+  const { getPayable, addPayableAttachment, addPayableHistoryEntry, payableCategories, getInstallmentSiblings } = useData();
+  const { user } = useAuth();
+  const { toast } = useToast();
 
-  // Mantém o último ID válido enquanto o modal anima o fechamento
   const lastIdRef = useRef<string | null>(null);
   if (payableId) lastIdRef.current = payableId;
   const resolvedId = open ? payableId : lastIdRef.current;
 
   const payable = resolvedId ? getPayable(resolvedId) : undefined;
-  const attachments = payable ? getAttachmentsForPayable(payable.id) : [];
-  const history = payable ? getHistoryForPayable(payable.id) : [];
   const category = payable ? payableCategories.find((item) => item.id === payable.categoryId) : undefined;
+
+  const [detalhes, setDetalhes] = useState<ContaPagarDetalhes | null>(null);
+  const [loadingDetalhes, setLoadingDetalhes] = useState(false);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!open || !resolvedId || !IS_REAL_AUTH) {
+      setDetalhes(null);
+      return;
+    }
+    let cancelled = false;
+    setLoadingDetalhes(true);
+    getContaPagarDetalhes(resolvedId).then((result) => {
+      if (!cancelled) {
+        setDetalhes(result);
+        setLoadingDetalhes(false);
+      }
+    }).catch(() => {
+      if (!cancelled) setLoadingDetalhes(false);
+    });
+    return () => { cancelled = true; };
+  }, [open, resolvedId]);
 
   if (!payable) {
     return (
@@ -74,6 +119,75 @@ export default function PayableDetailsModal({
   const displayStatus = getPayableDisplayStatus(payable);
   const recurrenceLabel = formatPayableRecurrenceLabel(payable, RECURRENCE_TYPE_LABELS[payable.recurrence]);
   const installmentSiblings = (payable.totalInstallments ?? 0) > 1 ? getInstallmentSiblings(payable) : [];
+
+  const displayAttachments = IS_REAL_AUTH
+    ? (detalhes?.anexos ?? []).map((a) => ({
+        id: a.id_anexo,
+        payableId: payable.id,
+        type: a.tipo as PayableAttachmentFileType,
+        filename: a.nome_arquivo,
+        url: a.url,
+        createdAt: a.created_at,
+        createdByUserId: '',
+      }))
+    : [];
+
+  const displayHistory = IS_REAL_AUTH
+    ? (detalhes?.historico ?? []).map((h) => ({
+        id: h.id_historico_conta,
+        payableId: payable.id,
+        action: h.acao,
+        description: h.descricao,
+        createdAt: h.created_at,
+        userId: h.usuario?.nome ?? '',
+      }))
+    : [];
+
+  const paymentNotes = IS_REAL_AUTH
+    ? (detalhes?.conta.observacoes_pagamento ?? null)
+    : (payable.paymentNotes ?? null);
+
+  async function handleAttachmentFile(file: File) {
+    if (!payable) return;
+    setUploadingAttachment(true);
+    try {
+      const type = inferAttachmentType(file.name);
+      let url = `local-upload://${file.name}`;
+      if (IS_REAL_AUTH) {
+        url = await uploadAnexoContaPagar({ contaPagarId: payable.id, file });
+        await insertAnexoContaPagar({
+          p_fk_contas_pagar: payable.id,
+          p_tipo: type,
+          p_nome_arquivo: file.name,
+          p_url: url,
+        });
+        const updated = await getContaPagarDetalhes(payable.id);
+        setDetalhes(updated);
+      }
+      addPayableAttachment({
+        payableId: payable.id,
+        type,
+        filename: file.name,
+        url,
+        createdByUserId: user?.id ?? '',
+      });
+      addPayableHistoryEntry({
+        payableId: payable.id,
+        action: 'ATTACHMENT_ADDED',
+        description: `Arquivo "${file.name}" anexado.`,
+        userId: user?.id ?? '',
+      });
+      toast({ title: 'Anexo adicionado', description: file.name });
+    } catch (err) {
+      toast({
+        title: 'Erro ao adicionar anexo',
+        description: err instanceof Error ? err.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setUploadingAttachment(false);
+    }
+  }
 
   return (
     <PayableModalShell
@@ -114,7 +228,19 @@ export default function PayableDetailsModal({
                 </div>
                 {payable.observations ? (
                   <div className="rounded-2xl border border-border/60 bg-muted/20 p-4 text-sm text-muted-foreground">
+                    <p className="mb-1 text-xs font-semibold text-foreground">Observações</p>
                     {payable.observations}
+                  </div>
+                ) : null}
+                {loadingDetalhes ? (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Carregando detalhes do pagamento...
+                  </div>
+                ) : paymentNotes ? (
+                  <div className="rounded-2xl border border-border/60 bg-muted/20 p-4 text-sm text-muted-foreground">
+                    <p className="mb-1 text-xs font-semibold text-foreground">Observações do pagamento</p>
+                    {paymentNotes}
                   </div>
                 ) : null}
               </CardContent>
@@ -187,13 +313,39 @@ export default function PayableDetailsModal({
 
             <Card>
               <CardContent className="p-5 space-y-4">
-                <div className="flex items-center gap-2">
-                  <Paperclip className="h-4 w-4 text-primary" />
-                  <p className="text-sm font-semibold">Anexos e comprovantes</p>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Paperclip className="h-4 w-4 text-primary" />
+                    <p className="text-sm font-semibold">Anexos e comprovantes</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {loadingDetalhes && IS_REAL_AUTH ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
+                    <input
+                      ref={attachmentInputRef}
+                      type="file"
+                      accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) void handleAttachmentFile(file);
+                        e.target.value = '';
+                      }}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      disabled={uploadingAttachment}
+                      onClick={() => attachmentInputRef.current?.click()}
+                    >
+                      {uploadingAttachment ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlusCircle className="h-3.5 w-3.5" />}
+                      Adicionar
+                    </Button>
+                  </div>
                 </div>
-                {attachments.length > 0 ? (
+                {displayAttachments.length > 0 ? (
                   <div className="space-y-2.5">
-                    {attachments.map((attachment) => (
+                    {displayAttachments.map((attachment) => (
                       <div key={attachment.id} className="flex items-center justify-between gap-3 rounded-2xl border border-border/60 p-3 text-sm">
                         <div className="min-w-0">
                           <p className="truncate font-medium">{attachment.filename}</p>
@@ -214,7 +366,9 @@ export default function PayableDetailsModal({
                   </div>
                 ) : (
                   <div className="rounded-2xl border border-dashed border-border/60 p-4 text-sm text-muted-foreground">
-                    Ainda não há anexo nessa conta. O front-end já está preparado para PDF, imagem, DOCX e comprovantes.
+                    {loadingDetalhes && IS_REAL_AUTH
+                      ? 'Carregando anexos...'
+                      : 'Ainda não há anexo nessa conta. Use o botão "Adicionar" para vincular PDF, imagem ou DOCX.'}
                   </div>
                 )}
               </CardContent>
@@ -225,13 +379,14 @@ export default function PayableDetailsModal({
                 <div className="flex items-center gap-2">
                   <CalendarRange className="h-4 w-4 text-primary" />
                   <p className="text-sm font-semibold">Histórico e auditoria</p>
+                  {loadingDetalhes && IS_REAL_AUTH ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
                 </div>
-                {history.length > 0 ? (
+                {displayHistory.length > 0 ? (
                   <div className="space-y-2.5">
-                    {history.slice(0, 8).map((entry) => (
+                    {displayHistory.slice(0, 8).map((entry) => (
                       <div key={entry.id} className="rounded-2xl border border-border/60 p-3 text-sm">
                         <div className="flex items-center justify-between gap-3">
-                          <p className="font-medium">{PAYABLE_HISTORY_ACTION_LABELS[entry.action]}</p>
+                          <p className="font-medium">{PAYABLE_HISTORY_ACTION_LABELS[entry.action as keyof typeof PAYABLE_HISTORY_ACTION_LABELS] ?? entry.action}</p>
                           <span className="text-xs text-muted-foreground">{format(parseISO(entry.createdAt), 'dd/MM HH:mm')}</span>
                         </div>
                         <p className="mt-1 text-muted-foreground">{entry.description}</p>
@@ -239,7 +394,9 @@ export default function PayableDetailsModal({
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">Nenhum evento registrado até o momento.</p>
+                  <p className="text-sm text-muted-foreground">
+                    {loadingDetalhes && IS_REAL_AUTH ? 'Carregando histórico...' : 'Nenhum evento registrado até o momento.'}
+                  </p>
                 )}
               </CardContent>
             </Card>

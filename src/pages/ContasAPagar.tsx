@@ -20,7 +20,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { AccountPayable, PaymentMethod, PAYABLE_ENTRY_SOURCE_LABELS, PAYABLE_STATUS_COLORS, PAYABLE_STATUS_LABELS, PAYMENT_METHOD_LABELS, RECURRENCE_TYPE_LABELS } from '@/types';
-import { buildPayableHistoryDescription, calculatePayableRemainingBalance, canCancelPayable, canRegisterPayment, formatPayableDueDateLabel, getDueDateUrgencyLevel, getPayableDisplayStatus, isPayableOverdue } from '@/services/domain/payables';
+import { buildPayableHistoryDescription, calculatePayableRemainingBalance, canCancelPayable, canEditPayable, canRegisterPayment, formatPayableDueDateLabel, getDueDateUrgencyLevel, getPayableDisplayStatus, isPayableEditRestricted, isPayableOverdue } from '@/services/domain/payables';
 import PayableCreateModal from '@/components/payables/PayableCreateModal';
 import PayableImportModal from '@/components/payables/PayableImportModal';
 import PayableDetailsModal from '@/components/payables/PayableDetailsModal';
@@ -87,6 +87,10 @@ export default function ContasAPagar() {
   const [editDueDate, setEditDueDate] = useState('');
   const [editObservations, setEditObservations] = useState('');
   const [editUrgent, setEditUrgent] = useState(false);
+  const [editSupplierName, setEditSupplierName] = useState('');
+  const [editOriginalAmount, setEditOriginalAmount] = useState('');
+  const [editDocNumber, setEditDocNumber] = useState('');
+  const [editPaymentMethod, setEditPaymentMethod] = useState<PaymentMethod>('PIX');
 
   const pendingEmailSuggestions = useMemo(() => emailSuggestions.filter((s) => s.status === 'PENDING').length, [emailSuggestions]);
 
@@ -165,6 +169,10 @@ export default function ContasAPagar() {
     setEditDueDate('');
     setEditObservations('');
     setEditUrgent(false);
+    setEditSupplierName('');
+    setEditOriginalAmount('');
+    setEditDocNumber('');
+    setEditPaymentMethod('PIX');
   }
 
   function resetDialogs() {
@@ -187,6 +195,10 @@ export default function ContasAPagar() {
     setEditDueDate(payable.dueDate.slice(0, 10));
     setEditObservations(payable.observations ?? '');
     setEditUrgent(payable.isUrgent);
+    setEditSupplierName(payable.supplierName ?? '');
+    setEditOriginalAmount(payable.originalAmount.toFixed(2).replace('.', ','));
+    setEditDocNumber(payable.docNumber ?? '');
+    setEditPaymentMethod(payable.paymentMethod ?? 'PIX');
     setDialogMode('edit');
   }
 
@@ -255,14 +267,26 @@ export default function ContasAPagar() {
       toast({ title: 'Campos obrigatórios', description: 'Título, categoria e vencimento precisam estar preenchidos.', variant: 'destructive' });
       return;
     }
+    const restricted = isPayableEditRestricted(selectedPayable);
+    const parsedAmount = parseMoneyInput(editOriginalAmount);
     try {
-      await updatePayable(selectedPayable.id, {
+      const patch: Partial<AccountPayable> = {
         title: editTitle.trim(),
         categoryId: editCategoryId,
         dueDate: editDueDate,
         observations: editObservations.trim() || undefined,
         isUrgent: editUrgent,
-      });
+      };
+      if (!restricted) {
+        if (editSupplierName.trim()) patch.supplierName = editSupplierName.trim();
+        if (parsedAmount > 0) {
+          patch.originalAmount = parsedAmount;
+          patch.finalAmount = parsedAmount;
+        }
+        if (editDocNumber.trim()) patch.docNumber = editDocNumber.trim();
+        patch.paymentMethod = editPaymentMethod;
+      }
+      await updatePayable(selectedPayable.id, patch);
       addPayableHistoryEntry(buildPayableHistoryDescription({ payableId: selectedPayable.id, action: 'UPDATED', userId: user?.id ?? 'user-2' }));
       toast({ title: 'Conta atualizada', description: 'As informações principais foram ajustadas com sucesso.' });
       setDialogMode(null);
@@ -319,7 +343,7 @@ export default function ContasAPagar() {
         <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuItem onClick={() => updateRouteModal('details', payable.id)}><FileText className="mr-2 h-4 w-4" />Ver detalhes</DropdownMenuItem>
           {canRegisterPayment(payable) ? <DropdownMenuItem onClick={() => openPayment(payable)}><Wallet className="mr-2 h-4 w-4" />Registrar pagamento</DropdownMenuItem> : null}
-          <DropdownMenuItem onClick={() => openEdit(payable)}><Pencil className="mr-2 h-4 w-4" />Editar</DropdownMenuItem>
+          {canEditPayable(payable) ? <DropdownMenuItem onClick={() => openEdit(payable)}><Pencil className="mr-2 h-4 w-4" />Editar</DropdownMenuItem> : null}
           <DropdownMenuItem onClick={() => handleDuplicate(payable)}><Copy className="mr-2 h-4 w-4" />Duplicar</DropdownMenuItem>
           {canCancelPayable(payable) ? <DropdownMenuItem onClick={() => { setSelectedPayableId(payable.id); setDialogMode('cancel'); }}><XCircle className="mr-2 h-4 w-4" />Cancelar</DropdownMenuItem> : null}
           <DropdownMenuSeparator />
@@ -421,7 +445,7 @@ export default function ContasAPagar() {
                       <div className="flex items-center justify-between gap-2"><PayableStatusBadge payable={payable} /><span className="text-xs text-muted-foreground">{getDueDateUrgencyLevel(payable) === 'overdue' ? 'Atenção imediata' : 'Em acompanhamento'}</span></div>
                       <div className="mt-auto grid grid-cols-2 gap-2">
                         <Button variant="outline" size="sm" onClick={() => updateRouteModal('details', payable.id)}>Ver detalhes</Button>
-                        {canRegisterPayment(payable) ? <Button size="sm" onClick={() => openPayment(payable)}>Registrar pagamento</Button> : <Button variant="outline" size="sm" onClick={() => openEdit(payable)}>Editar</Button>}
+                        {canRegisterPayment(payable) ? <Button size="sm" onClick={() => openPayment(payable)}>Registrar pagamento</Button> : canEditPayable(payable) ? <Button variant="outline" size="sm" onClick={() => openEdit(payable)}>Editar</Button> : null}
                       </div>
                     </CardContent>
                   </Card>
@@ -447,8 +471,25 @@ export default function ContasAPagar() {
 
       <Dialog open={dialogMode === 'edit'} onOpenChange={(open) => !open && resetDialogs()}>
         <DialogContent className="max-w-2xl">
-          <DialogHeader><DialogTitle>Editar conta</DialogTitle><DialogDescription>Edição rápida dos dados principais.</DialogDescription></DialogHeader>
-          <div className="grid gap-4 md:grid-cols-2"><div className="space-y-2 md:col-span-2"><Label>Título</Label><Input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} /></div><div className="space-y-2"><Label>Categoria</Label><Select value={editCategoryId} onValueChange={setEditCategoryId}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{payableCategories.filter((category) => category.isActive).map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Vencimento</Label><Input type="date" value={editDueDate} onChange={(event) => setEditDueDate(event.target.value)} /></div><div className="space-y-2 md:col-span-2"><Label>Observações</Label><Textarea value={editObservations} onChange={(event) => setEditObservations(event.target.value)} rows={4} /></div><label className="flex items-center gap-3 rounded-xl border border-border/60 px-4 py-3 text-sm md:col-span-2"><input type="checkbox" checked={editUrgent} onChange={(event) => setEditUrgent(event.target.checked)} className="h-4 w-4 rounded border-input" />Marcar esta conta como urgente</label></div>
+          <DialogHeader>
+            <DialogTitle>Editar conta</DialogTitle>
+            <DialogDescription>
+              {selectedPayable && isPayableEditRestricted(selectedPayable)
+                ? 'Conta paga — apenas título, observações e urgência podem ser alterados.'
+                : 'Edição completa dos dados da conta.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2 md:col-span-2"><Label>Título *</Label><Input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} /></div>
+            <div className="space-y-2"><Label>Fornecedor</Label><Input value={editSupplierName} onChange={(event) => setEditSupplierName(event.target.value)} disabled={!!(selectedPayable && isPayableEditRestricted(selectedPayable))} placeholder="Nome do fornecedor" /></div>
+            <div className="space-y-2"><Label>Nº do documento</Label><Input value={editDocNumber} onChange={(event) => setEditDocNumber(event.target.value)} disabled={!!(selectedPayable && isPayableEditRestricted(selectedPayable))} placeholder="Número do boleto, NF..." /></div>
+            <div className="space-y-2"><Label>Categoria *</Label><Select value={editCategoryId} onValueChange={setEditCategoryId}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{payableCategories.filter((category) => category.isActive).map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label>Vencimento *</Label><Input type="date" value={editDueDate} onChange={(event) => setEditDueDate(event.target.value)} /></div>
+            <div className="space-y-2"><Label>Valor (R$)</Label><Input value={editOriginalAmount} onChange={(event) => setEditOriginalAmount(event.target.value)} disabled={!!(selectedPayable && isPayableEditRestricted(selectedPayable))} placeholder="0,00" /></div>
+            <div className="space-y-2"><Label>Forma de pagamento</Label><Select value={editPaymentMethod} onValueChange={(v) => setEditPaymentMethod(v as PaymentMethod)} disabled={!!(selectedPayable && isPayableEditRestricted(selectedPayable))}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2 md:col-span-2"><Label>Observações</Label><Textarea value={editObservations} onChange={(event) => setEditObservations(event.target.value)} rows={3} /></div>
+            <label className="flex items-center gap-3 rounded-xl border border-border/60 px-4 py-3 text-sm md:col-span-2"><input type="checkbox" checked={editUrgent} onChange={(event) => setEditUrgent(event.target.checked)} className="h-4 w-4 rounded border-input" />Marcar esta conta como urgente</label>
+          </div>
           <DialogFooter><Button variant="outline" onClick={resetDialogs}>Cancelar</Button><Button onClick={() => void handleSubmitEdit()}>Salvar alterações</Button></DialogFooter>
         </DialogContent>
       </Dialog>

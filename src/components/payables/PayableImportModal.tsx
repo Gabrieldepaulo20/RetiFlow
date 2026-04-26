@@ -12,9 +12,8 @@ import {
   buildPayableHistoryDescription,
   calculatePayableFinalAmount,
   findPayableDuplicate,
-  formatPayableRecurrenceLabel,
 } from '@/services/domain/payables';
-import { AccountPayable, PayableAttachmentFileType, PAYMENT_METHOD_LABELS, RECURRENCE_TYPE_LABELS } from '@/types';
+import { AccountPayable, PayableAttachmentFileType, PAYMENT_METHOD_LABELS } from '@/types';
 import { Camera, CheckCircle2, ChevronDown, FileScan, LoaderCircle, SendHorizontal, Trash2, Upload, XCircle } from 'lucide-react';
 import { analisarContaPagarComIA, insertAnexoContaPagar, uploadAnexoContaPagar } from '@/api/supabase/contas-pagar';
 
@@ -53,6 +52,15 @@ type AnalysisResult = {
 type ImportSource = 'arquivo' | 'camera';
 type ImportFileStatus = 'pending' | 'analyzing' | 'success' | 'error' | 'created';
 
+type ImportDraftEdits = {
+  title?: string;
+  supplierName?: string;
+  originalAmount?: string;
+  dueDate?: string;
+  paymentMethod?: AccountPayable['paymentMethod'];
+  categoryId?: string;
+};
+
 type ImportFileItem = {
   id: string;
   file: File;
@@ -63,6 +71,8 @@ type ImportFileItem = {
   analysis: AnalysisResult | null;
   error?: string;
   expanded: boolean;
+  draftEdits: ImportDraftEdits;
+  creating: boolean;
 };
 
 function formatBytes(size: number) {
@@ -86,6 +96,8 @@ function buildImportFileItem(file: File, source: ImportSource): ImportFileItem {
     progress: 0,
     analysis: null,
     expanded: false,
+    draftEdits: {},
+    creating: false,
   };
 }
 
@@ -390,42 +402,88 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
       });
       return;
     }
-
-    let createdCount = 0;
-    let failedCount = 0;
-    let lastCreated: AccountPayable | undefined;
-
     for (const item of targets) {
-      const result = await analyzeItem(item);
-      if (!result) {
-        failedCount += 1;
-        continue;
-      }
+      await analyzeItem(item);
+    }
+  }
 
+  async function handleCreateItem(itemId: string) {
+    const item = itemsRef.current.find((i) => i.id === itemId);
+    if (!item || !item.analysis) return;
+    updateItem(itemId, { creating: true });
+    const draft = item.analysis.draft;
+    const edits = item.draftEdits;
+    const mergedDraft = {
+      ...draft,
+      title: edits.title ?? draft.title,
+      supplierName: edits.supplierName ?? draft.supplierName,
+      originalAmount: edits.originalAmount
+        ? (Number(edits.originalAmount.replace(/\./g, '').replace(',', '.')) || draft.originalAmount)
+        : draft.originalAmount,
+      dueDate: edits.dueDate ?? draft.dueDate,
+      paymentMethod: edits.paymentMethod ?? draft.paymentMethod,
+      categoryId: edits.categoryId ?? draft.categoryId,
+    };
+    try {
+      const created = await createPayableFromAnalysis(item, { ...item.analysis, draft: mergedDraft });
+      toast({ title: 'Conta criada', description: mergedDraft.title });
+      onCreated?.(created);
+    } catch (error) {
+      updateItem(itemId, {
+        creating: false,
+        status: 'error',
+        progress: 0,
+        error: error instanceof Error ? error.message : 'Não foi possível criar a conta.',
+        expanded: true,
+      });
+    }
+  }
+
+  async function handleCreateAll(source: ImportSource) {
+    const targets = itemsRef.current.filter((i) => i.source === source && i.status === 'success');
+    if (targets.length === 0) return;
+    let createdCount = 0;
+    let lastCreated: AccountPayable | undefined;
+    for (const item of targets) {
+      if (!item.analysis) continue;
+      updateItem(item.id, { creating: true });
+      const edits = item.draftEdits;
+      const draft = item.analysis.draft;
+      const mergedDraft = {
+        ...draft,
+        title: edits.title ?? draft.title,
+        supplierName: edits.supplierName ?? draft.supplierName,
+        originalAmount: edits.originalAmount
+          ? (Number(edits.originalAmount.replace(/\./g, '').replace(',', '.')) || draft.originalAmount)
+          : draft.originalAmount,
+        dueDate: edits.dueDate ?? draft.dueDate,
+        paymentMethod: edits.paymentMethod ?? draft.paymentMethod,
+        categoryId: edits.categoryId ?? draft.categoryId,
+      };
       try {
-        const created = await createPayableFromAnalysis(item, result);
+        const created = await createPayableFromAnalysis(item, { ...item.analysis, draft: mergedDraft });
         createdCount += 1;
         lastCreated = created;
       } catch (error) {
-        failedCount += 1;
         updateItem(item.id, {
+          creating: false,
           status: 'error',
           progress: 0,
-          error: error instanceof Error ? error.message : 'A análise funcionou, mas a conta não pôde ser criada.',
+          error: error instanceof Error ? error.message : 'Não foi possível criar a conta.',
           expanded: true,
         });
       }
     }
-
     toast({
       title: createdCount > 0 ? 'Importação concluída' : 'Nenhuma conta criada',
-      description: `${createdCount} conta${createdCount === 1 ? '' : 's'} criada${createdCount === 1 ? '' : 's'} • ${failedCount} falha${failedCount === 1 ? '' : 's'}.`,
+      description: `${createdCount} conta${createdCount === 1 ? '' : 's'} criada${createdCount === 1 ? '' : 's'}.`,
       variant: createdCount === 0 ? 'destructive' : undefined,
     });
-
-    onOpenChange(false);
-    window.setTimeout(clearItems, 250);
-    if (lastCreated) onCreated?.(lastCreated);
+    if (lastCreated) {
+      onOpenChange(false);
+      window.setTimeout(clearItems, 250);
+      onCreated?.(lastCreated);
+    }
   }
 
   return (
@@ -455,9 +513,13 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
             items={items.filter((item) => item.source === 'arquivo')}
             isAnalyzing={isAnalyzing}
             analyzableCount={items.filter((item) => item.source === 'arquivo' && (item.status === 'pending' || item.status === 'error')).length}
+            creatableCount={items.filter((item) => item.source === 'arquivo' && item.status === 'success').length}
             payableCategories={payableCategories}
             onSelect={() => fileInputRef.current?.click()}
             onAnalyze={() => void handleAnalyzeAll('arquivo')}
+            onCreateAll={() => void handleCreateAll('arquivo')}
+            onCreateItem={(id) => void handleCreateItem(id)}
+            onEditDraft={(id, edits) => updateItem(id, { draftEdits: { ...items.find((i) => i.id === id)?.draftEdits, ...edits } })}
             onClear={clearItems}
             onRemove={removeItem}
             onToggleExpanded={(id) => updateItem(id, { expanded: !items.find((item) => item.id === id)?.expanded })}
@@ -477,10 +539,14 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
             items={items.filter((item) => item.source === 'camera')}
             isAnalyzing={isAnalyzing}
             analyzableCount={items.filter((item) => item.source === 'camera' && (item.status === 'pending' || item.status === 'error')).length}
+            creatableCount={items.filter((item) => item.source === 'camera' && item.status === 'success').length}
             payableCategories={payableCategories}
             cameraMode
             onSelect={() => cameraInputRef.current?.click()}
             onAnalyze={() => void handleAnalyzeAll('camera')}
+            onCreateAll={() => void handleCreateAll('camera')}
+            onCreateItem={(id) => void handleCreateItem(id)}
+            onEditDraft={(id, edits) => updateItem(id, { draftEdits: { ...items.find((i) => i.id === id)?.draftEdits, ...edits } })}
             onClear={clearItems}
             onRemove={removeItem}
             onToggleExpanded={(id) => updateItem(id, { expanded: !items.find((item) => item.id === id)?.expanded })}
@@ -495,10 +561,14 @@ type ImportBodyProps = {
   items: ImportFileItem[];
   isAnalyzing: boolean;
   analyzableCount: number;
+  creatableCount: number;
   payableCategories: Array<{ id: string; name: string }>;
   cameraMode?: boolean;
   onSelect: () => void;
   onAnalyze: () => void;
+  onCreateAll: () => void;
+  onCreateItem: (id: string) => void;
+  onEditDraft: (id: string, edits: ImportDraftEdits) => void;
   onClear: () => void;
   onRemove: (id: string) => void;
   onToggleExpanded: (id: string) => void;
@@ -508,15 +578,19 @@ function ImportBody({
   items,
   isAnalyzing,
   analyzableCount,
+  creatableCount,
   payableCategories,
   cameraMode = false,
   onSelect,
   onAnalyze,
+  onCreateAll,
+  onCreateItem,
+  onEditDraft,
   onClear,
   onRemove,
   onToggleExpanded,
 }: ImportBodyProps) {
-  const successCount = items.filter((item) => item.status === 'success' || item.status === 'created').length;
+  const analyzedCount = items.filter((item) => item.status === 'success' || item.status === 'created').length;
   const errorCount = items.filter((item) => item.status === 'error').length;
   const pendingCount = items.filter((item) => item.status === 'pending').length;
 
@@ -546,14 +620,20 @@ function ImportBody({
           <p className="text-xs text-muted-foreground">
             {items.length === 0
               ? 'Nenhum arquivo selecionado.'
-              : `${items.length} arquivo${items.length === 1 ? '' : 's'} • ${pendingCount} pendente${pendingCount === 1 ? '' : 's'} • ${successCount} concluído${successCount === 1 ? '' : 's'} • ${errorCount} erro${errorCount === 1 ? '' : 's'}`}
+              : `${items.length} arquivo${items.length === 1 ? '' : 's'} • ${pendingCount} pendente${pendingCount === 1 ? '' : 's'} • ${analyzedCount} analisado${analyzedCount === 1 ? '' : 's'} • ${errorCount} erro${errorCount === 1 ? '' : 's'}`}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button onClick={onAnalyze} disabled={items.length === 0 || analyzableCount === 0 || isAnalyzing} className="gap-2">
             {isAnalyzing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
-            {isAnalyzing ? 'Processando...' : `Analisar e criar${analyzableCount > 0 ? ` (${analyzableCount})` : ''}`}
+            {isAnalyzing ? 'Analisando...' : `Analisar${analyzableCount > 0 ? ` (${analyzableCount})` : ''}`}
           </Button>
+          {creatableCount > 0 ? (
+            <Button variant="default" onClick={onCreateAll} disabled={isAnalyzing} className="gap-2">
+              <CheckCircle2 className="h-4 w-4" />
+              Criar todos ({creatableCount})
+            </Button>
+          ) : null}
           {items.length > 0 ? (
             <Button variant="outline" onClick={onClear} disabled={isAnalyzing}>
               Limpar
@@ -571,32 +651,29 @@ function ImportBody({
             </div>
           ) : null}
 
-          {items.map((item) => (
-            <ImportFileCard
-              key={item.id}
-              item={item}
-              categoryName={item.analysis ? payableCategories.find((category) => category.id === item.analysis?.draft.categoryId)?.name ?? 'Categoria sugerida' : null}
-              recurrenceLabel={item.analysis ? formatPayableRecurrenceLabel(
-                {
-                  id: 'preview',
-                  title: item.analysis.draft.title,
-                  categoryId: item.analysis.draft.categoryId,
-                  dueDate: item.analysis.draft.dueDate,
-                  originalAmount: item.analysis.draft.originalAmount,
-                  finalAmount: item.analysis.draft.originalAmount,
-                  status: 'PENDENTE',
-                  recurrence: item.analysis.draft.recurrence,
-                  isUrgent: item.analysis.draft.isUrgent,
-                  createdAt: '',
-                  updatedAt: '',
-                  createdByUserId: 'preview',
-                },
-                RECURRENCE_TYPE_LABELS[item.analysis.draft.recurrence],
-              ) : null}
-              onRemove={onRemove}
-              onToggleExpanded={onToggleExpanded}
-            />
-          ))}
+          {items.map((item) => {
+            const effectiveDraft = item.analysis ? {
+              ...item.analysis.draft,
+              title: item.draftEdits.title ?? item.analysis.draft.title,
+              supplierName: item.draftEdits.supplierName ?? item.analysis.draft.supplierName,
+              dueDate: item.draftEdits.dueDate ?? item.analysis.draft.dueDate,
+              categoryId: item.draftEdits.categoryId ?? item.analysis.draft.categoryId,
+              paymentMethod: item.draftEdits.paymentMethod ?? item.analysis.draft.paymentMethod,
+            } : null;
+            return (
+              <ImportFileCard
+                key={item.id}
+                item={item}
+                effectiveDraft={effectiveDraft}
+                categoryName={effectiveDraft ? payableCategories.find((c) => c.id === effectiveDraft.categoryId)?.name ?? 'Categoria sugerida' : null}
+                payableCategories={payableCategories}
+                onRemove={onRemove}
+                onToggleExpanded={onToggleExpanded}
+                onCreateItem={onCreateItem}
+                onEditDraft={onEditDraft}
+              />
+            );
+          })}
       </div>
     </div>
   );
@@ -604,10 +681,13 @@ function ImportBody({
 
 type ImportFileCardProps = {
   item: ImportFileItem;
+  effectiveDraft: ImportDraft | null;
   categoryName: string | null;
-  recurrenceLabel: string | null;
+  payableCategories: Array<{ id: string; name: string }>;
   onRemove: (id: string) => void;
   onToggleExpanded: (id: string) => void;
+  onCreateItem: (id: string) => void;
+  onEditDraft: (id: string, edits: ImportDraftEdits) => void;
 };
 
 function FileTileIcon({ file }: { file: File }) {
@@ -630,98 +710,171 @@ function StatusBadge({ status }: { status: ImportFileStatus }) {
 
 function ImportFileCard({
   item,
+  effectiveDraft,
   categoryName,
-  recurrenceLabel,
+  payableCategories,
   onRemove,
   onToggleExpanded,
+  onCreateItem,
+  onEditDraft,
 }: ImportFileCardProps) {
   const kind = getFileKind(item.file);
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border/60 bg-background">
-        <div className="flex items-start gap-3 p-4">
-          <FileTileIcon file={item.file} />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold">{item.file.name}</p>
-                <p className="text-xs text-muted-foreground">{kind.label} • {formatBytes(item.file.size)} • {item.file.type || 'Tipo não informado'}</p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <StatusBadge status={item.status} />
+      <div className="flex items-start gap-3 p-4">
+        <FileTileIcon file={item.file} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold">{item.file.name}</p>
+              <p className="text-xs text-muted-foreground">{kind.label} • {formatBytes(item.file.size)} • {item.file.type || 'Tipo não informado'}</p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <StatusBadge status={item.status} />
+              {item.status !== 'created' ? (
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onToggleExpanded(item.id)}>
                   <ChevronDown className={`h-4 w-4 transition-transform ${item.expanded ? 'rotate-180' : ''}`} />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => onRemove(item.id)} disabled={item.status === 'analyzing'}>
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
+              ) : null}
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => onRemove(item.id)} disabled={item.status === 'analyzing' || item.creating}>
+                <Trash2 className="h-4 w-4" />
+              </Button>
             </div>
-
-            {item.status === 'analyzing' ? (
-              <div className="mt-3 space-y-2">
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Lendo documento e extraindo campos</span>
-                  <span>{item.progress}%</span>
-                </div>
-                <Progress value={item.progress} />
-              </div>
-            ) : null}
-
-            {item.status === 'error' && !item.expanded ? (
-              <p className="mt-2 truncate text-xs text-destructive">{item.error}</p>
-            ) : null}
           </div>
+
+          {item.status === 'analyzing' ? (
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Lendo documento e extraindo campos</span>
+                <span>{item.progress}%</span>
+              </div>
+              <Progress value={item.progress} />
+            </div>
+          ) : null}
+
+          {item.status === 'error' && !item.expanded ? (
+            <p className="mt-2 truncate text-xs text-destructive">{item.error}</p>
+          ) : null}
         </div>
+      </div>
 
-        {item.expanded ? (
-          <div className="border-t bg-muted/20 p-4">
-            {item.error ? (
-              <Alert variant="destructive">
-                <XCircle className="h-4 w-4" />
-                <AlertTitle>Erro ao analisar este arquivo</AlertTitle>
-                <AlertDescription>{item.error}</AlertDescription>
-              </Alert>
-            ) : null}
+      {item.expanded ? (
+        <div className="border-t bg-muted/20 p-4 space-y-4">
+          {item.error ? (
+            <Alert variant="destructive">
+              <XCircle className="h-4 w-4" />
+              <AlertTitle>Erro ao analisar este arquivo</AlertTitle>
+              <AlertDescription>{item.error}</AlertDescription>
+            </Alert>
+          ) : null}
 
-            {item.previewUrl && item.file.type.startsWith('image/') ? (
-              <div className="mb-4 overflow-hidden rounded-2xl border border-border/60 bg-background">
-                <img src={item.previewUrl} alt={item.file.name} className="max-h-[260px] w-full object-contain" />
-              </div>
-            ) : null}
+          {item.previewUrl && item.file.type.startsWith('image/') ? (
+            <div className="overflow-hidden rounded-2xl border border-border/60 bg-background">
+              <img src={item.previewUrl} alt={item.file.name} className="max-h-[260px] w-full object-contain" />
+            </div>
+          ) : null}
 
-            {item.analysis ? (
-              <div className="space-y-4">
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {item.analysis.fields.map((field) => (
-                    <div key={field.label} className="rounded-2xl border border-border/60 bg-background p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{field.label}</p>
-                        <Badge variant={field.confidence >= 85 ? 'default' : 'secondary'}>{field.confidence}%</Badge>
-                      </div>
-                      <p className="mt-2 text-sm font-medium">{field.value}</p>
+          {item.analysis ? (
+            <>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {item.analysis.fields.map((field) => (
+                  <div key={field.label} className="rounded-2xl border border-border/60 bg-background p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{field.label}</p>
+                      <Badge variant={field.confidence >= 85 ? 'default' : 'secondary'}>{field.confidence}%</Badge>
                     </div>
-                  ))}
-                </div>
+                    <p className="mt-2 text-sm font-medium">{field.value}</p>
+                  </div>
+                ))}
+              </div>
 
-                <div className="rounded-2xl border border-primary/20 bg-background p-4">
-                  <p className="text-sm font-semibold">Resumo pronto para virar conta</p>
-                  <div className="mt-3 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
-                    <p><span className="font-medium text-foreground">Categoria:</span> {categoryName}</p>
-                    <p><span className="font-medium text-foreground">Valor:</span> {formatMoney(item.analysis.draft.originalAmount)}</p>
-                    <p><span className="font-medium text-foreground">Status:</span> {item.analysis.draft.suggestedStatus === 'PAGO' ? 'Já paga' : item.analysis.draft.suggestedStatus === 'AGENDADO' ? 'Agendada' : item.analysis.draft.suggestedStatus === 'PENDENTE' ? 'A pagar' : 'Não tenho certeza'}</p>
-                    <p><span className="font-medium text-foreground">Recorrência:</span> {recurrenceLabel ?? 'Sem recorrência'}</p>
+              {item.analysis.warnings.length > 0 ? (
+                <Alert>
+                  <AlertTitle className="text-sm">Atenção</AlertTitle>
+                  <AlertDescription className="mt-1 space-y-1">
+                    {item.analysis.warnings.map((w, i) => <p key={i} className="text-xs">{w}</p>)}
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
+              <div className="rounded-2xl border border-primary/20 bg-background p-4 space-y-4">
+                <p className="text-sm font-semibold">Revisar antes de criar</p>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="md:col-span-2 space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">Título</label>
+                    <input
+                      className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      value={item.draftEdits.title ?? item.analysis.draft.title}
+                      onChange={(e) => onEditDraft(item.id, { title: e.target.value })}
+                    />
                   </div>
-                  <div className="mt-4 rounded-xl bg-success/10 px-3 py-2 text-sm font-medium text-success">
-                    {item.status === 'created'
-                      ? 'Conta criada e anexo vinculado.'
-                      : 'Pronto para ser criado automaticamente ao concluir o lote.'}
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">Fornecedor</label>
+                    <input
+                      className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      value={item.draftEdits.supplierName ?? item.analysis.draft.supplierName}
+                      onChange={(e) => onEditDraft(item.id, { supplierName: e.target.value })}
+                    />
                   </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">Valor (R$)</label>
+                    <input
+                      className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      value={item.draftEdits.originalAmount ?? item.analysis.draft.originalAmount.toFixed(2).replace('.', ',')}
+                      onChange={(e) => onEditDraft(item.id, { originalAmount: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">Vencimento</label>
+                    <input
+                      type="date"
+                      className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      value={item.draftEdits.dueDate ?? item.analysis.draft.dueDate}
+                      onChange={(e) => onEditDraft(item.id, { dueDate: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">Categoria</label>
+                    <select
+                      className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      value={item.draftEdits.categoryId ?? item.analysis.draft.categoryId}
+                      onChange={(e) => onEditDraft(item.id, { categoryId: e.target.value })}
+                    >
+                      {payableCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">Forma de pagamento</label>
+                    <select
+                      className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      value={item.draftEdits.paymentMethod ?? item.analysis.draft.paymentMethod ?? 'BOLETO'}
+                      onChange={(e) => onEditDraft(item.id, { paymentMethod: e.target.value as AccountPayable['paymentMethod'] })}
+                    >
+                      {Object.entries(PAYMENT_METHOD_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-3 border-t border-border/50 pt-3">
+                  <div className="text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">Categoria:</span> {categoryName} &nbsp;•&nbsp;
+                    <span className="font-medium text-foreground">Status:</span> {effectiveDraft?.suggestedStatus === 'PAGO' ? 'Já paga' : effectiveDraft?.suggestedStatus === 'AGENDADO' ? 'Agendada' : 'A pagar'}
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => onCreateItem(item.id)}
+                    disabled={item.creating}
+                    className="gap-1.5 shrink-0"
+                  >
+                    {item.creating ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                    Confirmar e criar
+                  </Button>
                 </div>
               </div>
-            ) : null}
-          </div>
-        ) : null}
+            </>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

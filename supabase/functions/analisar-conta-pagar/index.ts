@@ -19,6 +19,8 @@ type ImportDraft = {
   observations?: string;
   isUrgent: boolean;
   suggestedStatus: SuggestedStatus;
+  recurrenceIndex?: number;
+  totalInstallments?: number;
 };
 
 type AnalysisResult = {
@@ -125,6 +127,12 @@ function sanitizeAnalysis(raw: unknown, validCategoryIds: Set<string>, fallbackC
       suggestedStatus: ['PAGO', 'PENDENTE', 'AGENDADO', 'INCERTO'].includes(suggestedStatus)
         ? suggestedStatus as SuggestedStatus
         : 'INCERTO',
+      recurrenceIndex: typeof draft.recurrenceIndex === 'number' && draft.recurrenceIndex > 0
+        ? draft.recurrenceIndex
+        : undefined,
+      totalInstallments: typeof draft.totalInstallments === 'number' && draft.totalInstallments > 1
+        ? draft.totalInstallments
+        : undefined,
     },
     fields: Array.isArray(root.fields) ? root.fields.slice(0, 12).map((field: unknown) => {
       const item = isRecord(field) ? field : {};
@@ -217,14 +225,79 @@ Deno.serve(async (request) => {
     try {
       openAIFileId = (await uploadOpenAIFile(file, apiKey)).id;
 
+      const today = new Date().toISOString().slice(0, 10);
       const prompt = [
-        'Extraia dados financeiros de uma conta a pagar brasileira.',
-        'Retorne somente JSON válido com este formato:',
-        '{ "draft": { "title": string, "supplierName": string, "categoryId": string, "dueDate": "YYYY-MM-DD", "issueDate": "YYYY-MM-DD opcional", "originalAmount": number, "paymentMethod": "PIX|BOLETO|TRANSFERENCIA|CARTAO_CREDITO|CARTAO_DEBITO|DINHEIRO|CHEQUE|DEBITO_AUTOMATICO", "recurrence": "NENHUMA|SEMANAL|QUINZENAL|MENSAL|BIMESTRAL|TRIMESTRAL|SEMESTRAL|ANUAL", "docNumber": string opcional, "observations": string opcional, "isUrgent": boolean, "suggestedStatus": "PAGO|PENDENTE|AGENDADO|INCERTO" }, "fields": [{ "label": string, "value": string, "confidence": number }], "warnings": string[], "highlights": string[] }',
-        'Escolha categoryId apenas da lista fornecida. Se não tiver certeza, use a categoria mais genérica.',
-        `Categorias disponíveis: ${JSON.stringify(categories)}`,
-        `Fornecedores conhecidos: ${JSON.stringify(suppliers.slice(0, 80))}`,
-        'Não invente valor, vencimento ou fornecedor com confiança alta se o documento não permitir leitura clara.',
+        `Você é um especialista em documentos financeiros brasileiros. Hoje é ${today}.`,
+        'Analise o documento e extraia dados de uma conta a pagar. Retorne SOMENTE JSON válido, sem texto adicional.',
+        '',
+        'FORMATO DE SAÍDA OBRIGATÓRIO:',
+        '{ "draft": { "title": string, "supplierName": string, "categoryId": string,',
+        '  "dueDate": "YYYY-MM-DD", "issueDate": "YYYY-MM-DD|null",',
+        '  "originalAmount": number, "paymentMethod": "PIX|BOLETO|TRANSFERENCIA|CARTAO_CREDITO|CARTAO_DEBITO|DINHEIRO|CHEQUE|DEBITO_AUTOMATICO",',
+        '  "recurrence": "NENHUMA|SEMANAL|QUINZENAL|MENSAL|BIMESTRAL|TRIMESTRAL|SEMESTRAL|ANUAL",',
+        '  "docNumber": "string|null", "observations": "string|null",',
+        '  "isUrgent": boolean, "suggestedStatus": "PAGO|PENDENTE|AGENDADO|INCERTO",',
+        '  "recurrenceIndex": number|null, "totalInstallments": number|null },',
+        '  "fields": [{ "label": string, "value": string, "confidence": number }],',
+        '  "warnings": string[], "highlights": string[] }',
+        '',
+        'REGRAS CRÍTICAS — leia com atenção:',
+        '',
+        '1. DATAS — distinguir emissão de vencimento:',
+        '   - issueDate = data em que o documento foi emitido/gerado.',
+        '   - dueDate = data limite para pagamento. NUNCA confunda as duas.',
+        '   - Em boletos: a data de vencimento está na linha digitável (campo 5, posições 33-42) no formato AAAMMDD.',
+        '     Se o código de barras/linha digitável estiver visível, prefira essa data sobre qualquer texto.',
+        '   - Se não conseguir identificar o vencimento com segurança, use null em issueDate e coloque a data encontrada em warnings.',
+        '',
+        '2. VALORES — nunca inventar:',
+        '   - originalAmount deve ser o valor principal do documento em reais (número positivo sem R$).',
+        '   - Em boletos: o valor pode estar no código de barras (posições 10-19 do campo livre).',
+        '   - Se houver múltiplos valores (valor bruto, desconto, valor final), use o valor a pagar.',
+        '   - Se o valor for ilegível ou ambíguo, use 0 e adicione warning.',
+        '',
+        '3. FORNECEDOR — identificação:',
+        '   - supplierName: nome da empresa emitente (ex: "SABESP", "Enel SP", "Prefeitura de São Paulo").',
+        '   - Se o CNPJ do fornecedor estiver visível, inclua em observations no formato "CNPJ: XX.XXX.XXX/XXXX-XX".',
+        '   - Se o fornecedor estiver na lista de fornecedores conhecidos, use o nome exatamente como está na lista.',
+        '',
+        '4. RECORRÊNCIA — inferir pelo tipo de documento:',
+        '   - Água, energia elétrica, gás, internet, telefone, aluguel, condomínio → recurrence: "MENSAL".',
+        '   - IPTU, IPVA → recurrence: "ANUAL".',
+        '   - Plano de saúde mensal → recurrence: "MENSAL".',
+        '   - Compra única, nota fiscal de produto, boleto avulso → recurrence: "NENHUMA".',
+        '',
+        '5. PARCELAMENTO — detectar automaticamente:',
+        '   - Se o documento mencionar "parcela X de Y", "X/Y", "prestação X de Y", extraia:',
+        '     recurrenceIndex: X (número da parcela atual), totalInstallments: Y (total de parcelas).',
+        '   - Caso contrário: recurrenceIndex: null, totalInstallments: null.',
+        '',
+        '6. URGÊNCIA:',
+        '   - isUrgent: true SE o vencimento for hoje ou amanhã (comparar com hoje = ' + today + ').',
+        '   - isUrgent: true SE o documento contiver palavras como "URGENTE", "ÚLTIMO DIA", "PROTESTADO", "INADIMPLENTE", "VENCIDO".',
+        '   - Caso contrário: isUrgent: false.',
+        '',
+        '7. STATUS SUGERIDO:',
+        '   - "PAGO": documento for comprovante, recibo ou tiver carimbo/selo de quitação.',
+        '   - "AGENDADO": documento mencionar agendamento ou débito automático futuro.',
+        '   - "PENDENTE": boleto, fatura ou nota fiscal sem evidência de pagamento.',
+        '   - "INCERTO": quando não houver evidência suficiente.',
+        '',
+        '8. CAMPOS fields[] — mostrar ao usuário para revisão:',
+        '   Liste os campos que extraiu com label em português, value (texto do documento) e confidence (0-100).',
+        '   Exemplos de labels: "Fornecedor", "Valor", "Vencimento", "Emissão", "Documento", "CNPJ", "Forma de pagamento".',
+        '   Confidence abaixo de 70 indica que o usuário DEVE revisar antes de salvar.',
+        '',
+        '9. WARNINGS — sempre informar limitações:',
+        '   Adicione warning quando: documento ilegível, data ambígua, valor incerto, CNPJ não encontrado,',
+        '   campo inferido (não lido diretamente), recorrência inferida pelo tipo de conta.',
+        '   Lembre: "Revise os valores antes de confirmar — esta análise é uma sugestão, não um dado oficial."',
+        '',
+        '10. CATEGORIA — escolha apenas da lista abaixo. Se não tiver certeza, use a mais genérica:',
+        `    ${JSON.stringify(categories)}`,
+        '',
+        '11. FORNECEDORES CONHECIDOS — prefira corresponder a um da lista se o nome for parecido:',
+        `    ${JSON.stringify(suppliers.slice(0, 80))}`,
       ].join('\n');
 
       const response = await fetch('https://api.openai.com/v1/responses', {

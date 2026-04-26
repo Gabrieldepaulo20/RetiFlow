@@ -778,8 +778,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
         } else {
           const payload: Partial<InsertContaPagarPayload> = {};
           if (data.title !== undefined) payload.p_titulo = data.title;
+          if (data.supplierName !== undefined) payload.p_nome_fornecedor = data.supplierName;
+          if (data.supplierId !== undefined) payload.p_fk_fornecedores = data.supplierId;
           if (data.categoryId !== undefined) payload.p_fk_categorias = data.categoryId;
           if (data.dueDate !== undefined) payload.p_data_vencimento = data.dueDate;
+          if (data.issueDate !== undefined) payload.p_data_emissao = data.issueDate;
+          if (data.originalAmount !== undefined) payload.p_valor_original = data.originalAmount;
+          if (data.interest !== undefined) payload.p_juros = data.interest;
+          if (data.discount !== undefined) payload.p_desconto = data.discount;
+          if (data.docNumber !== undefined) payload.p_numero_documento = data.docNumber;
+          if (data.paymentMethod !== undefined) payload.p_forma_pagamento_prevista = data.paymentMethod;
+          if (data.recurrence !== undefined) payload.p_recorrencia = data.recurrence;
+          if (data.competencyDate !== undefined) payload.p_data_competencia = data.competencyDate;
           if (data.isUrgent !== undefined) payload.p_urgente = data.isUrgent;
           if (data.observations !== undefined) payload.p_observacoes = data.observations;
           if (Object.keys(payload).length > 0) {

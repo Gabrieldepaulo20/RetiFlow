@@ -68,13 +68,45 @@ export async function getContasPagar(params?: {
   return { dados: env.dados ?? [], total: env.total ?? 0 };
 }
 
-export async function getContaPagarDetalhes(idContasPagar: string) {
-  const env = await callRPC('get_conta_pagar_detalhes', { p_id_contas_pagar: idContasPagar });
-  return env as unknown as Record<string, unknown>;
+export interface ContaPagarDetalhes {
+  conta: ContaPagar & { observacoes_pagamento?: string | null };
+  anexos: Array<{
+    id_anexo: string;
+    tipo: string;
+    nome_arquivo: string;
+    url: string;
+    created_at: string;
+  }>;
+  historico: Array<{
+    id_historico_conta: string;
+    acao: string;
+    descricao: string;
+    created_at: string;
+    usuario?: { nome?: string | null } | null;
+  }>;
+  parcelas: Array<{
+    id_contas_pagar: string;
+    titulo: string;
+    indice_recorrencia: number | null;
+    total_parcelas: number | null;
+    data_vencimento: string;
+    valor_final: number;
+    status: string;
+    pago_em: string | null;
+  }>;
+}
+
+export async function getContaPagarDetalhes(idContasPagar: string): Promise<ContaPagarDetalhes | null> {
+  try {
+    const env = await callRPC('get_conta_pagar_detalhes', { p_id_contas_pagar: idContasPagar });
+    return env as unknown as ContaPagarDetalhes;
+  } catch {
+    return null;
+  }
 }
 
 export async function insertContaPagar(payload: InsertContaPagarPayload) {
-  const env = await callRPC('insert_conta_pagar', payload);
+  const env = await callRPC('insert_conta_pagar', payload as unknown as Record<string, unknown>);
   return env.id_contas_pagar as string;
 }
 
