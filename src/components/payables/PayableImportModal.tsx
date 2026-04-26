@@ -314,16 +314,15 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     if (IS_REAL_AUTH) {
       try {
         url = await uploadAnexoContaPagar({ contaPagarId: payableId, file: item.file });
-      } catch (error) {
-        console.warn('[PayableImportModal] storage upload unavailable, keeping local attachment reference', error);
+        await insertAnexoContaPagar({
+          p_fk_contas_pagar: payableId,
+          p_tipo: type,
+          p_nome_arquivo: item.file.name,
+          p_url: url,
+        });
+      } catch {
+        return false;
       }
-
-      await insertAnexoContaPagar({
-        p_fk_contas_pagar: payableId,
-        p_tipo: type,
-        p_nome_arquivo: item.file.name,
-        p_url: url,
-      });
     }
 
     addPayableAttachment({
@@ -333,6 +332,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
       url,
       createdByUserId: user?.id ?? 'user-2',
     });
+    return true;
   }
 
   async function createPayableFromAnalysis(item: ImportFileItem, analysis: AnalysisResult) {
@@ -377,19 +377,21 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
       createdByUserId: user?.id ?? 'user-2',
     });
 
-    await persistImportedAttachment(item, payable.id);
+    const attachmentSaved = await persistImportedAttachment(item, payable.id);
 
-    addPayableHistoryEntry(
-      buildPayableHistoryDescription({
-        payableId: payable.id,
-        action: 'ATTACHMENT_ADDED',
-        userId: user?.id ?? 'user-2',
-        extra: { filename: item.file.name },
-      }),
-    );
+    if (attachmentSaved) {
+      addPayableHistoryEntry(
+        buildPayableHistoryDescription({
+          payableId: payable.id,
+          action: 'ATTACHMENT_ADDED',
+          userId: user?.id ?? 'user-2',
+          extra: { filename: item.file.name },
+        }),
+      );
+    }
 
     updateItem(item.id, { status: 'created', expanded: false });
-    return payable;
+    return { payable, attachmentSaved };
   }
 
   async function handleAnalyzeAll(source: ImportSource) {
@@ -425,8 +427,14 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
       categoryId: edits.categoryId ?? draft.categoryId,
     };
     try {
-      const created = await createPayableFromAnalysis(item, { ...item.analysis, draft: mergedDraft });
-      toast({ title: 'Conta criada', description: mergedDraft.title });
+      const { payable: created, attachmentSaved } = await createPayableFromAnalysis(item, { ...item.analysis, draft: mergedDraft });
+      toast({
+        title: 'Conta criada',
+        description: attachmentSaved
+          ? mergedDraft.title
+          : `${mergedDraft.title} criada, mas o anexo não foi salvo no Storage.`,
+        variant: attachmentSaved ? undefined : 'destructive',
+      });
       onCreated?.(created);
     } catch (error) {
       updateItem(itemId, {
@@ -461,7 +469,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
         categoryId: edits.categoryId ?? draft.categoryId,
       };
       try {
-        const created = await createPayableFromAnalysis(item, { ...item.analysis, draft: mergedDraft });
+        const { payable: created } = await createPayableFromAnalysis(item, { ...item.analysis, draft: mergedDraft });
         createdCount += 1;
         lastCreated = created;
       } catch (error) {

@@ -239,6 +239,7 @@ export default function PayableQuickForm({
     if (attachment) {
       const type = inferAttachmentType(attachment);
       let url = `local-upload://${attachment.name}`;
+      let attachmentSaved = true;
 
       if (IS_REAL_AUTH) {
         try {
@@ -250,25 +251,33 @@ export default function PayableQuickForm({
             p_url: url,
           });
         } catch {
-          // storage indisponível — mantém referência local
+          attachmentSaved = false;
         }
       }
 
-      addPayableAttachment({
-        payableId: payable.id,
-        type,
-        filename: attachment.name,
-        url,
-        createdByUserId: user?.id ?? 'user-2',
-      });
-      addPayableHistoryEntry(
-        buildPayableHistoryDescription({
+      if (attachmentSaved) {
+        addPayableAttachment({
           payableId: payable.id,
-          action: 'ATTACHMENT_ADDED',
-          userId: user?.id ?? 'user-2',
-          extra: { filename: attachment.name },
-        }),
-      );
+          type,
+          filename: attachment.name,
+          url,
+          createdByUserId: user?.id ?? 'user-2',
+        });
+        addPayableHistoryEntry(
+          buildPayableHistoryDescription({
+            payableId: payable.id,
+            action: 'ATTACHMENT_ADDED',
+            userId: user?.id ?? 'user-2',
+            extra: { filename: attachment.name },
+          }),
+        );
+      } else {
+        toast({
+          title: 'Conta criada sem anexo',
+          description: 'O arquivo não foi salvo no Storage. Tente anexar novamente nos detalhes da conta.',
+          variant: 'destructive',
+        });
+      }
     }
 
     toast({
