@@ -20,6 +20,7 @@ import {
 } from '@/types';
 import {
   calculatePayableRemainingBalance,
+  canEditPayable,
   canRegisterPayment,
   formatPayableRecurrenceLabel,
   getPayableDisplayStatus,
@@ -66,7 +67,15 @@ export default function PayableDetailsModal({
   onRequestPayment,
   onRequestEdit,
 }: PayableDetailsModalProps) {
-  const { getPayable, addPayableAttachment, addPayableHistoryEntry, payableCategories, getInstallmentSiblings } = useData();
+  const {
+    getPayable,
+    addPayableAttachment,
+    addPayableHistoryEntry,
+    getAttachmentsForPayable,
+    getHistoryForPayable,
+    payableCategories,
+    getInstallmentSiblings,
+  } = useData();
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -120,8 +129,8 @@ export default function PayableDetailsModal({
   const recurrenceLabel = formatPayableRecurrenceLabel(payable, RECURRENCE_TYPE_LABELS[payable.recurrence]);
   const installmentSiblings = (payable.totalInstallments ?? 0) > 1 ? getInstallmentSiblings(payable) : [];
 
-  const displayAttachments = IS_REAL_AUTH
-    ? (detalhes?.anexos ?? []).map((a) => ({
+  const localAttachments = payable ? getAttachmentsForPayable(payable.id) : [];
+  const remoteAttachments = (detalhes?.anexos ?? []).map((a) => ({
         id: a.id_anexo,
         payableId: payable.id,
         type: a.tipo as PayableAttachmentFileType,
@@ -129,22 +138,26 @@ export default function PayableDetailsModal({
         url: a.url,
         createdAt: a.created_at,
         createdByUserId: '',
-      }))
-    : [];
+      }));
+  const displayAttachments = IS_REAL_AUTH
+    ? (remoteAttachments.length > 0 ? remoteAttachments : localAttachments)
+    : localAttachments;
 
-  const displayHistory = IS_REAL_AUTH
-    ? (detalhes?.historico ?? []).map((h) => ({
+  const localHistory = payable ? getHistoryForPayable(payable.id) : [];
+  const remoteHistory = (detalhes?.historico ?? []).map((h) => ({
         id: h.id_historico_conta,
         payableId: payable.id,
         action: h.acao,
         description: h.descricao,
         createdAt: h.created_at,
         userId: h.usuario?.nome ?? '',
-      }))
-    : [];
+      }));
+  const displayHistory = IS_REAL_AUTH
+    ? (remoteHistory.length > 0 ? remoteHistory : localHistory)
+    : localHistory;
 
   const paymentNotes = IS_REAL_AUTH
-    ? (detalhes?.conta.observacoes_pagamento ?? null)
+    ? (detalhes?.conta?.observacoes_pagamento ?? null)
     : (payable.paymentNotes ?? null);
 
   async function handleAttachmentFile(file: File) {
@@ -424,7 +437,9 @@ export default function PayableDetailsModal({
             </Card>
 
             <div className="flex flex-col gap-2">
-              <Button variant="outline" onClick={() => onRequestEdit?.(payable)}>Editar dados</Button>
+              {canEditPayable(payable) ? (
+                <Button variant="outline" onClick={() => onRequestEdit?.(payable)}>Editar dados</Button>
+              ) : null}
               {canRegisterPayment(payable) ? <Button onClick={() => onRequestPayment?.(payable)}>Registrar pagamento</Button> : null}
               <Button variant="outline" onClick={() => onOpenChange(false)}>Fechar</Button>
             </div>

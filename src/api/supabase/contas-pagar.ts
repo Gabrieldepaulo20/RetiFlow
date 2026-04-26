@@ -98,8 +98,19 @@ export interface ContaPagarDetalhes {
 
 export async function getContaPagarDetalhes(idContasPagar: string): Promise<ContaPagarDetalhes | null> {
   try {
-    const env = await callRPC('get_conta_pagar_detalhes', { p_id_contas_pagar: idContasPagar });
-    return env as unknown as ContaPagarDetalhes;
+    const env = await callRPC<ContaPagarDetalhes>('get_conta_pagar_detalhes', { p_id_contas_pagar: idContasPagar });
+    const dados = env.dados;
+
+    if (!dados?.conta) {
+      return null;
+    }
+
+    return {
+      conta: dados.conta,
+      anexos: Array.isArray(dados.anexos) ? dados.anexos : [],
+      historico: Array.isArray(dados.historico) ? dados.historico : [],
+      parcelas: Array.isArray(dados.parcelas) ? dados.parcelas : [],
+    };
   } catch {
     return null;
   }

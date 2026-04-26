@@ -20,7 +20,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { AccountPayable, PaymentMethod, PAYABLE_ENTRY_SOURCE_LABELS, PAYABLE_STATUS_COLORS, PAYABLE_STATUS_LABELS, PAYMENT_METHOD_LABELS, RECURRENCE_TYPE_LABELS } from '@/types';
-import { buildPayableHistoryDescription, calculatePayableRemainingBalance, canCancelPayable, canEditPayable, canRegisterPayment, formatPayableDueDateLabel, getDueDateUrgencyLevel, getPayableDisplayStatus, isPayableEditRestricted, isPayableOverdue } from '@/services/domain/payables';
+import { buildPayableHistoryDescription, calculatePayableFinalAmount, calculatePayableRemainingBalance, canCancelPayable, canEditPayable, canRegisterPayment, formatPayableDueDateLabel, getDueDateUrgencyLevel, getPayableDisplayStatus, isPayableEditRestricted, isPayableOverdue } from '@/services/domain/payables';
 import PayableCreateModal from '@/components/payables/PayableCreateModal';
 import PayableImportModal from '@/components/payables/PayableImportModal';
 import PayableDetailsModal from '@/components/payables/PayableDetailsModal';
@@ -269,6 +269,10 @@ export default function ContasAPagar() {
     }
     const restricted = isPayableEditRestricted(selectedPayable);
     const parsedAmount = parseMoneyInput(editOriginalAmount);
+    if (!restricted && parsedAmount <= 0) {
+      toast({ title: 'Informe um valor válido', description: 'O valor da conta precisa ser maior que zero.', variant: 'destructive' });
+      return;
+    }
     try {
       const patch: Partial<AccountPayable> = {
         title: editTitle.trim(),
@@ -279,10 +283,8 @@ export default function ContasAPagar() {
       };
       if (!restricted) {
         if (editSupplierName.trim()) patch.supplierName = editSupplierName.trim();
-        if (parsedAmount > 0) {
-          patch.originalAmount = parsedAmount;
-          patch.finalAmount = parsedAmount;
-        }
+        patch.originalAmount = parsedAmount;
+        patch.finalAmount = calculatePayableFinalAmount(parsedAmount, selectedPayable.interest, selectedPayable.discount);
         if (editDocNumber.trim()) patch.docNumber = editDocNumber.trim();
         patch.paymentMethod = editPaymentMethod;
       }
