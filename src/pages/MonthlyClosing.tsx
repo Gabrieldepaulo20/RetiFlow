@@ -206,6 +206,7 @@ export default function MonthlyClosing() {
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [draftModalOpen, setDraftModalOpen] = useState(false);
   const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false);
+  const [returnToDraftAfterPreview, setReturnToDraftAfterPreview] = useState(false);
   const [templatePreviewLoading, setTemplatePreviewLoading] = useState(false);
 
   // Preview state
@@ -317,7 +318,7 @@ export default function MonthlyClosing() {
     return () => { cancelled = true; };
   }, [selClientId, notes, defaultMonth, defaultYear, selYear, toast]);
 
-  const openDraft = useCallback((draft: ClosingDraft) => {
+  const loadDraftIntoEditor = useCallback((draft: ClosingDraft) => {
     setActiveDraftId(draft.id);
     setSelClientId(draft.clientId);
     setSelMonth(draft.month);
@@ -325,18 +326,41 @@ export default function MonthlyClosing() {
     setPreviewNotes(draft.notes);
     setDescontos(draft.discounts);
     setEditingItems({});
-    setDraftModalOpen(true);
   }, []);
+
+  const openDraft = useCallback((draft: ClosingDraft) => {
+    loadDraftIntoEditor(draft);
+    setDraftModalOpen(true);
+  }, [loadDraftIntoEditor]);
 
   const closeTemplatePreview = useCallback(() => {
     setTemplatePreviewOpen(false);
     setTemplatePreviewLoading(false);
-  }, []);
+    if (returnToDraftAfterPreview) {
+      setReturnToDraftAfterPreview(false);
+      setDraftModalOpen(true);
+    }
+  }, [returnToDraftAfterPreview]);
 
   const closeDraftModal = useCallback(() => {
     setDraftModalOpen(false);
-    closeTemplatePreview();
-  }, [closeTemplatePreview]);
+    setTemplatePreviewOpen(false);
+    setTemplatePreviewLoading(false);
+    setReturnToDraftAfterPreview(false);
+  }, []);
+
+  const openDraftPreview = useCallback((draft: ClosingDraft) => {
+    loadDraftIntoEditor(draft);
+    setReturnToDraftAfterPreview(false);
+    setDraftModalOpen(false);
+    setTemplatePreviewOpen(true);
+  }, [loadDraftIntoEditor]);
+
+  const openActiveDraftPreview = useCallback(() => {
+    setReturnToDraftAfterPreview(true);
+    setDraftModalOpen(false);
+    setTemplatePreviewOpen(true);
+  }, []);
 
   const removeDraft = useCallback((draftId: string) => {
     setDrafts((current) => current.filter((draft) => draft.id !== draftId));
@@ -773,7 +797,7 @@ export default function MonthlyClosing() {
                         <Button size="sm" variant="outline" onClick={() => openDraft(draft)}>
                           <PencilLine className="w-3.5 h-3.5 mr-1.5" /> Editar
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => { openDraft(draft); setTemplatePreviewOpen(true); }}>
+                        <Button size="sm" variant="outline" onClick={() => openDraftPreview(draft)}>
                           <Eye className="w-3.5 h-3.5 mr-1.5" /> Visualizar
                         </Button>
                         <Button size="sm" onClick={() => void generateDraft(draft)} disabled={generating}>
@@ -881,15 +905,16 @@ export default function MonthlyClosing() {
                   <p className="text-sm text-muted-foreground">{activeDraft?.periodLabel ?? '—'}</p>
                 </div>
                 <div className="flex flex-wrap gap-2 xl:justify-end">
-                  <Button variant="outline" onClick={() => setTemplatePreviewOpen(true)} disabled={!modalPreviewDados}>
+                  <Button variant="outline" onClick={openActiveDraftPreview} disabled={!modalPreviewDados}>
                     <Eye className="w-4 h-4 mr-2" /> Visualizar
                   </Button>
                 </div>
               </div>
             </div>
 
-            <div className="grid min-h-0 flex-1 gap-0 xl:grid-cols-[minmax(0,1fr)_280px]">
-              <div className="min-h-0 overflow-y-auto p-4 sm:p-5 space-y-4">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-thin">
+              <div className="grid min-h-full gap-0 xl:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="p-4 sm:p-5 space-y-4">
                 {previewNotes.map((nota) => {
                   const disc = descontos[nota.id] ?? 0;
                   const totalComDesc = nota.total * (1 - disc / 100);
@@ -984,28 +1009,29 @@ export default function MonthlyClosing() {
                 })}
               </div>
 
-              <div className="border-t bg-muted/20 p-4 sm:p-5 xl:border-l xl:border-t-0">
-                <div className="space-y-4 xl:sticky xl:top-4">
-                <div className="rounded-2xl border bg-background p-4 shadow-sm">
-                  <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Resumo do rascunho</p>
-                  <p className="mt-2 text-sm text-muted-foreground">{previewNotes.length} O.S. · {activeDraft?.periodLabel ?? '—'}</p>
-                  <p className="mt-1 text-3xl font-bold text-primary">R$ {toMoney(grandTotal)}</p>
-                  {grandTotalOriginal !== grandTotal && <p className="mt-1 text-xs text-muted-foreground">Bruto: R$ {toMoney(grandTotalOriginal)}</p>}
-                </div>
-                <div className="rounded-2xl border bg-background p-4 shadow-sm space-y-2 text-sm text-muted-foreground">
-                  <p>1. Este popup serve para edição e revisão das O.S.</p>
-                  <p>2. O botão visualizar mostra o template final em outro popup.</p>
-                  <p>3. Só o botão gerar fechamento grava no banco.</p>
-                </div>
-                <Button
-                  onClick={handleGerar}
-                  disabled={generating || !activeDraft}
-                  className="h-12 w-full bg-destructive text-sm font-semibold text-destructive-foreground hover:bg-destructive/90"
-                  size="lg"
-                >
-                  <RefreshCcw className={cn('mr-2 h-4 w-4', generating && 'animate-spin')} />
-                  Gerar fechamento
-                </Button>
+                <div className="border-t bg-muted/20 p-4 sm:p-5 xl:border-l xl:border-t-0">
+                  <div className="space-y-4 xl:sticky xl:top-4">
+                    <div className="rounded-2xl border bg-background p-4 shadow-sm">
+                      <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Resumo do rascunho</p>
+                      <p className="mt-2 text-sm text-muted-foreground">{previewNotes.length} O.S. · {activeDraft?.periodLabel ?? '—'}</p>
+                      <p className="mt-1 text-3xl font-bold text-primary">R$ {toMoney(grandTotal)}</p>
+                      {grandTotalOriginal !== grandTotal && <p className="mt-1 text-xs text-muted-foreground">Bruto: R$ {toMoney(grandTotalOriginal)}</p>}
+                    </div>
+                    <div className="rounded-2xl border bg-background p-4 shadow-sm space-y-2 text-sm text-muted-foreground">
+                      <p>1. Este popup serve para edição e revisão das O.S.</p>
+                      <p>2. O botão visualizar mostra o template final em outro popup.</p>
+                      <p>3. Só o botão gerar fechamento grava no banco.</p>
+                    </div>
+                    <Button
+                      onClick={handleGerar}
+                      disabled={generating || !activeDraft}
+                      className="h-12 w-full bg-destructive text-sm font-semibold text-destructive-foreground hover:bg-destructive/90"
+                      size="lg"
+                    >
+                      <RefreshCcw className={cn('mr-2 h-4 w-4', generating && 'animate-spin')} />
+                      Gerar fechamento
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
