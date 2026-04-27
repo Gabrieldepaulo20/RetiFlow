@@ -245,8 +245,18 @@ export async function analisarContaPagarComIA(params: {
   body.append('categories', JSON.stringify(params.categories));
   body.append('suppliers', JSON.stringify(params.suppliers));
 
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+
+  if (sessionError || !accessToken) {
+    throw new Error('Sessão Supabase não encontrada. Faça login novamente antes de usar a análise com IA.');
+  }
+
   const { data, error } = await supabase.functions.invoke<AnalisarContaPagarResultado>('analisar-conta-pagar', {
     body,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
   });
 
   if (error) {
