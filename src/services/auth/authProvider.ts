@@ -27,10 +27,10 @@ export interface IAuthProvider {
 export function getAuthProvider(): IAuthProvider {
   const mode = (import.meta.env.VITE_AUTH_MODE as string | undefined) ?? 'mock';
 
-  if (import.meta.env.PROD && mode === 'mock') {
-    console.error(
-      '[auth] VITE_AUTH_MODE=mock está ativo em um build de produção. ' +
-        'Defina VITE_AUTH_MODE=real e conecte um backend real antes de publicar.',
+  if (import.meta.env.PROD && mode !== 'real') {
+    throw new Error(
+      '[auth] VITE_AUTH_MODE não está configurado como "real" em build de produção. ' +
+        'Defina VITE_AUTH_MODE=real no ambiente antes de publicar.',
     );
   }
 

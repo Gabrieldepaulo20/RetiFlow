@@ -55,6 +55,7 @@ import {
 import { getCategorias, type Categoria } from '@/api/supabase/categorias';
 import { getFornecedores, type Fornecedor } from '@/api/supabase/fornecedores';
 import { getLogs, type LogAtividade } from '@/api/supabase/logs';
+import { toast } from '@/hooks/use-toast';
 
 // ── Supabase adapters ─────────────────────────────────────────────────────────
 
@@ -231,7 +232,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }
   const init = initRef.current;
 
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>(IS_REAL_AUTH ? [] : (init.customers ?? []));
   const [notes, setNotes] = useState<IntakeNote[]>(init.notes);
   const [services, setServices] = useState<IntakeService[]>(init.services);
   const [products, setProducts] = useState<IntakeProduct[]>(init.products);
@@ -546,15 +547,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const updateNoteStatus = useCallback((id: string, status: NoteStatus) => {
     const changedAt = new Date().toISOString();
+    const previousNotes = notes;
 
-    if (IS_REAL_AUTH) {
-      const statusId = statusDbIdRef.current.get(status);
-      if (statusId !== undefined) {
-        updateNotaServicoDB({ id_notas_servico: id, fk_status: statusId }).catch(() => {});
-      }
-    }
-
-    setNotes((previous) => {
+    const applyTransition = (previous: IntakeNote[]) => {
       let updatedNotes = previous.map((note) =>
         note.id === id ? applyNoteStatusTransition({ nextStatus: status, previousNote: note, changedAt }) : note,
       );
@@ -563,27 +558,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (changedNote?.parentNoteId && FINAL_STATUSES.has(status)) {
         updatedNotes = updatedNotes.map((note) => {
           if (note.id === changedNote.parentNoteId && note.status === 'AGUARDANDO_COMPRA' && note.previousStatus) {
-            return {
-              ...note,
-              status: note.previousStatus,
-              previousStatus: undefined,
-              updatedAt: changedAt,
-            };
+            return { ...note, status: note.previousStatus, previousStatus: undefined, updatedAt: changedAt };
           }
-
           return note;
         });
       }
 
       return updatedNotes;
-    });
+    };
 
+    setNotes(applyTransition);
     bumpDataVersion();
 
     const note = notes.find((candidate) => candidate.id === id);
-    if (!note) {
-      return;
-    }
+    if (!note) return;
 
     addActivity(`${note.number} movida para ${status}`, id);
     if (note.parentNoteId && FINAL_STATUSES.has(status)) {
@@ -593,6 +581,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
           `${parent.number} retomada automaticamente (compra ${status === 'FINALIZADO' ? 'finalizada' : 'encerrada'})`,
           parent.id,
         );
+      }
+    }
+
+    if (IS_REAL_AUTH) {
+      const statusId = statusDbIdRef.current.get(status);
+      if (statusId !== undefined) {
+        updateNotaServicoDB({ id_notas_servico: id, fk_status: statusId }).catch(() => {
+          setNotes(previousNotes);
+          bumpDataVersion();
+          toast({ title: 'Erro ao salvar status', description: 'Mudança revertida. Tente novamente.', variant: 'destructive' });
+        });
       }
     }
   }, [addActivity, bumpDataVersion, notes]);

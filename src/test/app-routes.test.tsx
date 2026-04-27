@@ -81,7 +81,7 @@ describe('App routes', () => {
     ['/notas-entrada/n1/editar', async () => screen.findByRole('heading', { name: 'Editar OS-1' })],
     ['/notas-entrada/n1', async () => screen.findByRole('heading', { name: 'OS-1' })],
     ['/kanban', async () => screen.findByRole('heading', { name: 'Produção' })],
-    ['/fechamento', async () => screen.findByRole('heading', { name: 'Fechamento' })],
+    ['/fechamento', async () => screen.findByRole('heading', { name: 'Fechamento Mensal' })],
     ['/nota-fiscal', async () => screen.findByRole('heading', { name: 'Notas Fiscais' })],
     ['/contas-a-pagar', async () => screen.findByRole('heading', { name: 'Contas a Pagar' })],
   ])('renders operational route %s', async (path, findElement) => {
@@ -92,7 +92,7 @@ describe('App routes', () => {
 
   it.each([
     ['/contas-a-pagar/nova', 'modal=new', /Nova conta a pagar/i],
-    ['/contas-a-pagar/importar', 'modal=import', /Importar conta com IA/i],
+    ['/contas-a-pagar/importar', 'modal=import', /Importar contas/i],
   ])('redirects payable compatibility route %s', async (path, search, modalTitle) => {
     authenticateAs('FINANCEIRO');
     renderAt(path);

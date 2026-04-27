@@ -170,6 +170,21 @@ export async function uploadFechamentoPDF(
     throw new Error(`[upload_fechamento_pdf] ${error.message}`);
   }
 
-  const { data } = supabase.storage.from('fechamentos').getPublicUrl(path);
-  return data.publicUrl;
+  return path;
+}
+
+export async function getFechamentoPDFSignedUrl(pathOrUrl: string): Promise<string> {
+  if (!pathOrUrl || pathOrUrl.startsWith('http') || pathOrUrl.startsWith('blob:')) {
+    return pathOrUrl;
+  }
+
+  const { data, error } = await supabase.storage
+    .from('fechamentos')
+    .createSignedUrl(pathOrUrl, 60 * 60);
+
+  if (error || !data?.signedUrl) {
+    throw new Error(`[getFechamentoPDFSignedUrl] ${error?.message ?? 'Não foi possível gerar link seguro do PDF.'}`);
+  }
+
+  return data.signedUrl;
 }
