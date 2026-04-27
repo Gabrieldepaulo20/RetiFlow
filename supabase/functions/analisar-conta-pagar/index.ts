@@ -1,3 +1,5 @@
+import { createClient } from 'npm:@supabase/supabase-js@2';
+
 type ExtractedField = {
   label: string;
   value: string;
@@ -55,6 +57,36 @@ function jsonResponse(body: unknown, status = 200) {
       'Content-Type': 'application/json',
     },
   });
+}
+
+async function assertAuthenticatedUser(request: Request) {
+  const authHeader = request.headers.get('Authorization') ?? '';
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+
+  if (!token) {
+    return { ok: false, response: jsonResponse({ error: 'Autenticação obrigatória.' }, 401) };
+  }
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return { ok: false, response: jsonResponse({ error: 'Configuração Supabase ausente na Function.' }, 500) };
+  }
+
+  const authClient = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+
+  const { data, error } = await authClient.auth.getUser(token);
+  if (error || !data.user) {
+    return { ok: false, response: jsonResponse({ error: 'Usuário autenticado obrigatório para analisar documentos.' }, 401) };
+  }
+
+  return { ok: true, userId: data.user.id };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -189,8 +221,9 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: 'Método não permitido.' }, 405);
   }
 
-  if (!request.headers.get('Authorization')) {
-    return jsonResponse({ error: 'Autenticação obrigatória.' }, 401);
+  const auth = await assertAuthenticatedUser(request);
+  if (!auth.ok) {
+    return auth.response;
   }
 
   const apiKey = Deno.env.get('OPENAI_API_KEY');

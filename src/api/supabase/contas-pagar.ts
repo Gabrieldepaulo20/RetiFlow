@@ -99,7 +99,7 @@ export interface ContaPagarDetalhes {
 export async function getContaPagarDetalhes(idContasPagar: string): Promise<ContaPagarDetalhes | null> {
   try {
     const env = await callRPC<ContaPagarDetalhes>('get_conta_pagar_detalhes', { p_id_contas_pagar: idContasPagar });
-    const dados = env.dados;
+    const dados = (env.dados ?? env) as ContaPagarDetalhes;
 
     if (!dados?.conta) {
       return null;
@@ -156,6 +156,8 @@ export async function insertAnexoContaPagar(params: {
   return env.id_anexo as string;
 }
 
+const PAYABLE_ATTACHMENTS_BUCKET = import.meta.env.VITE_SUPABASE_PAYABLE_ATTACHMENTS_BUCKET || 'contas-pagar';
+
 function sanitizeStorageName(filename: string) {
   const extension = filename.includes('.') ? `.${filename.split('.').pop()}` : '';
   const basename = filename
@@ -173,10 +175,9 @@ export async function uploadAnexoContaPagar(params: {
   contaPagarId: string;
   file: File;
 }) {
-  const bucket = import.meta.env.VITE_SUPABASE_PAYABLE_ATTACHMENTS_BUCKET || 'contas-pagar';
   const safeName = sanitizeStorageName(params.file.name);
   const path = `${params.contaPagarId}/${Date.now()}-${safeName}`;
-  const { error } = await supabase.storage.from(bucket).upload(path, params.file, {
+  const { error } = await supabase.storage.from(PAYABLE_ATTACHMENTS_BUCKET).upload(path, params.file, {
     contentType: params.file.type || 'application/octet-stream',
     upsert: false,
   });
@@ -185,8 +186,23 @@ export async function uploadAnexoContaPagar(params: {
     throw new Error(`[uploadAnexoContaPagar] ${error.message}`);
   }
 
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-  return data.publicUrl;
+  return path;
+}
+
+export async function getAnexoContaPagarUrl(pathOrUrl: string) {
+  if (!pathOrUrl || pathOrUrl.startsWith('http') || pathOrUrl.startsWith('blob:') || pathOrUrl.startsWith('local-upload://')) {
+    return pathOrUrl;
+  }
+
+  const { data, error } = await supabase.storage
+    .from(PAYABLE_ATTACHMENTS_BUCKET)
+    .createSignedUrl(pathOrUrl, 60 * 10);
+
+  if (error || !data?.signedUrl) {
+    throw new Error(`[getAnexoContaPagarUrl] ${error?.message ?? 'Não foi possível gerar link seguro do anexo.'}`);
+  }
+
+  return data.signedUrl;
 }
 
 export type AnalisarContaPagarResultado = {
@@ -203,11 +219,37 @@ export type AnalisarContaPagarResultado = {
     observations?: string;
     isUrgent: boolean;
     suggestedStatus: 'PAGO' | 'PENDENTE' | 'AGENDADO' | 'INCERTO';
+    recurrenceIndex?: number;
+    totalInstallments?: number;
   };
   fields: Array<{ label: string; value: string; confidence: number }>;
   warnings: string[];
   highlights: string[];
 };
+
+async function getFunctionErrorMessage(error: unknown) {
+  let message = error instanceof Error ? error.message : 'Erro ao chamar a função de IA.';
+  const context = typeof error === 'object' && error !== null && 'context' in error
+    ? (error as { context?: unknown }).context
+    : null;
+
+  if (context instanceof Response) {
+    try {
+      const text = await context.clone().text();
+      const parsed = JSON.parse(text) as { message?: string; error?: string; code?: string };
+      message = parsed.message ?? parsed.error ?? message;
+      if (parsed.code) message = `${parsed.code}: ${message}`;
+    } catch {
+      // Mantém a mensagem original do SDK quando o corpo não é JSON.
+    }
+  }
+
+  if (message.includes('UNAUTHORIZED_LEGACY_JWT') || message.includes('Invalid JWT')) {
+    return 'Sessão ou chave Supabase inválida para chamar a IA. Atualize a VITE_SUPABASE_ANON_KEY no Amplify/.env e faça login novamente.';
+  }
+
+  return message;
+}
 
 export async function analisarContaPagarComIA(params: {
   file: File;
@@ -219,16 +261,30 @@ export async function analisarContaPagarComIA(params: {
   body.append('categories', JSON.stringify(params.categories));
   body.append('suppliers', JSON.stringify(params.suppliers));
 
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+
+  if (sessionError || !accessToken) {
+    throw new Error('Sessão Supabase não encontrada. Faça login novamente antes de usar a análise com IA.');
+  }
+
   const { data, error } = await supabase.functions.invoke<AnalisarContaPagarResultado>('analisar-conta-pagar', {
     body,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
   });
 
   if (error) {
-    throw new Error(error.message);
+    throw new Error(await getFunctionErrorMessage(error));
   }
 
   if (!data) {
     throw new Error('A análise por IA não retornou dados.');
+  }
+
+  if ('error' in data && typeof data.error === 'string') {
+    throw new Error(data.error);
   }
 
   return data;

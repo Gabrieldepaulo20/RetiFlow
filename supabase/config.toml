@@ -1,0 +1,4 @@
+project_id = "dqeoxxokvvcpssajycgq"
+
+[functions.analisar-conta-pagar]
+verify_jwt = false

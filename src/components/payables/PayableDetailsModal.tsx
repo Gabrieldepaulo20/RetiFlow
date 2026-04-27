@@ -28,6 +28,7 @@ import {
 } from '@/services/domain/payables';
 import {
   type ContaPagarDetalhes,
+  getAnexoContaPagarUrl,
   getContaPagarDetalhes,
   uploadAnexoContaPagar,
   insertAnexoContaPagar,
@@ -89,6 +90,7 @@ export default function PayableDetailsModal({
   const [detalhes, setDetalhes] = useState<ContaPagarDetalhes | null>(null);
   const [loadingDetalhes, setLoadingDetalhes] = useState(false);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [openingAttachmentId, setOpeningAttachmentId] = useState<string | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -199,6 +201,23 @@ export default function PayableDetailsModal({
       });
     } finally {
       setUploadingAttachment(false);
+    }
+  }
+
+  async function handleOpenAttachment(attachmentId: string, url: string) {
+    if (url.startsWith('local-upload://')) return;
+    setOpeningAttachmentId(attachmentId);
+    try {
+      const resolvedUrl = IS_REAL_AUTH ? await getAnexoContaPagarUrl(url) : url;
+      window.open(resolvedUrl, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      toast({
+        title: 'Erro ao abrir anexo',
+        description: err instanceof Error ? err.message : 'Não foi possível gerar o link seguro.',
+        variant: 'destructive',
+      });
+    } finally {
+      setOpeningAttachmentId(null);
     }
   }
 
@@ -368,11 +387,11 @@ export default function PayableDetailsModal({
                           variant="outline"
                           size="sm"
                           className="gap-1.5"
-                          disabled={attachment.url.startsWith('local-upload://')}
-                          onClick={() => window.open(attachment.url, '_blank', 'noopener,noreferrer')}
+                          disabled={attachment.url.startsWith('local-upload://') || openingAttachmentId === attachment.id}
+                          onClick={() => void handleOpenAttachment(attachment.id, attachment.url)}
                         >
+                          {openingAttachmentId === attachment.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUpRight className="h-3.5 w-3.5" />}
                           Abrir
-                          <ArrowUpRight className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     ))}

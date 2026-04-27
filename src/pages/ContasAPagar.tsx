@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { endOfMonth, format, startOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { motion } from 'framer-motion';
-import { AlertCircle, AlertTriangle, ArrowLeft, CalendarCheck, CheckCircle2, Clock, Copy, FileText, MailOpen, MoreHorizontal, Pencil, PlusCircle, Search, Trash2, Wallet, XCircle } from 'lucide-react';
+import { AlertCircle, AlertTriangle, CalendarCheck, CheckCircle2, Clock, Copy, FileText, MailOpen, MoreHorizontal, Pencil, PlusCircle, Search, Trash2, Wallet, XCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useData } from '@/contexts/DataContext';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -363,30 +363,28 @@ export default function ContasAPagar() {
             <h1 className="text-2xl font-display font-bold">Contas a Pagar</h1>
             <p className="mt-0.5 text-sm text-muted-foreground">Gerencie boletos, notas e despesas da retífica com entrada manual rápida ou importação assistida.</p>
           </div>
-          {pageView === 'sugestoes' ? (
-            <Button variant="outline" onClick={() => setPageView('contas')}>
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Voltar para Contas
-            </Button>
-          ) : (
+          <div className="flex flex-col items-stretch gap-3 sm:items-end">
+            <Tabs value={pageView} onValueChange={(value) => setPageView(value as PageView)}>
+              <TabsList className="grid h-10 grid-cols-2 rounded-xl">
+                <TabsTrigger value="contas">Contas</TabsTrigger>
+                <TabsTrigger value="sugestoes" className="relative gap-2">
+                  <MailOpen className="h-4 w-4" />
+                  Sugestões
+                  {pendingEmailSuggestions > 0 ? (
+                    <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                      {pendingEmailSuggestions}
+                    </span>
+                  ) : null}
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+            {pageView === 'contas' ? (
             <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setPageView('sugestoes')}
-                className="relative"
-              >
-                <MailOpen className="mr-2 h-4 w-4" />
-                Sugestões de E-mail
-                {pendingEmailSuggestions > 0 ? (
-                  <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                    {pendingEmailSuggestions}
-                  </span>
-                ) : null}
-              </Button>
               <Button variant="outline" onClick={() => updateRouteModal('import')}><FileText className="mr-2 h-4 w-4" />Importar com IA</Button>
               <Button onClick={() => updateRouteModal('new')}><PlusCircle className="mr-2 h-4 w-4" />Nova Conta</Button>
             </div>
-          )}
+            ) : null}
+          </div>
         </div>
 
         {pageView === 'sugestoes' ? (

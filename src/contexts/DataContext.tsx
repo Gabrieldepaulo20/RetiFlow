@@ -54,7 +54,14 @@ import {
 } from '@/api/supabase/contas-pagar';
 import { getCategorias, type Categoria } from '@/api/supabase/categorias';
 import { getFornecedores, type Fornecedor } from '@/api/supabase/fornecedores';
-import { getLogs, type LogAtividade } from '@/api/supabase/logs';
+import { getLogs, insertLog, type LogAtividade } from '@/api/supabase/logs';
+import {
+  aceitarSugestaoEmail,
+  getSugestoesEmail,
+  ignorarSugestaoEmail,
+  type SugestaoEmail,
+} from '@/api/supabase/sugestoes-email';
+import { toast } from '@/hooks/use-toast';
 
 // ── Supabase adapters ─────────────────────────────────────────────────────────
 
@@ -127,6 +134,26 @@ function supabaseToActivityLog(log: LogAtividade): ActivityLog {
   };
 }
 
+function supabaseToEmailSuggestion(item: SugestaoEmail): EmailSuggestion {
+  return {
+    id: item.id_sugestoes_email,
+    subject: item.assunto,
+    senderName: item.nome_remetente,
+    senderEmail: item.email_remetente,
+    receivedAt: item.recebido_em,
+    suggestedTitle: item.titulo_sugerido,
+    suggestedAmount: item.valor_sugerido,
+    suggestedDueDate: item.vencimento_sugerido,
+    suggestedCategoryId: item.categoria_sugerida?.id ?? '',
+    suggestedSupplierName: item.fornecedor_sugerido,
+    suggestedPaymentMethod: (item.forma_pagamento_sugerida as PaymentMethod) ?? 'BOLETO',
+    confidence: item.confianca,
+    status: item.status,
+    emailSnippet: item.trecho_email ?? undefined,
+    createdAt: item.created_at,
+  };
+}
+
 export interface NotaItemDB {
   descricao: string;
   quantidade: number;
@@ -195,8 +222,8 @@ interface DataCtx {
 
   // ── Sugestões de E-mail ──────────────────────────────────────────────────
   emailSuggestions: EmailSuggestion[];
-  acceptEmailSuggestion: (id: string) => AccountPayable | null;
-  dismissEmailSuggestion: (id: string) => void;
+  acceptEmailSuggestion: (id: string) => Promise<AccountPayable | null>;
+  dismissEmailSuggestion: (id: string) => Promise<void>;
 }
 
 const Ctx = createContext<DataCtx | null>(null);
@@ -226,12 +253,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ...fullState,
           customers: [],
           notes: [],
+          services: [],
+          products: [],
+          attachments: [],
+          invoices: [],
+          activities: [],
+          payables: [],
+          payableAttachments: [],
+          payableHistory: [],
+          emailSuggestions: [],
         }
       : fullState;
   }
   const init = initRef.current;
 
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>(IS_REAL_AUTH ? [] : (init.customers ?? []));
   const [notes, setNotes] = useState<IntakeNote[]>(init.notes);
   const [services, setServices] = useState<IntakeService[]>(init.services);
   const [products, setProducts] = useState<IntakeProduct[]>(init.products);
@@ -243,8 +279,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   // ── Contas a Pagar state ──────────────────────────────────────────────────
   const [payables, setPayables] = useState<AccountPayable[]>(init.payables);
-  const [payableCategories, setPayableCategories] = useState<PayableCategory[]>(seed.payableCategories);
-  const [payableSuppliers, setPayableSuppliers] = useState<PayableSupplier[]>(seed.payableSuppliers);
+  const [payableCategories, setPayableCategories] = useState<PayableCategory[]>(IS_REAL_AUTH ? [] : seed.payableCategories);
+  const [payableSuppliers, setPayableSuppliers] = useState<PayableSupplier[]>(IS_REAL_AUTH ? [] : seed.payableSuppliers);
   const [payableAttachments, setPayableAttachments] = useState<PayableAttachment[]>(init.payableAttachments);
   const [payableHistory, setPayableHistory] = useState<PayableHistory[]>(init.payableHistory);
   const [emailSuggestions, setEmailSuggestions] = useState<EmailSuggestion[]>(init.emailSuggestions);
@@ -275,7 +311,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (dados.length > 0) setPayableSuppliers(dados.map(supabaseToPayableSupplier));
     }).catch(() => {});
     getLogs({ p_limite: 50 }).then(({ dados }) => {
-      if (dados.length > 0) setActivities(dados.map(supabaseToActivityLog));
+      setActivities(dados.map(supabaseToActivityLog));
+    }).catch(() => {});
+    getSugestoesEmail().then((dados) => {
+      setEmailSuggestions(dados.map(supabaseToEmailSuggestion));
     }).catch(() => {});
   }, []);
 
@@ -286,15 +325,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
     debouncedSaveToStorage({
       customers: IS_REAL_AUTH ? [] : customers,
       notes: IS_REAL_AUTH ? [] : notes,
-      services,
-      products,
-      attachments,
-      invoices,
-      activities,
-      payables,
-      payableAttachments,
-      payableHistory,
-      emailSuggestions,
+      services: IS_REAL_AUTH ? [] : services,
+      products: IS_REAL_AUTH ? [] : products,
+      attachments: IS_REAL_AUTH ? [] : attachments,
+      invoices: IS_REAL_AUTH ? [] : invoices,
+      activities: IS_REAL_AUTH ? [] : activities,
+      payables: IS_REAL_AUTH ? [] : payables,
+      payableAttachments: IS_REAL_AUTH ? [] : payableAttachments,
+      payableHistory: IS_REAL_AUTH ? [] : payableHistory,
+      emailSuggestions: IS_REAL_AUTH ? [] : emailSuggestions,
     });
   }, [customers, notes, services, products, attachments, invoices, activities, payables, payableAttachments, payableHistory, emailSuggestions]);
 
@@ -313,6 +352,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
       },
       ...previous,
     ]);
+
+    if (IS_REAL_AUTH) {
+      void insertLog({
+        p_acao: 'UI_ACTIVITY',
+        p_tabela_nome: noteId ? 'Notas_de_Servico' : 'Sistema',
+        p_entidade_id: noteId ?? '',
+        p_descricao: message,
+      })
+        .then(() => getLogs({ p_limite: 50 }))
+        .then(({ dados }) => setActivities(dados.map(supabaseToActivityLog)))
+        .catch(() => {});
+    }
   }, []);
 
   const addClient = useCallback(async (client: Omit<Client, 'id' | 'createdAt'>): Promise<Client> => {
@@ -546,15 +597,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const updateNoteStatus = useCallback((id: string, status: NoteStatus) => {
     const changedAt = new Date().toISOString();
+    const previousNotes = notes;
 
-    if (IS_REAL_AUTH) {
-      const statusId = statusDbIdRef.current.get(status);
-      if (statusId !== undefined) {
-        updateNotaServicoDB({ id_notas_servico: id, fk_status: statusId }).catch(() => {});
-      }
-    }
-
-    setNotes((previous) => {
+    const applyTransition = (previous: IntakeNote[]) => {
       let updatedNotes = previous.map((note) =>
         note.id === id ? applyNoteStatusTransition({ nextStatus: status, previousNote: note, changedAt }) : note,
       );
@@ -563,27 +608,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (changedNote?.parentNoteId && FINAL_STATUSES.has(status)) {
         updatedNotes = updatedNotes.map((note) => {
           if (note.id === changedNote.parentNoteId && note.status === 'AGUARDANDO_COMPRA' && note.previousStatus) {
-            return {
-              ...note,
-              status: note.previousStatus,
-              previousStatus: undefined,
-              updatedAt: changedAt,
-            };
+            return { ...note, status: note.previousStatus, previousStatus: undefined, updatedAt: changedAt };
           }
-
           return note;
         });
       }
 
       return updatedNotes;
-    });
+    };
 
+    setNotes(applyTransition);
     bumpDataVersion();
 
     const note = notes.find((candidate) => candidate.id === id);
-    if (!note) {
-      return;
-    }
+    if (!note) return;
 
     addActivity(`${note.number} movida para ${status}`, id);
     if (note.parentNoteId && FINAL_STATUSES.has(status)) {
@@ -593,6 +631,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
           `${parent.number} retomada automaticamente (compra ${status === 'FINALIZADO' ? 'finalizada' : 'encerrada'})`,
           parent.id,
         );
+      }
+    }
+
+    if (IS_REAL_AUTH) {
+      const statusId = statusDbIdRef.current.get(status);
+      if (statusId !== undefined) {
+        updateNotaServicoDB({ id_notas_servico: id, fk_status: statusId }).catch(() => {
+          setNotes(previousNotes);
+          bumpDataVersion();
+          toast({ title: 'Erro ao salvar status', description: 'Mudança revertida. Tente novamente.', variant: 'destructive' });
+        });
       }
     }
   }, [addActivity, bumpDataVersion, notes]);
@@ -850,7 +899,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     ).sort((a, b) => (a.recurrenceIndex ?? 1) - (b.recurrenceIndex ?? 1));
   }, [payables]);
 
-  const acceptEmailSuggestion = useCallback((id: string): AccountPayable | null => {
+  const acceptEmailSuggestion = useCallback(async (id: string): Promise<AccountPayable | null> => {
     const suggestion = emailSuggestions.find((s) => s.id === id);
     if (!suggestion) return null;
     const now = new Date().toISOString();
@@ -873,19 +922,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       createdByUserId: 'user-2',
     };
     if (IS_REAL_AUTH) {
-      insertContaPagar({
-        p_titulo: newPayable.title,
-        p_fk_categorias: newPayable.categoryId,
-        p_data_vencimento: newPayable.dueDate,
-        p_valor_original: newPayable.originalAmount,
-        p_nome_fornecedor: newPayable.supplierName,
-        p_forma_pagamento_prevista: newPayable.paymentMethod,
-        p_origem_lancamento: 'EMAIL_IMPORT',
-        p_recorrencia: 'NENHUMA',
-        p_urgente: false,
-      }).then((dbId) => {
-        setPayables((prev) => prev.map((p) => p.id === localId ? { ...p, id: dbId } : p));
-      }).catch((err) => console.error('[acceptEmailSuggestion]', err));
+      const dbId = await aceitarSugestaoEmail(id);
+      const refreshed = await getContasPagar({ p_limite: 500 });
+      setPayables(refreshed.dados.map(supabaseToAccountPayable));
+      setEmailSuggestions((prev) => prev.map((s) => s.id === id ? { ...s, status: 'ACCEPTED' } : s));
+      bumpDataVersion();
+      return { ...newPayable, id: dbId };
     }
     setPayables((prev) => [newPayable, ...prev]);
     setEmailSuggestions((prev) => prev.map((s) => s.id === id ? { ...s, status: 'ACCEPTED' } : s));
@@ -893,7 +935,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return newPayable;
   }, [emailSuggestions, bumpDataVersion]);
 
-  const dismissEmailSuggestion = useCallback((id: string) => {
+  const dismissEmailSuggestion = useCallback(async (id: string) => {
+    if (IS_REAL_AUTH) {
+      await ignorarSugestaoEmail(id);
+    }
     setEmailSuggestions((prev) => prev.map((s) => s.id === id ? { ...s, status: 'DISMISSED' } : s));
   }, []);
 

@@ -13,8 +13,8 @@ import {
   calculatePayableFinalAmount,
   findPayableDuplicate,
 } from '@/services/domain/payables';
-import { AccountPayable, PayableAttachmentFileType, PAYMENT_METHOD_LABELS } from '@/types';
-import { Camera, CheckCircle2, ChevronDown, FileScan, LoaderCircle, SendHorizontal, Trash2, Upload, XCircle } from 'lucide-react';
+import { AccountPayable, PayableAttachmentFileType, PAYMENT_METHOD_LABELS, PaymentMethod, RecurrenceType } from '@/types';
+import { Camera, CheckCircle2, ChevronDown, FileScan, LoaderCircle, RotateCw, Trash2, Upload, XCircle } from 'lucide-react';
 import { analisarContaPagarComIA, insertAnexoContaPagar, uploadAnexoContaPagar } from '@/api/supabase/contas-pagar';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
@@ -40,6 +40,8 @@ type ImportDraft = {
   observations?: string;
   isUrgent: boolean;
   suggestedStatus: SuggestedStatus;
+  recurrenceIndex?: number;
+  totalInstallments?: number;
 };
 
 type AnalysisResult = {
@@ -73,6 +75,8 @@ type ImportFileItem = {
   expanded: boolean;
   draftEdits: ImportDraftEdits;
   creating: boolean;
+  createdPayableId?: string;
+  createdPayable?: AccountPayable;
 };
 
 function formatBytes(size: number) {
@@ -83,6 +87,29 @@ function formatBytes(size: number) {
 
 function formatMoney(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+const VALID_RECURRENCE_TYPES: RecurrenceType[] = ['NENHUMA', 'SEMANAL', 'QUINZENAL', 'MENSAL', 'BIMESTRAL', 'TRIMESTRAL', 'SEMESTRAL', 'ANUAL'];
+const VALID_PAYMENT_METHODS = Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethod[];
+
+function isValidISODate(value: string | undefined) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function parseMoneyDraft(value: string | undefined, fallback: number) {
+  if (!value) return fallback;
+  const parsed = Number(value.replace(/\./g, '').replace(',', '.').trim());
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizePaymentMethod(value: unknown): PaymentMethod {
+  return VALID_PAYMENT_METHODS.includes(value as PaymentMethod) ? value as PaymentMethod : 'BOLETO';
+}
+
+function normalizeRecurrence(value: unknown): RecurrenceType {
+  return VALID_RECURRENCE_TYPES.includes(value as RecurrenceType) ? value as RecurrenceType : 'NENHUMA';
 }
 
 function buildImportFileItem(file: File, source: ImportSource): ImportFileItem {
@@ -231,20 +258,73 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     });
   }, []);
 
-  const isAnalyzing = items.some((item) => item.status === 'analyzing');
+  const isAnalyzing = items.some((item) => item.status === 'analyzing' || item.creating);
 
   function updateItem(id: string, patch: Partial<ImportFileItem>) {
     setItems((previous) => previous.map((item) => item.id === id ? { ...item, ...patch } : item));
+  }
+
+  function mergeDraftEdits(item: ImportFileItem): ImportDraft | null {
+    if (!item.analysis) return null;
+    const draft = item.analysis.draft;
+    const edits = item.draftEdits;
+    return {
+      ...draft,
+      title: edits.title ?? draft.title,
+      supplierName: edits.supplierName ?? draft.supplierName,
+      originalAmount: parseMoneyDraft(edits.originalAmount, draft.originalAmount),
+      dueDate: edits.dueDate ?? draft.dueDate,
+      paymentMethod: edits.paymentMethod ?? draft.paymentMethod,
+      categoryId: edits.categoryId ?? draft.categoryId,
+    };
+  }
+
+  function normalizeDraftForCreate(draft: ImportDraft): ImportDraft {
+    const fallbackCategory = payableCategories.find((category) => category.isActive) ?? payableCategories[0];
+    if (!fallbackCategory) {
+      throw new Error('Nenhuma categoria de contas a pagar está disponível para salvar esta conta.');
+    }
+
+    const originalAmount = Number(draft.originalAmount);
+    if (!Number.isFinite(originalAmount) || originalAmount <= 0) {
+      throw new Error('A IA não identificou um valor válido. Expanda o arquivo, corrija o valor e tente criar novamente.');
+    }
+
+    const dueDate = isValidISODate(draft.dueDate)
+      ? draft.dueDate
+      : new Date().toISOString().slice(0, 10);
+    const issueDate = isValidISODate(draft.issueDate) ? draft.issueDate : undefined;
+    const categoryId = payableCategories.some((category) => category.id === draft.categoryId)
+      ? draft.categoryId
+      : fallbackCategory.id;
+    const totalInstallments = Number(draft.totalInstallments);
+    const recurrenceIndex = Number(draft.recurrenceIndex);
+
+    return {
+      ...draft,
+      title: draft.title.trim() || 'Conta importada com IA',
+      supplierName: draft.supplierName.trim() || 'Fornecedor não identificado',
+      categoryId,
+      dueDate,
+      issueDate,
+      originalAmount: Number(originalAmount.toFixed(2)),
+      paymentMethod: normalizePaymentMethod(draft.paymentMethod),
+      recurrence: normalizeRecurrence(draft.recurrence),
+      recurrenceIndex: Number.isInteger(recurrenceIndex) && recurrenceIndex > 0 ? recurrenceIndex : undefined,
+      totalInstallments: Number.isInteger(totalInstallments) && totalInstallments > 1 ? totalInstallments : undefined,
+      suggestedStatus: draft.suggestedStatus === 'PAGO' || draft.suggestedStatus === 'AGENDADO' || draft.suggestedStatus === 'PENDENTE'
+        ? draft.suggestedStatus
+        : 'PENDENTE',
+    };
   }
 
   function handleFileSelection(files: FileList | File[] | null, source: ImportSource) {
     const selectedFiles = Array.from(files ?? []);
     if (selectedFiles.length === 0) return;
 
-    setItems((previous) => [
-      ...previous,
-      ...selectedFiles.map((file) => buildImportFileItem(file, source)),
-    ]);
+    const newItems = selectedFiles.map((file) => buildImportFileItem(file, source));
+    setItems((previous) => [...previous, ...newItems]);
+    void processItems(newItems, { closeOnSuccess: true });
   }
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>, source: ImportSource) {
@@ -312,17 +392,13 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     let url = item.previewUrl ?? `local-upload://${item.file.name}`;
 
     if (IS_REAL_AUTH) {
-      try {
-        url = await uploadAnexoContaPagar({ contaPagarId: payableId, file: item.file });
-        await insertAnexoContaPagar({
-          p_fk_contas_pagar: payableId,
-          p_tipo: type,
-          p_nome_arquivo: item.file.name,
-          p_url: url,
-        });
-      } catch {
-        return false;
-      }
+      url = await uploadAnexoContaPagar({ contaPagarId: payableId, file: item.file });
+      await insertAnexoContaPagar({
+        p_fk_contas_pagar: payableId,
+        p_tipo: type,
+        p_nome_arquivo: item.file.name,
+        p_url: url,
+      });
     }
 
     addPayableAttachment({
@@ -332,80 +408,127 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
       url,
       createdByUserId: user?.id ?? 'user-2',
     });
-    return true;
   }
 
   async function createPayableFromAnalysis(item: ImportFileItem, analysis: AnalysisResult) {
-    const duplicate = findPayableDuplicate(
-      {
-        supplierName: analysis.draft.supplierName,
-        supplierId: undefined,
-        docNumber: analysis.draft.docNumber,
-        originalAmount: analysis.draft.originalAmount,
-        dueDate: analysis.draft.dueDate,
-      },
-      payables,
+    const draft = normalizeDraftForCreate(analysis.draft);
+    let payable = item.createdPayable ?? (item.createdPayableId ? payables.find((candidate) => candidate.id === item.createdPayableId) : undefined);
+
+    if (!payable) {
+      const duplicate = findPayableDuplicate(
+        {
+          supplierName: draft.supplierName,
+          supplierId: undefined,
+          docNumber: draft.docNumber,
+          originalAmount: draft.originalAmount,
+          dueDate: draft.dueDate,
+        },
+        payables,
+      );
+
+      if (duplicate) {
+        throw new Error(`Conta possivelmente duplicada: ${duplicate.title}.`);
+      }
+
+      const finalAmount = calculatePayableFinalAmount(draft.originalAmount);
+      const treatAsPaid = draft.suggestedStatus === 'PAGO';
+      const source = item.source === 'camera' ? 'CAMERA_CAPTURE' : 'IA_IMPORT';
+
+      payable = await addPayable({
+        title: draft.title,
+        supplierName: draft.supplierName,
+        categoryId: draft.categoryId,
+        docNumber: draft.docNumber,
+        issueDate: draft.issueDate,
+        dueDate: draft.dueDate,
+        originalAmount: draft.originalAmount,
+        finalAmount,
+        status: treatAsPaid ? 'PAGO' : draft.suggestedStatus === 'AGENDADO' ? 'AGENDADO' : 'PENDENTE',
+        paymentMethod: draft.paymentMethod,
+        paidWith: treatAsPaid ? draft.paymentMethod : undefined,
+        paidAmount: treatAsPaid ? finalAmount : undefined,
+        paidAt: treatAsPaid ? new Date().toISOString() : undefined,
+        recurrence: draft.recurrence,
+        recurrenceIndex: draft.recurrenceIndex,
+        totalInstallments: draft.totalInstallments,
+        observations: draft.observations,
+        isUrgent: draft.isUrgent,
+        entrySource: source,
+        paymentExecutionStatus: draft.suggestedStatus === 'AGENDADO' ? 'SCHEDULED' : 'MANUAL',
+        createdByUserId: user?.id ?? 'user-2',
+      });
+
+      updateItem(item.id, { createdPayableId: payable.id, createdPayable: payable });
+    }
+
+    try {
+      await persistImportedAttachment(item, payable.id);
+    } catch (error) {
+      throw new Error(`Conta criada, mas o anexo não foi salvo: ${error instanceof Error ? error.message : 'erro desconhecido no Storage.'}`);
+    }
+
+    addPayableHistoryEntry(
+      buildPayableHistoryDescription({
+        payableId: payable.id,
+        action: 'ATTACHMENT_ADDED',
+        userId: user?.id ?? 'user-2',
+        extra: { filename: item.file.name },
+      }),
     );
 
-    if (duplicate) {
-      throw new Error(`Conta possivelmente duplicada: ${duplicate.title}.`);
-    }
-
-    const finalAmount = calculatePayableFinalAmount(analysis.draft.originalAmount);
-    const treatAsPaid = analysis.draft.suggestedStatus === 'PAGO';
-    const source = item.source === 'camera' ? 'CAMERA_CAPTURE' : 'IA_IMPORT';
-
-    const payable = await addPayable({
-      title: analysis.draft.title,
-      supplierName: analysis.draft.supplierName,
-      categoryId: analysis.draft.categoryId,
-      docNumber: analysis.draft.docNumber,
-      issueDate: analysis.draft.issueDate,
-      dueDate: analysis.draft.dueDate,
-      originalAmount: analysis.draft.originalAmount,
-      finalAmount,
-      status: treatAsPaid ? 'PAGO' : analysis.draft.suggestedStatus === 'AGENDADO' ? 'AGENDADO' : 'PENDENTE',
-      paymentMethod: analysis.draft.paymentMethod,
-      paidWith: treatAsPaid ? analysis.draft.paymentMethod : undefined,
-      paidAmount: treatAsPaid ? finalAmount : undefined,
-      paidAt: treatAsPaid ? new Date().toISOString() : undefined,
-      recurrence: analysis.draft.recurrence,
-      observations: analysis.draft.observations,
-      isUrgent: analysis.draft.isUrgent,
-      entrySource: source,
-      paymentExecutionStatus: analysis.draft.suggestedStatus === 'AGENDADO' ? 'SCHEDULED' : 'MANUAL',
-      createdByUserId: user?.id ?? 'user-2',
-    });
-
-    const attachmentSaved = await persistImportedAttachment(item, payable.id);
-
-    if (attachmentSaved) {
-      addPayableHistoryEntry(
-        buildPayableHistoryDescription({
-          payableId: payable.id,
-          action: 'ATTACHMENT_ADDED',
-          userId: user?.id ?? 'user-2',
-          extra: { filename: item.file.name },
-        }),
-      );
-    }
-
-    updateItem(item.id, { status: 'created', expanded: false });
-    return { payable, attachmentSaved };
+    updateItem(item.id, { status: 'created', progress: 100, creating: false, expanded: false });
+    return { payable };
   }
 
-  async function handleAnalyzeAll(source: ImportSource) {
-    const targets = items.filter((item) => item.source === source && (item.status === 'pending' || item.status === 'error'));
-    if (targets.length === 0) {
-      toast({
-        title: 'Nenhum arquivo pendente',
-        description: 'Adicione novos arquivos ou remova os que já foram processados.',
-        variant: 'destructive',
-      });
-      return;
-    }
+  async function processItems(targets: ImportFileItem[], options: { closeOnSuccess?: boolean } = {}) {
+    if (targets.length === 0) return;
+
+    let createdCount = 0;
+    let errorCount = 0;
+    let attachmentWarningCount = 0;
+    let lastCreated: AccountPayable | undefined;
+
     for (const item of targets) {
-      await analyzeItem(item);
+      const analysis = item.analysis ?? await analyzeItem(item);
+      if (!analysis) {
+        errorCount += 1;
+        continue;
+      }
+
+      updateItem(item.id, { creating: true, expanded: false });
+      try {
+        const mergedDraft = mergeDraftEdits(item) ?? analysis.draft;
+        const { payable: created } = await createPayableFromAnalysis(item, { ...analysis, draft: mergedDraft });
+        createdCount += 1;
+        lastCreated = created;
+      } catch (error) {
+        errorCount += 1;
+        const message = error instanceof Error ? error.message : 'Não foi possível criar a conta.';
+        if (message.startsWith('Conta criada, mas o anexo')) attachmentWarningCount += 1;
+        updateItem(item.id, {
+          creating: false,
+          status: 'error',
+          progress: 0,
+          error: message,
+          expanded: true,
+        });
+      }
+    }
+
+    toast({
+      title: createdCount > 0 ? 'Importação concluída' : 'Importação precisa de revisão',
+      description: [
+        `${createdCount} conta${createdCount === 1 ? '' : 's'} criada${createdCount === 1 ? '' : 's'}`,
+        errorCount > 0 ? `${errorCount} arquivo${errorCount === 1 ? '' : 's'} com pendência` : null,
+        attachmentWarningCount > 0 ? `${attachmentWarningCount} anexo${attachmentWarningCount === 1 ? '' : 's'} não salvo${attachmentWarningCount === 1 ? '' : 's'} no Storage` : null,
+      ].filter(Boolean).join(' • '),
+      variant: createdCount === 0 ? 'destructive' : undefined,
+    });
+
+    if (options.closeOnSuccess && createdCount > 0 && errorCount === 0 && lastCreated) {
+      onOpenChange(false);
+      window.setTimeout(clearItems, 250);
+      onCreated?.(lastCreated);
     }
   }
 
@@ -413,27 +536,13 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     const item = itemsRef.current.find((i) => i.id === itemId);
     if (!item || !item.analysis) return;
     updateItem(itemId, { creating: true });
-    const draft = item.analysis.draft;
-    const edits = item.draftEdits;
-    const mergedDraft = {
-      ...draft,
-      title: edits.title ?? draft.title,
-      supplierName: edits.supplierName ?? draft.supplierName,
-      originalAmount: edits.originalAmount
-        ? (Number(edits.originalAmount.replace(/\./g, '').replace(',', '.')) || draft.originalAmount)
-        : draft.originalAmount,
-      dueDate: edits.dueDate ?? draft.dueDate,
-      paymentMethod: edits.paymentMethod ?? draft.paymentMethod,
-      categoryId: edits.categoryId ?? draft.categoryId,
-    };
+    const mergedDraft = mergeDraftEdits(item);
+    if (!mergedDraft) return;
     try {
-      const { payable: created, attachmentSaved } = await createPayableFromAnalysis(item, { ...item.analysis, draft: mergedDraft });
+      const { payable: created } = await createPayableFromAnalysis(item, { ...item.analysis, draft: mergedDraft });
       toast({
         title: 'Conta criada',
-        description: attachmentSaved
-          ? mergedDraft.title
-          : `${mergedDraft.title} criada, mas o anexo não foi salvo no Storage.`,
-        variant: attachmentSaved ? undefined : 'destructive',
+        description: mergedDraft.title,
       });
       onCreated?.(created);
     } catch (error) {
@@ -447,51 +556,17 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     }
   }
 
-  async function handleCreateAll(source: ImportSource) {
-    const targets = itemsRef.current.filter((i) => i.source === source && i.status === 'success');
-    if (targets.length === 0) return;
-    let createdCount = 0;
-    let lastCreated: AccountPayable | undefined;
-    for (const item of targets) {
-      if (!item.analysis) continue;
-      updateItem(item.id, { creating: true });
-      const edits = item.draftEdits;
-      const draft = item.analysis.draft;
-      const mergedDraft = {
-        ...draft,
-        title: edits.title ?? draft.title,
-        supplierName: edits.supplierName ?? draft.supplierName,
-        originalAmount: edits.originalAmount
-          ? (Number(edits.originalAmount.replace(/\./g, '').replace(',', '.')) || draft.originalAmount)
-          : draft.originalAmount,
-        dueDate: edits.dueDate ?? draft.dueDate,
-        paymentMethod: edits.paymentMethod ?? draft.paymentMethod,
-        categoryId: edits.categoryId ?? draft.categoryId,
-      };
-      try {
-        const { payable: created } = await createPayableFromAnalysis(item, { ...item.analysis, draft: mergedDraft });
-        createdCount += 1;
-        lastCreated = created;
-      } catch (error) {
-        updateItem(item.id, {
-          creating: false,
-          status: 'error',
-          progress: 0,
-          error: error instanceof Error ? error.message : 'Não foi possível criar a conta.',
-          expanded: true,
-        });
-      }
-    }
-    toast({
-      title: createdCount > 0 ? 'Importação concluída' : 'Nenhuma conta criada',
-      description: `${createdCount} conta${createdCount === 1 ? '' : 's'} criada${createdCount === 1 ? '' : 's'}.`,
-      variant: createdCount === 0 ? 'destructive' : undefined,
-    });
-    if (lastCreated) {
-      onOpenChange(false);
-      window.setTimeout(clearItems, 250);
-      onCreated?.(lastCreated);
-    }
+  async function handleRetryItem(itemId: string) {
+    const item = itemsRef.current.find((candidate) => candidate.id === itemId);
+    if (!item) return;
+    const freshItem = {
+      ...item,
+      analysis: item.createdPayableId ? item.analysis : null,
+      status: 'pending' as ImportFileStatus,
+      error: undefined,
+    };
+    updateItem(itemId, freshItem);
+    await processItems([freshItem], { closeOnSuccess: false });
   }
 
   return (
@@ -520,13 +595,10 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
           <ImportBody
             items={items.filter((item) => item.source === 'arquivo')}
             isAnalyzing={isAnalyzing}
-            analyzableCount={items.filter((item) => item.source === 'arquivo' && (item.status === 'pending' || item.status === 'error')).length}
-            creatableCount={items.filter((item) => item.source === 'arquivo' && item.status === 'success').length}
             payableCategories={payableCategories}
             onSelect={() => fileInputRef.current?.click()}
-            onAnalyze={() => void handleAnalyzeAll('arquivo')}
-            onCreateAll={() => void handleCreateAll('arquivo')}
             onCreateItem={(id) => void handleCreateItem(id)}
+            onRetryItem={(id) => void handleRetryItem(id)}
             onEditDraft={(id, edits) => updateItem(id, { draftEdits: { ...items.find((i) => i.id === id)?.draftEdits, ...edits } })}
             onClear={clearItems}
             onRemove={removeItem}
@@ -546,14 +618,11 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
           <ImportBody
             items={items.filter((item) => item.source === 'camera')}
             isAnalyzing={isAnalyzing}
-            analyzableCount={items.filter((item) => item.source === 'camera' && (item.status === 'pending' || item.status === 'error')).length}
-            creatableCount={items.filter((item) => item.source === 'camera' && item.status === 'success').length}
             payableCategories={payableCategories}
             cameraMode
             onSelect={() => cameraInputRef.current?.click()}
-            onAnalyze={() => void handleAnalyzeAll('camera')}
-            onCreateAll={() => void handleCreateAll('camera')}
             onCreateItem={(id) => void handleCreateItem(id)}
+            onRetryItem={(id) => void handleRetryItem(id)}
             onEditDraft={(id, edits) => updateItem(id, { draftEdits: { ...items.find((i) => i.id === id)?.draftEdits, ...edits } })}
             onClear={clearItems}
             onRemove={removeItem}
@@ -568,14 +637,11 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
 type ImportBodyProps = {
   items: ImportFileItem[];
   isAnalyzing: boolean;
-  analyzableCount: number;
-  creatableCount: number;
   payableCategories: Array<{ id: string; name: string }>;
   cameraMode?: boolean;
   onSelect: () => void;
-  onAnalyze: () => void;
-  onCreateAll: () => void;
   onCreateItem: (id: string) => void;
+  onRetryItem: (id: string) => void;
   onEditDraft: (id: string, edits: ImportDraftEdits) => void;
   onClear: () => void;
   onRemove: (id: string) => void;
@@ -585,22 +651,19 @@ type ImportBodyProps = {
 function ImportBody({
   items,
   isAnalyzing,
-  analyzableCount,
-  creatableCount,
   payableCategories,
   cameraMode = false,
   onSelect,
-  onAnalyze,
-  onCreateAll,
   onCreateItem,
+  onRetryItem,
   onEditDraft,
   onClear,
   onRemove,
   onToggleExpanded,
 }: ImportBodyProps) {
-  const analyzedCount = items.filter((item) => item.status === 'success' || item.status === 'created').length;
+  const createdCount = items.filter((item) => item.status === 'created').length;
   const errorCount = items.filter((item) => item.status === 'error').length;
-  const pendingCount = items.filter((item) => item.status === 'pending').length;
+  const processingCount = items.filter((item) => item.status === 'analyzing' || item.creating).length;
 
   return (
     <div className="space-y-4">
@@ -628,20 +691,14 @@ function ImportBody({
           <p className="text-xs text-muted-foreground">
             {items.length === 0
               ? 'Nenhum arquivo selecionado.'
-              : `${items.length} arquivo${items.length === 1 ? '' : 's'} • ${pendingCount} pendente${pendingCount === 1 ? '' : 's'} • ${analyzedCount} analisado${analyzedCount === 1 ? '' : 's'} • ${errorCount} erro${errorCount === 1 ? '' : 's'}`}
+              : `${items.length} arquivo${items.length === 1 ? '' : 's'} • ${processingCount} processando • ${createdCount} criado${createdCount === 1 ? '' : 's'} • ${errorCount} pendência${errorCount === 1 ? '' : 's'}`}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={onAnalyze} disabled={items.length === 0 || analyzableCount === 0 || isAnalyzing} className="gap-2">
-            {isAnalyzing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
-            {isAnalyzing ? 'Analisando...' : `Analisar${analyzableCount > 0 ? ` (${analyzableCount})` : ''}`}
+          <Button onClick={onSelect} disabled={isAnalyzing} className="gap-2">
+            {isAnalyzing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            {isAnalyzing ? 'Processando...' : cameraMode ? 'Tirar outra foto' : 'Adicionar arquivos'}
           </Button>
-          {creatableCount > 0 ? (
-            <Button variant="default" onClick={onCreateAll} disabled={isAnalyzing} className="gap-2">
-              <CheckCircle2 className="h-4 w-4" />
-              Criar todos ({creatableCount})
-            </Button>
-          ) : null}
           {items.length > 0 ? (
             <Button variant="outline" onClick={onClear} disabled={isAnalyzing}>
               Limpar
@@ -678,6 +735,7 @@ function ImportBody({
                 onRemove={onRemove}
                 onToggleExpanded={onToggleExpanded}
                 onCreateItem={onCreateItem}
+                onRetryItem={onRetryItem}
                 onEditDraft={onEditDraft}
               />
             );
@@ -695,6 +753,7 @@ type ImportFileCardProps = {
   onRemove: (id: string) => void;
   onToggleExpanded: (id: string) => void;
   onCreateItem: (id: string) => void;
+  onRetryItem: (id: string) => void;
   onEditDraft: (id: string, edits: ImportDraftEdits) => void;
 };
 
@@ -724,6 +783,7 @@ function ImportFileCard({
   onRemove,
   onToggleExpanded,
   onCreateItem,
+  onRetryItem,
   onEditDraft,
 }: ImportFileCardProps) {
   const kind = getFileKind(item.file);
@@ -772,8 +832,21 @@ function ImportFileCard({
           {item.error ? (
             <Alert variant="destructive">
               <XCircle className="h-4 w-4" />
-              <AlertTitle>Erro ao analisar este arquivo</AlertTitle>
-              <AlertDescription>{item.error}</AlertDescription>
+              <AlertTitle>Este arquivo precisa de revisão</AlertTitle>
+              <AlertDescription className="space-y-3">
+                <p>{item.error}</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="gap-1.5"
+                  onClick={() => onRetryItem(item.id)}
+                  disabled={item.creating || item.status === 'analyzing'}
+                >
+                  <RotateCw className="h-3.5 w-3.5" />
+                  Tentar novamente
+                </Button>
+              </AlertDescription>
             </Alert>
           ) : null}
 

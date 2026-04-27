@@ -24,6 +24,7 @@ import {
   registrarAcaoFechamento,
   getNotaDetalhesParaFechamento,
   uploadFechamentoPDF,
+  getFechamentoPDFSignedUrl,
   type FechamentoListItem,
   type FechamentoDadosJson,
   type FechamentoNota,
@@ -620,8 +621,13 @@ export default function MonthlyClosing() {
   /* ── Download PDF ── */
   const handleDownload = useCallback(async (fechamento: FechamentoListItem) => {
     if (fechamento.pdf_url) {
-      window.open(fechamento.pdf_url, '_blank');
-      try { await registrarAcaoFechamento({ p_id_fechamentos: fechamento.id_fechamentos, p_tipo: 'baixado' }); } catch { /* */ }
+      try {
+        const url = await getFechamentoPDFSignedUrl(fechamento.pdf_url);
+        window.open(url, '_blank');
+        await registrarAcaoFechamento({ p_id_fechamentos: fechamento.id_fechamentos, p_tipo: 'baixado' }).catch(() => {});
+      } catch {
+        toast({ title: 'Erro ao abrir PDF', description: 'Não foi possível gerar link seguro.', variant: 'destructive' });
+      }
       return;
     }
     if (!fechamento.dados_json) { toast({ title: 'PDF não disponível', variant: 'destructive' }); return; }
@@ -877,9 +883,18 @@ export default function MonthlyClosing() {
                         <Button size="sm" variant="outline" onClick={() => handleDownload(f)}>
                           <Download className="w-3.5 h-3.5 mr-1.5" /> PDF
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={() => {
-                          if (f.pdf_url) navigator.clipboard.writeText(f.pdf_url).then(() => toast({ title: 'Link copiado!' }));
-                          else toast({ title: 'PDF ainda não disponível', variant: 'destructive' });
+                        <Button size="sm" variant="ghost" onClick={async () => {
+                          if (f.pdf_url) {
+                            try {
+                              const url = await getFechamentoPDFSignedUrl(f.pdf_url);
+                              await navigator.clipboard.writeText(url);
+                              toast({ title: 'Link copiado!' });
+                            } catch {
+                              toast({ title: 'Erro ao gerar link', variant: 'destructive' });
+                            }
+                          } else {
+                            toast({ title: 'PDF ainda não disponível', variant: 'destructive' });
+                          }
                         }}>
                           <Share2 className="w-3.5 h-3.5" />
                         </Button>

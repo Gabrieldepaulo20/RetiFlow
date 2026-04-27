@@ -148,6 +148,22 @@ describe('Note edit flow', () => {
       addInvoice: vi.fn(),
       updateInvoice: vi.fn(),
       addActivity: vi.fn(),
+      payables: [],
+      payableCategories: [],
+      payableSuppliers: [],
+      payableAttachments: [],
+      payableHistory: [],
+      addPayable: vi.fn(),
+      updatePayable: vi.fn(),
+      getPayable: vi.fn(),
+      addPayableAttachment: vi.fn(),
+      addPayableHistoryEntry: vi.fn(),
+      getAttachmentsForPayable: vi.fn(() => []),
+      getHistoryForPayable: vi.fn(() => []),
+      getInstallmentSiblings: vi.fn(() => []),
+      emailSuggestions: [],
+      acceptEmailSuggestion: vi.fn(),
+      dismissEmailSuggestion: vi.fn(),
     });
 
     render(
@@ -178,6 +194,7 @@ describe('Note edit flow', () => {
           complaint: 'Batendo válvula',
           totalAmount: 350,
         }),
+        expect.any(Array),
       );
     });
 

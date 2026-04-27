@@ -6,9 +6,10 @@ dist/
 dist-ssr/
 
 # ── Variáveis de ambiente — NUNCA versionadas ─────────────────────────────────
-# Apenas .env.example é seguro para o git
+# Apenas .env.example e .env.integration.example são seguros para o git
 .env
 .env.local
+.env.integration
 .env.development
 .env.development.local
 .env.test
