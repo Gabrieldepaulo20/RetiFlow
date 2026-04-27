@@ -172,7 +172,6 @@ supabase/
 
 docs/
   contexto-sessao.md
-  modulo-contas-a-pagar.md
 ```
 
 ---
