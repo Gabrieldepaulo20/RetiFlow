@@ -203,11 +203,37 @@ export type AnalisarContaPagarResultado = {
     observations?: string;
     isUrgent: boolean;
     suggestedStatus: 'PAGO' | 'PENDENTE' | 'AGENDADO' | 'INCERTO';
+    recurrenceIndex?: number;
+    totalInstallments?: number;
   };
   fields: Array<{ label: string; value: string; confidence: number }>;
   warnings: string[];
   highlights: string[];
 };
+
+async function getFunctionErrorMessage(error: unknown) {
+  let message = error instanceof Error ? error.message : 'Erro ao chamar a função de IA.';
+  const context = typeof error === 'object' && error !== null && 'context' in error
+    ? (error as { context?: unknown }).context
+    : null;
+
+  if (context instanceof Response) {
+    try {
+      const text = await context.clone().text();
+      const parsed = JSON.parse(text) as { message?: string; error?: string; code?: string };
+      message = parsed.message ?? parsed.error ?? message;
+      if (parsed.code) message = `${parsed.code}: ${message}`;
+    } catch {
+      // Mantém a mensagem original do SDK quando o corpo não é JSON.
+    }
+  }
+
+  if (message.includes('UNAUTHORIZED_LEGACY_JWT') || message.includes('Invalid JWT')) {
+    return 'Sessão ou chave Supabase inválida para chamar a IA. Atualize a VITE_SUPABASE_ANON_KEY no Amplify/.env e faça login novamente.';
+  }
+
+  return message;
+}
 
 export async function analisarContaPagarComIA(params: {
   file: File;
@@ -224,11 +250,15 @@ export async function analisarContaPagarComIA(params: {
   });
 
   if (error) {
-    throw new Error(error.message);
+    throw new Error(await getFunctionErrorMessage(error));
   }
 
   if (!data) {
     throw new Error('A análise por IA não retornou dados.');
+  }
+
+  if ('error' in data && typeof data.error === 'string') {
+    throw new Error(data.error);
   }
 
   return data;
