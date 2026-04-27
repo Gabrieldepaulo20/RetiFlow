@@ -75,6 +75,8 @@ type ImportFileItem = {
   expanded: boolean;
   draftEdits: ImportDraftEdits;
   creating: boolean;
+  createdPayableId?: string;
+  createdPayable?: AccountPayable;
 };
 
 function formatBytes(size: number) {
@@ -390,17 +392,13 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     let url = item.previewUrl ?? `local-upload://${item.file.name}`;
 
     if (IS_REAL_AUTH) {
-      try {
-        url = await uploadAnexoContaPagar({ contaPagarId: payableId, file: item.file });
-        await insertAnexoContaPagar({
-          p_fk_contas_pagar: payableId,
-          p_tipo: type,
-          p_nome_arquivo: item.file.name,
-          p_url: url,
-        });
-      } catch {
-        return false;
-      }
+      url = await uploadAnexoContaPagar({ contaPagarId: payableId, file: item.file });
+      await insertAnexoContaPagar({
+        p_fk_contas_pagar: payableId,
+        p_tipo: type,
+        p_nome_arquivo: item.file.name,
+        p_url: url,
+      });
     }
 
     addPayableAttachment({
@@ -410,69 +408,76 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
       url,
       createdByUserId: user?.id ?? 'user-2',
     });
-    return true;
   }
 
   async function createPayableFromAnalysis(item: ImportFileItem, analysis: AnalysisResult) {
     const draft = normalizeDraftForCreate(analysis.draft);
-    const duplicate = findPayableDuplicate(
-      {
+    let payable = item.createdPayable ?? (item.createdPayableId ? payables.find((candidate) => candidate.id === item.createdPayableId) : undefined);
+
+    if (!payable) {
+      const duplicate = findPayableDuplicate(
+        {
+          supplierName: draft.supplierName,
+          supplierId: undefined,
+          docNumber: draft.docNumber,
+          originalAmount: draft.originalAmount,
+          dueDate: draft.dueDate,
+        },
+        payables,
+      );
+
+      if (duplicate) {
+        throw new Error(`Conta possivelmente duplicada: ${duplicate.title}.`);
+      }
+
+      const finalAmount = calculatePayableFinalAmount(draft.originalAmount);
+      const treatAsPaid = draft.suggestedStatus === 'PAGO';
+      const source = item.source === 'camera' ? 'CAMERA_CAPTURE' : 'IA_IMPORT';
+
+      payable = await addPayable({
+        title: draft.title,
         supplierName: draft.supplierName,
-        supplierId: undefined,
+        categoryId: draft.categoryId,
         docNumber: draft.docNumber,
-        originalAmount: draft.originalAmount,
+        issueDate: draft.issueDate,
         dueDate: draft.dueDate,
-      },
-      payables,
+        originalAmount: draft.originalAmount,
+        finalAmount,
+        status: treatAsPaid ? 'PAGO' : draft.suggestedStatus === 'AGENDADO' ? 'AGENDADO' : 'PENDENTE',
+        paymentMethod: draft.paymentMethod,
+        paidWith: treatAsPaid ? draft.paymentMethod : undefined,
+        paidAmount: treatAsPaid ? finalAmount : undefined,
+        paidAt: treatAsPaid ? new Date().toISOString() : undefined,
+        recurrence: draft.recurrence,
+        recurrenceIndex: draft.recurrenceIndex,
+        totalInstallments: draft.totalInstallments,
+        observations: draft.observations,
+        isUrgent: draft.isUrgent,
+        entrySource: source,
+        paymentExecutionStatus: draft.suggestedStatus === 'AGENDADO' ? 'SCHEDULED' : 'MANUAL',
+        createdByUserId: user?.id ?? 'user-2',
+      });
+
+      updateItem(item.id, { createdPayableId: payable.id, createdPayable: payable });
+    }
+
+    try {
+      await persistImportedAttachment(item, payable.id);
+    } catch (error) {
+      throw new Error(`Conta criada, mas o anexo não foi salvo: ${error instanceof Error ? error.message : 'erro desconhecido no Storage.'}`);
+    }
+
+    addPayableHistoryEntry(
+      buildPayableHistoryDescription({
+        payableId: payable.id,
+        action: 'ATTACHMENT_ADDED',
+        userId: user?.id ?? 'user-2',
+        extra: { filename: item.file.name },
+      }),
     );
 
-    if (duplicate) {
-      throw new Error(`Conta possivelmente duplicada: ${duplicate.title}.`);
-    }
-
-    const finalAmount = calculatePayableFinalAmount(draft.originalAmount);
-    const treatAsPaid = draft.suggestedStatus === 'PAGO';
-    const source = item.source === 'camera' ? 'CAMERA_CAPTURE' : 'IA_IMPORT';
-
-    const payable = await addPayable({
-      title: draft.title,
-      supplierName: draft.supplierName,
-      categoryId: draft.categoryId,
-      docNumber: draft.docNumber,
-      issueDate: draft.issueDate,
-      dueDate: draft.dueDate,
-      originalAmount: draft.originalAmount,
-      finalAmount,
-      status: treatAsPaid ? 'PAGO' : draft.suggestedStatus === 'AGENDADO' ? 'AGENDADO' : 'PENDENTE',
-      paymentMethod: draft.paymentMethod,
-      paidWith: treatAsPaid ? draft.paymentMethod : undefined,
-      paidAmount: treatAsPaid ? finalAmount : undefined,
-      paidAt: treatAsPaid ? new Date().toISOString() : undefined,
-      recurrence: draft.recurrence,
-      recurrenceIndex: draft.recurrenceIndex,
-      totalInstallments: draft.totalInstallments,
-      observations: draft.observations,
-      isUrgent: draft.isUrgent,
-      entrySource: source,
-      paymentExecutionStatus: draft.suggestedStatus === 'AGENDADO' ? 'SCHEDULED' : 'MANUAL',
-      createdByUserId: user?.id ?? 'user-2',
-    });
-
-    const attachmentSaved = await persistImportedAttachment(item, payable.id);
-
-    if (attachmentSaved) {
-      addPayableHistoryEntry(
-        buildPayableHistoryDescription({
-          payableId: payable.id,
-          action: 'ATTACHMENT_ADDED',
-          userId: user?.id ?? 'user-2',
-          extra: { filename: item.file.name },
-        }),
-      );
-    }
-
     updateItem(item.id, { status: 'created', progress: 100, creating: false, expanded: false });
-    return { payable, attachmentSaved };
+    return { payable };
   }
 
   async function processItems(targets: ImportFileItem[], options: { closeOnSuccess?: boolean } = {}) {
@@ -493,17 +498,18 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
       updateItem(item.id, { creating: true, expanded: false });
       try {
         const mergedDraft = mergeDraftEdits(item) ?? analysis.draft;
-        const { payable: created, attachmentSaved } = await createPayableFromAnalysis(item, { ...analysis, draft: mergedDraft });
+        const { payable: created } = await createPayableFromAnalysis(item, { ...analysis, draft: mergedDraft });
         createdCount += 1;
         lastCreated = created;
-        if (!attachmentSaved) attachmentWarningCount += 1;
       } catch (error) {
         errorCount += 1;
+        const message = error instanceof Error ? error.message : 'Não foi possível criar a conta.';
+        if (message.startsWith('Conta criada, mas o anexo')) attachmentWarningCount += 1;
         updateItem(item.id, {
           creating: false,
           status: 'error',
           progress: 0,
-          error: error instanceof Error ? error.message : 'Não foi possível criar a conta.',
+          error: message,
           expanded: true,
         });
       }
@@ -533,13 +539,10 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     const mergedDraft = mergeDraftEdits(item);
     if (!mergedDraft) return;
     try {
-      const { payable: created, attachmentSaved } = await createPayableFromAnalysis(item, { ...item.analysis, draft: mergedDraft });
+      const { payable: created } = await createPayableFromAnalysis(item, { ...item.analysis, draft: mergedDraft });
       toast({
         title: 'Conta criada',
-        description: attachmentSaved
-          ? mergedDraft.title
-          : `${mergedDraft.title} criada, mas o anexo não foi salvo no Storage.`,
-        variant: attachmentSaved ? undefined : 'destructive',
+        description: mergedDraft.title,
       });
       onCreated?.(created);
     } catch (error) {
@@ -556,7 +559,12 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
   async function handleRetryItem(itemId: string) {
     const item = itemsRef.current.find((candidate) => candidate.id === itemId);
     if (!item) return;
-    const freshItem = { ...item, analysis: null, status: 'pending' as ImportFileStatus, error: undefined };
+    const freshItem = {
+      ...item,
+      analysis: item.createdPayableId ? item.analysis : null,
+      status: 'pending' as ImportFileStatus,
+      error: undefined,
+    };
     updateItem(itemId, freshItem);
     await processItems([freshItem], { closeOnSuccess: false });
   }

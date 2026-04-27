@@ -156,6 +156,8 @@ export async function insertAnexoContaPagar(params: {
   return env.id_anexo as string;
 }
 
+const PAYABLE_ATTACHMENTS_BUCKET = import.meta.env.VITE_SUPABASE_PAYABLE_ATTACHMENTS_BUCKET || 'contas-pagar';
+
 function sanitizeStorageName(filename: string) {
   const extension = filename.includes('.') ? `.${filename.split('.').pop()}` : '';
   const basename = filename
@@ -173,10 +175,9 @@ export async function uploadAnexoContaPagar(params: {
   contaPagarId: string;
   file: File;
 }) {
-  const bucket = import.meta.env.VITE_SUPABASE_PAYABLE_ATTACHMENTS_BUCKET || 'contas-pagar';
   const safeName = sanitizeStorageName(params.file.name);
   const path = `${params.contaPagarId}/${Date.now()}-${safeName}`;
-  const { error } = await supabase.storage.from(bucket).upload(path, params.file, {
+  const { error } = await supabase.storage.from(PAYABLE_ATTACHMENTS_BUCKET).upload(path, params.file, {
     contentType: params.file.type || 'application/octet-stream',
     upsert: false,
   });
@@ -185,8 +186,23 @@ export async function uploadAnexoContaPagar(params: {
     throw new Error(`[uploadAnexoContaPagar] ${error.message}`);
   }
 
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-  return data.publicUrl;
+  return path;
+}
+
+export async function getAnexoContaPagarUrl(pathOrUrl: string) {
+  if (!pathOrUrl || pathOrUrl.startsWith('http') || pathOrUrl.startsWith('blob:') || pathOrUrl.startsWith('local-upload://')) {
+    return pathOrUrl;
+  }
+
+  const { data, error } = await supabase.storage
+    .from(PAYABLE_ATTACHMENTS_BUCKET)
+    .createSignedUrl(pathOrUrl, 60 * 10);
+
+  if (error || !data?.signedUrl) {
+    throw new Error(`[getAnexoContaPagarUrl] ${error?.message ?? 'Não foi possível gerar link seguro do anexo.'}`);
+  }
+
+  return data.signedUrl;
 }
 
 export type AnalisarContaPagarResultado = {
