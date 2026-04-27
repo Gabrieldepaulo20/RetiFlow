@@ -163,7 +163,7 @@ describe.skipIf(skipIntegration)('Contas a Pagar — integração real com Supab
     });
 
     expect(detailResult.status).toBe(200);
-    const conta = (detailResult.dados as { conta: { titulo: string; valor_original: number; valor_final: number } }).conta;
+    const conta = (detailResult as unknown as { conta: { titulo: string; valor_original: number; valor_final: number } }).conta;
     expect(conta.titulo).toContain('Atualizado');
     expect(conta.valor_original).toBe(1600.00);
     // valor_final = 1600 - 100 desconto = 1500
@@ -219,7 +219,7 @@ describe.skipIf(skipIntegration)('Contas a Pagar — integração real com Supab
       p_id_contas_pagar: cancelId,
     });
 
-    const conta = (detail.dados as { conta: { status: string } }).conta;
+    const conta = (detail as unknown as { conta: { status: string } }).conta;
     expect(conta.status).toBe('CANCELADO');
 
     await client.auth.signOut();
@@ -248,7 +248,7 @@ describe.skipIf(skipIntegration)('Contas a Pagar — integração real com Supab
     });
 
     expect(result.status).toBe(200);
-    const dados = result.dados as {
+    const dados = result as unknown as {
       historico: Array<{ acao: string }>;
     };
 

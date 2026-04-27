@@ -94,8 +94,8 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
   const dismissed = useMemo(() => emailSuggestions.filter((s) => s.status === 'DISMISSED'), [emailSuggestions]);
   const accepted = useMemo(() => emailSuggestions.filter((s) => s.status === 'ACCEPTED'), [emailSuggestions]);
 
-  function handleAccept(suggestion: EmailSuggestion) {
-    const payable = acceptEmailSuggestion(suggestion.id);
+  async function handleAccept(suggestion: EmailSuggestion) {
+    const payable = await acceptEmailSuggestion(suggestion.id);
     if (!payable) return;
     addPayableHistoryEntry(buildPayableHistoryDescription({
       payableId: payable.id,
@@ -106,8 +106,8 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
     onCreated?.(payable.id);
   }
 
-  function handleDismiss(suggestion: EmailSuggestion) {
-    dismissEmailSuggestion(suggestion.id);
+  async function handleDismiss(suggestion: EmailSuggestion) {
+    await dismissEmailSuggestion(suggestion.id);
     toast({ title: 'Sugestão ignorada', description: 'Você pode encontrá-la no histórico se precisar.' });
   }
 
@@ -151,8 +151,8 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
                 key={suggestion.id}
                 suggestion={suggestion}
                 categoryName={categoryById.get(suggestion.suggestedCategoryId)?.name ?? 'Categoria'}
-                onAccept={() => handleAccept(suggestion)}
-                onDismiss={() => handleDismiss(suggestion)}
+                onAccept={() => { void handleAccept(suggestion); }}
+                onDismiss={() => { void handleDismiss(suggestion); }}
               />
             ))}
           </AnimatePresence>

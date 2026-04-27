@@ -33,7 +33,8 @@ export default defineConfig({
     include: ['src/test/integration/**/*.test.ts'],
     testTimeout: 20_000,
     hookTimeout: 30_000,
-    // Testes de integração rodam em série — evita race conditions no DB
+    // Testes de integração rodam em série — evita race conditions no DB/Auth.
+    fileParallelism: false,
     sequence: { concurrent: false },
     env: loadIntegrationEnv(),
   },

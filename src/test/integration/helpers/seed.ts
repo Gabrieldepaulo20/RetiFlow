@@ -12,6 +12,43 @@ export const TEST_PREFIX = '[INTEGRATION-TEST]';
  */
 export const TEST_CATEGORY_ID = 'b80ff39d-4da4-4553-8bc4-20a47fecd5ce';
 
+async function deleteInternalUserRowsByEmail(email: string): Promise<void> {
+  const service = createServiceClient();
+
+  const { data: users, error: usersError } = await service
+    .schema('RetificaPremium')
+    .from('Usuarios')
+    .select('id_usuarios')
+    .eq('email', email);
+
+  if (usersError) {
+    throw new Error(`[seed] Falha ao localizar usuário interno de teste: ${usersError.message}`);
+  }
+
+  const ids = (users ?? []).map((user) => user.id_usuarios as string);
+  if (ids.length === 0) return;
+
+  const { error: modulesError } = await service
+    .schema('RetificaPremium')
+    .from('Modulos')
+    .delete()
+    .in('fk_usuarios', ids);
+
+  if (modulesError) {
+    throw new Error(`[seed] Falha ao remover módulos do usuário de teste: ${modulesError.message}`);
+  }
+
+  const { error: deleteError } = await service
+    .schema('RetificaPremium')
+    .from('Usuarios')
+    .delete()
+    .in('id_usuarios', ids);
+
+  if (deleteError) {
+    throw new Error(`[seed] Falha ao remover usuário interno de teste: ${deleteError.message}`);
+  }
+}
+
 /**
  * Garante que o usuário de teste existe em Supabase Auth e na tabela Usuarios.
  * Operação idempotente — seguro chamar múltiplas vezes.
@@ -30,6 +67,9 @@ export async function ensureTestUser(email: string, password: string): Promise<s
   if (existing) {
     authId = existing.id;
   } else {
+    // Remove resíduos de execuções anteriores que falharam entre Usuarios/Auth.
+    await deleteInternalUserRowsByEmail(email);
+
     const { data, error } = await service.auth.admin.createUser({
       email,
       password,
@@ -71,12 +111,7 @@ export async function ensureTestUser(email: string, password: string): Promise<s
 export async function deleteTestUser(email: string): Promise<void> {
   const service = createServiceClient();
 
-  // Remove de Usuarios primeiro (FK)
-  await service
-    .schema('RetificaPremium')
-    .from('Usuarios')
-    .delete()
-    .eq('email', email);
+  await deleteInternalUserRowsByEmail(email);
 
   // Remove de auth.users
   const { data: list } = await service.auth.admin.listUsers({ perPage: 1000 });

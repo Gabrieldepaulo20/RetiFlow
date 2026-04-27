@@ -98,9 +98,9 @@ describe.skipIf(skipIntegration)('Auth — integração real com Supabase', () =
     const client = createAnonClient();
 
     // Login
-    await client.auth.signInWithPassword({ email: testEmail, password: testPassword });
-    const sessionAntes = await client.auth.getSession();
-    expect(sessionAntes.data.session).not.toBeNull();
+    const loginResult = await client.auth.signInWithPassword({ email: testEmail, password: testPassword });
+    expect(loginResult.error).toBeNull();
+    expect(loginResult.data.session).not.toBeNull();
 
     // Logout
     await client.auth.signOut();

@@ -99,7 +99,7 @@ export interface ContaPagarDetalhes {
 export async function getContaPagarDetalhes(idContasPagar: string): Promise<ContaPagarDetalhes | null> {
   try {
     const env = await callRPC<ContaPagarDetalhes>('get_conta_pagar_detalhes', { p_id_contas_pagar: idContasPagar });
-    const dados = env.dados;
+    const dados = (env.dados ?? env) as ContaPagarDetalhes;
 
     if (!dados?.conta) {
       return null;
