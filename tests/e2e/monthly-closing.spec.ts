@@ -87,7 +87,7 @@ test.describe('Módulo de Fechamento Mensal', () => {
     await modal.getByRole('button', { name: /Gerar fechamento/i }).click();
 
     // Verifica toast de sucesso (MOCK mode)
-    await expect(page.getByText(/Fechamento gerado \(MOCK\)/i)).toBeVisible();
+    await expect(page.getByText('Fechamento gerado (MOCK)', { exact: true })).toBeVisible();
     
     // O rascunho deve ter sumido da lista na página principal (o modal fechou)
     await expect(page.getByText(/Nenhum rascunho salvo ainda/i)).toBeVisible();
