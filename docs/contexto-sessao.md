@@ -4,7 +4,7 @@
 > Repositório local: `/Users/gabrielwilliamdepaulo/Documents/RetificaPremium/retiflow`
 > GitHub: `Gabrieldepaulo20/RetiFlow`
 > Branch principal: `main`
-> Último commit validado neste contexto: `ff4f719 test: validate real Supabase integration and storage flows`
+> Último commit validado neste contexto: `cc341b2 security: reduce auth token mirroring and configure function cors`
 > Escopo desta documentação: sistema Retiflow exceto Nota Fiscal, que ainda deve ser tratada como fora da v1/piloto.
 
 Este arquivo foi escrito para ser entregue a outro modelo de IA ou revisor técnico. A intenção é dar contexto suficiente para análise de arquitetura, segurança, banco, frontend, integração Supabase, riscos restantes e oportunidades de melhoria.
@@ -28,9 +28,9 @@ Estado atual honesto:
 | Contas a pagar | Integrado ao Supabase via RPCs, storage privado, IA via Edge Function |
 | Sugestões de e-mail | Agora conectadas a RPC real, não mais local-only |
 | Logs/histórico | Agora lê e insere no Supabase via `get_logs`/`insert_log` |
-| Nota Fiscal | Fora da v1; há mocks/toasts fake na tela `Invoices.tsx` |
-| Configurações | Parcial/local; empresa, tema, logo, senha e prévias ainda não estão totalmente persistidos no backend |
-| Testes | Unit tests e integration tests reais passando |
+| Nota Fiscal | Fora da v1; rota mantém aviso de indisponibilidade e ações fake foram removidas |
+| Configurações | Parcial/local; seções locais foram explicitamente marcadas/bloqueadas para não parecer persistência real |
+| Testes | Unit tests e integration tests reais passando; auth provider tem teste contra mock em produção |
 
 Validações executadas recentemente:
 
@@ -39,7 +39,7 @@ Validações executadas recentemente:
 | `npx tsc --noEmit` | Passou |
 | `npm run build` | Passou |
 | `npm run lint` | Passou com warnings, sem erros |
-| `npm test -- --run` | 170 testes passaram |
+| `npm test -- --run` | 175 testes passaram |
 | `npm run test:integration` | 5 arquivos, 24 testes passaram contra Supabase real |
 
 Avisos ainda existentes:
@@ -752,14 +752,13 @@ Arquivo:
 Estado:
 
 - Fora do escopo da v1/piloto.
-- Existem toasts explicitamente mockados:
-  - `PDF baixado (mock)`
-  - `Imprimindo... (mock)`
-  - `Enviado (mock)`
+- A rota `/nota-fiscal` foi mantida apenas como página de aviso de indisponibilidade.
+- Ações fake de baixar, imprimir, enviar, emitir ou simular fluxo fiscal foram removidas/desabilitadas.
+- O item operacional de Nota Fiscal foi removido do menu para reduzir risco de uso acidental.
 
 Recomendação:
 
-- Esconder/desabilitar rota/módulo Nota Fiscal na v1 ou manter claramente marcado como indisponível.
+- Manter fora da v1 até existir backend fiscal real, validações fiscais, storage/assinatura adequados e testes próprios.
 
 ---
 
@@ -787,7 +786,7 @@ Recomendação:
 | Bucket `notas` público | PDFs de O.S. podem conter PII | Migrar para bucket privado + signed URL |
 | CORS sem allowlist configurada na Edge Function | Mantém compatibilidade com `*`; com env configurada restringe origem | Definir `CORS_ALLOWED_ORIGINS`/`ALLOWED_ORIGINS` no projeto Supabase de produção |
 | Configurações locais | Usuário pode achar que salvou configuração real | Manter avisos/desabilitar salvar até persistir |
-| Nota Fiscal mockada | Usuário pode acreditar que está funcionando | Fora da v1 ou desabilitar rota |
+| Nota Fiscal fora da v1 | Usuário pode pedir/esperar uso fiscal | Manter bloqueada/indisponível até existir implementação real |
 | Projeto Supabase real usado em integration tests | Risco de sujeira/dados teste em ambiente principal | Criar Supabase Branch/projeto separado para testes |
 
 ### 9.3 Perguntas de segurança para próximo revisor/modelo
@@ -813,9 +812,9 @@ npm test -- --run
 
 Resultado recente:
 
-- 12 arquivos
-- 170 testes
-- 170 passaram
+- 13 arquivos
+- 175 testes
+- 175 passaram
 
 Cobertura por intenção:
 
@@ -875,6 +874,10 @@ Principais commits recentes:
 
 | Commit | Resumo |
 |---|---|
+| `cc341b2` | Remove espelhamento manual de tokens em modo real e adiciona CORS configurável na Edge Function |
+| `db15ea7` | Remove ações fake de Nota Fiscal na v1 e marca Settings locais/parciais de forma explícita |
+| `7397051` | Remove documento antigo de contas a pagar para manter um único contexto oficial |
+| `c987837` | Atualiza contexto técnico completo para revisão de produção |
 | `ff4f719` | Valida integração real Supabase e storage flows |
 | `709e933` | Endurece harness de integration tests |
 | `d99e31f` | Corrige bloqueadores P0 antes da v1 |
@@ -883,6 +886,9 @@ Principais commits recentes:
 
 O que foi feito recentemente:
 
+- Contexto do projeto Retiflow foi consolidado neste arquivo para servir como fonte única para novos agentes/modelos.
+- Estado de Git, build, lint, typecheck, testes unitários e integração foi usado como baseline para as fases recentes.
+- Mapeamento de frontend, Supabase, RPCs, Storage, Auth, Edge Function, mocks e riscos de produção foi documentado de forma explícita.
 - Integração real validada contra Supabase.
 - Testes storage/fechamento/anexos criados.
 - Testes sugestões de e-mail criados.
@@ -896,6 +902,40 @@ O que foi feito recentemente:
 - Logs passaram a persistir no banco.
 - Storage `contas-pagar` privado criado por migration.
 - Grants do schema customizado para service_role/supabase_auth_admin adicionados.
+- Nota Fiscal deixou de expor formulário/listas/ações visuais sem backend. A rota `/nota-fiscal` agora mostra aviso estático de módulo fora da v1/piloto.
+- Nota Fiscal foi removida do menu operacional para reduzir descoberta acidental por usuário final.
+- Settings foi ajustada para avisar que empresa, permissões, aparência, modelos, segurança e usuários ainda são locais/parciais.
+- Controles locais de permissões em Settings foram bloqueados para não parecerem configuração real de backend.
+- `auth.session` deixou de espelhar access/refresh tokens no modo real. Em produção, tokens ficam sob responsabilidade do Supabase SDK; `auth.session` fica restrito a mock/dev.
+- `realAuthProvider` não retorna mais tokens no objeto de sessão da aplicação.
+- Edge Function `analisar-conta-pagar` passou a aceitar allowlist por `CORS_ALLOWED_ORIGINS` ou `ALLOWED_ORIGINS`, preservando localhost para dev e `*` como fallback de compatibilidade quando a env não está definida.
+- Teste `auth-provider.test.ts` foi criado para garantir que mock auth funciona fora de produção, é bloqueado em produção e `real` é aceito em produção.
+- Documento antigo `docs/modulo-contas-a-pagar.md` foi removido; `docs/contexto-sessao.md` é a fonte única de contexto.
+
+### 11.1 Resumo do que foi pedido e status real
+
+Esta lista resume as principais frentes solicitadas pelo usuário ao longo da sessão e o estado atual delas:
+
+| Frente solicitada | Status atual | Observação transparente |
+|---|---|---|
+| Entender contexto Retiflow/Supabase/Amplify/Git | Feito | Contexto consolidado neste arquivo; deploy segue GitHub/main via Amplify |
+| Clientes reais no Supabase | Feito para v1 | CRUD principal, ativar/desativar e validações CPF/CNPJ estão conectados |
+| Notas de serviço/O.S. reais | Feito para v1 | Criação, edição, status, detalhe, PDF e preview estão conectados; bucket `notas` ainda deve migrar para privado |
+| Template de O.S. parecido com sistema antigo | Feito parcialmente/validar manualmente | Template foi ajustado, mas impressão precisa continuar sendo validada em telas/impressoras reais |
+| Preview de O.S. rápido e correto | Melhorado | Modal usa preview visual do template final; ainda é ponto sensível para QA manual em Mac, desktop e celular |
+| Fechamento mensal com rascunho e geração real | Feito para v1 | Rascunho local, geração real, PDF privado e signed URL; performance de preview ainda deve ser observada |
+| Fechamento com impressão/download | Feito | PDF é salvo no bucket privado `fechamentos` e acessado por signed URL |
+| Contas a pagar reais | Feito para v1 | CRUD, pagamento, cancelamento, detalhes, histórico, anexos e storage privado conectados |
+| Importação de contas com IA | Feito para v1 | Edge Function com OpenAI, upload/anexo, múltiplos arquivos e status por arquivo; revisão humana continua necessária |
+| Sugestões de e-mail como tab | Feito | Sugestões passaram a usar RPC real e tab no módulo financeiro |
+| Agrupamento inteligente de parceladas/recorrentes | Parcial | Dados existem/foram previstos, mas UX avançada de agrupamento ainda é melhoria P2/P1 |
+| Logs/histórico reais | Feito | `insert_log` e `get_logs` validados em integration tests |
+| Nota Fiscal fora da v1 | Feito | Menu operacional ocultado e tela transformada em aviso de indisponibilidade sem ações fake |
+| Settings sem falsa persistência | Feito como mitigação | Seções locais/parciais estão marcadas/bloqueadas; persistência real ainda é futura |
+| Segurança de auth/token | Melhorada | App não espelha mais access/refresh token em `auth.session` no modo real; Supabase SDK gerencia sessão |
+| CORS da Edge Function | Melhorado | Allowlist por env foi adicionada; produção precisa configurar `CORS_ALLOWED_ORIGINS`/`ALLOWED_ORIGINS` |
+| Testes de integração confiáveis | Feito | Sem credenciais deve pular limpo; com `.env.integration` roda contra Supabase real |
+| Documento único de contexto | Feito | Documento antigo de contas a pagar foi removido para evitar divergência |
 
 ---
 
@@ -907,7 +947,7 @@ Esta seção é intencionalmente transparente.
 
 | Local | Tipo | Observação |
 |---|---|---|
-| `src/pages/Invoices.tsx` | Nota Fiscal mock | Fora da v1; há ações fake de baixar/imprimir/enviar |
+| `src/pages/Invoices.tsx` | Nota Fiscal fora da v1 | Ações fake foram removidas; a tela agora mostra aviso de indisponibilidade |
 | `src/pages/Settings.tsx` | Preview de modelo com dados mock | Usado para prévia visual |
 | `src/data/seed.ts` | Dados demo | Usado em `VITE_AUTH_MODE=mock` |
 | `src/services/auth/mockAuthProvider.ts` | Auth dev | Bloqueado em produção por `getAuthProvider()` |
@@ -979,7 +1019,7 @@ Fora da v1:
   - `npm run lint`
   - `npm test -- --run`
   - `npm run test:integration` com ambiente configurado
-- Desabilitar ou deixar Nota Fiscal claramente fora da v1.
+- Confirmar que Nota Fiscal segue claramente fora da v1 e sem ações fake.
 - Testar manualmente:
   - login/logout;
   - criar/editar cliente;
@@ -1024,7 +1064,7 @@ Perguntas úteis para uma próxima auditoria:
 5. A configuração `CORS_ALLOWED_ORIGINS`/`ALLOWED_ORIGINS` já está definida no Supabase de produção?
 6. Há risco de escalation entre usuários financeiros/admin via RPC?
 7. O fechamento mensal deve ter tabela normalizada de itens ou `dados_json` snapshot é suficiente para o negócio?
-8. A Edge Function deveria restringir CORS para o domínio do Amplify?
+8. A Edge Function já recebeu suporte a allowlist; a env de produção já foi configurada com o domínio do Amplify?
 9. Como modelar corretamente empresa/configurações/templates sem deixar mock local?
 10. Quais chunks grandes precisam de code-splitting prioritário?
 
