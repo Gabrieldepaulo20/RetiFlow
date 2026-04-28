@@ -46,7 +46,24 @@ function getDefaultRedirect(user: SystemUser) {
 }
 
 function loadStoredSession() {
+  if (IS_REAL_AUTH) {
+    removeStorageItem(AUTH_SESSION_STORAGE_KEY);
+    return null;
+  }
   return readJsonStorage<AuthSession | null>(AUTH_SESSION_STORAGE_KEY, null);
+}
+
+function createRealSession(user: SystemUser): AuthSession {
+  return {
+    user,
+    mode: 'real',
+    tokens: {
+      accessToken: null,
+      refreshToken: null,
+      expiresAt: null,
+    },
+    authenticatedAt: new Date().toISOString(),
+  };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -81,46 +98,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const perfil = envelope.dados;
 
-      const restored: AuthSession = {
-        user: dbUserToSystemUser(perfil),
-        mode: 'real',
-        tokens: {
-          accessToken:  sbSession.access_token,
-          refreshToken: sbSession.refresh_token,
-          expiresAt: sbSession.expires_at
-            ? new Date(sbSession.expires_at * 1000).toISOString()
-            : null,
-        },
-        authenticatedAt: new Date().toISOString(),
-      };
-
-      setSession(restored);
-      writeJsonStorage(AUTH_SESSION_STORAGE_KEY, restored);
+      removeStorageItem(AUTH_SESSION_STORAGE_KEY);
+      setSession(createRealSession(dbUserToSystemUser(perfil)));
     });
 
-    // Escuta token refresh e sign-out do Supabase
+    // Escuta sign-out do Supabase. Tokens ficam somente na persistência do SDK.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, sbSession) => {
+      removeStorageItem(AUTH_SESSION_STORAGE_KEY);
+
       if (event === 'SIGNED_OUT') {
-        removeStorageItem(AUTH_SESSION_STORAGE_KEY);
         setSession(null);
         return;
       }
 
-      if ((event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') && sbSession) {
-        setSession((prev) => {
-          if (!prev) return prev;
-          const updated: AuthSession = {
-            ...prev,
-            tokens: {
-              accessToken:  sbSession.access_token,
-              refreshToken: sbSession.refresh_token,
-              expiresAt: sbSession.expires_at
-                ? new Date(sbSession.expires_at * 1000).toISOString()
-                : null,
-            },
-          };
-          writeJsonStorage(AUTH_SESSION_STORAGE_KEY, updated);
-          return updated;
+      if (event === 'SIGNED_IN' && sbSession && !session) {
+        void supabase.schema('RetificaPremium').rpc('get_usuario_por_auth_id').then(({ data: envelope }) => {
+          if (envelope && envelope.status === 200) {
+            setSession(createRealSession(dbUserToSystemUser(envelope.dados)));
+          }
         });
       }
     });
@@ -133,7 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const commitSession = useCallback((nextSession: AuthSession | null) => {
     setSession(nextSession);
-    if (nextSession) {
+    if (nextSession && !IS_REAL_AUTH) {
       writeJsonStorage(AUTH_SESSION_STORAGE_KEY, nextSession);
       return;
     }

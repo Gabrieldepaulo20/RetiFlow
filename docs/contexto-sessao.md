@@ -225,8 +225,9 @@ Fluxo:
 2. Supabase retorna `access_token`, `refresh_token`, `expires_at`.
 3. App chama RPC `get_usuario_por_auth_id` no schema `RetificaPremium`.
 4. Perfil interno é convertido via `dbUserToSystemUser`.
-5. Sessão é gravada no estado React e também em `localStorage` (`auth.session`).
-6. Supabase SDK também persiste sessão própria por padrão (`persistSession: true`).
+5. Em modo real, o app mantém somente o perfil do usuário no estado React.
+6. A persistência de tokens fica exclusivamente com o Supabase SDK (`persistSession: true`).
+7. `auth.session` continua existindo apenas para modo mock/dev e é removido automaticamente no modo real.
 
 ### 5.3 Risco do access token no navegador
 
@@ -252,7 +253,7 @@ Recomendações para endurecer:
 - CSP forte em produção, sem `unsafe-inline` quando possível.
 - Evitar bibliotecas/scripts externos desnecessários.
 - Não armazenar dados sensíveis adicionais em `localStorage`.
-- Considerar reduzir o espelhamento manual de tokens em `auth.session`; o Supabase SDK já gerencia sessão.
+- O espelhamento manual de tokens em `auth.session` foi removido no modo real; não reintroduzir sem uma justificativa forte.
 - Implementar checks de permissão/módulo no backend para RPCs sensíveis, não apenas no frontend.
 - Tornar todos os buckets com documentos sensíveis privados e usar signed URLs curtas.
 
@@ -432,7 +433,7 @@ Pontos positivos:
 
 Riscos:
 
-- CORS está `Access-Control-Allow-Origin: *`. Como exige bearer token, não abre acesso sozinho, mas se houver token roubado qualquer origem poderia tentar chamar.
+- CORS aceita allowlist via `CORS_ALLOWED_ORIGINS`/`ALLOWED_ORIGINS`; sem env configurada mantém `*` por compatibilidade. Como exige bearer token, CORS não abre acesso sozinho, mas a allowlist deve ser definida em produção.
 - IA pode errar valor/data. A UI precisa manter revisão/correção humana.
 - A categoria fallback depende da lista enviada pelo frontend.
 
@@ -494,7 +495,7 @@ Riscos/manutenção:
 | Login admin | Real via Supabase Auth |
 | Perfil interno | RPC `get_usuario_por_auth_id` |
 | Usuário inativo | Bloqueado no login real |
-| Sessão persistida | Supabase SDK + `auth.session` local |
+| Sessão persistida | Supabase SDK em modo real; `auth.session` apenas em mock/dev |
 | Auth mock em produção | Bloqueado por throw em `getAuthProvider()` |
 
 ### 8.2 Clientes
@@ -781,10 +782,10 @@ Recomendação:
 | Risco | Impacto | Recomendação |
 |---|---|---|
 | Access token no navegador | XSS pode roubar token e chamar RPCs | CSP forte, evitar scripts externos, auditoria XSS, RLS/RPC estritos |
-| `auth.session` espelha tokens no localStorage | Aumenta superfície em caso de XSS | Avaliar remover espelhamento manual e confiar no Supabase SDK |
+| Access/refresh token persistidos pelo Supabase SDK | Normal em SPA, mas XSS ainda pode roubar/usar sessão | CSP forte, evitar scripts externos, auditoria XSS, RPC/RLS estritos |
 | Proteção de rota só no frontend | Atacante com token pode chamar RPC direto | Validar role/módulo também no banco |
 | Bucket `notas` público | PDFs de O.S. podem conter PII | Migrar para bucket privado + signed URL |
-| CORS `*` na Edge Function | Com token roubado, qualquer origem chama | Restringir origem em produção se possível |
+| CORS sem allowlist configurada na Edge Function | Mantém compatibilidade com `*`; com env configurada restringe origem | Definir `CORS_ALLOWED_ORIGINS`/`ALLOWED_ORIGINS` no projeto Supabase de produção |
 | Configurações locais | Usuário pode achar que salvou configuração real | Manter avisos/desabilitar salvar até persistir |
 | Nota Fiscal mockada | Usuário pode acreditar que está funcionando | Fora da v1 ou desabilitar rota |
 | Projeto Supabase real usado em integration tests | Risco de sujeira/dados teste em ambiente principal | Criar Supabase Branch/projeto separado para testes |
@@ -915,8 +916,8 @@ Esta seção é intencionalmente transparente.
 
 | Local | Uso | Aceitável? |
 |---|---|---|
-| `auth.session` | sessão espelhada | Funcional, mas revisar por segurança |
-| Supabase SDK session | auth persistente | Normal para SPA |
+| `auth.session` | sessão mock/dev sem tokens reais | Sim, bloqueado no modo real |
+| Supabase SDK session | auth persistente real | Normal para SPA |
 | Kanban column visibility | preferência visual | Sim |
 | Monthly closing drafts | rascunho antes de gerar | Sim, desde que fique claro que não é fechamento salvo |
 | `DataContext` em modo mock | demo/dev | Sim |
@@ -1020,7 +1021,7 @@ Perguntas úteis para uma próxima auditoria:
 2. Alguma RPC `SECURITY DEFINER` permite alteração sem validar `auth.uid()`?
 3. As permissões de módulos (`Modulos`) são aplicadas no banco ou só no frontend?
 4. O bucket `notas` deve ser privado antes do piloto?
-5. O armazenamento manual de tokens em `auth.session` deve ser removido?
+5. A configuração `CORS_ALLOWED_ORIGINS`/`ALLOWED_ORIGINS` já está definida no Supabase de produção?
 6. Há risco de escalation entre usuários financeiros/admin via RPC?
 7. O fechamento mensal deve ter tabela normalizada de itens ou `dados_json` snapshot é suficiente para o negócio?
 8. A Edge Function deveria restringir CORS para o domínio do Amplify?

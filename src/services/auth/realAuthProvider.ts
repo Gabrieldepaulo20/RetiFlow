@@ -43,11 +43,9 @@ export const realAuthProvider: IAuthProvider = {
           user: dbUserToSystemUser(perfil),
           mode: 'real',
           tokens: {
-            accessToken:  authData.session.access_token,
-            refreshToken: authData.session.refresh_token,
-            expiresAt: authData.session.expires_at
-              ? new Date(authData.session.expires_at * 1000).toISOString()
-              : null,
+            accessToken: null,
+            refreshToken: null,
+            expiresAt: null,
           },
           authenticatedAt: new Date().toISOString(),
         },

@@ -32,10 +32,17 @@ type AnalysisResult = {
   highlights: string[];
 };
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+const localDevOrigins = new Set([
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:8080',
+  'http://127.0.0.1:8080',
+]);
+
+const baseCorsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Vary': 'Origin',
 };
 
 const allowedMimeTypes = new Set([
@@ -49,11 +56,42 @@ const allowedMimeTypes = new Set([
 
 const maxFileSizeBytes = 15 * 1024 * 1024;
 
-function jsonResponse(body: unknown, status = 200) {
+function getConfiguredOrigins() {
+  const raw = Deno.env.get('CORS_ALLOWED_ORIGINS') ?? Deno.env.get('ALLOWED_ORIGINS') ?? '';
+  return raw
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
+function getCorsHeaders(request: Request) {
+  const origin = request.headers.get('Origin') ?? '';
+  const configuredOrigins = getConfiguredOrigins();
+
+  if (configuredOrigins.length === 0 || configuredOrigins.includes('*')) {
+    return { allowed: true, headers: { ...baseCorsHeaders, 'Access-Control-Allow-Origin': '*' } };
+  }
+
+  if (!origin) {
+    return { allowed: true, headers: { ...baseCorsHeaders, 'Access-Control-Allow-Origin': configuredOrigins[0] } };
+  }
+
+  const allowed = configuredOrigins.includes(origin) || localDevOrigins.has(origin);
+  return {
+    allowed,
+    headers: {
+      ...baseCorsHeaders,
+      'Access-Control-Allow-Origin': allowed ? origin : 'null',
+    },
+  };
+}
+
+function jsonResponse(body: unknown, status: number, request: Request) {
+  const { headers } = getCorsHeaders(request);
   return new Response(JSON.stringify(body), {
     status,
     headers: {
-      ...corsHeaders,
+      ...headers,
       'Content-Type': 'application/json',
     },
   });
@@ -64,14 +102,14 @@ async function assertAuthenticatedUser(request: Request) {
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
 
   if (!token) {
-    return { ok: false, response: jsonResponse({ error: 'Autenticação obrigatória.' }, 401) };
+    return { ok: false, response: jsonResponse({ error: 'Autenticação obrigatória.' }, 401, request) };
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    return { ok: false, response: jsonResponse({ error: 'Configuração Supabase ausente na Function.' }, 500) };
+    return { ok: false, response: jsonResponse({ error: 'Configuração Supabase ausente na Function.' }, 500, request) };
   }
 
   const authClient = createClient(supabaseUrl, supabaseAnonKey, {
@@ -83,7 +121,7 @@ async function assertAuthenticatedUser(request: Request) {
 
   const { data, error } = await authClient.auth.getUser(token);
   if (error || !data.user) {
-    return { ok: false, response: jsonResponse({ error: 'Usuário autenticado obrigatório para analisar documentos.' }, 401) };
+    return { ok: false, response: jsonResponse({ error: 'Usuário autenticado obrigatório para analisar documentos.' }, 401, request) };
   }
 
   return { ok: true, userId: data.user.id };
@@ -213,12 +251,23 @@ async function deleteOpenAIFile(fileId: string, apiKey: string) {
 }
 
 Deno.serve(async (request) => {
+  const cors = getCorsHeaders(request);
+  if (!cors.allowed) {
+    return new Response(JSON.stringify({ error: 'Origem não autorizada.' }), {
+      status: 403,
+      headers: {
+        ...cors.headers,
+        'Content-Type': 'application/json',
+      },
+    });
+  }
+
   if (request.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response('ok', { headers: cors.headers });
   }
 
   if (request.method !== 'POST') {
-    return jsonResponse({ error: 'Método não permitido.' }, 405);
+    return jsonResponse({ error: 'Método não permitido.' }, 405, request);
   }
 
   const auth = await assertAuthenticatedUser(request);
@@ -228,7 +277,7 @@ Deno.serve(async (request) => {
 
   const apiKey = Deno.env.get('OPENAI_API_KEY');
   if (!apiKey) {
-    return jsonResponse({ error: 'OPENAI_API_KEY não configurada na Supabase Function.' }, 500);
+    return jsonResponse({ error: 'OPENAI_API_KEY não configurada na Supabase Function.' }, 500, request);
   }
 
   try {
@@ -238,15 +287,15 @@ Deno.serve(async (request) => {
     const suppliersRaw = String(formData.get('suppliers') ?? '[]');
 
     if (!(file instanceof File)) {
-      return jsonResponse({ error: 'Arquivo obrigatório.' }, 400);
+      return jsonResponse({ error: 'Arquivo obrigatório.' }, 400, request);
     }
 
     if (!allowedMimeTypes.has(file.type)) {
-      return jsonResponse({ error: `Tipo de arquivo não suportado: ${file.type || file.name}` }, 400);
+      return jsonResponse({ error: `Tipo de arquivo não suportado: ${file.type || file.name}` }, 400, request);
     }
 
     if (file.size > maxFileSizeBytes) {
-      return jsonResponse({ error: 'Arquivo acima de 15 MB.' }, 400);
+      return jsonResponse({ error: 'Arquivo acima de 15 MB.' }, 400, request);
     }
 
     const categories = JSON.parse(categoriesRaw) as Array<{ id: string; name: string }>;
@@ -361,7 +410,7 @@ Deno.serve(async (request) => {
 
       const data = await response.json();
       const parsed = parseJsonObject(getOutputText(data));
-      return jsonResponse(sanitizeAnalysis(parsed, validCategoryIds, fallbackCategoryId));
+      return jsonResponse(sanitizeAnalysis(parsed, validCategoryIds, fallbackCategoryId), 200, request);
     } finally {
       if (openAIFileId) {
         await deleteOpenAIFile(openAIFileId, apiKey);
@@ -370,6 +419,6 @@ Deno.serve(async (request) => {
   } catch (error) {
     return jsonResponse({
       error: error instanceof Error ? error.message : 'Erro inesperado ao analisar documento.',
-    }, 500);
+    }, 500, request);
   }
 });
