@@ -3,6 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import {
   ChevronDown,
+  AlertTriangle,
+  Copy,
   KeyRound,
   LayoutGrid,
   Mail,
@@ -18,10 +20,12 @@ import { useSystemUsersQuery } from '@/hooks/useSystemUsersQuery';
 import { useRoleModuleConfig, useUserModuleOverrides } from '@/hooks/useRoleModuleConfig';
 import { saveSystemUsers } from '@/services/auth/systemUsers';
 import { saveUserModuleOverrides } from '@/services/auth/moduleAccess';
-import { inativarUsuario, insertUsuario, reativarUsuario, upsertModulo } from '@/api/supabase/usuarios';
-import { appModulesToRpcPayload, ROLE_PARA_ACESSO } from '@/services/auth/supabaseUserMapping';
+import { callAdminUsersFunction } from '@/api/supabase/admin-users';
+import { useAuth } from '@/contexts/AuthContext';
+import { isSuperAdmin as checkIsSuperAdmin } from '@/services/auth/superAdmin';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -61,6 +65,7 @@ function buildUserId() {
 
 export default function AdminClients() {
   const { data: systemUsersData = [], isLoading } = useSystemUsersQuery();
+  const { user: currentUser } = useAuth();
   const roleModuleConfig = useRoleModuleConfig();
   const storedOverrides = useUserModuleOverrides();
   const queryClient = useQueryClient();
@@ -74,6 +79,8 @@ export default function AdminClients() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showModulesDialog, setShowModulesDialog] = useState<string | null>(null);
   const [showResetDialog, setShowResetDialog] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [temporaryActionLink, setTemporaryActionLink] = useState<{ title: string; url: string } | null>(null);
   const [newName, setNewName] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newPhone, setNewPhone] = useState('');
@@ -117,6 +124,8 @@ export default function AdminClients() {
 
   const activeCount = systemUsers.filter((user) => user.isActive).length;
   const inactiveCount = systemUsers.filter((user) => !user.isActive).length;
+  const isSuperAdmin = checkIsSuperAdmin(currentUser);
+  const canUseSensitiveAdminActions = !IS_REAL_AUTH || isSuperAdmin;
 
   const getEffectiveModules = (user: SystemUser) => {
     return ALL_MODULES.reduce<Record<AppModuleKey, boolean>>((accumulator, module) => {
@@ -130,16 +139,24 @@ export default function AdminClients() {
   };
 
   const handleToggleActive = async (userId: string) => {
-    const currentUser = systemUsers.find((user) => user.id === userId);
-    if (!currentUser) return;
+    const targetUser = systemUsers.find((user) => user.id === userId);
+    if (!targetUser) return;
+    if (IS_REAL_AUTH && !isSuperAdmin) {
+      toast({
+        title: 'Ação restrita ao Super Admin',
+        description: 'Ativar ou inativar usuários exige autorização administrativa reforçada.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
+    setPendingAction(`active-${userId}`);
     try {
       if (IS_REAL_AUTH) {
-        if (currentUser.isActive) {
-          await inativarUsuario(userId);
-        } else {
-          await reativarUsuario(userId);
-        }
+        await callAdminUsersFunction({
+          action: targetUser.isActive ? 'deactivate_user' : 'reactivate_user',
+          userId,
+        });
       }
 
       const nextUsers = systemUsers.map((user) =>
@@ -157,18 +174,60 @@ export default function AdminClients() {
         description: error instanceof Error ? error.message : 'Tente novamente.',
         variant: 'destructive',
       });
+    } finally {
+      setPendingAction(null);
     }
   };
 
-  const handleResetPassword = (userId: string) => {
+  const handleResetPassword = async (userId: string) => {
     const user = systemUsers.find((candidate) => candidate.id === userId);
-    toast({
-      title: 'Reset de senha pendente de integração',
-      description: IS_REAL_AUTH
-        ? 'Reset seguro de senha precisa ser feito pelo Supabase Auth/Admin API, não pelo frontend.'
-        : user ? `${user.name} continua usando a senha de desenvolvimento demo123 até a API de autenticação entrar.` : 'A API de autenticação ainda não foi integrada.',
-    });
-    setShowResetDialog(null);
+    if (!user) return;
+
+    if (IS_REAL_AUTH && !isSuperAdmin) {
+      toast({
+        title: 'Ação restrita ao Super Admin',
+        description: 'Reset de senha só pode ser gerado pelo Super Admin autorizado.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setPendingAction(`reset-${userId}`);
+    try {
+      if (IS_REAL_AUTH) {
+        const result = await callAdminUsersFunction({
+          action: 'reset_password',
+          userId,
+          email: user.email,
+        });
+        if (result.action_link) {
+          setTemporaryActionLink({
+            title: `Link temporário de recuperação - ${user.name}`,
+            url: result.action_link,
+          });
+        }
+        toast({
+          title: 'Link de recuperação gerado',
+          description: result.action_link
+            ? 'Copie o link temporário exibido na tela e envie pelo canal combinado. Ele expira conforme a configuração do Supabase.'
+            : 'O Supabase aceitou a solicitação de recuperação.',
+        });
+      } else {
+        toast({
+          title: 'Reset de senha em desenvolvimento',
+          description: `${user.name} continua usando a senha de desenvolvimento demo123 até o backend real entrar.`,
+        });
+      }
+      setShowResetDialog(null);
+    } catch (error) {
+      toast({
+        title: 'Não foi possível resetar a senha',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setPendingAction(null);
+    }
   };
 
   const handleCreateUser = async () => {
@@ -183,16 +242,29 @@ export default function AdminClients() {
       return;
     }
 
+    if (IS_REAL_AUTH && !isSuperAdmin) {
+      toast({
+        title: 'Ação restrita ao Super Admin',
+        description: 'Criar usuários exige autorização administrativa reforçada.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setPendingAction('create-user');
     try {
-      const createdId = IS_REAL_AUTH
-        ? await insertUsuario({
-            p_nome: newName.trim(),
-            p_email: normalizedEmail,
-            p_telefone: newPhone.trim(),
-            p_acesso: ROLE_PARA_ACESSO[newRole],
-            p_status: true,
+      const result = IS_REAL_AUTH
+        ? await callAdminUsersFunction({
+            action: newRole === 'ADMIN' ? 'create_admin' : 'create_user',
+            name: newName.trim(),
+            email: normalizedEmail,
+            phone: newPhone.trim(),
+            role: newRole,
+            modules: roleModuleConfig[newRole],
           })
-        : buildUserId();
+        : null;
+
+      const createdId = result?.id_usuarios ?? buildUserId();
 
       const newUser: SystemUser = {
         id: createdId,
@@ -205,15 +277,17 @@ export default function AdminClients() {
         moduleAccess: IS_REAL_AUTH ? roleModuleConfig[newRole] : undefined,
       };
 
-      if (IS_REAL_AUTH) {
-        await upsertModulo(createdId, appModulesToRpcPayload(roleModuleConfig[newRole]) as Parameters<typeof upsertModulo>[1]);
-      }
-
       persistSystemUsers([newUser, ...systemUsers]);
+      if (result?.action_link) {
+        setTemporaryActionLink({
+          title: `Link temporário de convite - ${newUser.name}`,
+          url: result.action_link,
+        });
+      }
       toast({
-        title: 'Usuário do sistema criado',
+        title: IS_REAL_AUTH ? 'Convite seguro criado' : 'Usuário do sistema criado',
         description: IS_REAL_AUTH
-          ? `${newUser.name} foi cadastrado no perfil interno. O acesso ao login ainda depende da conta no Supabase Auth.`
+          ? `${newUser.name} recebeu/tem um convite no Supabase Auth e o perfil interno foi configurado.`
           : `${newUser.name} já pode acessar o ambiente de desenvolvimento com a senha demo123.`,
       });
       setShowCreateDialog(false);
@@ -227,11 +301,22 @@ export default function AdminClients() {
         description: error instanceof Error ? error.message : 'Tente novamente.',
         variant: 'destructive',
       });
+    } finally {
+      setPendingAction(null);
     }
   };
 
   const toggleUserModule = async (user: SystemUser, moduleKey: AppModuleKey) => {
     if (roleModuleConfig[user.role]?.[moduleKey] === false) {
+      return;
+    }
+
+    if (IS_REAL_AUTH && !isSuperAdmin) {
+      toast({
+        title: 'Ação restrita ao Super Admin',
+        description: 'Alterar módulos exige autorização administrativa reforçada.',
+        variant: 'destructive',
+      });
       return;
     }
 
@@ -243,7 +328,12 @@ export default function AdminClients() {
       };
 
       try {
-        await upsertModulo(user.id, appModulesToRpcPayload(nextModuleAccess) as Parameters<typeof upsertModulo>[1]);
+        setPendingAction(`modules-${user.id}`);
+        await callAdminUsersFunction({
+          action: 'set_modules',
+          userId: user.id,
+          modules: nextModuleAccess,
+        });
         setSystemUsers((previous) =>
           previous.map((candidate) =>
             candidate.id === user.id ? { ...candidate, moduleAccess: nextModuleAccess } : candidate,
@@ -256,6 +346,8 @@ export default function AdminClients() {
           description: error instanceof Error ? error.message : 'Tente novamente.',
           variant: 'destructive',
         });
+      } finally {
+        setPendingAction(null);
       }
       return;
     }
@@ -303,10 +395,22 @@ export default function AdminClients() {
             Gerencie contas internas, status de acesso e restrições adicionais por usuário.
           </p>
         </div>
-        <Button onClick={() => setShowCreateDialog(true)} className="gap-2 rounded-xl h-11 px-5 shadow-lg shadow-primary/20">
-          <UserPlus className="w-4 h-4" /> Novo Usuário
-        </Button>
+        {canUseSensitiveAdminActions ? (
+          <Button onClick={() => setShowCreateDialog(true)} className="gap-2 rounded-xl h-11 px-5 shadow-lg shadow-primary/20">
+            <UserPlus className="w-4 h-4" /> Novo Usuário
+          </Button>
+        ) : null}
       </div>
+
+      {IS_REAL_AUTH && !isSuperAdmin ? (
+        <Alert className="border-amber-200 bg-amber-50/80 text-amber-900">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Ações administrativas restritas</AlertTitle>
+          <AlertDescription>
+            Você pode consultar usuários, mas criar contas, resetar senhas, ativar/inativar e alterar módulos exige o Super Admin autorizado.
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <div className="grid grid-cols-3 gap-4">
         {[
@@ -353,6 +457,7 @@ export default function AdminClients() {
           const modules = getEffectiveModules(user);
           const activeModules = Object.values(modules).filter(Boolean).length;
           const isExpanded = expandedId === user.id;
+          const isMutatingUser = pendingAction?.endsWith(user.id);
 
           return (
             <motion.div
@@ -394,37 +499,54 @@ export default function AdminClients() {
                     </div>
 
                     <div className="flex items-center gap-1.5">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowModulesDialog(user.id)}>
-                            <LayoutGrid className="w-4 h-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Módulos</TooltipContent>
-                      </Tooltip>
+                      {canUseSensitiveAdminActions ? (
+                        <>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                disabled={isMutatingUser}
+                                onClick={() => setShowModulesDialog(user.id)}
+                              >
+                                <LayoutGrid className="w-4 h-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Módulos</TooltipContent>
+                          </Tooltip>
 
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowResetDialog(user.id)}>
-                            <KeyRound className="w-4 h-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Resetar Senha</TooltipContent>
-                      </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                disabled={isMutatingUser}
+                                onClick={() => setShowResetDialog(user.id)}
+                              >
+                                <KeyRound className="w-4 h-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Resetar Senha</TooltipContent>
+                          </Tooltip>
 
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className={cn('h-8 w-8', !user.isActive && 'text-success')}
-                            onClick={() => handleToggleActive(user.id)}
-                          >
-                            <Power className="w-4 h-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>{user.isActive ? 'Desativar' : 'Ativar'}</TooltipContent>
-                      </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className={cn('h-8 w-8', !user.isActive && 'text-success')}
+                                disabled={isMutatingUser}
+                                onClick={() => handleToggleActive(user.id)}
+                              >
+                                <Power className="w-4 h-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>{user.isActive ? 'Desativar' : 'Ativar'}</TooltipContent>
+                          </Tooltip>
+                        </>
+                      ) : null}
 
                       <Button
                         variant="ghost"
@@ -515,14 +637,19 @@ export default function AdminClients() {
                   <SelectItem value="RECEPCAO">Recepção</SelectItem>
                   <SelectItem value="PRODUCAO">Produção</SelectItem>
                   <SelectItem value="FINANCEIRO">Financeiro</SelectItem>
-                  <SelectItem value="ADMIN">Administrador</SelectItem>
+                  {isSuperAdmin || !IS_REAL_AUTH ? <SelectItem value="ADMIN">Administrador</SelectItem> : null}
                 </SelectContent>
               </Select>
             </div>
+            {IS_REAL_AUTH ? (
+              <p className="rounded-xl border border-border/60 bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground">
+                O usuário será convidado pelo Supabase Auth. Nenhuma senha é criada ou exibida nesta tela.
+              </p>
+            ) : null}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreateDialog(false)}>Cancelar</Button>
-            <Button onClick={handleCreateUser} className="gap-2">
+            <Button onClick={handleCreateUser} className="gap-2" disabled={pendingAction === 'create-user'}>
               <UserPlus className="w-4 h-4" /> Criar Usuário
             </Button>
           </DialogFooter>
@@ -550,7 +677,7 @@ export default function AdminClients() {
                 <div className="space-y-3">
                   {ALL_MODULES.map((module) => {
                     const roleAllowsModule = roleModuleConfig[user.role]?.[module.key] !== false;
-                    const isEnabled = roleAllowsModule && userModuleOverrides[user.id]?.[module.key] !== false;
+                    const isEnabled = getEffectiveModules(user)[module.key];
 
                     return (
                       <div key={module.key} className="flex items-center justify-between p-3 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors">
@@ -562,7 +689,7 @@ export default function AdminClients() {
                         </div>
                         <Switch
                           checked={isEnabled}
-                          disabled={!roleAllowsModule}
+                          disabled={!roleAllowsModule || pendingAction === `modules-${user.id}`}
                           onCheckedChange={() => void toggleUserModule(user, module.key)}
                         />
                       </div>
@@ -573,8 +700,8 @@ export default function AdminClients() {
             );
           })()}
           <DialogFooter>
-            <Button onClick={() => { setShowModulesDialog(null); toast({ title: 'Restrições atualizadas!' }); }}>
-              Salvar
+            <Button onClick={() => setShowModulesDialog(null)}>
+              Fechar
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -589,11 +716,51 @@ export default function AdminClients() {
           </DialogHeader>
           <p className="text-sm text-muted-foreground py-2">
             Tem certeza que deseja resetar a senha de <strong>{systemUsers.find((user) => user.id === showResetDialog)?.name}</strong>?
+            {IS_REAL_AUTH ? (
+              <span className="mt-2 block text-xs">
+                Será gerado um link temporário de recuperação pelo Supabase Auth. Nenhuma senha será exibida ou salva.
+              </span>
+            ) : null}
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowResetDialog(null)}>Cancelar</Button>
-            <Button variant="destructive" onClick={() => showResetDialog && handleResetPassword(showResetDialog)}>
+            <Button
+              variant="destructive"
+              disabled={!!showResetDialog && pendingAction === `reset-${showResetDialog}`}
+              onClick={() => showResetDialog && void handleResetPassword(showResetDialog)}
+            >
               Resetar Senha
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!temporaryActionLink} onOpenChange={() => setTemporaryActionLink(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="w-5 h-5" /> {temporaryActionLink?.title}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              Este link é sensível e temporário. Copie agora, envie por um canal seguro e não salve em arquivo ou conversa pública.
+            </p>
+            <Input readOnly value={temporaryActionLink?.url ?? ''} className="font-mono text-xs" />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTemporaryActionLink(null)}>
+              Fechar
+            </Button>
+            <Button
+              className="gap-2"
+              onClick={() => {
+                if (!temporaryActionLink?.url) return;
+                void navigator.clipboard.writeText(temporaryActionLink.url);
+                toast({ title: 'Link copiado' });
+              }}
+            >
+              <Copy className="w-4 h-4" /> Copiar link
             </Button>
           </DialogFooter>
         </DialogContent>

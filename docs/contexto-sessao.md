@@ -1092,3 +1092,66 @@ Antes de mudanças grandes no banco, recomenda-se gerar um dump/introspecção o
 - triggers;
 - funções `SECURITY DEFINER`;
 - grants efetivos.
+
+---
+
+## 17. Fase 9A — Arquitetura Segura de Super Admin e Auth Admin
+
+Atualização desta fase:
+
+- Ações administrativas sensíveis não devem mais depender de RPC chamada diretamente pelo frontend.
+- Foi criada a Edge Function `admin-users` para centralizar operações que exigem Supabase Auth Admin API.
+- A service role permanece exclusivamente server-side dentro da Edge Function ou de scripts manuais locais ignorados pelo git.
+- O frontend chama a Function com `Authorization: Bearer <access_token>` do usuário logado.
+- A Function valida o usuário autenticado via Supabase Auth e confirma que o e-mail está na allowlist `SUPER_ADMIN_EMAILS`.
+- Para o piloto, a allowlist esperada é `gabrielwilliam208@gmail.com`.
+- A Function também valida o perfil interno em `RetificaPremium.Usuarios` como `administrador` ativo antes de executar ações sensíveis.
+- Na criação/convite, a Function reaproveita usuário Auth existente quando houver e faz upsert seguro do perfil interno por `auth_id`/e-mail, evitando duplicidade quando o convite for reexecutado.
+- Quando Supabase retorna `action_link` de convite ou recuperação, a UI mostra o link apenas em modal temporário em memória para cópia imediata pelo Super Admin; o link não é persistido em banco/localStorage.
+
+Operações previstas na Function `admin-users`:
+
+| Ação | Objetivo | Segurança |
+|---|---|---|
+| `create_user` | Convidar/criar usuário operacional e criar perfil interno | Somente Super Admin |
+| `create_admin` | Convidar/criar administrador | Somente Super Admin |
+| `reset_password` | Gerar link temporário de recuperação | Somente Super Admin |
+| `set_modules` | Alterar módulos do usuário | Somente Super Admin |
+| `deactivate_user` / `reactivate_user` | Alterar status do perfil interno | Somente Super Admin |
+
+Regras de senha:
+
+- Nenhuma senha foi hardcoded.
+- Nenhuma senha deve ser colocada em migration, teste, README, `AGENTS.md` ou código.
+- Reset usa link temporário/recovery do Supabase Auth.
+- Criação usa convite/link seguro ou usuário Auth existente.
+
+Bootstrap do primeiro Super Admin:
+
+- Existe script manual: `scripts/bootstrap-super-admin.mjs`.
+- O script lê somente variáveis de ambiente:
+  - `SUPABASE_URL`
+  - `SUPABASE_SERVICE_ROLE_KEY`
+  - `SUPER_ADMIN_EMAIL` opcional; padrão operacional: `gabrielwilliam208@gmail.com`
+  - `SUPER_ADMIN_NAME` opcional
+  - `SUPER_ADMIN_PHONE` opcional
+  - `SUPER_ADMIN_TEMP_PASSWORD` opcional
+  - `AUTH_REDIRECT_TO` ou `APP_BASE_URL` opcional
+- Se `SUPER_ADMIN_TEMP_PASSWORD` estiver presente, cria usuário Auth confirmado com essa senha temporária.
+- Se a senha temporária não estiver presente, gera link de convite temporário.
+- O script não roda automaticamente e não contém senha.
+
+Pendências manuais no Supabase:
+
+- Deploy da Function: `supabase functions deploy admin-users`.
+- Configurar secret/env da Function:
+  - `SUPER_ADMIN_EMAILS=gabrielwilliam208@gmail.com`
+  - `CORS_ALLOWED_ORIGINS=<domínio do Amplify>,http://localhost:8080`
+  - `AUTH_REDIRECT_TO=<URL final de login/reset>`
+- Garantir `SUPABASE_SERVICE_ROLE_KEY` disponível apenas no ambiente da Function.
+- Criar o primeiro Super Admin via Dashboard Supabase ou `scripts/bootstrap-super-admin.mjs`.
+
+Risco remanescente:
+
+- RPCs administrativas antigas (`insert_usuario`, `upsert_modulo`, `inativar_usuario`, `reativar_usuario`) ainda devem ser auditadas server-side. A UI passou a usar a Function para ações sensíveis em modo real, mas a proteção definitiva contra chamadas diretas precisa existir nas próprias RPCs/RLS/grants.
+- A Edge Function `admin-users` precisa ser deployada e testada contra o projeto Supabase real antes de liberar a tela Admin em produção ampla.

@@ -59,10 +59,14 @@ Quando a mudança tocar integração real:
 ## Segurança
 
 - Nunca colocar service role no frontend.
+- Operações de Auth Admin, convite, reset de senha e alteração sensível de usuários devem passar por Edge Function server-side.
+- O Super Admin autorizado é configurado por `SUPER_ADMIN_EMAILS` na Function; no piloto o e-mail operacional esperado é `gabrielwilliam208@gmail.com`.
+- Senhas iniciais/reset nunca devem ser hardcoded, commitadas, logadas ou exibidas permanentemente.
 - A anon key do Supabase pode existir no frontend, mas ela não é autorização real. Segurança precisa estar em RLS, RPCs, policies, Storage e Edge Functions.
 - `ProtectedRoute` protege UX/navegação, mas não é barreira de segurança contra atacante.
 - Não expor access token, refresh token, secret key, OpenAI key, AWS key ou qualquer credencial em commit, log ou chat.
 - Edge Functions sensíveis devem exigir `Authorization: Bearer <token>`.
+- Edge Functions administrativas devem validar novamente o usuário autenticado no backend; esconder botão no frontend é apenas UX.
 - CORS deve ser configurável por ambiente e não deve ser afrouxado sem justificativa.
 - Buckets privados devem usar signed URL com expiração adequada.
 - Blobs e `URL.createObjectURL` precisam de cleanup.
@@ -93,6 +97,9 @@ Quando a mudança tocar integração real:
 - Alterar RLS, policies ou privacidade de buckets sem plano.
 - Expor credenciais ou pedir que o usuário cole segredo no chat.
 - Colocar service role no frontend.
+- Usar Supabase Auth Admin API diretamente no browser.
+- Permitir que admin comum crie admin, crie usuário, resete senha ou altere módulos sem validação server-side.
+- Colocar senha temporária em README, migration, teste, fixture ou código.
 - Reativar mocks em produção.
 - Implementar Nota Fiscal fora do escopo aprovado.
 - Trocar stack, roteador, provider de auth ou arquitetura de dados em refactor amplo.
