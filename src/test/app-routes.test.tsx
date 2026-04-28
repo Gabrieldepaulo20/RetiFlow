@@ -82,12 +82,22 @@ describe('App routes', () => {
     ['/notas-entrada/n1', async () => screen.findByRole('heading', { name: 'OS-1' })],
     ['/kanban', async () => screen.findByRole('heading', { name: 'Produção' })],
     ['/fechamento', async () => screen.findByRole('heading', { name: 'Fechamento Mensal' })],
-    ['/nota-fiscal', async () => screen.findByRole('heading', { name: 'Notas Fiscais' })],
+    ['/nota-fiscal', async () => screen.findByRole('heading', { name: 'Nota Fiscal indisponível' })],
     ['/contas-a-pagar', async () => screen.findByRole('heading', { name: 'Contas a Pagar' })],
   ])('renders operational route %s', async (path, findElement) => {
     authenticateAs('FINANCEIRO');
     renderAt(path);
     expect(await findElement()).toBeInTheDocument();
+  });
+
+  it('renders Nota Fiscal as unavailable instead of exposing mock actions', async () => {
+    authenticateAs('FINANCEIRO');
+    renderAt('/nota-fiscal');
+
+    expect(await screen.findByRole('heading', { name: 'Nota Fiscal indisponível' })).toBeInTheDocument();
+    expect(screen.getByText(/fora da v1\/piloto/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /registrar nf/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/pdf baixado/i)).not.toBeInTheDocument();
   });
 
   it.each([
@@ -118,6 +128,15 @@ describe('App routes', () => {
     authenticateAs('ADMIN');
     renderAt(path);
     expect(await findElement()).toBeInTheDocument();
+  });
+
+  it('shows Settings as partially local when opened by admin', async () => {
+    authenticateAs('ADMIN');
+    renderAt('/admin/configuracoes');
+
+    expect(await screen.findByRole('heading', { name: 'Configurações' })).toBeInTheDocument();
+    expect(screen.getByText(/ainda não persistem no backend/i)).toBeInTheDocument();
+    expect(screen.getByText(/não deve ser considerado configuração real de produção/i)).toBeInTheDocument();
   });
 
   it('redirects /admin/clientes to /admin/usuarios', async () => {

@@ -60,7 +60,7 @@ const MODULE_DEFS = [
   { key: 'notes', label: 'Notas de Entrada', icon: FileText },
   { key: 'kanban', label: 'Kanban', icon: KanbanSquare },
   { key: 'closing', label: 'Fechamento', icon: Calendar },
-  { key: 'invoices', label: 'Nota Fiscal', icon: Receipt },
+  { key: 'invoices', label: 'Nota Fiscal (fora da v1)', icon: Receipt },
   { key: 'settings', label: 'Configurações', icon: SettingsIcon },
 ];
 
@@ -71,6 +71,9 @@ const CONFIGURABLE_ROLES: { key: UserRole; label: string }[] = [
 ];
 
 const COMPANY_SETTINGS_CONNECTED = false;
+const MODULE_SETTINGS_CONNECTED = false;
+const APPEARANCE_SETTINGS_CONNECTED = false;
+const DOCUMENT_MODEL_SETTINGS_CONNECTED = false;
 const SECURITY_SETTINGS_CONNECTED = false;
 
 export default function SettingsPage() {
@@ -121,7 +124,7 @@ export default function SettingsPage() {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => { setLogoPreview(reader.result as string); toast({ title: 'Logo carregada!' }); };
+      reader.onloadend = () => { setLogoPreview(reader.result as string); toast({ title: 'Logo carregada apenas como prévia local' }); };
       reader.readAsDataURL(file);
     }
   };
@@ -141,7 +144,7 @@ export default function SettingsPage() {
     document.documentElement.style.setProperty('--accent', t.accent);
     document.documentElement.style.setProperty('--sidebar-background', t.sidebar);
     document.documentElement.style.setProperty('--sidebar-primary', t.primary);
-    toast({ title: `Tema "${t.name}" aplicado!` });
+    toast({ title: `Prévia local do tema "${t.name}" aplicada` });
   };
 
   return (
@@ -152,7 +155,8 @@ export default function SettingsPage() {
         <Info className="h-4 w-4" />
         <AlertTitle>Algumas seções ainda são locais</AlertTitle>
         <AlertDescription>
-          Permissões por perfil já são salvas no navegador. Dados da empresa, segurança e parte das prévias abaixo ainda não persistem no backend.
+          Dados da empresa, permissões por perfil, aparência, modelos e segurança ainda não persistem no backend.
+          O que aparecer como prévia local não deve ser considerado configuração real de produção.
         </AlertDescription>
       </Alert>
 
@@ -219,7 +223,7 @@ export default function SettingsPage() {
                       <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
                       <div className="flex items-center gap-2 px-4 py-2 rounded-md bg-muted hover:bg-muted/80 transition-colors text-sm font-medium"><Upload className="w-4 h-4" /> Enviar logo</div>
                     </label>
-                    <p className="text-[11px] text-muted-foreground">PNG, JPG ou SVG. Máx 2MB.</p>
+                    <p className="text-[11px] text-muted-foreground">PNG, JPG ou SVG. Prévia local; não salva no backend.</p>
                   </div>
                 </div>
               </div>
@@ -237,9 +241,14 @@ export default function SettingsPage() {
               <CardTitle className="flex items-center gap-2"><LayoutGrid className="w-5 h-5" /> Controle de Módulos por Perfil</CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
-              <p className="text-sm text-muted-foreground">
-                Defina quais módulos cada perfil pode acessar. O perfil <strong>Admin</strong> tem acesso total e não pode ser restrito.
-              </p>
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertTitle>Permissões reais ainda não conectadas nesta tela</AlertTitle>
+                <AlertDescription>
+                  Estes controles estão bloqueados para não parecerem alteração de backend. A autorização real deve continuar vindo
+                  das permissões do usuário no Supabase/RPCs.
+                </AlertDescription>
+              </Alert>
 
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -264,6 +273,7 @@ export default function SettingsPage() {
                           <td key={r.key} className="text-center py-3 px-4">
                             <Switch
                               checked={moduleConfig[r.key]?.[mod.key] ?? false}
+                              disabled={!MODULE_SETTINGS_CONNECTED}
                               onCheckedChange={() => toggleModule(r.key, mod.key)}
                             />
                           </td>
@@ -278,7 +288,9 @@ export default function SettingsPage() {
                 <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
                   <Check className="w-4 h-4 text-primary" />
                 </div>
-                <p className="text-xs text-muted-foreground">As alterações são salvas automaticamente e aplicadas no próximo login do usuário.</p>
+                <p className="text-xs text-muted-foreground">
+                  Bloqueado na v1 para evitar configuração local enganosa. Alterações reais exigem persistência no banco.
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -289,7 +301,16 @@ export default function SettingsPage() {
           <Card>
             <CardHeader><CardTitle className="flex items-center gap-2"><Palette className="w-5 h-5" /> Tema e Cores</CardTitle></CardHeader>
             <CardContent className="space-y-5">
-              <p className="text-sm text-muted-foreground">Escolha o tema visual do sistema.</p>
+              {!APPEARANCE_SETTINGS_CONNECTED && (
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertTitle>Prévia local de aparência</AlertTitle>
+                  <AlertDescription>
+                    A troca de tema abaixo altera apenas a sessão atual do navegador. Ainda não salva preferência no backend.
+                  </AlertDescription>
+                </Alert>
+              )}
+              <p className="text-sm text-muted-foreground">Teste uma prévia visual do tema do sistema.</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {THEME_PRESETS.map((t, i) => (
                   <button key={i} onClick={() => applyTheme(i)} className={`relative p-4 rounded-xl border-2 transition-all text-left hover:shadow-md ${selectedTheme === i ? 'border-primary shadow-md' : 'border-border hover:border-primary/30'}`}>
@@ -318,6 +339,15 @@ export default function SettingsPage() {
                 <p className="text-sm text-muted-foreground">
                   O formato do documento é selecionado automaticamente com base na quantidade de itens da O.S.
                 </p>
+                {!DOCUMENT_MODEL_SETTINGS_CONNECTED && (
+                  <Alert>
+                    <Info className="h-4 w-4" />
+                    <AlertTitle>Prévia com dados fictícios</AlertTitle>
+                    <AlertDescription>
+                      Os modelos abaixo usam dados mockados só para visualizar layout. Nenhuma regra de template é salva por esta tela.
+                    </AlertDescription>
+                  </Alert>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="border-2 rounded-xl p-5 hover:border-primary/30 transition-all">
                     <div className="flex items-center gap-3 mb-3">
@@ -363,14 +393,16 @@ export default function SettingsPage() {
                   {DOC_ACCENT_PRESETS.map(p => (
                     <button
                       key={p.color}
-                      onClick={() => { setDocAccentColor(p.color); toast({ title: `Cor "${p.name}" selecionada` }); }}
+                      onClick={() => { setDocAccentColor(p.color); toast({ title: `Prévia local da cor "${p.name}" selecionada` }); }}
                       className={`w-10 h-10 rounded-xl transition-all hover:scale-110 ${docAccentColor === p.color ? 'ring-2 ring-offset-2 ring-primary scale-110' : ''}`}
                       style={{ backgroundColor: p.color }}
                       title={p.name}
                     />
                   ))}
                 </div>
-                <p className="text-xs text-muted-foreground">Cor selecionada: <span className="font-mono font-semibold">{docAccentColor}</span></p>
+                <p className="text-xs text-muted-foreground">
+                  Cor da prévia local: <span className="font-mono font-semibold">{docAccentColor}</span>
+                </p>
               </CardContent>
             </Card>
           </div>
@@ -408,6 +440,13 @@ export default function SettingsPage() {
           <Card>
             <CardHeader><CardTitle className="flex items-center gap-2"><Users className="w-5 h-5" /> Usuários do Sistema</CardTitle></CardHeader>
             <CardContent>
+              <Alert className="mb-4">
+                <Info className="h-4 w-4" />
+                <AlertTitle>Lista ilustrativa nesta tela</AlertTitle>
+                <AlertDescription>
+                  Esta aba ainda usa dados locais de referência. A gestão real de usuários deve ser feita pelo módulo administrativo conectado ao Supabase.
+                </AlertDescription>
+              </Alert>
               <div className="space-y-3">
                 {users.map(u => (
                   <div key={u.id} className="flex items-center justify-between p-3 border rounded-lg">
