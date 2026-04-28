@@ -2,10 +2,9 @@ import { useMemo } from 'react';
 import { useData } from '@/contexts/DataContext';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { STATUS_LABELS, NoteStatus } from '@/types';
-import { Users, UserCheck, UserX, Activity, TrendingUp, FileText, KanbanSquare, BarChart3, ArrowUpRight, ArrowDownRight } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, CartesianGrid, Area, AreaChart } from 'recharts';
+import { Users, UserCheck, UserX, Activity, TrendingUp, FileText, BarChart3 } from 'lucide-react';
+import { Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { motion, useReducedMotion } from 'framer-motion';
 import { SectionEmptyState, SectionErrorState } from '@/components/ui/section-state';
 
@@ -35,34 +34,13 @@ export default function AdminDashboard() {
     }));
   }, [notes]);
 
-  const moduleUsage = useMemo(() => [
-    { name: 'Dashboard', usage: 95, users: 4 },
-    { name: 'Kanban', usage: 82, users: 3 },
-    { name: 'Notas de Entrada', usage: 78, users: 4 },
-    { name: 'Clientes', usage: 65, users: 3 },
-    { name: 'Fechamento', usage: 45, users: 2 },
-    { name: 'Nota Fiscal', usage: 38, users: 1 },
-    { name: 'Configurações', usage: 22, users: 1 },
-  ], []);
-
-  const weeklyActivity = useMemo(() => [
-    { day: 'Seg', ações: 42 }, { day: 'Ter', ações: 55 }, { day: 'Qua', ações: 38 },
-    { day: 'Qui', ações: 61 }, { day: 'Sex', ações: 48 }, { day: 'Sáb', ações: 12 }, { day: 'Dom', ações: 5 },
-  ], []);
-
-  const monthlyGrowth = useMemo(() => [
-    { month: 'Set', clientes: 12, os: 22 }, { month: 'Out', clientes: 14, os: 28 },
-    { month: 'Nov', clientes: 16, os: 25 }, { month: 'Dez', clientes: 18, os: 32 },
-    { month: 'Jan', clientes: 19, os: 35 }, { month: 'Fev', clientes: 20, os: 40 },
-  ], []);
-
   const kpis = [
-    { label: 'Total de Clientes', value: totalClients, icon: Users, color: 'text-primary', bg: 'bg-primary/10', trend: '+12%', up: true },
-    { label: 'Clientes Ativos', value: activeClients, icon: UserCheck, color: 'text-success', bg: 'bg-success/10', trend: `${Math.round((activeClients / totalClients) * 100)}%`, up: true },
-    { label: 'Clientes Inativos', value: inactiveClients, icon: UserX, color: 'text-destructive', bg: 'bg-destructive/10', trend: `${inactiveClients}`, up: false },
-    { label: 'Usuários Ativos', value: 4, icon: Activity, color: 'text-info', bg: 'bg-info/10', trend: '4 online', up: true },
-    { label: 'O.S. em Aberto', value: openNotes, icon: FileText, color: 'text-warning', bg: 'bg-warning/10', trend: `de ${totalNotes}`, up: true },
-    { label: 'Faturamento Total', value: `R$ ${(revenue / 1000).toFixed(0)}k`, icon: TrendingUp, color: 'text-accent', bg: 'bg-accent/10', trend: '+18%', up: true },
+    { label: 'Total de Clientes', value: totalClients, icon: Users, color: 'text-primary', bg: 'bg-primary/10', detail: 'Registros carregados do banco' },
+    { label: 'Clientes Ativos', value: activeClients, icon: UserCheck, color: 'text-success', bg: 'bg-success/10', detail: totalClients > 0 ? `${Math.round((activeClients / totalClients) * 100)}% da base` : 'Sem clientes cadastrados' },
+    { label: 'Clientes Inativos', value: inactiveClients, icon: UserX, color: 'text-destructive', bg: 'bg-destructive/10', detail: `${inactiveClients} registro${inactiveClients === 1 ? '' : 's'}` },
+    { label: 'Atividades Recentes', value: activities.length, icon: Activity, color: 'text-info', bg: 'bg-info/10', detail: 'Eventos carregados do banco' },
+    { label: 'O.S. em Aberto', value: openNotes, icon: FileText, color: 'text-warning', bg: 'bg-warning/10', detail: `de ${totalNotes} O.S. carregadas` },
+    { label: 'Faturamento Finalizado', value: `R$ ${(revenue / 1000).toFixed(0)}k`, icon: TrendingUp, color: 'text-accent', bg: 'bg-accent/10', detail: 'Soma das O.S. finalizadas' },
   ];
 
   const revealProps = (delay: number) => ({
@@ -92,12 +70,7 @@ export default function AdminDashboard() {
                     <p className="text-sm text-muted-foreground font-medium">{kpi.label}</p>
                     <p className="text-3xl font-display font-bold text-foreground">{kpi.value}</p>
                     <div className="flex items-center gap-1.5">
-                      {kpi.up ? (
-                        <ArrowUpRight className="w-3.5 h-3.5 text-success" />
-                      ) : (
-                        <ArrowDownRight className="w-3.5 h-3.5 text-destructive" />
-                      )}
-                      <span className={`text-xs font-medium ${kpi.up ? 'text-success' : 'text-destructive'}`}>{kpi.trend}</span>
+                      <span className="text-xs font-medium text-muted-foreground">{kpi.detail}</span>
                     </div>
                   </div>
                   <div className={`w-11 h-11 rounded-xl ${kpi.bg} flex items-center justify-center`}>
@@ -125,18 +98,14 @@ export default function AdminDashboard() {
               <CardTitle className="text-base flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 text-muted-foreground" />
                 Módulos Mais Utilizados
-                <Badge variant="outline" className="ml-auto text-[10px] uppercase tracking-wide">Amostra</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={moduleUsage} layout="vertical" margin={{ left: 10 }}>
-                  <XAxis type="number" tick={{ fontSize: 11 }} />
-                  <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={120} />
-                  <Tooltip formatter={(v: number) => `${v}% de uso`} />
-                  <Bar dataKey="usage" fill="hsl(var(--primary))" radius={[0, 6, 6, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <SectionEmptyState
+                title="Métrica ainda não instrumentada"
+                description="Este gráfico foi removido da v1 para não exibir dados de amostra como se fossem métricas reais."
+                className="min-h-[280px] border-0 bg-transparent"
+              />
             </CardContent>
           </Card>
 
@@ -194,19 +163,14 @@ export default function AdminDashboard() {
               <CardTitle className="text-base flex items-center gap-2">
                 <Activity className="w-4 h-4 text-muted-foreground" />
                 Atividade Semanal
-                <Badge variant="outline" className="ml-auto text-[10px] uppercase tracking-wide">Amostra</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <AreaChart data={weeklyActivity}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="day" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Area type="monotone" dataKey="ações" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.15)" strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
+              <SectionEmptyState
+                title="Série semanal indisponível"
+                description="O histórico existe, mas ainda falta uma agregação real por dia para alimentar este gráfico."
+                className="min-h-[220px] border-0 bg-transparent"
+              />
             </CardContent>
           </Card>
 
@@ -215,20 +179,14 @@ export default function AdminDashboard() {
               <CardTitle className="text-base flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-muted-foreground" />
                 Crescimento Mensal
-                <Badge variant="outline" className="ml-auto text-[10px] uppercase tracking-wide">Amostra</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={monthlyGrowth}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="clientes" stroke="hsl(var(--primary))" strokeWidth={2} name="Clientes" />
-                  <Line type="monotone" dataKey="os" stroke="hsl(var(--accent))" strokeWidth={2} name="O.S." />
-                </LineChart>
-              </ResponsiveContainer>
+              <SectionEmptyState
+                title="Crescimento real ainda não calculado"
+                description="Sem dados inventados: a v1 mostra apenas indicadores que vêm do banco ou estados vazios honestos."
+                className="min-h-[220px] border-0 bg-transparent"
+              />
             </CardContent>
           </Card>
         </div>
