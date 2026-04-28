@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useAuth } from '@/contexts/AuthContext';
 import { users } from '@/data/seed';
-import { DEFAULT_ROLE_MODULE_CONFIG, loadRoleModuleConfig, saveRoleModuleConfig } from '@/services/auth/moduleAccess';
+import { DEFAULT_ROLE_MODULE_CONFIG } from '@/services/auth/moduleAccess';
 import { Wrench, Building2, Users, Palette, Lock, Upload, Check, FileText, Eye, LayoutGrid, LayoutDashboard, KanbanSquare, Calendar, Receipt, Settings as SettingsIcon, Info } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import OSPreviewModal from '@/components/OSPreviewModal';
@@ -107,13 +107,10 @@ export default function SettingsPage() {
   const [showA4Preview, setShowA4Preview] = useState(false);
 
   // Modules
-  const [moduleConfig, setModuleConfig] = useState<RoleModuleConfig>(loadRoleModuleConfig);
-
-  useEffect(() => {
-    saveRoleModuleConfig(moduleConfig);
-  }, [moduleConfig]);
+  const [moduleConfig, setModuleConfig] = useState<RoleModuleConfig>(DEFAULT_ROLE_MODULE_CONFIG);
 
   const toggleModule = (role: UserRole, mod: keyof typeof DEFAULT_ROLE_MODULE_CONFIG.ADMIN) => {
+    if (!MODULE_SETTINGS_CONNECTED) return;
     setModuleConfig(prev => ({
       ...prev,
       [role]: { ...prev[role], [mod]: !prev[role]?.[mod] },
@@ -173,7 +170,12 @@ export default function SettingsPage() {
         {/* EMPRESA */}
         <TabsContent value="empresa">
           <Card>
-            <CardHeader><CardTitle className="flex items-center gap-2"><Building2 className="w-5 h-5" /> Dados da Empresa</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building2 className="w-5 h-5" /> Dados da Empresa
+                <Badge variant="outline">Prévia local</Badge>
+              </CardTitle>
+            </CardHeader>
             <CardContent className="space-y-5">
               {!COMPANY_SETTINGS_CONNECTED && (
                 <Alert>
@@ -227,7 +229,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
               </div>
-              <Button disabled={!COMPANY_SETTINGS_CONNECTED}>
+              <Button disabled={!COMPANY_SETTINGS_CONNECTED} aria-disabled={!COMPANY_SETTINGS_CONNECTED}>
                 {COMPANY_SETTINGS_CONNECTED ? 'Salvar Alterações' : 'Persistência em implementação'}
               </Button>
             </CardContent>
@@ -238,7 +240,10 @@ export default function SettingsPage() {
         <TabsContent value="modulos">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2"><LayoutGrid className="w-5 h-5" /> Controle de Módulos por Perfil</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <LayoutGrid className="w-5 h-5" /> Controle de Módulos por Perfil
+                <Badge variant="outline">Bloqueado na v1</Badge>
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
               <Alert>
@@ -299,7 +304,12 @@ export default function SettingsPage() {
         {/* APARÊNCIA */}
         <TabsContent value="aparencia">
           <Card>
-            <CardHeader><CardTitle className="flex items-center gap-2"><Palette className="w-5 h-5" /> Tema e Cores</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Palette className="w-5 h-5" /> Tema e Cores
+                <Badge variant="outline">Prévia local</Badge>
+              </CardTitle>
+            </CardHeader>
             <CardContent className="space-y-5">
               {!APPEARANCE_SETTINGS_CONNECTED && (
                 <Alert>
@@ -333,7 +343,10 @@ export default function SettingsPage() {
           <div className="space-y-5">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2"><FileText className="w-5 h-5" /> Modelos da O.S.</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="w-5 h-5" /> Modelos da O.S.
+                  <Badge variant="outline">Prévia local</Badge>
+                </CardTitle>
               </CardHeader>
               <CardContent className="space-y-5">
                 <p className="text-sm text-muted-foreground">
@@ -385,7 +398,10 @@ export default function SettingsPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2"><Palette className="w-4 h-4" /> Cor de Destaque do Documento</CardTitle>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Palette className="w-4 h-4" /> Cor de Destaque do Documento
+                  <Badge variant="outline">Prévia local</Badge>
+                </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <p className="text-sm text-muted-foreground">Escolha a cor principal usada nos cabeçalhos e destaques do documento impresso.</p>
@@ -414,7 +430,12 @@ export default function SettingsPage() {
         {/* SEGURANÇA */}
         <TabsContent value="seguranca">
           <Card>
-            <CardHeader><CardTitle className="flex items-center gap-2"><Lock className="w-5 h-5" /> Alterar Senha</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Lock className="w-5 h-5" /> Alterar Senha
+                <Badge variant="outline">Indisponível</Badge>
+              </CardTitle>
+            </CardHeader>
             <CardContent className="space-y-4 max-w-md">
               {!SECURITY_SETTINGS_CONNECTED && (
                 <Alert>
@@ -428,7 +449,7 @@ export default function SettingsPage() {
               <div><Label>Senha Atual</Label><Input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} className="mt-1.5" placeholder="••••••••" disabled={!SECURITY_SETTINGS_CONNECTED} /></div>
               <div><Label>Nova Senha</Label><Input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="mt-1.5" placeholder="Mínimo 6 caracteres" disabled={!SECURITY_SETTINGS_CONNECTED} /></div>
               <div><Label>Confirmar Nova Senha</Label><Input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="mt-1.5" placeholder="Repita a nova senha" disabled={!SECURITY_SETTINGS_CONNECTED} /></div>
-              <Button onClick={handlePasswordChange} disabled={!SECURITY_SETTINGS_CONNECTED}>
+              <Button onClick={handlePasswordChange} disabled={!SECURITY_SETTINGS_CONNECTED} aria-disabled={!SECURITY_SETTINGS_CONNECTED}>
                 {SECURITY_SETTINGS_CONNECTED ? 'Alterar Senha' : 'Integração em implementação'}
               </Button>
             </CardContent>
@@ -438,7 +459,12 @@ export default function SettingsPage() {
         {/* USUÁRIOS */}
         <TabsContent value="usuarios">
           <Card>
-            <CardHeader><CardTitle className="flex items-center gap-2"><Users className="w-5 h-5" /> Usuários do Sistema</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="w-5 h-5" /> Usuários do Sistema
+                <Badge variant="outline">Lista ilustrativa</Badge>
+              </CardTitle>
+            </CardHeader>
             <CardContent>
               <Alert className="mb-4">
                 <Info className="h-4 w-4" />

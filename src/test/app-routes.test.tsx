@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import App from '@/App';
 import type { AuthSession } from '@/types';
@@ -140,6 +140,29 @@ describe('App routes', () => {
     expect(await screen.findByRole('heading', { name: 'Configurações' })).toBeInTheDocument();
     expect(screen.getByText(/ainda não persistem no backend/i)).toBeInTheDocument();
     expect(screen.getByText(/não deve ser considerado configuração real de produção/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /persistência em implementação/i })).toBeDisabled();
+    expect(screen.getAllByText(/prévia local/i).length).toBeGreaterThan(0);
+    expect(window.localStorage.getItem('moduleConfig')).toBeNull();
+  });
+
+  it('does not expose fake settings persistence or password reset', async () => {
+    authenticateAs('ADMIN');
+    renderAt('/admin/configuracoes');
+
+    expect(await screen.findByRole('heading', { name: 'Configurações' })).toBeInTheDocument();
+
+    const modulesTab = screen.getByRole('tab', { name: /módulos/i });
+    fireEvent.keyDown(modulesTab, { key: 'Enter', code: 'Enter' });
+    await waitFor(() => expect(screen.getAllByText(/permissões reais ainda não conectadas/i).length).toBeGreaterThan(0));
+    for (const toggle of screen.getAllByRole('switch')) {
+      expect(toggle).toBeDisabled();
+    }
+
+    const securityTab = screen.getByRole('tab', { name: /segurança/i });
+    fireEvent.keyDown(securityTab, { key: 'Enter', code: 'Enter' });
+    await waitFor(() => expect(screen.getByText(/fluxo ainda indisponível/i)).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /integração em implementação/i })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /^alterar senha$/i })).not.toBeInTheDocument();
   });
 
   it('redirects /admin/clientes to /admin/usuarios', async () => {

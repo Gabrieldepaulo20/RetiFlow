@@ -931,6 +931,7 @@ Esta lista resume as principais frentes solicitadas pelo usuário ao longo da se
 | Contas a pagar reais | Feito para v1 | CRUD, pagamento, cancelamento, detalhes, histórico, anexos e storage privado conectados |
 | Importação de contas com IA | Feito para v1 | Edge Function com OpenAI, upload/anexo, múltiplos arquivos e status por arquivo; revisão humana continua necessária |
 | Sugestões de e-mail como tab | Feito | Sugestões passaram a usar RPC real e tab no módulo financeiro |
+| Settings segura/informativa | Feito na Fase 9D | Dados da empresa, módulos, aparência, modelos, segurança e usuários ficam marcados como prévia/local/indisponível quando não há backend real |
 | Agrupamento inteligente de parceladas/recorrentes | Parcial | Dados existem/foram previstos, mas UX avançada de agrupamento ainda é melhoria P2/P1 |
 | Logs/histórico reais | Feito | `insert_log` e `get_logs` validados em integration tests |
 | Nota Fiscal fora da v1 | Feito | Menu operacional ocultado e tela transformada em aviso de indisponibilidade sem ações fake |
@@ -1042,6 +1043,7 @@ Fora da v1:
 - Validar bucket `notas` privado com upload real + signed URL no ambiente final.
 - Criar ambiente Supabase separado para integration tests.
 - Persistir configurações da empresa/modelos.
+- Implementar backend real de Settings antes de permitir salvar empresa, tema, logo, modelos, senha ou módulos por essa tela.
 - Auditar permissões server-side por módulo/role em todas as RPCs.
 - Melhorar bundle splitting para `react-pdf`, `xlsx`, charts.
 - Corrigir warnings de lint.
