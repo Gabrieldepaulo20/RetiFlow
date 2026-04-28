@@ -12,8 +12,6 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { pdf } from '@react-pdf/renderer';
-import { ClosingPDFTemplate } from '@/components/closing/ClosingPDFTemplate';
 import { ClosingHtmlPreview } from '@/components/closing/ClosingHtmlPreview';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { openPdfPrintDialog } from '@/lib/printPdf';
@@ -544,6 +542,11 @@ export default function MonthlyClosing() {
   }, []);
 
   const renderClosingPdfBlob = useCallback(async (dados: FechamentoDadosJson, geradoEm: string) => {
+    const [{ pdf }, { ClosingPDFTemplate }] = await Promise.all([
+      import('@react-pdf/renderer'),
+      import('@/components/closing/ClosingPDFTemplate'),
+    ]);
+
     return pdf(<ClosingPDFTemplate dados={dados} geradoEm={geradoEm} />).toBlob();
   }, []);
 
