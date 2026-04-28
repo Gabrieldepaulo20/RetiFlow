@@ -499,6 +499,7 @@ export default function NoteFormCore({
     });
 
     if (editingNote) {
+      try {
       const dbItensEdit = itemPayload.map((item) => ({
         descricao: item.name,
         quantidade: item.quantity,
@@ -555,72 +556,89 @@ export default function NoteFormCore({
 
       toast({ title: `O.S. ${editingNote.number} atualizada com sucesso!` });
       onSuccess(editingNote);
+      } catch (error) {
+        setIsGeneratingPDF(false);
+        toast({
+          title: 'Erro ao atualizar O.S.',
+          description: error instanceof Error ? error.message : 'Tente novamente.',
+          variant: 'destructive',
+        });
+      }
       return;
     }
 
-    const dbItens = itemPayload.map((item) => ({
-      descricao: item.name,
-      quantidade: item.quantity,
-      valor: item.unitPrice,
-      desconto: item.discount,
-      detalhes: item.description !== item.name ? item.description : undefined,
-    }));
+    try {
+      const dbItens = itemPayload.map((item) => ({
+        descricao: item.name,
+        quantidade: item.quantity,
+        valor: item.unitPrice,
+        desconto: item.discount,
+        detalhes: item.description !== item.name ? item.description : undefined,
+      }));
 
-    const note = await addNote(
-      { ...payload, number: normalizeNoteNumber(osNumber), deadline: prazo || undefined },
-      dbItens,
-    );
-    itemPayload.forEach((item) => {
-      if (noteType === 'SERVICO') {
-        addService({
-          noteId: note.id,
-          name: item.name,
-          description: item.description,
-          price: item.price,
-          quantity: item.quantity,
-          subtotal: item.subtotal,
-        });
-      } else {
-        addProduct({
-          noteId: note.id,
-          name: item.name,
-          unitPrice: item.unitPrice,
-          quantity: item.quantity,
-          subtotal: item.subtotal,
-        });
-      }
-    });
-
-    if (parentNoteId) {
-      const parent = notes.find((n) => n.id === parentNoteId);
-      if (parent && parent.status !== 'AGUARDANDO_COMPRA') {
-        void updateNote(parentNoteId, { previousStatus: parent.status, status: 'AGUARDANDO_COMPRA' });
-      }
-    }
-
-    // Generate and persist PDF (real mode only; non-blocking on failure)
-    if (IS_REAL_AUTH) {
-      setIsGeneratingPDF(true);
-      try {
-        const detalhes = await getNotaServicoDetalhes(note.id);
-        if (detalhes) {
-          const blob = await generateNotaPdfBlob(detalhes);
-          const url = await uploadNotaPDF(blob, note.number);
-          await updateNotaPdfUrl(note.id, url);
+      const note = await addNote(
+        { ...payload, number: normalizeNoteNumber(osNumber), deadline: prazo || undefined },
+        dbItens,
+      );
+      itemPayload.forEach((item) => {
+        if (noteType === 'SERVICO') {
+          addService({
+            noteId: note.id,
+            name: item.name,
+            description: item.description,
+            price: item.price,
+            quantity: item.quantity,
+            subtotal: item.subtotal,
+          });
         } else {
-          console.error('[PDF] getNotaServicoDetalhes retornou null para', note.id);
-          toast({ title: 'Aviso: PDF não gerado', description: 'Detalhes da OS não encontrados.', variant: 'destructive' });
+          addProduct({
+            noteId: note.id,
+            name: item.name,
+            unitPrice: item.unitPrice,
+            quantity: item.quantity,
+            subtotal: item.subtotal,
+          });
         }
-      } catch (err) {
-        console.error('[PDF] Erro ao gerar/salvar PDF na criação:', err);
-        toast({ title: 'Aviso: PDF não gerado', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
-      } finally {
-        setIsGeneratingPDF(false);
-      }
-    }
+      });
 
-    toast({ title: `O.S. ${note.number} criada com sucesso!` });
-    onSuccess(note);
+      if (parentNoteId) {
+        const parent = notes.find((n) => n.id === parentNoteId);
+        if (parent && parent.status !== 'AGUARDANDO_COMPRA') {
+          void updateNote(parentNoteId, { previousStatus: parent.status, status: 'AGUARDANDO_COMPRA' });
+        }
+      }
+
+      // Generate and persist PDF (real mode only; non-blocking on failure)
+      if (IS_REAL_AUTH) {
+        setIsGeneratingPDF(true);
+        try {
+          const detalhes = await getNotaServicoDetalhes(note.id);
+          if (detalhes) {
+            const blob = await generateNotaPdfBlob(detalhes);
+            const url = await uploadNotaPDF(blob, note.number);
+            await updateNotaPdfUrl(note.id, url);
+          } else {
+            console.error('[PDF] getNotaServicoDetalhes retornou null para', note.id);
+            toast({ title: 'Aviso: PDF não gerado', description: 'Detalhes da OS não encontrados.', variant: 'destructive' });
+          }
+        } catch (err) {
+          console.error('[PDF] Erro ao gerar/salvar PDF na criação:', err);
+          toast({ title: 'Aviso: PDF não gerado', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
+        } finally {
+          setIsGeneratingPDF(false);
+        }
+      }
+
+      toast({ title: `O.S. ${note.number} criada com sucesso!` });
+      onSuccess(note);
+    } catch (error) {
+      setIsGeneratingPDF(false);
+      toast({
+        title: 'Erro ao criar O.S.',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    }
   };
 
   /* ─────────────────── JSX Sections ─────────────────── */

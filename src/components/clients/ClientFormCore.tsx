@@ -329,9 +329,17 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
         return;
       }
       const created = await addClient(payload);
+      toast({
+        title: 'Cliente criado com sucesso!',
+        description: `${created.name} já está disponível no cadastro.`,
+      });
       onSuccess(created);
-    } catch {
-      toast({ title: 'Erro ao salvar cliente', description: 'Tente novamente.', variant: 'destructive' });
+    } catch (error) {
+      toast({
+        title: editingClient ? 'Erro ao atualizar cliente' : 'Erro ao criar cliente',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
