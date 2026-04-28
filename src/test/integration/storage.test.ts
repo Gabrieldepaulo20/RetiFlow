@@ -10,6 +10,7 @@ if (skipIntegration) warnIntegrationSkipped('storage.test');
 describe.skipIf(skipIntegration)('Storage — PDFs e anexos privados com signed URL', () => {
   const fechamentoPaths: string[] = [];
   const payableAttachmentPaths: string[] = [];
+  const notaPaths: string[] = [];
 
   beforeAll(async () => {
     const { testUserEmail, testUserPassword } = getTestEnv();
@@ -24,6 +25,9 @@ describe.skipIf(skipIntegration)('Storage — PDFs e anexos privados com signed 
     }
     if (payableAttachmentPaths.length > 0) {
       await service.storage.from('contas-pagar').remove(payableAttachmentPaths);
+    }
+    if (notaPaths.length > 0) {
+      await service.storage.from('notas').remove(notaPaths);
     }
     await cleanupAll();
     const { testUserEmail } = getTestEnv();
@@ -115,5 +119,47 @@ describe.skipIf(skipIntegration)('Storage — PDFs e anexos privados com signed 
       client.auth.signOut(),
       supabase.auth.signOut(),
     ]);
+  });
+
+  it('uploadNotaPDF salva path privado e getNotaPDFSignedUrl permite leitura real', async () => {
+    const { testUserEmail, testUserPassword } = getTestEnv();
+    const service = createServiceClient();
+    const [{ supabase }, notasApi] = await Promise.all([
+      import('@/lib/supabase'),
+      import('@/api/supabase/notas'),
+    ]);
+
+    const bucket = await service.storage.getBucket('notas');
+    expect(bucket.error).toBeNull();
+    expect(bucket.data?.public).toBe(false);
+    expect(bucket.data?.allowed_mime_types).toContain('application/pdf');
+
+    const login = await supabase.auth.signInWithPassword({
+      email: testUserEmail,
+      password: testUserPassword,
+    });
+    expect(login.error).toBeNull();
+
+    const osNumero = `OS-INT-${crypto.randomUUID()}`;
+    const pdfBlob = new Blob(['%PDF-1.4\n% integration test nota\n'], { type: 'application/pdf' });
+    const path = await notasApi.uploadNotaPDF(pdfBlob, osNumero);
+    notaPaths.push(path);
+
+    expect(path).toMatch(/^notas\/\d{4}\/\d{2}\/OS-INT-/);
+    expect(path.startsWith('http')).toBe(false);
+
+    const signedUrl = await notasApi.getNotaPDFSignedUrl(path);
+    expect(signedUrl).toContain('/storage/v1/object/sign/notas/');
+
+    const response = await fetch(signedUrl!);
+    expect(response.ok).toBe(true);
+    expect(await response.text()).toContain('integration test nota');
+
+    const projectUrl = getTestEnv().url;
+    const legacyPublicUrl = `${projectUrl}/storage/v1/object/public/notas/${encodeURIComponent(path).replace(/%2F/g, '/')}`;
+    const signedFromLegacy = await notasApi.getNotaPDFSignedUrl(legacyPublicUrl);
+    expect(signedFromLegacy).toContain('/storage/v1/object/sign/notas/');
+
+    await supabase.auth.signOut();
   });
 });

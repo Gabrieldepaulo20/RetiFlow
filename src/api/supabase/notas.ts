@@ -209,11 +209,11 @@ export async function uploadNotaPDF(blob: Blob, osNumero: string): Promise<strin
   const path = `notas/${ano}/${mes}/OS-${numeroNormalizado}.pdf`;
   const { error } = await supabase.storage.from(NOTAS_BUCKET).upload(path, blob, {
     contentType: 'application/pdf',
+    cacheControl: '3600',
     upsert: true,
   });
   if (error) throw new Error(`[uploadNotaPDF] ${error.message}`);
-  const { data } = supabase.storage.from(NOTAS_BUCKET).getPublicUrl(path);
-  return data.publicUrl;
+  return path;
 }
 
 export async function getNotasCompra(params?: {

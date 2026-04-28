@@ -46,7 +46,7 @@ Avisos ainda existentes:
 
 - `npm run lint` tem 8 warnings antigos de Fast Refresh em componentes UI/AuthContext; o warning de dependência de hook em `NoteFormCore.tsx` foi corrigido.
 - Build alerta chunks grandes, especialmente `react-pdf.browser`, `xlsx`, charts e bundle principal.
-- O bucket `notas` retorna URL pública atualmente; isso deve ser revisto para produção com dados sensíveis.
+- Fase 9B prepara `notas` como bucket privado: novos PDFs de O.S. salvam path em `pdf_url` e a leitura usa signed URL sob demanda.
 - Tokens Supabase ficam no navegador, como em qualquer SPA com Supabase Auth. Isso exige CSP forte, ausência de XSS e RPC/RLS bem feitos no banco.
 
 ---
@@ -394,12 +394,13 @@ Sobre formas normais:
 |---|---:|---|---|
 | `contas-pagar` | Não | Anexos de contas a pagar; PDF, imagens, DOC/DOCX | Criado por migration; policies para authenticated; signed URL de 10 min |
 | `fechamentos` | Não | PDFs de fechamento mensal | Usado com signed URL de 1h; integration test valida upload e leitura |
-| `notas` | Atualmente retorna public URL | PDFs de O.S./nota de serviço | Funciona, mas deve ser considerado risco de privacidade se documentos contêm dados pessoais |
+| `notas` | Não, após migration `20260428110000_private_notas_storage.sql` | PDFs de O.S./nota de serviço | Novos PDFs salvam path em `pdf_url`; leitura usa signed URL de 1h; URLs públicas legadas parseáveis continuam compatíveis |
 
 Recomendação:
 
-- Migrar `notas` para bucket privado com signed URLs, como `fechamentos` e `contas-pagar`.
+- Aplicar a migration do bucket `notas` antes da produção ampla.
 - Padronizar caminhos por ano/mês/entidade e limpar arquivos órfãos quando registros forem removidos/cancelados.
+- Limitação atual: paths de `notas` não carregam tenant/cliente/usuário; as policies mínimas permitem acesso ao bucket para usuários autenticados. Para isolamento fino por cliente/unidade será necessária uma modelagem adicional de path + policy.
 
 ### 6.6 Edge Function `analisar-conta-pagar`
 
@@ -544,7 +545,7 @@ Funcionalidades:
 - atualizar status;
 - visualizar detalhes;
 - gerar PDF no frontend;
-- salvar URL do PDF no banco via `update_nota_pdf_url`;
+- salvar path do PDF no banco via `update_nota_pdf_url`;
 - preview alinhado ao template final.
 
 Validações frontend:
@@ -555,7 +556,7 @@ Validações frontend:
 
 Riscos:
 
-- Bucket `notas` retorna URL pública.
+- Bucket `notas` depende da migration `20260428110000_private_notas_storage.sql` aplicada em produção para ficar privado.
 - Preview/impressão deve continuar sendo validado manualmente com PDFs reais e telas diferentes.
 - Alguns fallbacks locais ainda existem em `NoteDetailModal` para montar PDF se RPC não retornar detalhes.
 
@@ -782,7 +783,7 @@ Recomendação:
 | Access token no navegador | XSS pode roubar token e chamar RPCs | CSP forte, evitar scripts externos, auditoria XSS, RLS/RPC estritos |
 | Access/refresh token persistidos pelo Supabase SDK | Normal em SPA, mas XSS ainda pode roubar/usar sessão | CSP forte, evitar scripts externos, auditoria XSS, RPC/RLS estritos |
 | Proteção de rota só no frontend | Atacante com token pode chamar RPC direto | Validar role/módulo também no banco |
-| Bucket `notas` público | PDFs de O.S. podem conter PII | Migrar para bucket privado + signed URL |
+| Bucket `notas` sem migration aplicada | PDFs de O.S. podem ficar públicos se o bucket ainda estiver público no projeto real | Aplicar migration `20260428110000_private_notas_storage.sql` e validar signed URL |
 | CORS sem allowlist configurada na Edge Function | Mantém compatibilidade com `*`; com env configurada restringe origem | Definir `CORS_ALLOWED_ORIGINS`/`ALLOWED_ORIGINS` no projeto Supabase de produção |
 | Configurações locais | Usuário pode achar que salvou configuração real | Manter avisos/desabilitar salvar até persistir |
 | Nota Fiscal fora da v1 | Usuário pode pedir/esperar uso fiscal | Manter bloqueada/indisponível até existir implementação real |
@@ -922,7 +923,7 @@ Esta lista resume as principais frentes solicitadas pelo usuário ao longo da se
 |---|---|---|
 | Entender contexto Retiflow/Supabase/Amplify/Git | Feito | Contexto consolidado neste arquivo; deploy segue GitHub/main via Amplify |
 | Clientes reais no Supabase | Feito para v1 | CRUD principal, ativar/desativar e validações CPF/CNPJ estão conectados |
-| Notas de serviço/O.S. reais | Feito para v1 | Criação, edição, status, detalhe, PDF e preview estão conectados; bucket `notas` ainda deve migrar para privado |
+| Notas de serviço/O.S. reais | Feito para v1 | Criação, edição, status, detalhe, PDF e preview estão conectados; novos PDFs salvam path no bucket privado `notas` e são acessados via signed URL |
 | Template de O.S. parecido com sistema antigo | Feito parcialmente/validar manualmente | Template foi ajustado, mas impressão precisa continuar sendo validada em telas/impressoras reais |
 | Preview de O.S. rápido e correto | Melhorado | Modal usa preview visual do template final; ainda é ponto sensível para QA manual em Mac, desktop e celular |
 | Fechamento mensal com rascunho e geração real | Feito para v1 | Rascunho local, geração real, PDF privado e signed URL; performance de preview ainda deve ser observada |
@@ -980,7 +981,7 @@ Veredito:
 
 - Pode publicar para piloto controlado, excluindo Nota Fiscal.
 - Não declarar 100% produção ampla sem:
-  - revisar bucket `notas`;
+  - aplicar e validar a migration do bucket `notas`;
   - validar manualmente impressão/PDF;
   - auditar todas as RPCs no banco para permissões;
   - finalizar settings ou esconder partes locais;
@@ -1038,7 +1039,7 @@ Fora da v1:
 
 ### P1 logo após piloto
 
-- Migrar bucket `notas` para privado.
+- Validar bucket `notas` privado com upload real + signed URL no ambiente final.
 - Criar ambiente Supabase separado para integration tests.
 - Persistir configurações da empresa/modelos.
 - Auditar permissões server-side por módulo/role em todas as RPCs.
@@ -1062,7 +1063,7 @@ Perguntas úteis para uma próxima auditoria:
 1. O schema `RetificaPremium` está totalmente protegido por RLS ou por RPCs `SECURITY DEFINER` com checks adequados?
 2. Alguma RPC `SECURITY DEFINER` permite alteração sem validar `auth.uid()`?
 3. As permissões de módulos (`Modulos`) são aplicadas no banco ou só no frontend?
-4. O bucket `notas` deve ser privado antes do piloto?
+4. A migration do bucket `notas` privado já foi aplicada e validada no Supabase de produção?
 5. A configuração `CORS_ALLOWED_ORIGINS`/`ALLOWED_ORIGINS` já está definida no Supabase de produção?
 6. Há risco de escalation entre usuários financeiros/admin via RPC?
 7. O fechamento mensal deve ter tabela normalizada de itens ou `dados_json` snapshot é suficiente para o negócio?

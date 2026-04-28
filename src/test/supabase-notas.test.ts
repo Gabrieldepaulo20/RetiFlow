@@ -4,6 +4,7 @@ import { extractNotaStoragePath, getNotaPDFSignedUrl } from '@/api/supabase/nota
 const mocks = vi.hoisted(() => ({
   from: vi.fn(),
   createSignedUrl: vi.fn(),
+  upload: vi.fn(),
 }));
 
 vi.mock('@/lib/supabase', () => ({
@@ -18,8 +19,10 @@ describe('Notas Supabase PDF storage helpers', () => {
   beforeEach(() => {
     mocks.from.mockReset();
     mocks.createSignedUrl.mockReset();
+    mocks.upload.mockReset();
     mocks.from.mockReturnValue({
       createSignedUrl: mocks.createSignedUrl,
+      upload: mocks.upload,
     });
   });
 
@@ -101,5 +104,25 @@ describe('Notas Supabase PDF storage helpers', () => {
     });
 
     await expect(getNotaPDFSignedUrl('notas/2026/04/OS-1.pdf')).resolves.toBeNull();
+  });
+
+  it('uploadNotaPDF stores the PDF and returns storage path instead of public URL', async () => {
+    const { uploadNotaPDF } = await import('@/api/supabase/notas');
+    mocks.upload.mockResolvedValue({ data: { path: 'notas/2026/04/OS-123.pdf' }, error: null });
+
+    const path = await uploadNotaPDF(new Blob(['%PDF-1.4 test'], { type: 'application/pdf' }), 'OS-123');
+
+    expect(path).toMatch(/^notas\/\d{4}\/\d{2}\/OS-123\.pdf$/);
+    expect(path.startsWith('http')).toBe(false);
+    expect(mocks.from).toHaveBeenCalledWith('notas');
+    expect(mocks.upload).toHaveBeenCalledWith(
+      expect.stringMatching(/^notas\/\d{4}\/\d{2}\/OS-123\.pdf$/),
+      expect.any(Blob),
+      {
+        contentType: 'application/pdf',
+        cacheControl: '3600',
+        upsert: true,
+      },
+    );
   });
 });

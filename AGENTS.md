@@ -78,8 +78,8 @@ Quando a mudança tocar integração real:
 - Prefira RPC existente quando ela já representa o contrato de negócio.
 - Não criar migration destrutiva sem plano, rollback e aprovação.
 - Não mudar policy, RLS ou bucket privacy sem plano de compatibilidade.
-- Buckets sensíveis como `contas-pagar` e `fechamentos` devem permanecer privados.
-- O bucket `notas` ainda requer atenção de segurança quando houver plano para migrar de URL pública para signed URL.
+- Buckets sensíveis como `contas-pagar`, `fechamentos` e `notas` devem permanecer privados.
+- PDFs de O.S. no bucket `notas` devem salvar path em `pdf_url` e resolver signed URL sob demanda; manter compatibilidade com URLs públicas legadas parseáveis.
 
 ## Performance E Bundle
 
