@@ -8,7 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { getNotaServicoDetalhes, type NotaServicoDetalhesItem, type NotaServicoDetalhes } from '@/api/supabase/notas';
+import { getNotaPDFSignedUrl, getNotaServicoDetalhes, type NotaServicoDetalhesItem, type NotaServicoDetalhes } from '@/api/supabase/notas';
 import { PDFViewer, pdf } from '@react-pdf/renderer';
 import { NotaPDFTemplate } from '@/components/notes/NotaPDFTemplate';
 import {
@@ -921,21 +921,33 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
                 variant="outline"
                 className="h-8 gap-1.5 text-xs"
                 onClick={async () => {
-                  const storedUrl = pdfDados.cabecalho.pdf_url;
-                  if (storedUrl) {
-                    const a = document.createElement('a');
-                    a.href = storedUrl;
-                    a.download = `OS-${pdfDados.cabecalho.os_numero}.pdf`;
-                    a.target = '_blank';
-                    a.click();
-                  } else {
-                    const blob = await pdf(<NotaPDFTemplate dados={pdfDados} />).toBlob();
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `OS-${pdfDados.cabecalho.os_numero}.pdf`;
-                    a.click();
-                    URL.revokeObjectURL(url);
+                  try {
+                    const storedUrl = pdfDados.cabecalho.pdf_url;
+                    if (storedUrl) {
+                      const resolvedUrl = await getNotaPDFSignedUrl(storedUrl);
+                      if (!resolvedUrl) {
+                        throw new Error('Não foi possível preparar o link seguro do PDF.');
+                      }
+                      const a = document.createElement('a');
+                      a.href = resolvedUrl;
+                      a.download = `OS-${pdfDados.cabecalho.os_numero}.pdf`;
+                      a.target = '_blank';
+                      a.click();
+                    } else {
+                      const blob = await pdf(<NotaPDFTemplate dados={pdfDados} />).toBlob();
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `OS-${pdfDados.cabecalho.os_numero}.pdf`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }
+                  } catch (error) {
+                    toast({
+                      title: 'Não foi possível baixar o PDF',
+                      description: error instanceof Error ? error.message : 'Tente novamente.',
+                      variant: 'destructive',
+                    });
                   }
                 }}
               >

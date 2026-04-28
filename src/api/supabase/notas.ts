@@ -1,6 +1,9 @@
 import { callRPC } from './_base';
 import { NoteStatus, NoteType, IntakeNote, STATUS_LABELS } from '@/types';
 
+const NOTAS_BUCKET = 'notas';
+const DEFAULT_NOTA_PDF_SIGNED_URL_TTL = 60 * 60;
+
 export interface NotaServico {
   id_notas_servico: string;
   os: string;
@@ -136,6 +139,67 @@ export async function updateNotaPdfUrl(idNota: string, pdfUrl: string): Promise<
   await callRPC('update_nota_pdf_url', { p_id_nota: idNota, p_pdf_url: pdfUrl });
 }
 
+export function extractNotaStoragePath(pathOrUrl: string | null | undefined): string | null {
+  const value = pathOrUrl?.trim();
+  if (!value || value.startsWith('blob:')) return null;
+
+  const normalizePath = (path: string) => {
+    const decoded = decodeURIComponent(path)
+      .replace(/^\/+/, '')
+      .replace(/^object\/(?:public|sign)\/notas\//, '');
+
+    return decoded || null;
+  };
+
+  if (!/^https?:\/\//i.test(value)) {
+    return normalizePath(value);
+  }
+
+  try {
+    const url = new URL(value);
+    const publicMarker = `/storage/v1/object/public/${NOTAS_BUCKET}/`;
+    const signedMarker = `/storage/v1/object/sign/${NOTAS_BUCKET}/`;
+    const marker = url.pathname.includes(publicMarker)
+      ? publicMarker
+      : url.pathname.includes(signedMarker)
+        ? signedMarker
+        : null;
+
+    if (!marker) return null;
+
+    const [, storagePath = ''] = url.pathname.split(marker);
+    return normalizePath(storagePath);
+  } catch {
+    return null;
+  }
+}
+
+export async function getNotaPDFSignedUrl(
+  pathOrUrl: string | null | undefined,
+  expiresIn = DEFAULT_NOTA_PDF_SIGNED_URL_TTL,
+): Promise<string | null> {
+  const value = pathOrUrl?.trim();
+  if (!value) return null;
+  if (value.startsWith('blob:')) return value;
+
+  const path = extractNotaStoragePath(value);
+  if (!path) {
+    return /^https?:\/\//i.test(value) ? value : null;
+  }
+
+  const { supabase } = await import('@/lib/supabase');
+  const { data, error } = await supabase.storage
+    .from(NOTAS_BUCKET)
+    .createSignedUrl(path, expiresIn);
+
+  if (error || !data?.signedUrl) {
+    if (/^https?:\/\//i.test(value)) return value;
+    return null;
+  }
+
+  return data.signedUrl;
+}
+
 export async function uploadNotaPDF(blob: Blob, osNumero: string): Promise<string> {
   const { supabase } = await import('@/lib/supabase');
   const now = new Date();
@@ -143,12 +207,12 @@ export async function uploadNotaPDF(blob: Blob, osNumero: string): Promise<strin
   const mes = String(now.getMonth() + 1).padStart(2, '0');
   const numeroNormalizado = osNumero.replace(/^OS-/i, '').replace(/[^\dA-Za-z-]/g, '') || osNumero;
   const path = `notas/${ano}/${mes}/OS-${numeroNormalizado}.pdf`;
-  const { error } = await supabase.storage.from('notas').upload(path, blob, {
+  const { error } = await supabase.storage.from(NOTAS_BUCKET).upload(path, blob, {
     contentType: 'application/pdf',
     upsert: true,
   });
   if (error) throw new Error(`[uploadNotaPDF] ${error.message}`);
-  const { data } = supabase.storage.from('notas').getPublicUrl(path);
+  const { data } = supabase.storage.from(NOTAS_BUCKET).getPublicUrl(path);
   return data.publicUrl;
 }
 

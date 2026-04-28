@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { getNotaServicoDetalhes, type NotaServicoDetalhes } from '@/api/supabase/notas';
+import { getNotaPDFSignedUrl, getNotaServicoDetalhes, type NotaServicoDetalhes } from '@/api/supabase/notas';
 import { pdf } from '@react-pdf/renderer';
 import { NotaPDFTemplate } from '@/components/notes/NotaPDFTemplate';
 
@@ -94,7 +94,7 @@ export default function IntakeNoteDetail() {
     const message = [
       `Olá, ${client?.name ?? 'cliente'}!`,
       `Segue atualização da O.S. ${note.number}.`,
-      note.pdfUrl ? `PDF: ${note.pdfUrl}` : null,
+      note.pdfUrl ? 'O PDF da O.S. está disponível no sistema.' : null,
     ].filter(Boolean).join('\n');
     const url = buildWhatsAppUrl(client?.phone, message);
 
@@ -146,8 +146,12 @@ export default function IntakeNoteDetail() {
               setIsDownloadingPDF(true);
               try {
                 if (source?.cabecalho.pdf_url) {
+                  const resolvedUrl = await getNotaPDFSignedUrl(source.cabecalho.pdf_url);
+                  if (!resolvedUrl) {
+                    throw new Error('Não foi possível preparar o link seguro do PDF.');
+                  }
                   const a = document.createElement('a');
-                  a.href = source.cabecalho.pdf_url;
+                  a.href = resolvedUrl;
                   a.download = `OS-${source.cabecalho.os_numero}.pdf`;
                   a.target = '_blank';
                   a.click();
@@ -162,6 +166,12 @@ export default function IntakeNoteDetail() {
                 } else {
                   toast({ title: 'Imprimir indisponível em modo demo' });
                 }
+              } catch (error) {
+                toast({
+                  title: 'Não foi possível abrir o PDF',
+                  description: error instanceof Error ? error.message : 'Tente novamente.',
+                  variant: 'destructive',
+                });
               } finally {
                 setIsDownloadingPDF(false);
               }

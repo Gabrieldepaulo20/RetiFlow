@@ -21,6 +21,7 @@ import { noteMatchesNumericQuery } from '@/lib/noteNumbers';
 import { cn } from '@/lib/utils';
 import { buildWhatsAppUrl, openExternalUrl } from '@/lib/browserShare';
 import { format } from 'date-fns';
+import { getNotaPDFSignedUrl } from '@/api/supabase/notas';
 
 function initStatusFilters(searchParams: URLSearchParams): Set<string> {
   const raw = searchParams.get('status');
@@ -42,6 +43,7 @@ export default function IntakeNotes() {
   const [detailNoteId, setDetailNoteId] = useState<string | null>(null);
   const [newNoteOpen, setNewNoteOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<IntakeNote | null>(null);
+  const [resolvingPdfNoteId, setResolvingPdfNoteId] = useState<string | null>(null);
 
   const toggleStatusFilter = (key: string) => {
     setStatusFilters(prev => {
@@ -111,6 +113,38 @@ export default function IntakeNotes() {
       return true;
     }).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [notes, debouncedSearch, statusFilters, clientFilter, monthFilter, yearFilter, clients]);
+
+  const handleDownloadNotePDF = async (note: IntakeNote) => {
+    if (!note.pdfUrl) {
+      toast({
+        title: 'PDF ainda não gerado',
+        description: 'Abra e salve a O.S. para gerar o PDF.',
+      });
+      return;
+    }
+
+    setResolvingPdfNoteId(note.id);
+    try {
+      const url = await getNotaPDFSignedUrl(note.pdfUrl);
+      if (!url) {
+        throw new Error('Não foi possível preparar o link seguro do PDF.');
+      }
+
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `OS-${note.number}.pdf`;
+      link.target = '_blank';
+      link.click();
+    } catch (error) {
+      toast({
+        title: 'Não foi possível baixar a nota',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setResolvingPdfNoteId(null);
+    }
+  };
 
   const exportFilteredNotes = async () => {
     if (filtered.length === 0) {
@@ -479,20 +513,8 @@ export default function IntakeNotes() {
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
-                              onClick={() => {
-                                if (n.pdfUrl) {
-                                  const a = document.createElement('a');
-                                  a.href = n.pdfUrl;
-                                  a.download = `OS-${n.number}.pdf`;
-                                  a.target = '_blank';
-                                  a.click();
-                                } else {
-                                  toast({
-                                    title: 'PDF ainda não gerado',
-                                    description: 'Abra e salve a O.S. para gerar o PDF.',
-                                  });
-                                }
-                              }}
+                              disabled={resolvingPdfNoteId === n.id}
+                              onClick={() => void handleDownloadNotePDF(n)}
                             >
                               <Download className="w-4 h-4 mr-2" /> Baixar nota
                             </DropdownMenuItem>
@@ -503,7 +525,7 @@ export default function IntakeNotes() {
                                   [
                                     `Olá, ${client?.name ?? 'cliente'}!`,
                                     `Segue atualização da O.S. ${n.number}.`,
-                                    n.pdfUrl ? `PDF: ${n.pdfUrl}` : null,
+                                    n.pdfUrl ? 'O PDF da O.S. está disponível no sistema.' : null,
                                   ].filter(Boolean).join('\n'),
                                 );
 
