@@ -29,7 +29,9 @@ test.describe('Módulo de Contas a Pagar', () => {
     await expect(page.getByRole('heading', { name: /Nova conta a pagar/i })).toBeVisible();
 
     await page.getByPlaceholder(/Ex.: Boleto peças/i).fill('Aluguel Julho');
+    await page.getByPlaceholder(/Digite ou escolha um fornecedor/i).fill('Fornecedor Teste');
     await page.getByPlaceholder(/0,00/i).first().fill('3000');
+    await page.locator('input[type="date"]').fill('2026-12-31');
 
     await page.getByRole('button', { name: /Salvar conta/i }).click();
 

@@ -36,24 +36,23 @@ test.describe('Módulo de Clientes', () => {
     await expect(page.getByRole('heading', { name: /Novo cliente/i })).toBeVisible();
 
     // Nome
-    await page.fill('input[placeholder*="Nome completo"]', 'Cliente Teste E2E');
+    await page.getByLabel(/Nome completo/i).fill('Cliente Teste E2E');
     
     // Documento (Masked) - Usamos type para disparar a máscara corretamente
-    await page.locator('input[name="docNumber"], input:below(:text("CPF"))').first().type('12345678901', { delay: 50 });
+    await page.getByLabel(/CPF/i).type('11171313004', { delay: 50 });
     
     // Telefone
-    await page.fill('input[placeholder="(00) 00000-0000"]', '11999998888');
+    await page.getByLabel(/Telefone/i).fill('11999998888');
 
-    // CEP (Masked) - Dispara busca automática
-    await page.fill('input[placeholder="00000-000"]', '01310-930');
-    // Clica no botão de busca se não for automático ou apenas espera a hidratação
-    await page.keyboard.press('Tab');
-    
+    // CEP (Masked) - Dispara busca
+    await page.getByRole('textbox', { name: /CEP/i }).fill('01310-930');
+    await page.getByRole('button', { name: /buscar CEP/i }).click();
+
     // Espera preencher endereço (Av. Paulista em 01310-930)
-    await expect(page.locator('input[value*="Paulista"]')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByLabel(/Logradouro/i)).toHaveValue(/Paulista/i, { timeout: 10000 });
     
     // Número
-    await page.fill('input[placeholder="142"]', '1000');
+    await page.getByLabel(/Número/i).fill('1000');
     
     await page.getByRole('button', { name: /Salvar/i }).click();
 

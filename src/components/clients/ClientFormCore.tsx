@@ -103,19 +103,24 @@ function Field({
   hint,
   required,
   children,
+  htmlFor,
 }: {
   label: string;
   hint?: string;
   required?: boolean;
   children: ReactNode;
+  htmlFor?: string;
 }) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-2 leading-none">
-        <span className="text-[12.5px] font-semibold text-foreground/90">
+        <label 
+          htmlFor={htmlFor}
+          className="text-[12.5px] font-semibold text-foreground/90 cursor-default"
+        >
           {label}
           {required && <span className="ml-0.5 text-destructive">*</span>}
-        </span>
+        </label>
         {hint && (
           <span className="text-[10.5px] text-muted-foreground/70 tabular-nums shrink-0">{hint}</span>
         )}
@@ -131,17 +136,20 @@ function LookupButton({
   disabled,
   wide,
   onClick,
+  ariaLabel,
 }: {
   loading: boolean;
   disabled: boolean;
   wide?: boolean;
   onClick: () => void;
+  ariaLabel?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
+      aria-label={ariaLabel}
       className={cn(
         'shrink-0 flex items-center justify-center gap-1.5 rounded-lg border border-border/70',
         'bg-muted/35 text-foreground/80 transition-all h-10 shadow-sm',
@@ -329,6 +337,7 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
         return;
       }
       const created = await addClient(payload);
+      toast({ title: 'Cliente cadastrado com sucesso!' });
       onSuccess(created);
     } catch {
       toast({ title: 'Erro ao salvar cliente', description: 'Tente novamente.', variant: 'destructive' });
@@ -389,9 +398,10 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
                 </Select>
               </Field>
 
-              <Field label={docLabel} required>
+              <Field label={docLabel} required htmlFor="docNumber">
                 <div className="flex gap-1.5">
                   <Input
+                    id="docNumber"
                     className={cn(inputBase, 'flex-1 font-mono text-sm tracking-wide')}
                     value={form.docNumber}
                     onChange={(e) =>
@@ -407,6 +417,7 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
                       disabled={!canLookupCnpj || cnpjLoading}
                       wide
                       onClick={() => void handleCnpjLookup()}
+                      ariaLabel="Buscar CNPJ"
                     />
                   )}
                 </div>
@@ -415,9 +426,11 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
               <Field
                 label={isCompany ? 'Razão social' : 'Nome completo'}
                 required
+                htmlFor="name"
                 hint={`${form.name.length}/${CUSTOMER_FIELD_LIMITS.name}`}
               >
                 <Input
+                  id="name"
                   className={inputBase}
                   value={form.name}
                   onChange={(e) => {
@@ -437,9 +450,11 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
               {isCompany && (
                 <Field
                   label="Nome fantasia"
+                  htmlFor="tradeName"
                   hint={`${(form.tradeName || '').length}/${CUSTOMER_FIELD_LIMITS.tradeName}`}
                 >
                   <Input
+                    id="tradeName"
                     className={inputBase}
                     value={form.tradeName || ''}
                     onChange={(e) =>
@@ -449,10 +464,11 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
                   />
                 </Field>
               )}
-              <Field label="Telefone / WhatsApp">
+              <Field label="Telefone / WhatsApp" htmlFor="phone">
                 <div className="relative">
                   <Phone className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/55" />
                   <Input
+                    id="phone"
                     className={cn(inputBase, 'pl-9')}
                     value={form.phone}
                     onChange={(e) => set('phone', formatPhone(e.target.value))}
@@ -461,10 +477,11 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
                   />
                 </div>
               </Field>
-              <Field label="E-mail">
+              <Field label="E-mail" htmlFor="email">
                 <div className="relative">
                   <Mail className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/55" />
                   <Input
+                    id="email"
                     type="email"
                     className={cn(inputBase, 'pl-9')}
                     value={form.email}
@@ -484,11 +501,12 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
 
             {/* Row 1: CEP + Número + Logradouro (tudo na mesma linha) */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-[200px_88px_1fr]">
-              <Field label="CEP" required>
+              <Field label="CEP" required htmlFor="cep">
                 <div className="flex gap-1.5">
                   <div className="relative flex-1">
                     <MapPin className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/55" />
                     <Input
+                      id="cep"
                       className={cn(inputBase, 'pl-9 font-mono text-sm tracking-wide')}
                       value={form.cep || ''}
                       onChange={(e) => {
@@ -507,19 +525,21 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
                       }}
                       onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (canLookupCep) void handleCepLookup(); } }}
                       maxLength={CUSTOMER_FIELD_LIMITS.cep}
-                      placeholder=""
+                      placeholder="00000-000"
                     />
                   </div>
                   <LookupButton
                     loading={cepLoading}
                     disabled={!canLookupCep || cepLoading}
                     onClick={() => void handleCepLookup()}
+                    ariaLabel="Buscar CEP"
                   />
                 </div>
               </Field>
 
-              <Field label="Número" required>
+              <Field label="Número" required htmlFor="addressNumber">
                 <Input
+                  id="addressNumber"
                   className={inputBase}
                   value={form.addressNumber || ''}
                   onChange={(e) =>
@@ -529,8 +549,9 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
                 />
               </Field>
 
-              <Field label="Logradouro" required>
+              <Field label="Logradouro" required htmlFor="address">
                 <Input
+                  id="address"
                   className={readOnly}
                   value={form.address}
                   readOnly
