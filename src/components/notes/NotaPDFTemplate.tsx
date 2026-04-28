@@ -105,6 +105,13 @@ const styles = StyleSheet.create({
     marginTop: 15,
     gap: 5,
   },
+  clienteBoxFull: {
+    marginTop: 18,
+    paddingTop: 52,
+    paddingRight: 14,
+    paddingBottom: 10,
+    paddingLeft: 14,
+  },
   notaInfos: {
     position: 'absolute',
     top: 0,
@@ -320,11 +327,13 @@ function Via({
   itens,
   maxRows = MAX_ROWS,
   fullPage = false,
+  copyLabel,
 }: {
   dados: NotaServicoDetalhes;
   itens: NotaServicoDetalhesItem[];
   maxRows?: number;
   fullPage?: boolean;
+  copyLabel?: string;
 }) {
   const { cabecalho, financeiro_servicos } = dados;
   const paddingRows = Math.max(0, maxRows - itens.length);
@@ -337,13 +346,14 @@ function Via({
         </View>
         <View style={[styles.headerSide, styles.headerRight]}>
           <Text style={styles.headerEyebrow}>ORDEM DE SERVIÇO</Text>
+          {copyLabel && <Text style={[styles.headerInfo, styles.headerInfoStrong]}>{copyLabel.toUpperCase()}</Text>}
           <Text style={[styles.headerInfo, styles.headerInfoStrong]}>Av. Fioravante Magro, 1059</Text>
           <Text style={styles.headerInfo}>Jardim Boa Vista · Sertãozinho/SP</Text>
           <Text style={styles.headerInfo}>CEP 14177-578 · (16) 3524-4661</Text>
         </View>
       </View>
 
-      <View style={styles.clienteBox}>
+      <View style={[styles.clienteBox, fullPage && styles.clienteBoxFull]}>
         <View style={styles.notaInfos}>
           <View style={styles.infoGroup}>
             <Text style={styles.infoLabel}>O.S:</Text>
@@ -447,26 +457,30 @@ interface Props {
 
 export function NotaPDFTemplate({ dados }: Props) {
   const usePortraitLayout = dados.itens_servico.length > MAX_ROWS;
-  const paginas = chunkItems(dados.itens_servico, usePortraitLayout ? LONG_MAX_ROWS : MAX_ROWS);
+  const itemPages = chunkItems(dados.itens_servico, usePortraitLayout ? LONG_MAX_ROWS : MAX_ROWS);
+  const portraitPages = itemPages.flatMap((itens, index) => [
+    { itens, copyLabel: 'Via cliente', key: `cliente-${index}` },
+    { itens, copyLabel: 'Via retífica', key: `retifica-${index}` },
+  ]);
 
   return (
     <Document title={`O.S. ${dados.cabecalho.os_numero} — ${dados.cabecalho.cliente.nome}`}>
-      {paginas.map((itens, index) => (
+      {(usePortraitLayout ? portraitPages : itemPages.map((itens, index) => ({ itens, copyLabel: null, key: `landscape-${index}` }))).map((page) => (
         <Page
-          key={`${dados.cabecalho.id_nota}-${index}`}
+          key={`${dados.cabecalho.id_nota}-${page.key}`}
           size="A4"
           orientation={usePortraitLayout ? 'portrait' : 'landscape'}
           style={styles.page}
         >
           {usePortraitLayout ? (
             <View style={styles.notaContainer}>
-              <Via dados={dados} itens={itens} maxRows={LONG_MAX_ROWS} fullPage />
+              <Via dados={dados} itens={page.itens} maxRows={LONG_MAX_ROWS} fullPage copyLabel={page.copyLabel ?? undefined} />
             </View>
           ) : (
             <View style={styles.notaContainer}>
-              <Via dados={dados} itens={itens} />
+              <Via dados={dados} itens={page.itens} />
               <View style={styles.divider} />
-              <Via dados={dados} itens={itens} />
+              <Via dados={dados} itens={page.itens} />
             </View>
           )}
         </Page>

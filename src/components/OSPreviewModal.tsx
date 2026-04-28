@@ -172,11 +172,13 @@ function PreviewVia({
   itens,
   maxRows = MAX_ROWS,
   fullPage = false,
+  copyLabel,
 }: {
   dados: NotaServicoDetalhes;
   itens: NotaServicoDetalhesItem[];
   maxRows?: number;
   fullPage?: boolean;
+  copyLabel?: string;
 }) {
   const { cabecalho, financeiro_servicos } = dados;
   const paddingRows = Math.max(0, maxRows - itens.length);
@@ -204,14 +206,29 @@ function PreviewVia({
         </div>
         <div className="flex w-[52%] flex-col items-center justify-center border-l border-[#cfcfcf] px-3 py-2 text-center text-[13px] text-neutral-700">
           <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-500">Ordem de Serviço</p>
+          {copyLabel && (
+            <p className="mb-1 rounded-full border border-[#d2d2d2] bg-white px-3 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-neutral-700">
+              {copyLabel}
+            </p>
+          )}
           <p className="my-0.5 font-medium">Av. Fioravante Magro, 1059</p>
           <p className="my-0.5">Jardim Boa Vista · Sertãozinho/SP</p>
           <p className="my-0.5">CEP 14177-578 · (16) 3524-4661</p>
         </div>
       </div>
 
-      <div className="relative mt-3 shrink-0 border border-[#dddddd] px-2.5 pb-1.5 pt-[34px]">
-        <div className="absolute inset-x-0 top-0 grid grid-cols-3 items-center bg-[#dcdcdc] px-2.5 py-1 text-center text-neutral-700">
+      <div
+        className={cn(
+          'relative shrink-0 border border-[#dddddd]',
+          fullPage ? 'mt-4 px-4 pb-3 pt-[54px]' : 'mt-3 px-2.5 pb-1.5 pt-[34px]',
+        )}
+      >
+        <div
+          className={cn(
+            'absolute inset-x-0 top-0 grid grid-cols-3 items-center bg-[#dcdcdc] text-center text-neutral-700',
+            fullPage ? 'px-4 py-2' : 'px-2.5 py-1',
+          )}
+        >
           <div className="whitespace-nowrap">
             <strong className="mr-1.5">O.S:</strong>
             <span className="inline-block min-w-[82px] rounded-full border border-[#cccccc] bg-white px-2.5 py-1 text-center font-bold">
@@ -231,6 +248,12 @@ function PreviewVia({
             </span>
           </div>
         </div>
+
+        {fullPage && (
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-500">
+            Dados do cliente
+          </p>
+        )}
 
         <div className="mb-[3px] flex flex-wrap gap-x-[7px] gap-y-[3px]">
           <PreviewField label="Cliente" value={cabecalho.cliente.nome} />
@@ -337,7 +360,15 @@ function PreviewPage({ dados, itens }: { dados: NotaServicoDetalhes; itens: Nota
   );
 }
 
-function PreviewPortraitPage({ dados, itens }: { dados: NotaServicoDetalhes; itens: NotaServicoDetalhesItem[] }) {
+function PreviewPortraitPage({
+  dados,
+  itens,
+  copyLabel,
+}: {
+  dados: NotaServicoDetalhes;
+  itens: NotaServicoDetalhesItem[];
+  copyLabel: string;
+}) {
   return (
     <div
       className="mx-auto flex shrink-0 overflow-hidden bg-white shadow-sm ring-1 ring-black/10"
@@ -346,7 +377,7 @@ function PreviewPortraitPage({ dados, itens }: { dados: NotaServicoDetalhes; ite
         height: NOTA_PRINT_PORTRAIT_PAGE.height,
       }}
     >
-      <PreviewVia dados={dados} itens={itens} maxRows={LONG_MAX_ROWS} fullPage />
+      <PreviewVia dados={dados} itens={itens} maxRows={LONG_MAX_ROWS} fullPage copyLabel={copyLabel} />
     </div>
   );
 }
@@ -372,7 +403,17 @@ export default function OSPreviewModal({
   const usePortraitLayout = pdfDados.itens_servico.length > MAX_ROWS;
   const pageLayout = usePortraitLayout ? NOTA_PRINT_PORTRAIT_PAGE : NOTA_PRINT_PAGE;
   const pageMaxRows = usePortraitLayout ? LONG_MAX_ROWS : MAX_ROWS;
-  const pages = useMemo(() => chunkItems(pdfDados.itens_servico, pageMaxRows), [pageMaxRows, pdfDados.itens_servico]);
+  const itemPages = useMemo(() => chunkItems(pdfDados.itens_servico, pageMaxRows), [pageMaxRows, pdfDados.itens_servico]);
+  const previewPages = useMemo(() => {
+    if (!usePortraitLayout) {
+      return itemPages.map((items, index) => ({ items, copyLabel: null, key: `landscape-${index}` }));
+    }
+
+    return itemPages.flatMap((items, index) => [
+      { items, copyLabel: 'Via cliente', key: `cliente-${index}` },
+      { items, copyLabel: 'Via retífica', key: `retifica-${index}` },
+    ]);
+  }, [itemPages, usePortraitLayout]);
   const previewScale = useMemo(() => {
     if (!previewViewportSize.width || !previewViewportSize.height) return 1;
 
@@ -472,7 +513,7 @@ export default function OSPreviewModal({
               </DialogTitle>
               <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">
                 {usePortraitLayout
-                  ? `Formato A4 vertical — ${pages.length} página(s), conforme quantidade de serviços.`
+                  ? `Formato A4 vertical — ${previewPages.length} página(s), com via do cliente e da retífica.`
                   : 'Visualização rápida no formato final da O.S.'}
               </p>
             </div>
@@ -497,8 +538,8 @@ export default function OSPreviewModal({
             </div>
           ) : (
             <div className="flex min-h-full w-full flex-col items-center justify-start gap-3">
-              {pages.map((items, index) => (
-                <div key={`${pdfDados.cabecalho.id_nota}-${index}`} style={scaledPageStyle}>
+              {previewPages.map((page) => (
+                <div key={`${pdfDados.cabecalho.id_nota}-${page.key}`} style={scaledPageStyle}>
                   <div
                     className="origin-top-left"
                     style={{
@@ -508,8 +549,8 @@ export default function OSPreviewModal({
                     }}
                   >
                     {usePortraitLayout
-                      ? <PreviewPortraitPage dados={pdfDados} itens={items} />
-                      : <PreviewPage dados={pdfDados} itens={items} />
+                      ? <PreviewPortraitPage dados={pdfDados} itens={page.items} copyLabel={page.copyLabel ?? 'Via'} />
+                      : <PreviewPage dados={pdfDados} itens={page.items} />
                     }
                   </div>
                 </div>

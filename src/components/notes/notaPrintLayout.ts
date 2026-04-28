@@ -1,5 +1,7 @@
+import retificaPremiumLogo from '@/assets/retifica-premium-logo.png';
+
 export const NOTA_PRINT_MAX_ROWS = 7;
-export const NOTA_PRINT_LONG_MAX_ROWS = 14;
+export const NOTA_PRINT_LONG_MAX_ROWS = 12;
 
 export const NOTA_PRINT_PAGE = {
   width: 1122,
@@ -21,4 +23,4 @@ export const NOTA_PRINT_OBSERVATIONS = [
   '3. Garantia de 6 meses para os serviços executados conforme contrato.',
 ];
 
-export const NOTA_BRAND_LOGO_SRC = '/brand/retifica-premium-logo.png';
+export const NOTA_BRAND_LOGO_SRC = retificaPremiumLogo;
