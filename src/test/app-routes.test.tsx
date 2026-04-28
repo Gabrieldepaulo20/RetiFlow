@@ -103,6 +103,16 @@ describe('App routes', () => {
     expect(screen.queryByText(/enviado/i)).not.toBeInTheDocument();
   });
 
+  it('keeps Dashboard indicators limited to real v1 modules', async () => {
+    authenticateAs('FINANCEIRO');
+    renderAt('/dashboard');
+
+    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
+    expect(screen.getByText(/fonte dos indicadores/i)).toBeInTheDocument();
+    expect(screen.getByText(/Nota Fiscal não entra nos indicadores da v1/i)).toBeInTheDocument();
+    expect(screen.queryByText(/NFs este mês/i)).not.toBeInTheDocument();
+  });
+
   it.each([
     ['/contas-a-pagar/nova', 'modal=new', /Nova conta a pagar/i],
     ['/contas-a-pagar/importar', 'modal=import', /Importar contas/i],

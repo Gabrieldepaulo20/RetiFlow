@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '@/contexts/DataContext';
@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { STATUS_LABELS, STATUS_COLORS, NoteStatus, FINAL_STATUSES, PAYABLE_STATUS_LABELS, PAYABLE_STATUS_COLORS, RECURRENCE_TYPE_LABELS } from '@/types';
 import {
   FileText, DollarSign, Clock, TrendingUp, AlertCircle,
-  CheckCircle2, Timer, Users, Receipt, ShoppingCart,
+  CheckCircle2, Timer, Users, Receipt,
   ArrowUpRight, ArrowDownRight, Minus, AlertTriangle,
   Wrench, Package, Info, Wallet, Landmark, PiggyBank, Layers3,
 } from 'lucide-react';
@@ -32,6 +32,8 @@ import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { formatPayableRecurrenceLabel, isPayableOverdue } from '@/services/domain/payables';
 import { SectionEmptyState, SectionErrorState } from '@/components/ui/section-state';
+import { getNotaServicoDetalhes } from '@/api/supabase/notas';
+import type { IntakeService } from '@/types';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -55,6 +57,8 @@ const BAR_COLORS: Partial<Record<NoteStatus, string>> = {
 };
 
 const TYPE_COLORS = ['hsl(var(--primary))', '#f97316'];
+const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
+const SERVICE_DETAILS_CONCURRENCY = 8;
 
 function fmtBRL(value: number) {
   return value.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -75,9 +79,12 @@ function pct(a: number, b: number) {
 const ACTIVE_STATUSES_PARAM = 'ABERTO,EM_ANALISE,ORCAMENTO,APROVADO,EM_EXECUCAO,AGUARDANDO_COMPRA,PRONTO,ENTREGUE';
 
 export default function Dashboard() {
-  const { notes, clients, invoices, services, products, activities, payables, payableCategories } = useData();
+  const { notes, clients, services, activities, payables, payableCategories } = useData();
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
+  const [dbServices, setDbServices] = useState<IntakeService[]>([]);
+  const [serviceMetricsLoading, setServiceMetricsLoading] = useState(IS_REAL_AUTH);
+  const [serviceMetricsError, setServiceMetricsError] = useState(false);
 
   const now = useMemo(() => new Date(), []);
   const startCurrent = startOfMonth(now).getTime();
@@ -158,23 +165,6 @@ export default function Dashboard() {
     [clients],
   );
 
-  // ── NFs emitidas este mês ────────────────────────────────────────────────
-  const invoicesThisMonth = useMemo(
-    () => invoices.filter(inv => {
-      const t = new Date(inv.issueDate).getTime();
-      return t >= startCurrent && t <= endCurrent && inv.status !== 'CANCELADA';
-    }),
-    [invoices, startCurrent, endCurrent],
-  );
-
-  const invoicesThisMonthTotal = invoicesThisMonth.reduce((s, i) => s + i.amount, 0);
-
-  // ── Total NFs (all time) ─────────────────────────────────────────────────
-  const totalInvoices = useMemo(
-    () => invoices.filter(i => i.status !== 'CANCELADA').length,
-    [invoices],
-  );
-
   // ── Taxa de conclusão ────────────────────────────────────────────────────
   const closedNotes = useMemo(
     () => notes.filter(n => FINAL_STATUSES.has(n.status)),
@@ -238,6 +228,71 @@ export default function Dashboard() {
     });
   }, [finalizedNotes, now]);
 
+  useEffect(() => {
+    if (!IS_REAL_AUTH) {
+      setDbServices([]);
+      setServiceMetricsLoading(false);
+      setServiceMetricsError(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadRealServiceItems = async () => {
+      if (notes.length === 0) {
+        setDbServices([]);
+        setServiceMetricsLoading(false);
+        setServiceMetricsError(false);
+        return;
+      }
+
+      setServiceMetricsLoading(true);
+      setServiceMetricsError(false);
+
+      try {
+        const orderedNotes = [...notes].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+        const loadedServices: IntakeService[] = [];
+
+        for (let index = 0; index < orderedNotes.length; index += SERVICE_DETAILS_CONCURRENCY) {
+          const chunk = orderedNotes.slice(index, index + SERVICE_DETAILS_CONCURRENCY);
+          const detailsList = await Promise.all(chunk.map((note) => getNotaServicoDetalhes(note.id)));
+
+          if (cancelled) return;
+
+          detailsList.forEach((details) => {
+            if (!details) return;
+            details.itens_servico.forEach((item) => {
+              loadedServices.push({
+                id: item.id_rel,
+                noteId: details.cabecalho.id_nota,
+                name: item.descricao,
+                description: item.detalhes ?? '',
+                price: item.preco_unitario,
+                quantity: item.quantidade,
+                subtotal: item.subtotal_item,
+              });
+            });
+          });
+        }
+
+        setDbServices(loadedServices);
+      } catch {
+        if (!cancelled) {
+          setServiceMetricsError(true);
+          setDbServices([]);
+        }
+      } finally {
+        if (!cancelled) setServiceMetricsLoading(false);
+      }
+    };
+
+    void loadRealServiceItems();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [notes]);
+
   // ── Top 5 clientes por faturamento ──────────────────────────────────────
   const topClients = useMemo(() => {
     const map = new Map<string, { revenue: number; count: number }>();
@@ -256,10 +311,13 @@ export default function Dashboard() {
   }, [finalizedNotes, clients]);
 
   // ── Top serviços ─────────────────────────────────────────────────────────
+  const servicesForMetrics = IS_REAL_AUTH ? dbServices : services;
+
   const topServices = useMemo(() => {
     const map = new Map<string, { count: number; revenue: number }>();
-    for (const s of services) {
+    for (const s of servicesForMetrics) {
       const key = s.name.trim();
+      if (!key) continue;
       const prev = map.get(key) ?? { count: 0, revenue: 0 };
       map.set(key, { count: prev.count + s.quantity, revenue: prev.revenue + s.subtotal });
     }
@@ -267,7 +325,7 @@ export default function Dashboard() {
       .map(([name, data]) => ({ name, ...data }))
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 5);
-  }, [services]);
+  }, [servicesForMetrics]);
 
   // ── KPI rows ─────────────────────────────────────────────────────────────
   const kpisRow1 = [
@@ -352,17 +410,15 @@ export default function Dashboard() {
       href: '/clientes',
     },
     {
-      label: 'NFs este mês',
-      value: invoicesThisMonth.length,
-      sub: invoicesThisMonth.length > 0
-        ? `R$ ${fmtBRL(invoicesThisMonthTotal)} emitido`
-        : `${totalInvoices} no total`,
-      icon: ShoppingCart,
+      label: 'Aguardando compra',
+      value: awaitingPurchase.length,
+      sub: awaitingPurchase.length > 0 ? 'O.S. bloqueadas por peças/serviços' : 'Nenhuma O.S. bloqueada',
+      icon: Package,
       iconClass: 'text-indigo-600 bg-indigo-50',
-      subClass: 'text-muted-foreground',
+      subClass: awaitingPurchase.length > 0 ? 'text-amber-600 font-medium' : 'text-muted-foreground',
       trend: null,
-      tooltip: 'Notas fiscais emitidas no mês atual com status Registrada ou Enviada (excluindo canceladas).',
-      href: '/nota-fiscal',
+      tooltip: 'O.S. que dependem de compra para avançar. Este número vem dos status reais das ordens de serviço.',
+      href: '/kanban',
     },
   ];
 
@@ -767,8 +823,16 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent className="pt-0 px-4 pb-4">
-            {topServices.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-6 text-center">Sem dados ainda</p>
+            {serviceMetricsLoading ? (
+              <p className="text-sm text-muted-foreground py-6 text-center">Carregando serviços reais das O.S...</p>
+            ) : serviceMetricsError ? (
+              <SectionErrorState
+                title="Não foi possível carregar o ranking"
+                description="Os demais indicadores continuam disponíveis. Recarregue o dashboard para tentar novamente."
+                className="border-0 bg-transparent py-5"
+              />
+            ) : topServices.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-6 text-center">Sem serviços registrados ainda</p>
             ) : (
               <div className="space-y-2.5">
                 {topServices.map((svc, i) => {
@@ -1169,18 +1233,16 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* NFs emitidas */}
+            {/* Fonte dos dados */}
             <div className="pt-2 border-t border-border/40">
               <div className="flex items-center justify-between mb-0.5">
                 <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                  NFs este mês
+                  Fonte dos indicadores
                 </span>
-                <span className="text-[12px] font-bold tabular-nums">{invoicesThisMonth.length}</span>
+                <span className="text-[12px] font-bold tabular-nums">Real</span>
               </div>
               <p className="text-[12px] text-muted-foreground">
-                {invoicesThisMonth.length > 0
-                  ? `R$ ${fmtBRLFull(invoicesThisMonthTotal)} emitido`
-                  : 'Nenhuma NF emitida no mês'}
+                O.S., clientes, financeiro e logs vêm dos wrappers Supabase. Nota Fiscal não entra nos indicadores da v1.
               </p>
             </div>
           </CardContent>
