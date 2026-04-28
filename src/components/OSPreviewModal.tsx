@@ -10,7 +10,6 @@ import { buildCustomerAddressLabel } from '@/services/domain/customers';
 import { cn } from '@/lib/utils';
 import type { NotaServicoDetalhes, NotaServicoDetalhesItem } from '@/api/supabase/notas';
 import {
-  NOTA_BRAND_LOGO_SRC,
   NOTA_PRINT_LONG_MAX_ROWS,
   NOTA_PRINT_MAX_ROWS,
   NOTA_PRINT_OBSERVATIONS,
@@ -195,14 +194,12 @@ function PreviewVia({
         fullPage ? 'min-h-[126px]' : 'min-h-[92px]',
       )}>
         <div className="flex w-[48%] flex-col items-center justify-center p-2 text-center">
-          <img
-            src={NOTA_BRAND_LOGO_SRC}
-            alt="Retífica de Cabeçote Premium"
-            className={cn(
-              'object-contain',
-              fullPage ? 'h-[104px] max-w-[260px]' : 'h-[76px] max-w-[190px]',
-            )}
-          />
+          <h2 className={cn('m-0 font-bold leading-tight', fullPage ? 'text-[30px]' : 'text-[21px]')}>
+            PREMIUM
+          </h2>
+          <p className={cn('m-0 text-neutral-700', fullPage ? 'text-[18px]' : 'text-[14px]')}>
+            RETÍFICA DE CABEÇOTE
+          </p>
         </div>
         <div className="flex w-[52%] flex-col items-center justify-center border-l border-[#cfcfcf] px-3 py-2 text-center text-[13px] text-neutral-700">
           <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-500">Ordem de Serviço</p>

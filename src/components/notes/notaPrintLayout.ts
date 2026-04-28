@@ -1,5 +1,3 @@
-import retificaPremiumLogo from '@/assets/retifica-premium-logo.png';
-
 export const NOTA_PRINT_MAX_ROWS = 7;
 export const NOTA_PRINT_LONG_MAX_ROWS = 12;
 
@@ -22,5 +20,3 @@ export const NOTA_PRINT_OBSERVATIONS = [
   '2. Peças substituídas ficam à disposição do cliente por até 30 dias após a retirada.',
   '3. Garantia de 6 meses para os serviços executados conforme contrato.',
 ];
-
-export const NOTA_BRAND_LOGO_SRC = retificaPremiumLogo;

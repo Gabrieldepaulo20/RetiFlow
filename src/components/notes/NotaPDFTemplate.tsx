@@ -1,7 +1,6 @@
-import { Document, Image, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
+import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { NotaServicoDetalhes, NotaServicoDetalhesItem } from '@/api/supabase/notas';
 import {
-  NOTA_BRAND_LOGO_SRC,
   NOTA_PRINT_LONG_MAX_ROWS,
   NOTA_PRINT_MAX_ROWS,
   NOTA_PRINT_OBSERVATIONS,
@@ -9,9 +8,6 @@ import {
 
 const MAX_ROWS = NOTA_PRINT_MAX_ROWS;
 const LONG_MAX_ROWS = NOTA_PRINT_LONG_MAX_ROWS;
-const BRAND_LOGO_SRC = typeof window === 'undefined'
-  ? NOTA_BRAND_LOGO_SRC
-  : new URL(NOTA_BRAND_LOGO_SRC, window.location.origin).toString();
 
 const styles = StyleSheet.create({
   page: {
@@ -65,15 +61,21 @@ const styles = StyleSheet.create({
     borderLeftColor: '#cfcfcf',
     borderLeftStyle: 'solid',
   },
-  brandLogo: {
-    width: 145,
-    height: 66,
-    objectFit: 'contain',
+  headerTitle: {
+    fontSize: 14.5,
+    marginBottom: 2,
+    fontWeight: 700,
   },
-  brandLogoFull: {
-    width: 210,
-    height: 96,
-    objectFit: 'contain',
+  headerTitleFull: {
+    fontSize: 22,
+  },
+  headerSubtitle: {
+    fontSize: 8.5,
+    color: '#333333',
+    marginBottom: 2,
+  },
+  headerSubtitleFull: {
+    fontSize: 13,
   },
   headerEyebrow: {
     fontSize: 6.3,
@@ -342,7 +344,8 @@ function Via({
     <View style={[styles.nota, fullPage && styles.notaFullPage]}>
       <View style={[styles.notaHeader, fullPage && { minHeight: 116 }]}>
         <View style={styles.headerSide}>
-          <Image src={BRAND_LOGO_SRC} style={fullPage ? styles.brandLogoFull : styles.brandLogo} />
+          <Text style={[styles.headerTitle, fullPage && styles.headerTitleFull]}>PREMIUM</Text>
+          <Text style={[styles.headerSubtitle, fullPage && styles.headerSubtitleFull]}>RETÍFICA DE CABEÇOTE</Text>
         </View>
         <View style={[styles.headerSide, styles.headerRight]}>
           <Text style={styles.headerEyebrow}>ORDEM DE SERVIÇO</Text>
