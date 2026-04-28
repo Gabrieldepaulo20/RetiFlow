@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth, LoginPortal } from '@/contexts/AuthContext';
+import { getDefaultRedirect } from '@/services/auth/defaultRedirect';
 import { useToast } from '@/hooks/use-toast';
 import { getDevelopmentCredentialHint } from '@/services/auth/developmentAuthService';
 
@@ -57,7 +58,7 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
   };
 
   if (isAuthenticated && user) {
-    return <Navigate to={user.role === 'ADMIN' ? '/admin' : '/dashboard'} replace />;
+    return <Navigate to={getDefaultRedirect(user)} replace />;
   }
 
   return (

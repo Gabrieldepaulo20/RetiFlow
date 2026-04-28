@@ -3,8 +3,6 @@ import { AuthMode, AuthSession, LoginCredentials, Permission, SystemUser } from 
 import { getAuthProvider } from '@/services/auth/authProvider';
 import { getModulePermission, hasPermission } from '@/services/auth/permissions';
 import {
-  isRoleModuleEnabled,
-  isUserModuleEnabled,
   subscribeToModuleAccessChanges,
 } from '@/services/auth/moduleAccess';
 import {
@@ -15,6 +13,7 @@ import {
 import { loadSystemUsers } from '@/services/auth/systemUsers';
 import { supabase } from '@/lib/supabase';
 import { dbUserToSystemUser } from '@/services/auth/supabaseUserMapping';
+import { canUserAccessModule, getDefaultRedirect } from '@/services/auth/defaultRedirect';
 
 const AUTH_SESSION_STORAGE_KEY = 'auth.session';
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
@@ -40,10 +39,6 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
-
-function getDefaultRedirect(user: SystemUser) {
-  return user.role === 'ADMIN' ? '/admin' : '/dashboard';
-}
 
 function loadStoredSession() {
   if (IS_REAL_AUTH) {
@@ -179,16 +174,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const can = useCallback((permission: Permission) => hasPermission(user, permission), [user]);
 
   const canAccessModule = useCallback((moduleKey: Parameters<typeof getModulePermission>[0]) => {
-    if (!user) return false;
-    const permission = getModulePermission(moduleKey);
-    if (!can(permission)) return false;
-    if (IS_REAL_AUTH && user.moduleAccess) {
-      return user.moduleAccess[moduleKey] !== false;
-    }
-    if (!isRoleModuleEnabled(user.role, moduleKey)) return false;
-    if (!isUserModuleEnabled(user.id, moduleKey)) return false;
-    return true;
-  }, [can, user]);
+    return canUserAccessModule(user, moduleKey);
+  }, [user]);
 
   const value = useMemo<AuthContextType>(
     () => ({
