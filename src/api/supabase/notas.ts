@@ -125,6 +125,7 @@ export async function getNotaServicoDetalhes(idNota: string): Promise<NotaServic
   try {
     const env = await callRPC('get_nota_servico_detalhes', { p_id_nota_servico: idNota });
     if ((env as Record<string, unknown>).status !== 200) return null;
+    // RPC legado: retorna o detalhe completo na raiz do envelope, não dentro de `dados`.
     return env as unknown as NotaServicoDetalhes;
   } catch {
     return null;
@@ -163,6 +164,7 @@ export async function getNotasCompra(params?: {
 
 export async function getNotaCompraDetalhes(idNota: string) {
   const env = await callRPC('get_nota_compra_detalhes', { p_id_nota_compra: idNota });
+  // RPC legado: mantém payload detalhado na raiz para consumo direto da tela.
   return env as unknown as Record<string, unknown>;
 }
 

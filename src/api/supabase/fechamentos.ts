@@ -95,6 +95,8 @@ async function callMutationRPC(rpcName: string, params: Record<string, unknown>)
     throw new Error(rpcMessage(rpcName, error.message));
   }
 
+  // Algumas RPCs legadas de fechamento são mutations que podem retornar void/null.
+  // Mantemos essa exceção isolada aqui para não afrouxar o contrato padrão de callRPC().
   if (data === null || data === undefined) return;
   if (typeof data !== 'object') return;
 

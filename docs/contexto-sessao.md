@@ -44,7 +44,7 @@ Validações executadas recentemente:
 
 Avisos ainda existentes:
 
-- `npm run lint` tem 9 warnings antigos, principalmente Fast Refresh em componentes UI e uma dependência de hook em `NoteFormCore.tsx`.
+- `npm run lint` tem 8 warnings antigos de Fast Refresh em componentes UI/AuthContext; o warning de dependência de hook em `NoteFormCore.tsx` foi corrigido.
 - Build alerta chunks grandes, especialmente `react-pdf.browser`, `xlsx`, charts e bundle principal.
 - O bucket `notas` retorna URL pública atualmente; isso deve ser revisto para produção com dados sensíveis.
 - Tokens Supabase ficam no navegador, como em qualquer SPA com Supabase Auth. Isso exige CSP forte, ausência de XSS e RPC/RLS bem feitos no banco.
@@ -585,7 +585,6 @@ Arquivos:
 - `src/components/closing/ClosingHtmlPreview.tsx`
 - `src/api/supabase/fechamentos.ts`
 - `src/services/domain/monthlyClosing.ts`
-- `src/hooks/useClosingRecords.ts` (legado/local; verificar se ainda é usado)
 
 Funcionalidades atuais:
 
@@ -971,7 +970,7 @@ Esta seção é intencionalmente transparente.
 |---|---|---|
 | `Settings.tsx` empresa/logo/tema/senha | Configuração local/visual | Criar tabela/RPC `Configuracoes_Empresa` |
 | `moduleAccess.ts` role config | Parte das permissões por perfil ainda local | Persistir role-level config no banco ou remover UI se não usada |
-| `useClosingRecords.ts` | Hook legado de fechamento local | Confirmar se ainda está morto; remover se não usado |
+| `useClosingRecords.ts` | Hook legado de fechamento local | Removido após busca confirmar ausência de uso no app |
 
 ---
 

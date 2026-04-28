@@ -252,11 +252,12 @@ export default function NoteFormCore({
   }, [editingNote, getServicesForNote, getProductsForNote]);
 
   /* ── In real mode, always fetch items from Supabase when editing ── */
+  const editingNoteId = editingNote?.id;
   useEffect(() => {
-    if (!editingNote || !IS_REAL_AUTH) return;
+    if (!editingNoteId || !IS_REAL_AUTH) return;
     let cancelled = false;
     setItemsLoadingFromDB(true);
-    getNotaServicoDetalhes(editingNote.id)
+    getNotaServicoDetalhes(editingNoteId)
       .then((detalhes) => {
         if (cancelled) return;
         const dbItems = detalhes?.itens_servico ?? [];
@@ -287,7 +288,7 @@ export default function NoteFormCore({
       .catch(() => { if (!cancelled) setItems((prev) => prev.length > 0 ? prev : [newItem()]); })
       .finally(() => { if (!cancelled) setItemsLoadingFromDB(false); });
     return () => { cancelled = true; };
-  }, [editingNote?.id]);
+  }, [editingNoteId]);
 
   /* ── Load catalog from Supabase (real mode only) ── */
   useEffect(() => {

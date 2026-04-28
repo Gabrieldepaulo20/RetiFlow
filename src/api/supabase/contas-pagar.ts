@@ -99,6 +99,8 @@ export interface ContaPagarDetalhes {
 export async function getContaPagarDetalhes(idContasPagar: string): Promise<ContaPagarDetalhes | null> {
   try {
     const env = await callRPC<ContaPagarDetalhes>('get_conta_pagar_detalhes', { p_id_contas_pagar: idContasPagar });
+    // RPC legado: em produção já retornou detalhes na raiz em vez de `dados`.
+    // O adapter aceita os dois formatos para compatibilidade sem alterar a UI.
     const dados = (env.dados ?? env) as ContaPagarDetalhes;
 
     if (!dados?.conta) {
