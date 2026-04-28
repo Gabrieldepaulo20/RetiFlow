@@ -20,3 +20,5 @@ export const NOTA_PRINT_OBSERVATIONS = [
   '2. Peças substituídas ficam à disposição do cliente por até 30 dias após a retirada.',
   '3. Garantia de 6 meses para os serviços executados conforme contrato.',
 ];
+
+export const NOTA_BRAND_LOGO_SRC = '/brand/retifica-premium-logo.png';

@@ -10,6 +10,7 @@ import { buildCustomerAddressLabel } from '@/services/domain/customers';
 import { cn } from '@/lib/utils';
 import type { NotaServicoDetalhes, NotaServicoDetalhesItem } from '@/api/supabase/notas';
 import {
+  NOTA_BRAND_LOGO_SRC,
   NOTA_PRINT_LONG_MAX_ROWS,
   NOTA_PRINT_MAX_ROWS,
   NOTA_PRINT_OBSERVATIONS,
@@ -187,16 +188,25 @@ function PreviewVia({
         fullPage ? 'w-full p-[24px] text-[14px]' : 'w-1/2 p-[18px] text-[13px]',
       )}
     >
-      <div className="flex shrink-0 items-stretch bg-[#e6e6e6] p-1">
-        <div className="flex w-1/2 flex-col items-center justify-center p-2.5 text-center">
-          <div className="mb-1 h-5" />
-          <h2 className="m-0 text-[21px] font-bold leading-tight">PREMIUM</h2>
-          <p className="m-0 text-[14px] text-neutral-700">RETÍFICA DE CABEÇOTE</p>
+      <div className={cn(
+        'flex shrink-0 items-stretch overflow-hidden border border-[#dddddd] bg-[#f1f1f1]',
+        fullPage ? 'min-h-[126px]' : 'min-h-[92px]',
+      )}>
+        <div className="flex w-[48%] flex-col items-center justify-center p-2 text-center">
+          <img
+            src={NOTA_BRAND_LOGO_SRC}
+            alt="Retífica de Cabeçote Premium"
+            className={cn(
+              'object-contain',
+              fullPage ? 'h-[104px] max-w-[260px]' : 'h-[76px] max-w-[190px]',
+            )}
+          />
         </div>
-        <div className="flex w-1/2 flex-col items-center justify-center border-l border-[#cfcfcf] p-2.5 text-center text-[13px] text-neutral-700">
-          <p className="my-0.5">Av: Fioravante Magro, 1059 – Jardim Boa Vista</p>
-          <p className="my-0.5">Sertãozinho - SP, 14177-578</p>
-          <p className="my-0.5">Contato: (16) 3524-4661</p>
+        <div className="flex w-[52%] flex-col items-center justify-center border-l border-[#cfcfcf] px-3 py-2 text-center text-[13px] text-neutral-700">
+          <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-500">Ordem de Serviço</p>
+          <p className="my-0.5 font-medium">Av. Fioravante Magro, 1059</p>
+          <p className="my-0.5">Jardim Boa Vista · Sertãozinho/SP</p>
+          <p className="my-0.5">CEP 14177-578 · (16) 3524-4661</p>
         </div>
       </div>
 

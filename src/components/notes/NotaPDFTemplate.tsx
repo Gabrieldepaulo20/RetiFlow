@@ -1,9 +1,17 @@
-import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
+import { Document, Image, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { NotaServicoDetalhes, NotaServicoDetalhesItem } from '@/api/supabase/notas';
-import { NOTA_PRINT_LONG_MAX_ROWS, NOTA_PRINT_MAX_ROWS, NOTA_PRINT_OBSERVATIONS } from '@/components/notes/notaPrintLayout';
+import {
+  NOTA_BRAND_LOGO_SRC,
+  NOTA_PRINT_LONG_MAX_ROWS,
+  NOTA_PRINT_MAX_ROWS,
+  NOTA_PRINT_OBSERVATIONS,
+} from '@/components/notes/notaPrintLayout';
 
 const MAX_ROWS = NOTA_PRINT_MAX_ROWS;
 const LONG_MAX_ROWS = NOTA_PRINT_LONG_MAX_ROWS;
+const BRAND_LOGO_SRC = typeof window === 'undefined'
+  ? NOTA_BRAND_LOGO_SRC
+  : new URL(NOTA_BRAND_LOGO_SRC, window.location.origin).toString();
 
 const styles = StyleSheet.create({
   page: {
@@ -37,47 +45,53 @@ const styles = StyleSheet.create({
     borderLeftStyle: 'dashed',
   },
   notaHeader: {
-    backgroundColor: '#e6e6e6',
+    backgroundColor: '#f1f1f1',
+    borderWidth: 1,
+    borderColor: '#dddddd',
+    borderStyle: 'solid',
     flexDirection: 'row',
     alignItems: 'stretch',
-    padding: 5,
+    minHeight: 78,
   },
   headerSide: {
-    width: '50%',
-    padding: 10,
+    width: '48%',
+    padding: 7,
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerRight: {
+    width: '52%',
     borderLeftWidth: 1,
     borderLeftColor: '#cfcfcf',
     borderLeftStyle: 'solid',
   },
-  logoSpacer: {
-    height: 28,
+  brandLogo: {
+    width: 145,
+    height: 66,
+    objectFit: 'contain',
+  },
+  brandLogoFull: {
+    width: 210,
+    height: 96,
+    objectFit: 'contain',
+  },
+  headerEyebrow: {
+    fontSize: 6.3,
+    color: '#666666',
     marginBottom: 5,
-  },
-  headerTitle: {
-    fontSize: 14.5,
-    marginBottom: 2,
-    fontWeight: 700,
-  },
-  headerSubtitle: {
-    fontSize: 8.5,
-    color: '#333333',
-    marginBottom: 2,
-  },
-  headerAddress: {
-    fontSize: 8,
-    color: '#333333',
-    marginBottom: 4,
     textAlign: 'center',
+    fontWeight: 700,
+    letterSpacing: 1.4,
   },
   headerInfo: {
-    fontSize: 8.5,
+    fontSize: 8.2,
     color: '#333333',
-    marginBottom: 4,
+    marginBottom: 3.5,
     textAlign: 'center',
+  },
+  headerInfoStrong: {
+    fontSize: 8.4,
+    fontWeight: 700,
   },
   clienteBox: {
     position: 'relative',
@@ -317,16 +331,15 @@ function Via({
 
   return (
     <View style={[styles.nota, fullPage && styles.notaFullPage]}>
-      <View style={styles.notaHeader}>
+      <View style={[styles.notaHeader, fullPage && { minHeight: 116 }]}>
         <View style={styles.headerSide}>
-          <View style={styles.logoSpacer} />
-          <Text style={styles.headerTitle}>PREMIUM</Text>
-          <Text style={styles.headerSubtitle}>RETÍFICA DE CABEÇOTE</Text>
+          <Image src={BRAND_LOGO_SRC} style={fullPage ? styles.brandLogoFull : styles.brandLogo} />
         </View>
         <View style={[styles.headerSide, styles.headerRight]}>
-          <Text style={styles.headerInfo}>Av: Fioravante Magro, 1059 – Jardim Boa Vista</Text>
-          <Text style={styles.headerInfo}>Sertãozinho - SP, 14177-578</Text>
-          <Text style={styles.headerInfo}>Contato: (16) 3524-4661</Text>
+          <Text style={styles.headerEyebrow}>ORDEM DE SERVIÇO</Text>
+          <Text style={[styles.headerInfo, styles.headerInfoStrong]}>Av. Fioravante Magro, 1059</Text>
+          <Text style={styles.headerInfo}>Jardim Boa Vista · Sertãozinho/SP</Text>
+          <Text style={styles.headerInfo}>CEP 14177-578 · (16) 3524-4661</Text>
         </View>
       </View>
 
