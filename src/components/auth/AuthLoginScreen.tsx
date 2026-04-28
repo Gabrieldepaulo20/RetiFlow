@@ -9,6 +9,7 @@ import { useAuth, LoginPortal } from '@/contexts/AuthContext';
 import { getDefaultRedirect } from '@/services/auth/defaultRedirect';
 import { useToast } from '@/hooks/use-toast';
 import { getDevelopmentCredentialHint } from '@/services/auth/developmentAuthService';
+import { LoadingScreen } from '@/components/ui/loading-screen';
 
 interface AuthLoginScreenProps {
   portal: LoginPortal;
@@ -19,7 +20,7 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const { authMode, isAuthenticated, login, user } = useAuth();
+  const { authMode, isAuthenticated, isAuthLoading, login, user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const credentials = getDevelopmentCredentialHint();
@@ -56,6 +57,18 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
       variant: 'destructive',
     });
   };
+
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <LoadingScreen
+          className="min-h-screen"
+          description="Verificando sua sessão antes de mostrar o login."
+          label="Restaurando sessão"
+        />
+      </div>
+    );
+  }
 
   if (isAuthenticated && user) {
     return <Navigate to={getDefaultRedirect(user)} replace />;

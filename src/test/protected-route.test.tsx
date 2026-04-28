@@ -50,6 +50,7 @@ describe('ProtectedRoute', () => {
       authMode: 'development',
       user: null,
       session: null,
+      isAuthLoading: false,
       isAuthenticated: false,
       login: vi.fn(),
       logout: vi.fn(),
@@ -63,11 +64,32 @@ describe('ProtectedRoute', () => {
     expect(screen.getByText('login-page')).toBeInTheDocument();
   });
 
+  it('waits for auth hydration before redirecting on page refresh', () => {
+    mockedUseAuth.mockReturnValue({
+      authMode: 'real',
+      user: null,
+      session: null,
+      isAuthLoading: true,
+      isAuthenticated: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+      can: vi.fn(),
+      canAccessModule: vi.fn(),
+      isAdmin: false,
+    });
+
+    renderProtectedRoute();
+
+    expect(screen.getByText('Restaurando sessão')).toBeInTheDocument();
+    expect(screen.queryByText('login-page')).not.toBeInTheDocument();
+  });
+
   it('redirects authenticated users without module access to the denied page', () => {
     mockedUseAuth.mockReturnValue({
       authMode: 'development',
       user: baseUser,
       session: null,
+      isAuthLoading: false,
       isAuthenticated: true,
       login: vi.fn(),
       logout: vi.fn(),
@@ -86,6 +108,7 @@ describe('ProtectedRoute', () => {
       authMode: 'development',
       user: baseUser,
       session: null,
+      isAuthLoading: false,
       isAuthenticated: true,
       login: vi.fn(),
       logout: vi.fn(),
@@ -104,6 +127,7 @@ describe('ProtectedRoute', () => {
       authMode: 'development',
       user: baseUser,
       session: null,
+      isAuthLoading: false,
       isAuthenticated: true,
       login: vi.fn(),
       logout: vi.fn(),

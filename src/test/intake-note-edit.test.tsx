@@ -34,6 +34,7 @@ describe('Note edit flow', () => {
         createdAt: '2026-01-01T00:00:00.000Z',
       },
       session: null,
+      isAuthLoading: false,
       isAuthenticated: true,
       login: vi.fn(),
       logout: vi.fn(),

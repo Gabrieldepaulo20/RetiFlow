@@ -30,6 +30,7 @@ interface AuthContextType {
   authMode: AuthMode;
   user: SystemUser | null;
   session: AuthSession | null;
+  isAuthLoading: boolean;
   isAuthenticated: boolean;
   login: (credentials: LoginCredentials, portal?: LoginPortal) => Promise<LoginResult>;
   logout: () => void;
@@ -63,6 +64,7 @@ function createRealSession(user: SystemUser): AuthSession {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(() => loadStoredSession());
+  const [isAuthLoading, setIsAuthLoading] = useState(IS_REAL_AUTH);
   const [moduleAccessVersion, setModuleAccessVersion] = useState(0);
 
   const authMode: AuthMode = IS_REAL_AUTH ? 'real' : 'development';
@@ -82,19 +84,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Modo real: restaura sessão Supabase existente ao montar e escuta mudanças de auth
   useEffect(() => {
-    if (!IS_REAL_AUTH) return;
+    if (!IS_REAL_AUTH) {
+      setIsAuthLoading(false);
+      return;
+    }
 
-    // Restaura sessão se Supabase tiver token válido mas app session não existir
-    supabase.auth.getSession().then(async ({ data: { session: sbSession } }) => {
-      if (!sbSession || session) return;
+    let active = true;
 
+    const restoreProfileFromSupabase = async () => {
       const { data: envelope } = await supabase.schema('RetificaPremium').rpc('get_usuario_por_auth_id');
-      if (!envelope || envelope.status !== 200) return;
+      if (!envelope || envelope.status !== 200) return null;
+      return createRealSession(dbUserToSystemUser(envelope.dados));
+    };
 
-      const perfil = envelope.dados;
+    // Restaura sessão antes de qualquer rota protegida decidir redirecionar.
+    void supabase.auth.getSession().then(async ({ data: { session: sbSession } }) => {
+      if (!active) return;
+
+      if (!sbSession) {
+        setSession(null);
+        return;
+      }
+
+      const restoredSession = await restoreProfileFromSupabase();
+      if (!active) return;
 
       removeStorageItem(AUTH_SESSION_STORAGE_KEY);
-      setSession(createRealSession(dbUserToSystemUser(perfil)));
+      setSession(restoredSession);
+    }).catch(() => {
+      if (active) setSession(null);
+    }).finally(() => {
+      if (active) setIsAuthLoading(false);
     });
 
     // Escuta sign-out do Supabase. Tokens ficam somente na persistência do SDK.
@@ -103,20 +123,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (event === 'SIGNED_OUT') {
         setSession(null);
+        setIsAuthLoading(false);
         return;
       }
 
-      if (event === 'SIGNED_IN' && sbSession && !session) {
-        void supabase.schema('RetificaPremium').rpc('get_usuario_por_auth_id').then(({ data: envelope }) => {
-          if (envelope && envelope.status === 200) {
-            setSession(createRealSession(dbUserToSystemUser(envelope.dados)));
-          }
+      if (event === 'SIGNED_IN' && sbSession) {
+        setIsAuthLoading(true);
+        void restoreProfileFromSupabase().then((restoredSession) => {
+          if (!active) return;
+          setSession(restoredSession);
+        }).catch(() => {
+          if (active) setSession(null);
+        }).finally(() => {
+          if (active) setIsAuthLoading(false);
         });
       }
     });
 
-    return () => subscription.unsubscribe();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const user = session?.user ?? null;
@@ -182,6 +209,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       authMode,
       user,
       session,
+      isAuthLoading,
       isAuthenticated: Boolean(user),
       login,
       logout,
@@ -190,7 +218,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAdmin: user?.role === 'ADMIN',
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [authMode, can, canAccessModule, login, logout, session, user, moduleAccessVersion],
+    [authMode, can, canAccessModule, isAuthLoading, login, logout, session, user, moduleAccessVersion],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
