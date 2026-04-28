@@ -146,7 +146,7 @@ export default function SettingsPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <h1 className="text-2xl font-display font-bold">Configurações</h1>
+      <h1 className="text-2xl font-display font-bold" data-testid="settings-title">Configurações</h1>
 
       <Alert>
         <Info className="h-4 w-4" />
@@ -158,18 +158,18 @@ export default function SettingsPage() {
 
       <Tabs defaultValue="empresa" className="space-y-4">
         <TabsList className="flex w-full flex-nowrap justify-start gap-1 overflow-x-auto">
-          <TabsTrigger value="empresa" className="shrink-0 text-xs sm:text-sm"><Building2 className="w-4 h-4 mr-1.5 hidden sm:inline" /> Empresa</TabsTrigger>
-          <TabsTrigger value="modulos" className="shrink-0 text-xs sm:text-sm"><LayoutGrid className="w-4 h-4 mr-1.5 hidden sm:inline" /> Módulos</TabsTrigger>
-          <TabsTrigger value="aparencia" className="shrink-0 text-xs sm:text-sm"><Palette className="w-4 h-4 mr-1.5 hidden sm:inline" /> Aparência</TabsTrigger>
-          <TabsTrigger value="modelos" className="shrink-0 text-xs sm:text-sm"><FileText className="w-4 h-4 mr-1.5 hidden sm:inline" /> Modelos</TabsTrigger>
-          <TabsTrigger value="seguranca" className="shrink-0 text-xs sm:text-sm"><Lock className="w-4 h-4 mr-1.5 hidden sm:inline" /> Segurança</TabsTrigger>
-          <TabsTrigger value="usuarios" className="shrink-0 text-xs sm:text-sm"><Users className="w-4 h-4 mr-1.5 hidden sm:inline" /> Usuários</TabsTrigger>
+          <TabsTrigger value="empresa" className="shrink-0 text-xs sm:text-sm" data-testid="tab-empresa"><Building2 className="w-4 h-4 mr-1.5 hidden sm:inline" /> Empresa</TabsTrigger>
+          <TabsTrigger value="modulos" className="shrink-0 text-xs sm:text-sm" data-testid="tab-modulos"><LayoutGrid className="w-4 h-4 mr-1.5 hidden sm:inline" /> Módulos</TabsTrigger>
+          <TabsTrigger value="aparencia" className="shrink-0 text-xs sm:text-sm" data-testid="tab-aparencia"><Palette className="w-4 h-4 mr-1.5 hidden sm:inline" /> Aparência</TabsTrigger>
+          <TabsTrigger value="modelos" className="shrink-0 text-xs sm:text-sm" data-testid="tab-modelos"><FileText className="w-4 h-4 mr-1.5 hidden sm:inline" /> Modelos</TabsTrigger>
+          <TabsTrigger value="seguranca" className="shrink-0 text-xs sm:text-sm" data-testid="tab-seguranca"><Lock className="w-4 h-4 mr-1.5 hidden sm:inline" /> Segurança</TabsTrigger>
+          <TabsTrigger value="usuarios" className="shrink-0 text-xs sm:text-sm" data-testid="tab-usuarios"><Users className="w-4 h-4 mr-1.5 hidden sm:inline" /> Usuários</TabsTrigger>
         </TabsList>
 
         {/* EMPRESA */}
         <TabsContent value="empresa">
           <Card>
-            <CardHeader><CardTitle className="flex items-center gap-2"><Building2 className="w-5 h-5" /> Dados da Empresa</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="flex items-center gap-2" data-testid="card-title-empresa"><Building2 className="w-5 h-5" /> Dados da Empresa</CardTitle></CardHeader>
             <CardContent className="space-y-5">
               {!COMPANY_SETTINGS_CONNECTED && (
                 <Alert>

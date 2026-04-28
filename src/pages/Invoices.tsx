@@ -92,7 +92,7 @@ interface InvoiceFormState {
 
 const EMPTY_FORM: InvoiceFormState = {
   clientId: '',
-  noteId: NO_NOTE,
+  noteId: '',
   type: 'NFSE',
   number: '',
   series: '001',
@@ -200,7 +200,7 @@ export default function Invoices() {
 
     addInvoice({
       clientId: form.clientId,
-      noteId: form.noteId === NO_NOTE ? undefined : form.noteId,
+      noteId: (form.noteId === NO_NOTE || !form.noteId) ? undefined : form.noteId,
       type: form.type,
       number: form.number || undefined,
       series: form.series || undefined,

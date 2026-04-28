@@ -557,6 +557,16 @@ export default function MonthlyClosing() {
       const dados = buildDadosFromDraft(draft);
       const notasDados: FechamentoNota[] = dados.notas;
       const totals = computeDraftTotals(draft);
+
+      if (!IS_REAL_AUTH) {
+        // Mock success
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        toast({ title: 'Fechamento gerado (MOCK)', description: 'Em modo demonstração, o registro não é salvo no banco.' });
+        removeDraft(draft.id);
+        closeDraftModal();
+        return;
+      }
+
       const pdfBlob = await renderClosingPdfBlob({ ...dados, gerado_em: geradoEm }, geradoEm);
 
       // 1. Insert fechamento header

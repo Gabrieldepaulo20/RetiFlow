@@ -408,7 +408,7 @@ export default function OSPreviewModal({ open, onClose, note, client, services, 
         <DialogHeader className="shrink-0 border-b bg-card px-4 py-2.5 pr-14 sm:px-5 sm:pr-16">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div className="min-w-0">
-              <DialogTitle className="text-lg font-bold">
+              <DialogTitle className="text-lg font-bold" data-testid="os-preview-title">
                 Preview — {note.number}
               </DialogTitle>
               <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">

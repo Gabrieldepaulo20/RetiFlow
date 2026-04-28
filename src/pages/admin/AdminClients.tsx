@@ -298,12 +298,12 @@ export default function AdminClients() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-display font-bold text-foreground">Usuários do Sistema</h1>
+          <h1 className="text-2xl font-display font-bold text-foreground" data-testid="admin-users-title">Usuários do Sistema</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Gerencie contas internas, status de acesso e restrições adicionais por usuário.
           </p>
         </div>
-        <Button onClick={() => setShowCreateDialog(true)} className="gap-2 rounded-xl h-11 px-5 shadow-lg shadow-primary/20">
+        <Button onClick={() => setShowCreateDialog(true)} className="gap-2 rounded-xl h-11 px-5 shadow-lg shadow-primary/20" data-testid="btn-new-user">
           <UserPlus className="w-4 h-4" /> Novo Usuário
         </Button>
       </div>
@@ -396,7 +396,7 @@ export default function AdminClients() {
                     <div className="flex items-center gap-1.5">
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowModulesDialog(user.id)}>
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowModulesDialog(user.id)} data-testid={`btn-modules-${user.id}`}>
                             <LayoutGrid className="w-4 h-4" />
                           </Button>
                         </TooltipTrigger>
@@ -419,6 +419,7 @@ export default function AdminClients() {
                             size="icon"
                             className={cn('h-8 w-8', !user.isActive && 'text-success')}
                             onClick={() => handleToggleActive(user.id)}
+                            data-testid={`btn-toggle-active-${user.id}`}
                           >
                             <Power className="w-4 h-4" />
                           </Button>
@@ -564,6 +565,7 @@ export default function AdminClients() {
                           checked={isEnabled}
                           disabled={!roleAllowsModule}
                           onCheckedChange={() => void toggleUserModule(user, module.key)}
+                          data-testid={`switch-module-${module.key}`}
                         />
                       </div>
                     );
