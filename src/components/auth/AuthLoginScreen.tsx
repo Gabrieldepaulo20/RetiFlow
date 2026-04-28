@@ -153,8 +153,9 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
 
           <form onSubmit={handleLogin} className="space-y-5">
             <div className="space-y-2">
-              <Label className="text-sm font-medium text-foreground">E-mail</Label>
+              <Label htmlFor="login-email" className="text-sm font-medium text-foreground">E-mail</Label>
               <Input
+                id="login-email"
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
@@ -165,9 +166,10 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-sm font-medium text-foreground">Senha</Label>
+              <Label htmlFor="login-password" className="text-sm font-medium text-foreground">Senha</Label>
               <div className="relative">
                 <Input
+                  id="login-password"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}

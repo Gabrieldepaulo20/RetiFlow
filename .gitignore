@@ -53,6 +53,8 @@ Thumbs.db
 # ── Testes e cobertura ────────────────────────────────────────────────────────
 coverage/
 .nyc_output/
+test-results/
+playwright-report/
 
 # ── Cache ─────────────────────────────────────────────────────────────────────
 .cache/
