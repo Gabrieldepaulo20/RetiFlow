@@ -158,6 +158,13 @@ export async function insertAnexoContaPagar(params: {
   return env.id_anexo as string;
 }
 
+export async function updateAnexoContaPagarNome(params: {
+  p_id_anexo: string;
+  p_nome_arquivo: string;
+}) {
+  await callRPC('update_anexo_conta_pagar_nome', params);
+}
+
 const PAYABLE_ATTACHMENTS_BUCKET = import.meta.env.VITE_SUPABASE_PAYABLE_ATTACHMENTS_BUCKET || 'contas-pagar';
 
 function sanitizeStorageName(filename: string) {

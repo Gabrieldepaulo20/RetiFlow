@@ -13,6 +13,7 @@ import {
   calculatePayableFinalAmount,
   findPayableDuplicate,
 } from '@/services/domain/payables';
+import { buildImportedPayableAttachmentName } from '@/services/domain/payableAttachments';
 import { AccountPayable, PayableAttachmentFileType, PAYMENT_METHOD_LABELS, PaymentMethod, RecurrenceType } from '@/types';
 import { Camera, CheckCircle2, ChevronDown, FileScan, LoaderCircle, RotateCw, Trash2, Upload, XCircle } from 'lucide-react';
 import { analisarContaPagarComIA, insertAnexoContaPagar, uploadAnexoContaPagar } from '@/api/supabase/contas-pagar';
@@ -387,8 +388,14 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     }
   }
 
-  async function persistImportedAttachment(item: ImportFileItem, payableId: string) {
+  async function persistImportedAttachment(item: ImportFileItem, payableId: string, draft: ImportDraft) {
     const type = inferAttachmentType(item.file);
+    const displayName = buildImportedPayableAttachmentName({
+      title: draft.title,
+      supplierName: draft.supplierName,
+      dueDate: draft.dueDate,
+      originalFilename: item.file.name,
+    });
     let url = item.previewUrl ?? `local-upload://${item.file.name}`;
 
     if (IS_REAL_AUTH) {
@@ -396,7 +403,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
       await insertAnexoContaPagar({
         p_fk_contas_pagar: payableId,
         p_tipo: type,
-        p_nome_arquivo: item.file.name,
+        p_nome_arquivo: displayName,
         p_url: url,
       });
     }
@@ -404,10 +411,12 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     addPayableAttachment({
       payableId,
       type,
-      filename: item.file.name,
+      filename: displayName,
       url,
       createdByUserId: user?.id ?? 'user-2',
     });
+
+    return displayName;
   }
 
   async function createPayableFromAnalysis(item: ImportFileItem, analysis: AnalysisResult) {
@@ -462,19 +471,18 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     }
 
     try {
-      await persistImportedAttachment(item, payable.id);
+      const attachmentName = await persistImportedAttachment(item, payable.id, draft);
+      addPayableHistoryEntry(
+        buildPayableHistoryDescription({
+          payableId: payable.id,
+          action: 'ATTACHMENT_ADDED',
+          userId: user?.id ?? 'user-2',
+          extra: { filename: attachmentName },
+        }),
+      );
     } catch (error) {
       throw new Error(`Conta criada, mas o anexo não foi salvo: ${error instanceof Error ? error.message : 'erro desconhecido no Storage.'}`);
     }
-
-    addPayableHistoryEntry(
-      buildPayableHistoryDescription({
-        payableId: payable.id,
-        action: 'ATTACHMENT_ADDED',
-        userId: user?.id ?? 'user-2',
-        extra: { filename: item.file.name },
-      }),
-    );
 
     updateItem(item.id, { status: 'created', progress: 100, creating: false, expanded: false });
     return { payable };

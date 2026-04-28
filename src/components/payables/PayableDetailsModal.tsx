@@ -3,6 +3,7 @@ import { format, parseISO } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import PayableModalShell from '@/components/payables/PayableModalShell';
 import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -32,8 +33,10 @@ import {
   getContaPagarDetalhes,
   uploadAnexoContaPagar,
   insertAnexoContaPagar,
+  updateAnexoContaPagarNome,
 } from '@/api/supabase/contas-pagar';
-import { ArrowUpRight, CalendarRange, CheckCircle2, Circle, Clock, Landmark, Layers3, Loader2, Paperclip, PlusCircle, Sparkles, Wallet } from 'lucide-react';
+import { normalizeAttachmentDisplayName } from '@/services/domain/payableAttachments';
+import { ArrowUpRight, CalendarRange, CheckCircle2, Circle, Clock, Landmark, Layers3, Loader2, Paperclip, Pencil, PlusCircle, Sparkles, Wallet } from 'lucide-react';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
@@ -70,6 +73,7 @@ export default function PayableDetailsModal({
 }: PayableDetailsModalProps) {
   const {
     getPayable,
+    updatePayable,
     addPayableAttachment,
     addPayableHistoryEntry,
     getAttachmentsForPayable,
@@ -85,13 +89,31 @@ export default function PayableDetailsModal({
   const resolvedId = open ? payableId : lastIdRef.current;
 
   const payable = resolvedId ? getPayable(resolvedId) : undefined;
+  const payableIdForReset = payable?.id;
+  const payableTitleForReset = payable?.title ?? '';
   const category = payable ? payableCategories.find((item) => item.id === payable.categoryId) : undefined;
 
   const [detalhes, setDetalhes] = useState<ContaPagarDetalhes | null>(null);
   const [loadingDetalhes, setLoadingDetalhes] = useState(false);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [openingAttachmentId, setOpeningAttachmentId] = useState<string | null>(null);
+  const [renamingTitle, setRenamingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const [savingTitle, setSavingTitle] = useState(false);
+  const [editingAttachmentId, setEditingAttachmentId] = useState<string | null>(null);
+  const [attachmentNameDraft, setAttachmentNameDraft] = useState('');
+  const [savingAttachmentId, setSavingAttachmentId] = useState<string | null>(null);
+  const [attachmentNameOverrides, setAttachmentNameOverrides] = useState<Record<string, string>>({});
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!open || !payableIdForReset) return;
+    setRenamingTitle(false);
+    setTitleDraft(payableTitleForReset);
+    setEditingAttachmentId(null);
+    setAttachmentNameDraft('');
+    setAttachmentNameOverrides({});
+  }, [open, payableIdForReset, payableTitleForReset]);
 
   useEffect(() => {
     if (!open || !resolvedId || !IS_REAL_AUTH) {
@@ -141,9 +163,13 @@ export default function PayableDetailsModal({
         createdAt: a.created_at,
         createdByUserId: '',
       }));
-  const displayAttachments = IS_REAL_AUTH
+  const displayAttachments = (IS_REAL_AUTH
     ? (remoteAttachments.length > 0 ? remoteAttachments : localAttachments)
-    : localAttachments;
+    : localAttachments
+  ).map((attachment) => ({
+    ...attachment,
+    filename: attachmentNameOverrides[attachment.id] ?? attachment.filename,
+  }));
 
   const localHistory = payable ? getHistoryForPayable(payable.id) : [];
   const remoteHistory = (detalhes?.historico ?? []).map((h) => ({
@@ -161,6 +187,81 @@ export default function PayableDetailsModal({
   const paymentNotes = IS_REAL_AUTH
     ? (detalhes?.conta?.observacoes_pagamento ?? null)
     : (payable.paymentNotes ?? null);
+
+  async function handleRenamePayableTitle() {
+    const nextTitle = titleDraft.trim();
+    if (!nextTitle) {
+      toast({ title: 'Nome inválido', description: 'Informe um nome para a conta.', variant: 'destructive' });
+      return;
+    }
+    if (nextTitle === payable.title) {
+      setRenamingTitle(false);
+      return;
+    }
+
+    setSavingTitle(true);
+    try {
+      await updatePayable(payable.id, { title: nextTitle });
+      setRenamingTitle(false);
+      toast({ title: 'Conta renomeada', description: nextTitle });
+    } catch (err) {
+      toast({
+        title: 'Erro ao renomear conta',
+        description: err instanceof Error ? err.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingTitle(false);
+    }
+  }
+
+  function startAttachmentRename(attachmentId: string, currentName: string) {
+    setEditingAttachmentId(attachmentId);
+    setAttachmentNameDraft(currentName);
+  }
+
+  async function handleRenameAttachment(attachmentId: string, currentName: string) {
+    const nextName = normalizeAttachmentDisplayName(attachmentNameDraft, currentName);
+    if (nextName === currentName) {
+      setEditingAttachmentId(null);
+      setAttachmentNameDraft('');
+      return;
+    }
+
+    setSavingAttachmentId(attachmentId);
+    try {
+      if (IS_REAL_AUTH) {
+        await updateAnexoContaPagarNome({
+          p_id_anexo: attachmentId,
+          p_nome_arquivo: nextName,
+        });
+        if (payable) {
+          const updated = await getContaPagarDetalhes(payable.id);
+          setDetalhes(updated);
+        }
+      }
+
+      setAttachmentNameOverrides((previous) => ({ ...previous, [attachmentId]: nextName }));
+      setEditingAttachmentId(null);
+      setAttachmentNameDraft('');
+      addPayableHistoryEntry({
+        payableId: payable.id,
+        action: 'UPDATED',
+        description: `Anexo renomeado para "${nextName}".`,
+        userId: user?.id ?? '',
+        fieldChanges: [{ field: 'Anexo', oldValue: currentName, newValue: nextName }],
+      });
+      toast({ title: 'Anexo renomeado', description: nextName });
+    } catch (err) {
+      toast({
+        title: 'Erro ao renomear anexo',
+        description: err instanceof Error ? err.message : 'Verifique se a função update_anexo_conta_pagar_nome já foi aplicada no Supabase.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingAttachmentId(null);
+    }
+  }
 
   async function handleAttachmentFile(file: File) {
     if (!payable) return;
@@ -247,6 +348,44 @@ export default function PayableDetailsModal({
                     <p className="text-xs text-muted-foreground">Tudo que a cliente precisa bater o olho e entender.</p>
                   </div>
                   {payable.isUrgent ? <Badge variant="secondary">Urgente</Badge> : null}
+                </div>
+                <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-medium text-muted-foreground">Nome da conta</p>
+                      {renamingTitle ? (
+                        <Input
+                          value={titleDraft}
+                          onChange={(event) => setTitleDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') void handleRenamePayableTitle();
+                            if (event.key === 'Escape') setRenamingTitle(false);
+                          }}
+                          maxLength={120}
+                          className="mt-1"
+                          autoFocus
+                        />
+                      ) : (
+                        <p className="mt-1 truncate text-sm font-semibold">{payable.title}</p>
+                      )}
+                    </div>
+                    {renamingTitle ? (
+                      <div className="flex shrink-0 gap-2">
+                        <Button size="sm" onClick={() => void handleRenamePayableTitle()} disabled={savingTitle}>
+                          {savingTitle ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+                          Salvar
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setRenamingTitle(false)} disabled={savingTitle}>
+                          Cancelar
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setRenamingTitle(true)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                        Renomear
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2 text-sm">
                   <div><span className="text-muted-foreground">Fornecedor:</span> <span className="font-medium">{payable.supplierName ?? 'Não informado'}</span></div>
@@ -378,21 +517,75 @@ export default function PayableDetailsModal({
                 {displayAttachments.length > 0 ? (
                   <div className="space-y-2.5">
                     {displayAttachments.map((attachment) => (
-                      <div key={attachment.id} className="flex items-center justify-between gap-3 rounded-2xl border border-border/60 p-3 text-sm">
-                        <div className="min-w-0">
-                          <p className="truncate font-medium">{attachment.filename}</p>
+                      <div key={attachment.id} className="flex flex-col gap-3 rounded-2xl border border-border/60 p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0 flex-1">
+                          {editingAttachmentId === attachment.id ? (
+                            <Input
+                              value={attachmentNameDraft}
+                              onChange={(event) => setAttachmentNameDraft(event.target.value)}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter') void handleRenameAttachment(attachment.id, attachment.filename);
+                                if (event.key === 'Escape') {
+                                  setEditingAttachmentId(null);
+                                  setAttachmentNameDraft('');
+                                }
+                              }}
+                              maxLength={140}
+                              autoFocus
+                            />
+                          ) : (
+                            <p className="truncate font-medium">{attachment.filename}</p>
+                          )}
                           <p className="mt-1 text-xs text-muted-foreground">{attachment.type} • {format(parseISO(attachment.createdAt), 'dd/MM/yyyy HH:mm')}</p>
                         </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-1.5"
-                          disabled={attachment.url.startsWith('local-upload://') || openingAttachmentId === attachment.id}
-                          onClick={() => void handleOpenAttachment(attachment.id, attachment.url)}
-                        >
-                          {openingAttachmentId === attachment.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUpRight className="h-3.5 w-3.5" />}
-                          Abrir
-                        </Button>
+                        <div className="flex shrink-0 flex-wrap gap-2">
+                          {editingAttachmentId === attachment.id ? (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={savingAttachmentId === attachment.id}
+                                onClick={() => void handleRenameAttachment(attachment.id, attachment.filename)}
+                              >
+                                {savingAttachmentId === attachment.id ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+                                Salvar
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={savingAttachmentId === attachment.id}
+                                onClick={() => {
+                                  setEditingAttachmentId(null);
+                                  setAttachmentNameDraft('');
+                                }}
+                              >
+                                Cancelar
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5"
+                                onClick={() => startAttachmentRename(attachment.id, attachment.filename)}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                                Renomear
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5"
+                                disabled={attachment.url.startsWith('local-upload://') || openingAttachmentId === attachment.id}
+                                onClick={() => void handleOpenAttachment(attachment.id, attachment.url)}
+                              >
+                                {openingAttachmentId === attachment.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUpRight className="h-3.5 w-3.5" />}
+                                Abrir
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>

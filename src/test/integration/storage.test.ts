@@ -108,6 +108,15 @@ describe.skipIf(skipIntegration)('Storage — PDFs e anexos privados com signed 
     expect(detalhes?.conta.id_contas_pagar).toBe(contaId);
     expect(detalhes?.anexos.some((anexo) => anexo.url === path)).toBe(true);
 
+    await payablesApi.updateAnexoContaPagarNome({
+      p_id_anexo: anexoId,
+      p_nome_arquivo: 'Comprovante Renomeado.pdf',
+    });
+    const renamedDetails = await payablesApi.getContaPagarDetalhes(contaId);
+    expect(renamedDetails?.anexos.some((anexo) => (
+      anexo.id_anexo === anexoId && anexo.nome_arquivo === 'Comprovante Renomeado.pdf'
+    ))).toBe(true);
+
     const signedUrl = await payablesApi.getAnexoContaPagarUrl(path);
     expect(signedUrl).toContain('/storage/v1/object/sign/contas-pagar/');
 
