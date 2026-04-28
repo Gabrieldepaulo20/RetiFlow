@@ -574,7 +574,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
       open={open}
       onOpenChange={onOpenChange}
       title="Importar contas"
-      description="Anexe documentos e a IA cria as contas a pagar automaticamente."
+      description="Anexe documentos, acompanhe cada status e revise os dados antes de confirmar contas com pendência."
       desktopClassName="sm:max-w-4xl"
     >
       <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
@@ -589,6 +589,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
             type="file"
             multiple
             accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.webp"
+            aria-label="Selecionar documentos para análise com IA"
             onChange={(event) => handleFileChange(event, 'arquivo')}
             className="hidden"
           />
@@ -612,6 +613,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
             type="file"
             accept="image/*"
             capture="environment"
+            aria-label="Abrir câmera para fotografar comprovante"
             onChange={(event) => handleFileChange(event, 'camera')}
             className="hidden"
           />
@@ -671,7 +673,8 @@ function ImportBody({
         <button
           type="button"
           onClick={onSelect}
-          className="flex w-full items-center gap-3 rounded-xl border border-dashed border-primary/30 bg-background px-4 py-3 text-left transition hover:border-primary/50 hover:bg-primary/5"
+          aria-label={cameraMode ? 'Tirar foto para importar conta' : 'Selecionar arquivos para importar contas'}
+          className="flex w-full items-center gap-3 rounded-xl border border-dashed border-primary/30 bg-background px-4 py-3 text-left transition hover:border-primary/50 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           <div className="rounded-xl bg-primary/10 p-2.5 text-primary">
             {cameraMode ? <Camera className="h-5 w-5" /> : <Upload className="h-5 w-5" />}
@@ -694,13 +697,13 @@ function ImportBody({
               : `${items.length} arquivo${items.length === 1 ? '' : 's'} • ${processingCount} processando • ${createdCount} criado${createdCount === 1 ? '' : 's'} • ${errorCount} pendência${errorCount === 1 ? '' : 's'}`}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={onSelect} disabled={isAnalyzing} className="gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button onClick={onSelect} disabled={isAnalyzing} className="gap-2 sm:w-auto">
             {isAnalyzing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
             {isAnalyzing ? 'Processando...' : cameraMode ? 'Tirar outra foto' : 'Adicionar arquivos'}
           </Button>
           {items.length > 0 ? (
-            <Button variant="outline" onClick={onClear} disabled={isAnalyzing}>
+            <Button variant="outline" onClick={onClear} disabled={isAnalyzing} className="sm:w-auto">
               Limpar
             </Button>
           ) : null}
@@ -787,6 +790,7 @@ function ImportFileCard({
   onEditDraft,
 }: ImportFileCardProps) {
   const kind = getFileKind(item.file);
+  const fieldPrefix = `payable-import-${item.id}`;
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border/60 bg-background">
@@ -801,11 +805,24 @@ function ImportFileCard({
             <div className="flex shrink-0 items-center gap-2">
               <StatusBadge status={item.status} />
               {item.status !== 'created' ? (
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onToggleExpanded(item.id)}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  aria-label={item.expanded ? `Recolher detalhes de ${item.file.name}` : `Expandir detalhes de ${item.file.name}`}
+                  onClick={() => onToggleExpanded(item.id)}
+                >
                   <ChevronDown className={`h-4 w-4 transition-transform ${item.expanded ? 'rotate-180' : ''}`} />
                 </Button>
               ) : null}
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => onRemove(item.id)} disabled={item.status === 'analyzing' || item.creating}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                aria-label={`Remover ${item.file.name} da fila`}
+                onClick={() => onRemove(item.id)}
+                disabled={item.status === 'analyzing' || item.creating}
+              >
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
@@ -883,32 +900,37 @@ function ImportFileCard({
                 <p className="text-sm font-semibold">Revisar antes de criar</p>
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="md:col-span-2 space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">Título</label>
+                    <label htmlFor={`${fieldPrefix}-title`} className="text-xs font-medium text-muted-foreground">Título</label>
                     <input
+                      id={`${fieldPrefix}-title`}
                       className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       value={item.draftEdits.title ?? item.analysis.draft.title}
                       onChange={(e) => onEditDraft(item.id, { title: e.target.value })}
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">Fornecedor</label>
+                    <label htmlFor={`${fieldPrefix}-supplier`} className="text-xs font-medium text-muted-foreground">Fornecedor</label>
                     <input
+                      id={`${fieldPrefix}-supplier`}
                       className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       value={item.draftEdits.supplierName ?? item.analysis.draft.supplierName}
                       onChange={(e) => onEditDraft(item.id, { supplierName: e.target.value })}
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">Valor (R$)</label>
+                    <label htmlFor={`${fieldPrefix}-amount`} className="text-xs font-medium text-muted-foreground">Valor (R$)</label>
                     <input
+                      id={`${fieldPrefix}-amount`}
+                      inputMode="decimal"
                       className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       value={item.draftEdits.originalAmount ?? item.analysis.draft.originalAmount.toFixed(2).replace('.', ',')}
                       onChange={(e) => onEditDraft(item.id, { originalAmount: e.target.value })}
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">Vencimento</label>
+                    <label htmlFor={`${fieldPrefix}-due-date`} className="text-xs font-medium text-muted-foreground">Vencimento</label>
                     <input
+                      id={`${fieldPrefix}-due-date`}
                       type="date"
                       className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       value={item.draftEdits.dueDate ?? item.analysis.draft.dueDate}
@@ -916,8 +938,9 @@ function ImportFileCard({
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">Categoria</label>
+                    <label htmlFor={`${fieldPrefix}-category`} className="text-xs font-medium text-muted-foreground">Categoria</label>
                     <select
+                      id={`${fieldPrefix}-category`}
                       className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       value={item.draftEdits.categoryId ?? item.analysis.draft.categoryId}
                       onChange={(e) => onEditDraft(item.id, { categoryId: e.target.value })}
@@ -926,8 +949,9 @@ function ImportFileCard({
                     </select>
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">Forma de pagamento</label>
+                    <label htmlFor={`${fieldPrefix}-payment-method`} className="text-xs font-medium text-muted-foreground">Forma de pagamento</label>
                     <select
+                      id={`${fieldPrefix}-payment-method`}
                       className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       value={item.draftEdits.paymentMethod ?? item.analysis.draft.paymentMethod ?? 'BOLETO'}
                       onChange={(e) => onEditDraft(item.id, { paymentMethod: e.target.value as AccountPayable['paymentMethod'] })}
@@ -936,7 +960,7 @@ function ImportFileCard({
                     </select>
                   </div>
                 </div>
-                <div className="flex items-center justify-between gap-3 border-t border-border/50 pt-3">
+                <div className="flex flex-col gap-3 border-t border-border/50 pt-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="text-xs text-muted-foreground">
                     <span className="font-medium text-foreground">Categoria:</span> {categoryName} &nbsp;•&nbsp;
                     <span className="font-medium text-foreground">Status:</span> {effectiveDraft?.suggestedStatus === 'PAGO' ? 'Já paga' : effectiveDraft?.suggestedStatus === 'AGENDADO' ? 'Agendada' : 'A pagar'}
@@ -945,7 +969,7 @@ function ImportFileCard({
                     size="sm"
                     onClick={() => onCreateItem(item.id)}
                     disabled={item.creating}
-                    className="gap-1.5 shrink-0"
+                    className="shrink-0 gap-1.5 sm:w-auto"
                   >
                     {item.creating ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
                     Confirmar e criar

@@ -681,7 +681,7 @@ export default function MonthlyClosing() {
   return (
     <div className="space-y-5 overflow-x-hidden">
       {generating && (
-        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex flex-col items-center justify-center gap-4">
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex flex-col items-center justify-center gap-4" role="status" aria-live="polite">
           <DualSpinner />
           <p className="text-sm font-medium text-muted-foreground">Gerando fechamento e PDF...</p>
         </div>
@@ -708,9 +708,9 @@ export default function MonthlyClosing() {
       <Card>
         <CardContent className="p-4">
           <p className="text-sm font-medium mb-3">Novo rascunho de fechamento</p>
-          <div className="flex flex-wrap gap-3 items-end">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(220px,1fr)_160px_110px_auto] lg:items-end">
             <div className="flex-1 min-w-[180px]">
-              <p className="text-xs text-muted-foreground mb-1.5">Cliente</p>
+              <label className="mb-1.5 block text-xs text-muted-foreground">Cliente</label>
               <Select value={selClientId} onValueChange={setSelClientId}>
                 <SelectTrigger><SelectValue placeholder="Selecionar cliente" /></SelectTrigger>
                 <SelectContent>
@@ -721,9 +721,9 @@ export default function MonthlyClosing() {
               </Select>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground mb-1.5">Mês</p>
+              <label className="mb-1.5 block text-xs text-muted-foreground">Mês</label>
               <Select value={selMonth} onValueChange={setSelMonth} disabled={!selClientId || loadingPeriods || availableMonthsForYear.length === 0}>
-                <SelectTrigger className="w-[160px]"><SelectValue placeholder={loadingPeriods ? 'Carregando...' : 'Sem notas'} /></SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue placeholder={loadingPeriods ? 'Carregando...' : 'Sem notas'} /></SelectTrigger>
                 <SelectContent>
                   {availableMonthsForYear.map((period) => (
                     <SelectItem key={period.key} value={period.month}>
@@ -734,15 +734,15 @@ export default function MonthlyClosing() {
               </Select>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground mb-1.5">Ano</p>
+              <label className="mb-1.5 block text-xs text-muted-foreground">Ano</label>
               <Select value={selYear} onValueChange={setSelYear} disabled={!selClientId || loadingPeriods || years.length === 0}>
-                <SelectTrigger className="w-[100px]"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {years.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-            <Button onClick={handleBuildPreview} disabled={loadingPreview || loadingPeriods || !selClientId || !selMonth || availablePeriods.length === 0} className="min-w-[180px]">
+            <Button onClick={handleBuildPreview} disabled={loadingPreview || loadingPeriods || !selClientId || !selMonth || availablePeriods.length === 0} className="w-full lg:min-w-[180px]">
               {loadingPreview || loadingPeriods ? <RefreshCcw className="w-4 h-4 mr-2 animate-spin" /> : <PlusCircle className="w-4 h-4 mr-2" />}
               Gerar rascunho
             </Button>
@@ -781,7 +781,7 @@ export default function MonthlyClosing() {
               return (
                 <Card key={draft.id} className={cn('border-l-4 overflow-hidden', palette.border)}>
                   <CardContent className="p-4">
-                    <div className="flex items-start gap-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                       <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0', palette.avatar)}>
                         {initials}
                       </div>
@@ -799,17 +799,17 @@ export default function MonthlyClosing() {
                           Salvo em {new Date(draft.updatedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                         </p>
                       </div>
-                      <div className="flex gap-2 shrink-0 flex-wrap justify-end">
-                        <Button size="sm" variant="outline" onClick={() => openDraft(draft)}>
+                      <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:grid-cols-none sm:flex sm:shrink-0 sm:flex-wrap sm:justify-end">
+                        <Button size="sm" variant="outline" onClick={() => openDraft(draft)} className="justify-center">
                           <PencilLine className="w-3.5 h-3.5 mr-1.5" /> Editar
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => openDraftPreview(draft)}>
+                        <Button size="sm" variant="outline" onClick={() => openDraftPreview(draft)} className="justify-center">
                           <Eye className="w-3.5 h-3.5 mr-1.5" /> Visualizar
                         </Button>
-                        <Button size="sm" onClick={() => void generateDraft(draft)} disabled={generating}>
+                        <Button size="sm" onClick={() => void generateDraft(draft)} disabled={generating} className="col-span-2 justify-center sm:col-span-1">
                           <RefreshCcw className="w-3.5 h-3.5 mr-1.5" /> Gerar fechamento
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={() => removeDraft(draft.id)}>
+                        <Button size="sm" variant="ghost" onClick={() => removeDraft(draft.id)} className="col-span-2 justify-center text-muted-foreground sm:col-span-1">
                           <EyeOff className="w-3.5 h-3.5 mr-1.5" /> Remover
                         </Button>
                       </div>
@@ -845,7 +845,7 @@ export default function MonthlyClosing() {
               return (
                 <Card key={f.id_fechamentos} className={cn('border-l-4 overflow-hidden', palette.border)}>
                   <CardContent className="p-4">
-                    <div className="flex items-start gap-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                       <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0', palette.avatar)}>
                         {initials}
                       </div>
@@ -879,11 +879,11 @@ export default function MonthlyClosing() {
                           </div>
                         )}
                       </div>
-                      <div className="flex gap-2 shrink-0">
-                        <Button size="sm" variant="outline" onClick={() => handleDownload(f)}>
+                      <div className="flex w-full gap-2 sm:w-auto sm:shrink-0">
+                        <Button size="sm" variant="outline" onClick={() => handleDownload(f)} className="flex-1 sm:flex-none">
                           <Download className="w-3.5 h-3.5 mr-1.5" /> PDF
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={async () => {
+                        <Button size="sm" variant="ghost" aria-label={`Copiar link do fechamento ${f.periodo}`} onClick={async () => {
                           if (f.pdf_url) {
                             try {
                               const url = await getFechamentoPDFSignedUrl(f.pdf_url);
@@ -895,7 +895,7 @@ export default function MonthlyClosing() {
                           } else {
                             toast({ title: 'PDF ainda não disponível', variant: 'destructive' });
                           }
-                        }}>
+                        }} className="shrink-0">
                           <Share2 className="w-3.5 h-3.5" />
                         </Button>
                       </div>
