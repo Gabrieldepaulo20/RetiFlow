@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,8 +13,9 @@ import { users } from '@/data/seed';
 import { DEFAULT_ROLE_MODULE_CONFIG } from '@/services/auth/moduleAccess';
 import { Wrench, Building2, Users, Palette, Lock, Upload, Check, FileText, Eye, LayoutGrid, LayoutDashboard, KanbanSquare, Calendar, Receipt, Settings as SettingsIcon, Info } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import OSPreviewModal from '@/components/OSPreviewModal';
 import type { IntakeNote, IntakeService, Client, RoleModuleConfig, UserRole } from '@/types';
+
+const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
 
 const THEME_PRESETS = [
   { name: 'Padrão', primary: '192 70% 38%', accent: '165 55% 40%', sidebar: '215 32% 13%' },
@@ -423,8 +424,12 @@ export default function SettingsPage() {
             </Card>
           </div>
 
-          <OSPreviewModal open={showA5Preview} onClose={() => setShowA5Preview(false)} note={mockNote} client={mockClient} services={mockServicesShort} products={[]} accentColor={docAccentColor} />
-          <OSPreviewModal open={showA4Preview} onClose={() => setShowA4Preview(false)} note={{ ...mockNote, totalAmount: 2500 }} client={mockClient} services={mockServicesLong} products={[]} accentColor={docAccentColor} />
+          {(showA5Preview || showA4Preview) && (
+            <Suspense fallback={null}>
+              <OSPreviewModal open={showA5Preview} onClose={() => setShowA5Preview(false)} note={mockNote} client={mockClient} services={mockServicesShort} products={[]} accentColor={docAccentColor} />
+              <OSPreviewModal open={showA4Preview} onClose={() => setShowA4Preview(false)} note={{ ...mockNote, totalAmount: 2500 }} client={mockClient} services={mockServicesLong} products={[]} accentColor={docAccentColor} />
+            </Suspense>
+          )}
         </TabsContent>
 
         {/* SEGURANÇA */}

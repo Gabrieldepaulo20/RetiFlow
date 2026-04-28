@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { lazy, Suspense, useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useData } from '@/contexts/DataContext';
@@ -14,7 +14,6 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { STATUS_LABELS, STATUS_COLORS, NoteStatus, NOTE_STATUS_ORDER, IntakeNote } from '@/types';
 import { PlusCircle, Search, Share2, Download, Eye, FileText, ClipboardList, SlidersHorizontal, Check, MoreHorizontal, Pencil, FileSpreadsheet } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import OSPreviewModal from '@/components/OSPreviewModal';
 import NoteDetailModal from '@/components/notes/NoteDetailModal';
 import NoteFormModal from '@/components/notes/NoteFormModal';
 import { noteMatchesNumericQuery } from '@/lib/noteNumbers';
@@ -22,6 +21,8 @@ import { cn } from '@/lib/utils';
 import { buildWhatsAppUrl, openExternalUrl } from '@/lib/browserShare';
 import { format } from 'date-fns';
 import { getNotaPDFSignedUrl } from '@/api/supabase/notas';
+
+const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
 
 function initStatusFilters(searchParams: URLSearchParams): Set<string> {
   const raw = searchParams.get('status');
@@ -596,14 +597,16 @@ export default function IntakeNotes() {
 
         {/* Document preview modal (opens on Eye button) */}
         {previewNote && (
-          <OSPreviewModal
-            open={!!previewNoteId}
-            onClose={() => setPreviewNoteId(null)}
-            note={previewNote}
-            client={previewClient}
-            services={previewServices}
-            products={previewProducts}
-          />
+          <Suspense fallback={null}>
+            <OSPreviewModal
+              open={!!previewNoteId}
+              onClose={() => setPreviewNoteId(null)}
+              note={previewNote}
+              client={previewClient}
+              services={previewServices}
+              products={previewProducts}
+            />
+          </Suspense>
         )}
       </div>
     </TooltipProvider>

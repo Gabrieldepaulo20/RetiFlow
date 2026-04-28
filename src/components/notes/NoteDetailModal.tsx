@@ -9,8 +9,7 @@ import { useEffect, useState } from 'react';
 import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { getNotaPDFSignedUrl, getNotaServicoDetalhes, type NotaServicoDetalhesItem, type NotaServicoDetalhes } from '@/api/supabase/notas';
-import { PDFViewer, pdf } from '@react-pdf/renderer';
-import { NotaPDFTemplate } from '@/components/notes/NotaPDFTemplate';
+import { LazyNotaPDFViewer } from '@/components/notes/LazyNotaPDFViewer';
 import {
   Dialog,
   DialogContent,
@@ -64,6 +63,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { generateNotaPdfBlob } from '@/lib/notaPdf';
 
 /** Main workflow statuses for timeline display */
 const MAIN_FLOW: NoteStatus[] = [
@@ -934,7 +934,7 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
                       a.target = '_blank';
                       a.click();
                     } else {
-                      const blob = await pdf(<NotaPDFTemplate dados={pdfDados} />).toBlob();
+                      const blob = await generateNotaPdfBlob(pdfDados);
                       const url = URL.createObjectURL(blob);
                       const a = document.createElement('a');
                       a.href = url;
@@ -959,9 +959,7 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
               </Button>
             </div>
           </div>
-          <PDFViewer width="100%" height="100%" style={{ border: 'none', flex: 1 }}>
-            <NotaPDFTemplate dados={pdfDados} />
-          </PDFViewer>
+          <LazyNotaPDFViewer dados={pdfDados} />
         </DialogContent>
       </Dialog>
     )}

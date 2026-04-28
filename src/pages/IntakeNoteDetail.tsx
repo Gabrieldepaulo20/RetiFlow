@@ -1,8 +1,6 @@
-import { useState, useEffect } from 'react';
+import { lazy, Suspense, useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { getNotaPDFSignedUrl, getNotaServicoDetalhes, type NotaServicoDetalhes } from '@/api/supabase/notas';
-import { pdf } from '@react-pdf/renderer';
-import { NotaPDFTemplate } from '@/components/notes/NotaPDFTemplate';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 import { useData } from '@/contexts/DataContext';
@@ -16,9 +14,11 @@ import { STATUS_LABELS, STATUS_COLORS, NOTE_STATUS_ORDER, FINAL_STATUSES, ALLOWE
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { ArrowLeft, Eye, Printer, Share2, ChevronRight, ChevronLeft, Paperclip, Receipt, Ban, Trash2, XCircle, Link2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import OSPreviewModal from '@/components/OSPreviewModal';
 import { cn } from '@/lib/utils';
 import { buildWhatsAppUrl, openExternalUrl } from '@/lib/browserShare';
+import { generateNotaPdfBlob } from '@/lib/notaPdf';
+
+const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
 
 /** Estágios do fluxo principal (sem os finais alternativos) para a timeline */
 const MAIN_FLOW: NoteStatus[] = ['ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'AGUARDANDO_COMPRA', 'PRONTO', 'ENTREGUE', 'FINALIZADO'];
@@ -156,7 +156,7 @@ export default function IntakeNoteDetail() {
                   a.target = '_blank';
                   a.click();
                 } else if (source) {
-                  const blob = await pdf(<NotaPDFTemplate dados={source} />).toBlob();
+                  const blob = await generateNotaPdfBlob(source);
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement('a');
                   a.href = url;
@@ -421,14 +421,18 @@ export default function IntakeNoteDetail() {
       </Tabs>
 
       {/* Preview Modal */}
-      <OSPreviewModal
-        open={showPreview}
-        onClose={() => setShowPreview(false)}
-        note={note}
-        client={client}
-        services={svcs}
-        products={prds}
-      />
+      {showPreview && (
+        <Suspense fallback={null}>
+          <OSPreviewModal
+            open={showPreview}
+            onClose={() => setShowPreview(false)}
+            note={note}
+            client={client}
+            services={svcs}
+            products={prds}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

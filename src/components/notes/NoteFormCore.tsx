@@ -33,10 +33,9 @@ import { generateId } from '@/lib/generateId';
 import { cn } from '@/lib/utils';
 import { buildCustomerAddressLabel } from '@/services/domain/customers';
 import { formatNoteNumber, normalizeNoteNumber } from '@/lib/noteNumbers';
-import { pdf } from '@react-pdf/renderer';
-import { NotaPDFTemplate } from '@/components/notes/NotaPDFTemplate';
 import { getNotaServicoDetalhes, uploadNotaPDF, updateNotaPdfUrl } from '@/api/supabase/notas';
 import { getTiposDeMotor, getServicosItens } from '@/api/supabase/catalogo';
+import { generateNotaPdfBlob } from '@/lib/notaPdf';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
@@ -535,7 +534,7 @@ export default function NoteFormCore({
         try {
           const detalhes = await getNotaServicoDetalhes(editingNote.id);
           if (detalhes) {
-            const blob = await pdf(<NotaPDFTemplate dados={detalhes} />).toBlob();
+            const blob = await generateNotaPdfBlob(detalhes);
             const url = await uploadNotaPDF(blob, editingNote.number);
             await updateNotaPdfUrl(editingNote.id, url);
           } else {
@@ -601,7 +600,7 @@ export default function NoteFormCore({
       try {
         const detalhes = await getNotaServicoDetalhes(note.id);
         if (detalhes) {
-          const blob = await pdf(<NotaPDFTemplate dados={detalhes} />).toBlob();
+          const blob = await generateNotaPdfBlob(detalhes);
           const url = await uploadNotaPDF(blob, note.number);
           await updateNotaPdfUrl(note.id, url);
         } else {

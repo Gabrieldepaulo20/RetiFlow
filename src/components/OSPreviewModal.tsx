@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { pdf } from '@react-pdf/renderer';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { IntakeNote, IntakeProduct, IntakeService } from '@/types';
@@ -8,11 +7,11 @@ import { Client } from '@/types';
 import { Download, Printer, Share2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { buildCustomerAddressLabel } from '@/services/domain/customers';
-import { NotaPDFTemplate } from '@/components/notes/NotaPDFTemplate';
 import type { NotaServicoDetalhes, NotaServicoDetalhesItem } from '@/api/supabase/notas';
 import { NOTA_PRINT_MAX_ROWS, NOTA_PRINT_OBSERVATIONS, NOTA_PRINT_PAGE } from '@/components/notes/notaPrintLayout';
 import { openPdfPrintDialog } from '@/lib/printPdf';
 import { shareOrCopyText } from '@/lib/browserShare';
+import { generateNotaPdfBlob } from '@/lib/notaPdf';
 
 const MAX_ROWS = NOTA_PRINT_MAX_ROWS;
 
@@ -312,7 +311,6 @@ export default function OSPreviewModal({ open, onClose, note, client, services, 
     () => buildPdfDados(note, client, services, products),
     [note, client, services, products],
   );
-  const documentNode = useMemo(() => <NotaPDFTemplate dados={pdfDados} />, [pdfDados]);
   const pages = useMemo(() => chunkItems(pdfDados.itens_servico, MAX_ROWS), [pdfDados.itens_servico]);
   const previewScale = useMemo(() => {
     if (!previewViewportSize.width || !previewViewportSize.height) return 1;
@@ -334,7 +332,7 @@ export default function OSPreviewModal({ open, onClose, note, client, services, 
   }), [previewScale]);
 
   const buildBlobUrl = async () => {
-    const blob = await pdf(documentNode).toBlob();
+    const blob = await generateNotaPdfBlob(pdfDados);
     return URL.createObjectURL(blob);
   };
 
