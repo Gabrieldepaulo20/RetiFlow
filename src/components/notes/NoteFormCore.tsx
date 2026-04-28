@@ -194,7 +194,6 @@ export default function NoteFormCore({
   const [complaint, setComplaint] = useState('');
   const [observations, setObservations] = useState('');
   const [responsavel, setResponsavel] = useState('');
-  const [noteTab, setNoteTab] = useState<'defeito' | 'obs'>('defeito');
   const [items, setItems] = useState<ServiceItem[]>([newItem()]);
   const [clientSearch, setClientSearch] = useState('');
   const [clientResultsOpen, setClientResultsOpen] = useState(false);
@@ -458,6 +457,11 @@ export default function NoteFormCore({
       return acc + sub - (sub * disc) / 100;
     }, 0);
 
+    const generatedComplaint = validItems
+      .map((item) => item.description.trim())
+      .filter(Boolean)
+      .join('; ');
+
     const payload = {
       clientId,
       status: editingNote?.status || ('ABERTO' as const),
@@ -467,8 +471,8 @@ export default function NoteFormCore({
       vehicleModel: vehicleModel || '-',
       plate: plate || undefined,
       km: km ? parseInt(km) : undefined,
-      complaint: complaint.trim() || validItems.map((i) => i.description).join('; '),
-      observations,
+      complaint: generatedComplaint || complaint.trim() || 'Serviços conforme descrição dos itens',
+      observations: observations.trim(),
       responsavel: responsavel.trim() || undefined,
       createdByUserId: editingNote?.createdByUserId || user!.id,
       totalServices: noteType === 'SERVICO' ? totalAmount : 0,
@@ -1082,44 +1086,16 @@ export default function NoteFormCore({
 
   const section5 = (
     <FormSection>
-      <SectionHeader step={5} icon={<FileText className="w-3.5 h-3.5" />} title="Defeito / Observação interna" />
-      <div className="flex border border-border/50 rounded-lg overflow-hidden mb-3 w-fit">
-        <button
-          type="button"
-          onClick={() => setNoteTab('defeito')}
-          className={cn(
-            'px-4 py-1.5 text-xs font-medium transition-colors',
-            noteTab === 'defeito' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/50',
-          )}
-        >
-          Defeito
-        </button>
-        <button
-          type="button"
-          onClick={() => setNoteTab('obs')}
-          className={cn(
-            'px-4 py-1.5 text-xs font-medium transition-colors',
-            noteTab === 'obs' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/50',
-          )}
-        >
-          Observação interna
-        </button>
-      </div>
-      {noteTab === 'defeito' ? (
-        <Textarea
-          value={complaint}
-          onChange={(e) => setComplaint(e.target.value)}
-          placeholder="Descreva o defeito ou problema relatado pelo cliente..."
-          className="min-h-[80px] resize-y text-sm"
-        />
-      ) : (
-        <Textarea
-          value={observations}
-          onChange={(e) => setObservations(e.target.value)}
-          placeholder="Anotações internas sobre esta O.S. (não visíveis para o cliente)..."
-          className="min-h-[80px] resize-y text-sm"
-        />
-      )}
+      <SectionHeader step={5} icon={<FileText className="w-3.5 h-3.5" />} title="Observação interna" />
+      <Textarea
+        value={observations}
+        onChange={(e) => setObservations(e.target.value)}
+        placeholder="Anotações internas sobre esta O.S. Não aparecem na notinha/PDF."
+        className="min-h-[92px] resize-y text-sm"
+      />
+      <p className="mt-2 text-xs text-muted-foreground">
+        A descrição impressa da notinha vem dos serviços/produtos. As observações do PDF permanecem fixas.
+      </p>
     </FormSection>
   );
 

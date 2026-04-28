@@ -430,6 +430,7 @@ export default function IntakeNoteDetail() {
             client={client}
             services={svcs}
             products={prds}
+            dados={realDetalhes}
           />
         </Suspense>
       )}

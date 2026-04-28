@@ -7,13 +7,21 @@ import { Client } from '@/types';
 import { Download, Printer, Share2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { buildCustomerAddressLabel } from '@/services/domain/customers';
+import { cn } from '@/lib/utils';
 import type { NotaServicoDetalhes, NotaServicoDetalhesItem } from '@/api/supabase/notas';
-import { NOTA_PRINT_MAX_ROWS, NOTA_PRINT_OBSERVATIONS, NOTA_PRINT_PAGE } from '@/components/notes/notaPrintLayout';
+import {
+  NOTA_PRINT_LONG_MAX_ROWS,
+  NOTA_PRINT_MAX_ROWS,
+  NOTA_PRINT_OBSERVATIONS,
+  NOTA_PRINT_PAGE,
+  NOTA_PRINT_PORTRAIT_PAGE,
+} from '@/components/notes/notaPrintLayout';
 import { openPdfPrintDialog } from '@/lib/printPdf';
 import { shareOrCopyText } from '@/lib/browserShare';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
 
 const MAX_ROWS = NOTA_PRINT_MAX_ROWS;
+const LONG_MAX_ROWS = NOTA_PRINT_LONG_MAX_ROWS;
 
 interface OSPreviewModalProps {
   open: boolean;
@@ -23,6 +31,8 @@ interface OSPreviewModalProps {
   services: IntakeService[];
   products: IntakeProduct[];
   accentColor?: string;
+  dados?: NotaServicoDetalhes | null;
+  loadingDados?: boolean;
 }
 
 const formatCurrency = (value: number) =>
@@ -156,12 +166,27 @@ function PreviewField({ label, value }: { label: string; value?: string | null }
   );
 }
 
-function PreviewVia({ dados, itens }: { dados: NotaServicoDetalhes; itens: NotaServicoDetalhesItem[] }) {
+function PreviewVia({
+  dados,
+  itens,
+  maxRows = MAX_ROWS,
+  fullPage = false,
+}: {
+  dados: NotaServicoDetalhes;
+  itens: NotaServicoDetalhesItem[];
+  maxRows?: number;
+  fullPage?: boolean;
+}) {
   const { cabecalho, financeiro_servicos } = dados;
-  const paddingRows = Math.max(0, MAX_ROWS - itens.length);
+  const paddingRows = Math.max(0, maxRows - itens.length);
 
   return (
-    <section className="flex h-full w-1/2 flex-col p-[18px] font-sans text-[13px] leading-snug text-neutral-950">
+    <section
+      className={cn(
+        'flex h-full flex-col font-sans leading-snug text-neutral-950',
+        fullPage ? 'w-full p-[24px] text-[14px]' : 'w-1/2 p-[18px] text-[13px]',
+      )}
+    >
       <div className="flex shrink-0 items-stretch bg-[#e6e6e6] p-1">
         <div className="flex w-1/2 flex-col items-center justify-center p-2.5 text-center">
           <div className="mb-1 h-5" />
@@ -302,34 +327,60 @@ function PreviewPage({ dados, itens }: { dados: NotaServicoDetalhes; itens: Nota
   );
 }
 
-export default function OSPreviewModal({ open, onClose, note, client, services, products }: OSPreviewModalProps) {
+function PreviewPortraitPage({ dados, itens }: { dados: NotaServicoDetalhes; itens: NotaServicoDetalhesItem[] }) {
+  return (
+    <div
+      className="mx-auto flex shrink-0 overflow-hidden bg-white shadow-sm ring-1 ring-black/10"
+      style={{
+        width: NOTA_PRINT_PORTRAIT_PAGE.width,
+        height: NOTA_PRINT_PORTRAIT_PAGE.height,
+      }}
+    >
+      <PreviewVia dados={dados} itens={itens} maxRows={LONG_MAX_ROWS} fullPage />
+    </div>
+  );
+}
+
+export default function OSPreviewModal({
+  open,
+  onClose,
+  note,
+  client,
+  services,
+  products,
+  dados,
+  loadingDados = false,
+}: OSPreviewModalProps) {
   const { toast } = useToast();
   const [busyAction, setBusyAction] = useState<'download' | 'print' | null>(null);
   const [previewViewportRef, previewViewportSize] = useElementSize<HTMLDivElement>();
 
   const pdfDados = useMemo(
-    () => buildPdfDados(note, client, services, products),
-    [note, client, services, products],
+    () => dados ?? buildPdfDados(note, client, services, products),
+    [dados, note, client, services, products],
   );
-  const pages = useMemo(() => chunkItems(pdfDados.itens_servico, MAX_ROWS), [pdfDados.itens_servico]);
+  const usePortraitLayout = pdfDados.itens_servico.length > MAX_ROWS;
+  const pageLayout = usePortraitLayout ? NOTA_PRINT_PORTRAIT_PAGE : NOTA_PRINT_PAGE;
+  const pageMaxRows = usePortraitLayout ? LONG_MAX_ROWS : MAX_ROWS;
+  const pages = useMemo(() => chunkItems(pdfDados.itens_servico, pageMaxRows), [pageMaxRows, pdfDados.itens_servico]);
   const previewScale = useMemo(() => {
     if (!previewViewportSize.width || !previewViewportSize.height) return 1;
 
-    const availableWidth = previewViewportSize.width - NOTA_PRINT_PAGE.viewportPadding;
-    const availableHeight = previewViewportSize.height - NOTA_PRINT_PAGE.viewportPadding;
+    const availableWidth = previewViewportSize.width - pageLayout.viewportPadding;
+    const availableHeight = previewViewportSize.height - pageLayout.viewportPadding;
     const scale = Math.min(
-      availableWidth / NOTA_PRINT_PAGE.width,
-      availableHeight / NOTA_PRINT_PAGE.height,
+      availableWidth / pageLayout.width,
+      availableHeight / pageLayout.height,
       1,
     );
 
-    return Math.max(NOTA_PRINT_PAGE.minScale, Number(scale.toFixed(3)));
-  }, [previewViewportSize.height, previewViewportSize.width]);
+    return Math.max(pageLayout.minScale, Number(scale.toFixed(3)));
+  }, [pageLayout, previewViewportSize.height, previewViewportSize.width]);
 
   const scaledPageStyle = useMemo<CSSProperties>(() => ({
-    width: NOTA_PRINT_PAGE.width * previewScale,
-    height: NOTA_PRINT_PAGE.height * previewScale,
-  }), [previewScale]);
+    width: pageLayout.width * previewScale,
+    height: pageLayout.height * previewScale,
+  }), [pageLayout.height, pageLayout.width, previewScale]);
 
   const buildBlobUrl = async () => {
     const blob = await generateNotaPdfBlob(pdfDados);
@@ -410,7 +461,9 @@ export default function OSPreviewModal({ open, onClose, note, client, services, 
                 Preview — {note.number}
               </DialogTitle>
               <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">
-                Visualização rápida no formato final da O.S.
+                {usePortraitLayout
+                  ? `Formato A4 vertical — ${pages.length} página(s), conforme quantidade de serviços.`
+                  : 'Visualização rápida no formato final da O.S.'}
               </p>
             </div>
             <div className="flex min-w-0 flex-wrap items-center gap-2 md:justify-end">
@@ -428,22 +481,31 @@ export default function OSPreviewModal({ open, onClose, note, client, services, 
         </DialogHeader>
 
         <div ref={previewViewportRef} className="min-h-0 flex-1 overflow-auto bg-zinc-100 p-2 sm:p-3">
-          <div className="flex min-h-full w-full flex-col items-center justify-start gap-3">
-            {pages.map((items, index) => (
-              <div key={`${pdfDados.cabecalho.id_nota}-${index}`} style={scaledPageStyle}>
-                <div
-                  className="origin-top-left"
-                  style={{
-                    transform: `scale(${previewScale})`,
-                    width: NOTA_PRINT_PAGE.width,
-                    height: NOTA_PRINT_PAGE.height,
-                  }}
-                >
-                  <PreviewPage dados={pdfDados} itens={items} />
+          {loadingDados && !dados ? (
+            <div className="flex min-h-full items-center justify-center text-sm font-medium text-muted-foreground">
+              Carregando serviços da O.S...
+            </div>
+          ) : (
+            <div className="flex min-h-full w-full flex-col items-center justify-start gap-3">
+              {pages.map((items, index) => (
+                <div key={`${pdfDados.cabecalho.id_nota}-${index}`} style={scaledPageStyle}>
+                  <div
+                    className="origin-top-left"
+                    style={{
+                      transform: `scale(${previewScale})`,
+                      width: pageLayout.width,
+                      height: pageLayout.height,
+                    }}
+                  >
+                    {usePortraitLayout
+                      ? <PreviewPortraitPage dados={pdfDados} itens={items} />
+                      : <PreviewPage dados={pdfDados} itens={items} />
+                    }
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>

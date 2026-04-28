@@ -191,7 +191,7 @@ describe('Note edit flow', () => {
         'note-1',
         expect.objectContaining({
           vehicleModel: 'Gol 1.6 atualizado',
-          complaint: 'Batendo válvula',
+          complaint: 'Plaina completa',
           totalAmount: 350,
         }),
         expect.any(Array),

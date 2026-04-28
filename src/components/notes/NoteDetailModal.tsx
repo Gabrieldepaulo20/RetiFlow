@@ -544,14 +544,14 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
                 </div>
               </div>
 
-              {/* Complaint */}
-              {note.complaint && (
+              {/* Internal observation */}
+              {note.observations && (
                 <div className="p-3 rounded-xl bg-muted/30">
                   <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
-                    Reclamação / Defeito relatado
+                    Observação interna
                   </p>
                   <p className="text-sm leading-relaxed text-foreground/75">
-                    {note.complaint}
+                    {note.observations}
                   </p>
                 </div>
               )}

@@ -1,8 +1,9 @@
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { NotaServicoDetalhes, NotaServicoDetalhesItem } from '@/api/supabase/notas';
-import { NOTA_PRINT_MAX_ROWS, NOTA_PRINT_OBSERVATIONS } from '@/components/notes/notaPrintLayout';
+import { NOTA_PRINT_LONG_MAX_ROWS, NOTA_PRINT_MAX_ROWS, NOTA_PRINT_OBSERVATIONS } from '@/components/notes/notaPrintLayout';
 
 const MAX_ROWS = NOTA_PRINT_MAX_ROWS;
+const LONG_MAX_ROWS = NOTA_PRINT_LONG_MAX_ROWS;
 
 const styles = StyleSheet.create({
   page: {
@@ -23,6 +24,10 @@ const styles = StyleSheet.create({
     padding: 20,
     flexDirection: 'column',
     boxSizing: 'border-box',
+  },
+  notaFullPage: {
+    width: '100%',
+    padding: 28,
   },
   divider: {
     width: 1,
@@ -299,15 +304,19 @@ function FieldValue({
 function Via({
   dados,
   itens,
+  maxRows = MAX_ROWS,
+  fullPage = false,
 }: {
   dados: NotaServicoDetalhes;
   itens: NotaServicoDetalhesItem[];
+  maxRows?: number;
+  fullPage?: boolean;
 }) {
   const { cabecalho, financeiro_servicos } = dados;
-  const paddingRows = Math.max(0, MAX_ROWS - itens.length);
+  const paddingRows = Math.max(0, maxRows - itens.length);
 
   return (
-    <View style={styles.nota}>
+    <View style={[styles.nota, fullPage && styles.notaFullPage]}>
       <View style={styles.notaHeader}>
         <View style={styles.headerSide}>
           <View style={styles.logoSpacer} />
@@ -424,7 +433,8 @@ interface Props {
 }
 
 export function NotaPDFTemplate({ dados }: Props) {
-  const paginas = chunkItems(dados.itens_servico, MAX_ROWS);
+  const usePortraitLayout = dados.itens_servico.length > MAX_ROWS;
+  const paginas = chunkItems(dados.itens_servico, usePortraitLayout ? LONG_MAX_ROWS : MAX_ROWS);
 
   return (
     <Document title={`O.S. ${dados.cabecalho.os_numero} — ${dados.cabecalho.cliente.nome}`}>
@@ -432,14 +442,20 @@ export function NotaPDFTemplate({ dados }: Props) {
         <Page
           key={`${dados.cabecalho.id_nota}-${index}`}
           size="A4"
-          orientation="landscape"
+          orientation={usePortraitLayout ? 'portrait' : 'landscape'}
           style={styles.page}
         >
-          <View style={styles.notaContainer}>
-            <Via dados={dados} itens={itens} />
-            <View style={styles.divider} />
-            <Via dados={dados} itens={itens} />
-          </View>
+          {usePortraitLayout ? (
+            <View style={styles.notaContainer}>
+              <Via dados={dados} itens={itens} maxRows={LONG_MAX_ROWS} fullPage />
+            </View>
+          ) : (
+            <View style={styles.notaContainer}>
+              <Via dados={dados} itens={itens} />
+              <View style={styles.divider} />
+              <Via dados={dados} itens={itens} />
+            </View>
+          )}
         </Page>
       ))}
     </Document>

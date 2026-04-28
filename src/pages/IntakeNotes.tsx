@@ -20,8 +20,9 @@ import { noteMatchesNumericQuery } from '@/lib/noteNumbers';
 import { cn } from '@/lib/utils';
 import { buildWhatsAppUrl, openExternalUrl } from '@/lib/browserShare';
 import { format } from 'date-fns';
-import { getNotaPDFSignedUrl } from '@/api/supabase/notas';
+import { getNotaPDFSignedUrl, getNotaServicoDetalhes, type NotaServicoDetalhes } from '@/api/supabase/notas';
 
+const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
 
 function initStatusFilters(searchParams: URLSearchParams): Set<string> {
@@ -45,6 +46,8 @@ export default function IntakeNotes() {
   const [newNoteOpen, setNewNoteOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<IntakeNote | null>(null);
   const [resolvingPdfNoteId, setResolvingPdfNoteId] = useState<string | null>(null);
+  const [previewDetalhes, setPreviewDetalhes] = useState<NotaServicoDetalhes | null>(null);
+  const [previewDetalhesLoading, setPreviewDetalhesLoading] = useState(false);
 
   const toggleStatusFilter = (key: string) => {
     setStatusFilters(prev => {
@@ -147,6 +150,35 @@ export default function IntakeNotes() {
     }
   };
 
+  const handleOpenPreview = async (note: IntakeNote) => {
+    setPreviewNoteId(note.id);
+    setPreviewDetalhes(null);
+
+    if (!IS_REAL_AUTH) return;
+
+    setPreviewDetalhesLoading(true);
+    try {
+      const detalhes = await getNotaServicoDetalhes(note.id);
+      if (detalhes) {
+        setPreviewDetalhes(detalhes);
+        return;
+      }
+
+      toast({
+        title: 'Prévia com dados locais',
+        description: 'Não foi possível carregar os serviços completos do banco agora.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Não foi possível carregar a prévia completa',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setPreviewDetalhesLoading(false);
+    }
+  };
+
   const exportFilteredNotes = async () => {
     if (filtered.length === 0) {
       toast({
@@ -173,7 +205,7 @@ export default function IntakeNotes() {
           Motor: note.engineType ?? '',
           Placa: note.plate ?? '',
           KM: note.km ?? '',
-          Defeito: note.complaint,
+          'Observação interna': note.observations ?? '',
           'Valor Total': note.totalAmount,
         };
       });
@@ -509,7 +541,7 @@ export default function IntakeNotes() {
                             <DropdownMenuItem onClick={() => setEditingNote(n)}>
                               <Pencil className="w-4 h-4 mr-2" /> Editar nota
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setPreviewNoteId(n.id)}>
+                            <DropdownMenuItem onClick={() => void handleOpenPreview(n)}>
                               <FileText className="w-4 h-4 mr-2" /> Preview do documento
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
@@ -600,11 +632,17 @@ export default function IntakeNotes() {
           <Suspense fallback={null}>
             <OSPreviewModal
               open={!!previewNoteId}
-              onClose={() => setPreviewNoteId(null)}
+              onClose={() => {
+                setPreviewNoteId(null);
+                setPreviewDetalhes(null);
+                setPreviewDetalhesLoading(false);
+              }}
               note={previewNote}
               client={previewClient}
               services={previewServices}
               products={previewProducts}
+              dados={previewDetalhes}
+              loadingDados={previewDetalhesLoading}
             />
           </Suspense>
         )}

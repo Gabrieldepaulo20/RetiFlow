@@ -1,9 +1,17 @@
 export const NOTA_PRINT_MAX_ROWS = 7;
+export const NOTA_PRINT_LONG_MAX_ROWS = 14;
 
 export const NOTA_PRINT_PAGE = {
   width: 1122,
   height: 793,
   minScale: 0.3,
+  viewportPadding: 16,
+} as const;
+
+export const NOTA_PRINT_PORTRAIT_PAGE = {
+  width: 793,
+  height: 1122,
+  minScale: 0.28,
   viewportPadding: 16,
 } as const;
 
