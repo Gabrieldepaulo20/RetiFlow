@@ -15,7 +15,14 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -24,7 +31,7 @@ import { preloadRouteModule, preloadRouteModules } from '@/routes/routeModules';
 import {
   LayoutDashboard, Users, FileText, KanbanSquare, Calendar, Settings, Wallet,
   Menu, Search, Bell, LogOut, ChevronLeft, ChevronRight, MoreHorizontal, Wrench, ChevronDown, MessageSquarePlus,
-  CheckCircle2, AlertCircle, PlusCircle, ArrowRightLeft, Paperclip, BellOff,
+  CheckCircle2, AlertCircle, PlusCircle, ArrowRightLeft, Paperclip, BellOff, Palette, FileCog,
 } from 'lucide-react';
 
 // ─── Notification helpers ───────────────────────────────────────────────────
@@ -186,17 +193,67 @@ export default function AppLayout() {
         })}
       </nav>
       <div className="p-3 border-t border-sidebar-border">
-        <div className={cn('flex items-center gap-3', collapsed && 'justify-center')}>
-          <Avatar className="w-8 h-8">
-            <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs">{initials}</AvatarFallback>
-          </Avatar>
-          {!collapsed && (
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-sidebar-accent-foreground truncate">{user.name}</p>
-              <p className="text-xs text-sidebar-foreground/60 truncate">{user.role}</p>
-            </div>
-          )}
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className={cn(
+                'flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-sidebar-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring',
+                collapsed && 'justify-center px-0',
+              )}
+              aria-label="Abrir menu da conta"
+            >
+              <Avatar className="w-8 h-8">
+                <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs">{initials}</AvatarFallback>
+              </Avatar>
+              {!collapsed && (
+                <>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-sidebar-accent-foreground truncate">{user.name}</p>
+                    <p className="text-xs text-sidebar-foreground/60 truncate">{user.role}</p>
+                  </div>
+                  <ChevronDown className="h-4 w-4 text-sidebar-foreground/60" />
+                </>
+              )}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            side={collapsed ? 'right' : 'top'}
+            align="start"
+            className="w-64"
+          >
+            <DropdownMenuLabel className="leading-tight">
+              <span className="block truncate text-sm">{user.name}</span>
+              <span className="block truncate text-xs font-normal text-muted-foreground">{user.email}</span>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {canAccessModule('settings') ? (
+              <>
+                <DropdownMenuItem onClick={() => navigate('/configuracoes?tab=empresa')}>
+                  <Settings className="w-4 h-4 mr-2" /> Configurações da empresa
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate('/configuracoes?tab=aparencia')}>
+                  <Palette className="w-4 h-4 mr-2" /> Cores do sistema
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate('/configuracoes?tab=modelos')}>
+                  <FileCog className="w-4 h-4 mr-2" /> Modelos e templates
+                </DropdownMenuItem>
+              </>
+            ) : null}
+            {canAccessModule('admin') && user.role === 'ADMIN' ? (
+              <DropdownMenuItem onClick={() => navigate('/admin/usuarios')}>
+                <Users className="w-4 h-4 mr-2" /> Acessos de funcionários
+              </DropdownMenuItem>
+            ) : null}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setSupportOpen(true)}>
+              <MessageSquarePlus className="w-4 h-4 mr-2" /> Sugestões / Chamado
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { logout(); navigate('/login'); }}>
+              <LogOut className="w-4 h-4 mr-2" /> Sair
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -76,10 +77,14 @@ const MODULE_SETTINGS_CONNECTED = false;
 const APPEARANCE_SETTINGS_CONNECTED = false;
 const DOCUMENT_MODEL_SETTINGS_CONNECTED = false;
 const SECURITY_SETTINGS_CONNECTED = false;
+const SETTINGS_TABS = new Set(['empresa', 'modulos', 'aparencia', 'modelos', 'seguranca', 'usuarios']);
 
 export default function SettingsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabFromUrl = searchParams.get('tab') ?? 'empresa';
+  const activeTab = SETTINGS_TABS.has(tabFromUrl) ? tabFromUrl : 'empresa';
 
   // Company
   const [companyName, setCompanyName] = useState('Retífica Premium');
@@ -145,6 +150,12 @@ export default function SettingsPage() {
     toast({ title: `Prévia local do tema "${t.name}" aplicada` });
   };
 
+  const handleTabChange = (tab: string) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('tab', tab);
+    setSearchParams(nextParams, { replace: true });
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <h1 className="text-2xl font-display font-bold">Configurações</h1>
@@ -158,7 +169,7 @@ export default function SettingsPage() {
         </AlertDescription>
       </Alert>
 
-      <Tabs defaultValue="empresa" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
         <TabsList className="flex w-full flex-nowrap justify-start gap-1 overflow-x-auto">
           <TabsTrigger value="empresa" className="shrink-0 text-xs sm:text-sm"><Building2 className="w-4 h-4 mr-1.5 hidden sm:inline" /> Empresa</TabsTrigger>
           <TabsTrigger value="modulos" className="shrink-0 text-xs sm:text-sm"><LayoutGrid className="w-4 h-4 mr-1.5 hidden sm:inline" /> Módulos</TabsTrigger>
