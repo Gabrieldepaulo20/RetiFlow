@@ -2,12 +2,15 @@ import { Page, expect } from '@playwright/test';
 
 /**
  * Prepares the page for E2E testing by clearing state.
+ * Should be called BEFORE the first navigation in a test.
  */
 export async function setupE2E(page: Page) {
-  await page.addInitScript(() => {
+  // We don't use addInitScript here because it runs on EVERY navigation,
+  // which would clear the session when moving between pages.
+  await page.goto('/'); // Navigate to a neutral page first to access storage
+  await page.evaluate(() => {
     window.localStorage.clear();
     window.sessionStorage.clear();
-    // Inicia o app como se fosse a primeira vez para carregar os defaults do seed.ts
   });
 }
 

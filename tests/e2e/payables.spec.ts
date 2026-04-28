@@ -17,22 +17,22 @@ test.describe('Módulo de Contas a Pagar', () => {
     await page.goto('/contas-a-pagar');
     await ensureHydrated(page);
     // Dado esperado do seed.ts
-    await expect(page.getByText(/CONTA DE LUZ/i).first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(/IPTU — Parcela 2\/10/i).first()).toBeVisible({ timeout: 15000 });
   });
 
   test('deve abrir o modal de nova conta e salvar', async ({ page }) => {
     await page.goto('/contas-a-pagar');
     await ensureHydrated(page);
-    
+
     await page.getByRole('button', { name: /Nova Conta/i }).click();
     await expect(page).toHaveURL(/modal=new/);
     await expect(page.getByRole('heading', { name: /Nova conta a pagar/i })).toBeVisible();
 
     await page.getByPlaceholder(/Ex.: Boleto peças/i).fill('Aluguel Julho');
     await page.getByPlaceholder(/0,00/i).first().fill('3000');
-    
+
     await page.getByRole('button', { name: /Salvar conta/i }).click();
-    
+
     await expect(page.getByText(/Conta cadastrada com sucesso/i).first()).toBeVisible();
   });
 });

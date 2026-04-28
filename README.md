@@ -15,7 +15,7 @@ RetiFlow is a specialized SPA (Single Page Application) designed to manage the u
 - **Backend/DB**: Supabase (Auth, Database, RPCs)
 - **State Management**: DataContext (Context API) + localStorage + React Query
 - **Validation**: Zod + React Hook Form
-- **Testing**: Vitest + Testing Library
+- **Testing**: Vitest + Testing Library (Unit/Logic) & Playwright (E2E)
 
 ## 📦 Key Modules
 
@@ -38,6 +38,7 @@ src/
   services/domain/ - Business logic and domain helpers
   types/           - Centralized TypeScript definitions
 docs/              - Project documentation and session context
+tests/e2e/         - Playwright end-to-end tests
 ```
 
 ## 📜 Core Guidelines
@@ -48,6 +49,10 @@ docs/              - Project documentation and session context
 - **Typing**: All types must be centralized in `src/types/index.ts`.
 - **State**: Prefer `DataContext` for cross-cutting state and Supabase for persistent data.
 - **Design Pattern**: Follow the shadcn/ui pattern for component structure and styling.
+- **Testing**: 
+  - Use **Vitest** for domain logic and component unit tests (`src/test/`).
+  - Use **Playwright** for critical user flows and E2E validation (`tests/e2e/`).
+  - All E2E tests should use the `VITE_AUTH_MODE=mock` for deterministic results.
 
 ## 🔧 Getting Started
 
@@ -55,6 +60,17 @@ docs/              - Project documentation and session context
 2. Install dependencies: `npm install`
 3. Set up `.env` (use `.env.example` as reference)
 4. Run dev server: `npm run dev`
+
+## 🧪 Testing
+
+### Unit & Logic (Vitest)
+- Run tests: `npm run test`
+- Watch mode: `npm run test:watch`
+
+### End-to-End (Playwright)
+- Run all tests: `npm run test:e2e`
+- Open Playwright UI: `npx playwright test --ui`
+- View report: `npx playwright show-report`
 
 ## 📖 Documentation
 

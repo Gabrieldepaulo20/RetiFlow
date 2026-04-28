@@ -60,7 +60,11 @@ You MUST read the overview resource to understand the complete workflow. The inf
 - **Session Context**: Always check and update `docs/contexto-sessao.md` at the end of every task or session. This is the source of truth for current project status.
 - **Forms**: Use `react-hook-form` with `zod` for validation. Prefer a "Core" component for the form logic and "Modal" wrappers for Dialog usage.
 - **Toasts**: Use the system's toast notification (top-right, teal for success, red for error, 5s duration).
-- **Testing**: Add or update tests in `src/test/` for any logic changes. Use `vitest`.
+- **Testing**:
+  - **Logic/Unit**: Add or update tests in `src/test/` for any logic changes. Use `vitest`.
+  - **E2E**: Add or update end-to-end tests in `tests/e2e/` for new features or critical bug fixes. Use `playwright`.
+  - **E2E Helpers**: Always use `setupE2E(page)` in `beforeEach` to clear state and `ensureHydrated(page)` after navigations to handle loading screens.
+  - **E2E Selectors**: Prefer `getByRole`, `getByText`, or `getByLabel` over CSS selectors.
 
 ### 4. Critical UI Patterns
 
