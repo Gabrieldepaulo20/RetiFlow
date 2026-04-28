@@ -96,8 +96,11 @@ describe('App routes', () => {
 
     expect(await screen.findByRole('heading', { name: 'Nota Fiscal indisponível' })).toBeInTheDocument();
     expect(screen.getByText(/fora da v1\/piloto/i)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /registrar nf/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /registrar|emitir|baixar|imprimir|enviar|cancelar/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/registrada com sucesso/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/pdf baixado/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/imprimindo/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/enviado/i)).not.toBeInTheDocument();
   });
 
   it.each([

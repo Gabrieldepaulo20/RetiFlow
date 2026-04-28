@@ -39,7 +39,7 @@ Validações executadas recentemente:
 | `npx tsc --noEmit` | Passou |
 | `npm run build` | Passou |
 | `npm run lint` | Passou com warnings, sem erros |
-| `npm test -- --run` | 175 testes passaram |
+| `npm test -- --run` | 185 testes passaram |
 | `npm run test:integration` | 5 arquivos, 24 testes passaram contra Supabase real |
 
 Avisos ainda existentes:
@@ -812,9 +812,9 @@ npm test -- --run
 
 Resultado recente:
 
-- 13 arquivos
-- 175 testes
-- 175 passaram
+- 15 arquivos
+- 185 testes
+- 185 passaram
 
 Cobertura por intenção:
 
@@ -910,6 +910,9 @@ O que foi feito recentemente:
 - `realAuthProvider` não retorna mais tokens no objeto de sessão da aplicação.
 - Edge Function `analisar-conta-pagar` passou a aceitar allowlist por `CORS_ALLOWED_ORIGINS` ou `ALLOWED_ORIGINS`, preservando localhost para dev e `*` como fallback de compatibilidade quando a env não está definida.
 - Teste `auth-provider.test.ts` foi criado para garantir que mock auth funciona fora de produção, é bloqueado em produção e `real` é aceito em produção.
+- Testes `supabase-base.test.ts` e `supabase-fechamentos.test.ts` foram criados para proteger contrato de envelope RPC, erro de transporte, erro de negócio, `dados` ausente e RPCs de mutation sem retorno.
+- Testes de rota foram reforçados para garantir que Nota Fiscal não expõe botões ou mensagens de sucesso fake.
+- Teste de `ProtectedRoute` foi reforçado para bloquear usuário autenticado com role não permitida.
 - Documento antigo `docs/modulo-contas-a-pagar.md` foi removido; `docs/contexto-sessao.md` é a fonte única de contexto.
 
 ### 11.1 Resumo do que foi pedido e status real
