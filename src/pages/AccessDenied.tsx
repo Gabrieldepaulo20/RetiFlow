@@ -2,9 +2,10 @@ import { Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { ShieldAlert, ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { getDefaultRedirect } from '@/services/auth/defaultRedirect';
 
 export default function AccessDenied() {
-  const { isAdmin } = useAuth();
+  const { user } = useAuth();
   const location = useLocation();
   const requestedPath =
     location.state && typeof location.state === 'object' && 'from' in location.state
@@ -30,7 +31,7 @@ export default function AccessDenied() {
 
         <div className="mt-6 flex flex-col gap-2">
           <Button asChild>
-            <Link to={isAdmin ? '/admin' : '/dashboard'}>Ir para a área permitida</Link>
+            <Link to={user ? getDefaultRedirect(user) : loginPath}>Ir para a área permitida</Link>
           </Button>
           <Button asChild variant="outline">
             <Link to={loginPath}>

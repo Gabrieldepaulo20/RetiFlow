@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { getDefaultRedirect } from '@/services/auth/defaultRedirect';
+import { canUserAccessModule, getDefaultRedirect } from '@/services/auth/defaultRedirect';
 import type { AppModuleKey, SystemUser } from '@/types';
 
 function makeUser(
@@ -40,11 +40,25 @@ describe('auth default redirect', () => {
     }))).toBe('/clientes');
   });
 
-  it('returns the denied page only when no module in the role entry order is available', () => {
+  it('respects explicit enabled modules and ignores disabled ones', () => {
     expect(getDefaultRedirect(makeUser('PRODUCAO', {
       dashboard: false,
       kanban: false,
+      notes: true,
+    }))).toBe('/notas-entrada');
+  });
+
+  it('falls back to role defaults when real module access is fully disabled by invalid config', () => {
+    const user = makeUser('FINANCEIRO', {
+      dashboard: false,
+      payables: false,
+      closing: false,
+      clients: false,
       notes: false,
-    }))).toBe('/acesso-negado');
+      kanban: false,
+    });
+
+    expect(getDefaultRedirect(user)).toBe('/dashboard');
+    expect(canUserAccessModule(user, 'dashboard')).toBe(true);
   });
 });
