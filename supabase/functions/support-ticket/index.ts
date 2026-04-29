@@ -83,6 +83,7 @@ async function sendSesEmail(params: {
   const secretKey = Deno.env.get('AWS_SECRET_ACCESS_KEY') ?? '';
   const from = Deno.env.get('SUPPORT_FROM_EMAIL') ?? '';
   const to = Deno.env.get('SUPPORT_TO_EMAIL') ?? 'gabrielwilliam208@gmail.com';
+  const replyTo = Deno.env.get('SUPPORT_REPLY_TO_EMAIL') ?? to;
 
   if (!accessKey || !secretKey || !from || !to) {
     throw new Error('SES não configurado. Configure AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, SUPPORT_FROM_EMAIL e SUPPORT_TO_EMAIL.');
@@ -92,6 +93,7 @@ async function sendSesEmail(params: {
   const path = '/v2/email/outbound-emails';
   const body = JSON.stringify({
     FromEmailAddress: from,
+    ReplyToAddresses: [replyTo],
     Destination: { ToAddresses: [to] },
     Content: {
       Simple: {
