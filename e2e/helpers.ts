@@ -23,5 +23,8 @@ export async function loginAs(page: Page, role: keyof typeof USERS) {
 export async function clearSession(page: Page) {
   // Must be on the app origin before accessing localStorage
   await page.goto('/login');
-  await page.evaluate(() => window.localStorage.clear());
+  await page.evaluate(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
 }

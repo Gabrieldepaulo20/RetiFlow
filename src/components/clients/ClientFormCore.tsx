@@ -103,19 +103,21 @@ function Field({
   hint,
   required,
   children,
+  htmlFor,
 }: {
   label: string;
   hint?: string;
   required?: boolean;
   children: ReactNode;
+  htmlFor?: string;
 }) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-2 leading-none">
-        <span className="text-[12.5px] font-semibold text-foreground/90">
+        <label htmlFor={htmlFor} className="text-[12.5px] font-semibold text-foreground/90">
           {label}
           {required && <span className="ml-0.5 text-destructive">*</span>}
-        </span>
+        </label>
         {hint && (
           <span className="text-[10.5px] text-muted-foreground/70 tabular-nums shrink-0">{hint}</span>
         )}
@@ -131,17 +133,20 @@ function LookupButton({
   disabled,
   wide,
   onClick,
+  ariaLabel,
 }: {
   loading: boolean;
   disabled: boolean;
   wide?: boolean;
   onClick: () => void;
+  ariaLabel?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
+      aria-label={ariaLabel}
       className={cn(
         'shrink-0 flex items-center justify-center gap-1.5 rounded-lg border border-border/70',
         'bg-muted/35 text-foreground/80 transition-all h-10 shadow-sm',
@@ -397,9 +402,10 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
                 </Select>
               </Field>
 
-              <Field label={docLabel} required>
+              <Field label={docLabel} required htmlFor="client-doc-number">
                 <div className="flex gap-1.5">
                   <Input
+                    id="client-doc-number"
                     className={cn(inputBase, 'flex-1 font-mono text-sm tracking-wide')}
                     value={form.docNumber}
                     onChange={(e) =>
@@ -415,6 +421,7 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
                       disabled={!canLookupCnpj || cnpjLoading}
                       wide
                       onClick={() => void handleCnpjLookup()}
+                      ariaLabel="Buscar CNPJ"
                     />
                   )}
                 </div>
@@ -423,9 +430,11 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
               <Field
                 label={isCompany ? 'Razão social' : 'Nome completo'}
                 required
+                htmlFor="client-name"
                 hint={`${form.name.length}/${CUSTOMER_FIELD_LIMITS.name}`}
               >
                 <Input
+                  id="client-name"
                   className={inputBase}
                   value={form.name}
                   onChange={(e) => {
@@ -445,9 +454,11 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
               {isCompany && (
                 <Field
                   label="Nome fantasia"
+                  htmlFor="client-trade-name"
                   hint={`${(form.tradeName || '').length}/${CUSTOMER_FIELD_LIMITS.tradeName}`}
                 >
                   <Input
+                    id="client-trade-name"
                     className={inputBase}
                     value={form.tradeName || ''}
                     onChange={(e) =>
@@ -457,10 +468,11 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
                   />
                 </Field>
               )}
-              <Field label="Telefone / WhatsApp">
+              <Field label="Telefone / WhatsApp" htmlFor="client-phone">
                 <div className="relative">
                   <Phone className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/55" />
                   <Input
+                    id="client-phone"
                     className={cn(inputBase, 'pl-9')}
                     value={form.phone}
                     onChange={(e) => set('phone', formatPhone(e.target.value))}
@@ -469,10 +481,11 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
                   />
                 </div>
               </Field>
-              <Field label="E-mail">
+              <Field label="E-mail" htmlFor="client-email">
                 <div className="relative">
                   <Mail className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/55" />
                   <Input
+                    id="client-email"
                     type="email"
                     className={cn(inputBase, 'pl-9')}
                     value={form.email}
@@ -492,11 +505,12 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
 
             {/* Row 1: CEP + Número + Logradouro (tudo na mesma linha) */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-[200px_88px_1fr]">
-              <Field label="CEP" required>
+              <Field label="CEP" required htmlFor="client-cep">
                 <div className="flex gap-1.5">
                   <div className="relative flex-1">
                     <MapPin className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/55" />
                     <Input
+                      id="client-cep"
                       className={cn(inputBase, 'pl-9 font-mono text-sm tracking-wide')}
                       value={form.cep || ''}
                       onChange={(e) => {
@@ -522,12 +536,14 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
                     loading={cepLoading}
                     disabled={!canLookupCep || cepLoading}
                     onClick={() => void handleCepLookup()}
+                    ariaLabel="Buscar CEP"
                   />
                 </div>
               </Field>
 
-              <Field label="Número" required>
+              <Field label="Número" required htmlFor="client-address-number">
                 <Input
+                  id="client-address-number"
                   className={inputBase}
                   value={form.addressNumber || ''}
                   onChange={(e) =>
@@ -537,8 +553,9 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
                 />
               </Field>
 
-              <Field label="Logradouro" required>
+              <Field label="Logradouro" required htmlFor="client-address">
                 <Input
+                  id="client-address"
                   className={readOnly}
                   value={form.address}
                   readOnly
@@ -549,24 +566,27 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
 
             {/* Row 2: Bairro + Cidade + UF */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_72px]">
-              <Field label="Bairro">
+              <Field label="Bairro" htmlFor="client-district">
                 <Input
+                  id="client-district"
                   className={readOnly}
                   value={form.district || ''}
                   readOnly
                   placeholder="—"
                 />
               </Field>
-              <Field label="Cidade" required>
+              <Field label="Cidade" required htmlFor="client-city">
                 <Input
+                  id="client-city"
                   className={readOnly}
                   value={form.city}
                   readOnly
                   placeholder="—"
                 />
               </Field>
-              <Field label="UF" required>
+              <Field label="UF" required htmlFor="client-state">
                 <Input
+                  id="client-state"
                   className={cn(readOnly, 'text-center font-mono tracking-widest')}
                   value={form.state}
                   readOnly
