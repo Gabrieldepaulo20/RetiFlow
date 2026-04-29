@@ -23,7 +23,7 @@ import { saveSystemUsers } from '@/services/auth/systemUsers';
 import { saveUserModuleOverrides } from '@/services/auth/moduleAccess';
 import { callAdminUsersFunction } from '@/api/supabase/admin-users';
 import { useAuth } from '@/contexts/AuthContext';
-import { isSuperAdmin as checkIsSuperAdmin } from '@/services/auth/superAdmin';
+import { isConfiguredSuperAdminEmail, isSuperAdmin as checkIsSuperAdmin } from '@/services/auth/superAdmin';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -59,6 +59,19 @@ const ROLE_LABELS: Record<UserRole, string> = {
 };
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
+const MASTER_MODULE_ACCESS: Record<AppModuleKey, boolean> = {
+  dashboard: true,
+  clients: true,
+  notes: true,
+  kanban: true,
+  closing: true,
+  payables: true,
+  invoices: false,
+  settings: true,
+  admin: true,
+};
+
+type NewAccountKind = 'client' | 'master';
 
 function buildUserId() {
   return `user-local-${Date.now()}`;
@@ -86,6 +99,7 @@ export default function AdminClients() {
   const [newEmail, setNewEmail] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [newRole, setNewRole] = useState<UserRole>('RECEPCAO');
+  const [newAccountKind, setNewAccountKind] = useState<NewAccountKind>('client');
 
   useEffect(() => {
     setSystemUsers(systemUsersData);
@@ -126,7 +140,9 @@ export default function AdminClients() {
   const activeCount = systemUsers.filter((user) => user.isActive).length;
   const inactiveCount = systemUsers.filter((user) => !user.isActive).length;
   const isSuperAdmin = checkIsSuperAdmin(currentUser);
-  const canUseSensitiveAdminActions = !IS_REAL_AUTH || isSuperAdmin;
+  const canUseSensitiveAdminActions = !IS_REAL_AUTH || (currentUser?.role === 'ADMIN' && currentUser.isActive);
+  const isCurrentUserMegaMaster = isSuperAdmin;
+  const isMegaMasterUser = (targetUser: SystemUser) => isConfiguredSuperAdminEmail(targetUser.email);
 
   const getEffectiveModules = (user: SystemUser) => {
     return ALL_MODULES.reduce<Record<AppModuleKey, boolean>>((accumulator, module) => {
@@ -145,10 +161,18 @@ export default function AdminClients() {
   const handleToggleActive = async (userId: string) => {
     const targetUser = systemUsers.find((user) => user.id === userId);
     if (!targetUser) return;
-    if (IS_REAL_AUTH && !isSuperAdmin) {
+    if (IS_REAL_AUTH && !canUseSensitiveAdminActions) {
       toast({
-        title: 'Ação restrita ao Super Admin',
-        description: 'Ativar ou inativar usuários exige autorização administrativa reforçada.',
+        title: 'Ação restrita a administradores',
+        description: 'Ativar ou inativar usuários exige acesso administrativo.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (IS_REAL_AUTH && !isCurrentUserMegaMaster && isMegaMasterUser(targetUser)) {
+      toast({
+        title: 'Mega Master protegido',
+        description: 'Usuários Master não podem alterar o status do Mega Master.',
         variant: 'destructive',
       });
       return;
@@ -187,10 +211,18 @@ export default function AdminClients() {
     const user = systemUsers.find((candidate) => candidate.id === userId);
     if (!user) return;
 
-    if (IS_REAL_AUTH && !isSuperAdmin) {
+    if (IS_REAL_AUTH && !canUseSensitiveAdminActions) {
       toast({
-        title: 'Ação restrita ao Super Admin',
-        description: 'Reset de senha só pode ser gerado pelo Super Admin autorizado.',
+        title: 'Ação restrita a administradores',
+        description: 'Reset de senha exige acesso administrativo.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (IS_REAL_AUTH && !isCurrentUserMegaMaster && isMegaMasterUser(user)) {
+      toast({
+        title: 'Mega Master protegido',
+        description: 'Usuários Master não podem resetar a senha do Mega Master.',
         variant: 'destructive',
       });
       return;
@@ -238,10 +270,21 @@ export default function AdminClients() {
       return;
     }
 
-    if (IS_REAL_AUTH && !isSuperAdmin) {
+    const accountRole = newAccountKind === 'master' ? 'ADMIN' : newRole;
+
+    if (accountRole === 'ADMIN' && IS_REAL_AUTH && !isCurrentUserMegaMaster) {
       toast({
-        title: 'Ação restrita ao Super Admin',
-        description: 'Criar usuários exige autorização administrativa reforçada.',
+        title: 'Ação restrita ao Mega Master',
+        description: 'Somente Gabriel pode criar outro usuário Master.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (IS_REAL_AUTH && !canUseSensitiveAdminActions) {
+      toast({
+        title: 'Ação restrita a administradores',
+        description: 'Criar usuários exige acesso administrativo.',
         variant: 'destructive',
       });
       return;
@@ -251,12 +294,12 @@ export default function AdminClients() {
     try {
       const result = IS_REAL_AUTH
         ? await callAdminUsersFunction({
-            action: newRole === 'ADMIN' ? 'create_admin' : 'create_user',
+            action: accountRole === 'ADMIN' ? 'create_admin' : 'create_user',
             name: newName.trim(),
             email: normalizedEmail,
             phone: newPhone.trim(),
-            role: newRole,
-            modules: roleModuleConfig[newRole],
+            role: accountRole,
+            modules: accountRole === 'ADMIN' ? MASTER_MODULE_ACCESS : roleModuleConfig[accountRole],
           })
         : null;
 
@@ -267,17 +310,19 @@ export default function AdminClients() {
         name: newName.trim(),
         email: normalizedEmail,
         phone: newPhone.trim() || undefined,
-        role: newRole,
+        role: accountRole,
         isActive: true,
         createdAt: new Date().toISOString(),
-        moduleAccess: IS_REAL_AUTH ? roleModuleConfig[newRole] : undefined,
+        moduleAccess: IS_REAL_AUTH
+          ? accountRole === 'ADMIN' ? MASTER_MODULE_ACCESS : roleModuleConfig[accountRole]
+          : undefined,
       };
 
       persistSystemUsers([newUser, ...systemUsers]);
       toast({
         title: IS_REAL_AUTH ? 'Convite enviado por e-mail' : 'Usuário do sistema criado',
         description: IS_REAL_AUTH
-          ? `${newUser.name} receberá o convite para criar a própria senha. Você não precisa saber nem definir senha de ninguém.`
+          ? `${newUser.name} receberá o convite para criar a própria senha como ${accountRole === 'ADMIN' ? 'Master' : 'cliente/usuário operacional'}.`
           : `${newUser.name} já pode acessar o ambiente de desenvolvimento com a senha demo123.`,
       });
       setShowCreateDialog(false);
@@ -285,6 +330,7 @@ export default function AdminClients() {
       setNewEmail('');
       setNewPhone('');
       setNewRole('RECEPCAO');
+      setNewAccountKind('client');
     } catch (error) {
       toast({
         title: 'Não foi possível criar o usuário',
@@ -301,10 +347,18 @@ export default function AdminClients() {
       return;
     }
 
-    if (IS_REAL_AUTH && !isSuperAdmin) {
+    if (IS_REAL_AUTH && !canUseSensitiveAdminActions) {
       toast({
-        title: 'Ação restrita ao Super Admin',
-        description: 'Alterar módulos exige autorização administrativa reforçada.',
+        title: 'Ação restrita a administradores',
+        description: 'Alterar módulos exige acesso administrativo.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (IS_REAL_AUTH && !isCurrentUserMegaMaster && isMegaMasterUser(user)) {
+      toast({
+        title: 'Mega Master protegido',
+        description: 'Usuários Master não podem alterar módulos do Mega Master.',
         variant: 'destructive',
       });
       return;
@@ -401,12 +455,12 @@ export default function AdminClients() {
         ) : null}
       </div>
 
-      {IS_REAL_AUTH && !isSuperAdmin ? (
+      {IS_REAL_AUTH && !canUseSensitiveAdminActions ? (
         <Alert className="border-amber-200 bg-amber-50/80 text-amber-900">
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Ações administrativas restritas</AlertTitle>
           <AlertDescription>
-            Você pode consultar usuários, mas criar contas, resetar senhas, ativar/inativar e alterar módulos exige o Super Admin autorizado.
+            Você pode consultar usuários, mas criar contas, resetar senhas, ativar/inativar e alterar módulos exige acesso administrativo.
           </AlertDescription>
         </Alert>
       ) : null}
@@ -457,6 +511,7 @@ export default function AdminClients() {
           const activeModules = Object.values(modules).filter(Boolean).length;
           const isExpanded = expandedId === user.id;
           const isMutatingUser = pendingAction?.endsWith(user.id);
+          const isProtectedMegaMaster = IS_REAL_AUTH && !isCurrentUserMegaMaster && isMegaMasterUser(user);
 
           return (
             <motion.div
@@ -484,7 +539,7 @@ export default function AdminClients() {
                           {user.isActive ? 'Ativo' : 'Inativo'}
                         </Badge>
                         <Badge variant="outline" className="text-[10px]">
-                          {ROLE_LABELS[user.role]}
+                          {isMegaMasterUser(user) ? 'Mega Master' : user.role === 'ADMIN' ? 'Master' : ROLE_LABELS[user.role]}
                         </Badge>
                       </div>
                       <p className="text-xs text-muted-foreground truncate">{user.email}</p>
@@ -506,7 +561,7 @@ export default function AdminClients() {
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8"
-                                disabled={isMutatingUser}
+                                disabled={isMutatingUser || isProtectedMegaMaster}
                                 onClick={() => setShowModulesDialog(user.id)}
                               >
                                 <LayoutGrid className="w-4 h-4" />
@@ -535,7 +590,7 @@ export default function AdminClients() {
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8"
-                                disabled={isMutatingUser}
+                                disabled={isMutatingUser || isProtectedMegaMaster}
                                 onClick={() => setShowResetDialog(user.id)}
                               >
                                 <KeyRound className="w-4 h-4" />
@@ -550,7 +605,7 @@ export default function AdminClients() {
                                 variant="ghost"
                                 size="icon"
                                 className={cn('h-8 w-8', !user.isActive && 'text-success')}
-                                disabled={isMutatingUser}
+                                disabled={isMutatingUser || isProtectedMegaMaster}
                                 onClick={() => handleToggleActive(user.id)}
                               >
                                 <Power className="w-4 h-4" />
@@ -641,19 +696,53 @@ export default function AdminClients() {
               <Input value={newPhone} onChange={(event) => setNewPhone(event.target.value)} placeholder="(00) 00000-0000" className="h-11 rounded-xl" />
             </div>
             <div className="space-y-2">
-              <Label>Perfil de Acesso</Label>
-              <Select value={newRole} onValueChange={(value) => setNewRole(value as UserRole)}>
+              <Label>Tipo de conta</Label>
+              <Select
+                value={newAccountKind}
+                onValueChange={(value) => {
+                  const nextKind = value as NewAccountKind;
+                  setNewAccountKind(nextKind);
+                  if (nextKind === 'master') {
+                    setNewRole('ADMIN');
+                  } else if (newRole === 'ADMIN') {
+                    setNewRole('RECEPCAO');
+                  }
+                }}
+              >
                 <SelectTrigger className="h-11 rounded-xl">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="RECEPCAO">Recepção</SelectItem>
-                  <SelectItem value="PRODUCAO">Produção</SelectItem>
-                  <SelectItem value="FINANCEIRO">Financeiro</SelectItem>
-                  {isSuperAdmin || !IS_REAL_AUTH ? <SelectItem value="ADMIN">Administrador</SelectItem> : null}
+                  <SelectItem value="client">Cliente / usuário operacional</SelectItem>
+                  {isCurrentUserMegaMaster || !IS_REAL_AUTH ? (
+                    <SelectItem value="master">Master administrador</SelectItem>
+                  ) : null}
                 </SelectContent>
               </Select>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                Master tem acesso administrativo amplo. Apenas o Mega Master pode criar outro Master.
+              </p>
             </div>
+
+            {newAccountKind === 'client' ? (
+              <div className="space-y-2">
+                <Label>Perfil de Acesso</Label>
+                <Select value={newRole} onValueChange={(value) => setNewRole(value as UserRole)}>
+                  <SelectTrigger className="h-11 rounded-xl">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="RECEPCAO">Recepção</SelectItem>
+                    <SelectItem value="PRODUCAO">Produção</SelectItem>
+                    <SelectItem value="FINANCEIRO">Financeiro</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs leading-relaxed text-muted-foreground">
+                Este convite criará um usuário Master com acesso administrativo. Ele não poderá alterar o usuário Mega Master.
+              </div>
+            )}
             {IS_REAL_AUTH ? (
               <p className="rounded-xl border border-border/60 bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground">
                 O usuário será convidado pelo Supabase Auth. Nenhuma senha é criada ou exibida nesta tela.

@@ -15,6 +15,18 @@ type UserRole = 'ADMIN' | 'FINANCEIRO' | 'PRODUCAO' | 'RECEPCAO';
 
 type ModuleAccess = Partial<Record<AppModuleKey, boolean>>;
 
+const MASTER_MODULE_ACCESS: Required<ModuleAccess> = {
+  dashboard: true,
+  clients: true,
+  notes: true,
+  kanban: true,
+  closing: true,
+  payables: true,
+  invoices: false,
+  settings: true,
+  admin: true,
+};
+
 type ActionPayload =
   | {
       action: 'create_user' | 'create_admin';
@@ -76,6 +88,10 @@ function getConfiguredOrigins() {
 function getSuperAdminEmails() {
   const raw = Deno.env.get('SUPER_ADMIN_EMAILS') ?? Deno.env.get('SUPER_ADMIN_EMAIL') ?? '';
   return new Set(raw.split(',').map((email) => email.trim().toLowerCase()).filter(Boolean));
+}
+
+function isMegaMasterEmail(email: string, superAdminEmails: Set<string>) {
+  return superAdminEmails.has(email.trim().toLowerCase());
 }
 
 function getCorsHeaders(request: Request) {
@@ -359,19 +375,17 @@ async function getRequester(request: Request) {
     return { ok: false as const, response: jsonResponse({ error: 'Allowlist de Super Admin não configurada no servidor.' }, 500, request) };
   }
 
-  const requesterEmail = authUserData.user.email.trim().toLowerCase();
-  if (!superAdminEmails.has(requesterEmail)) {
-    return { ok: false as const, response: jsonResponse({ error: 'Ação restrita ao Super Admin autorizado.' }, 403, request) };
-  }
-
   const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
+  const requesterEmail = authUserData.user.email.trim().toLowerCase();
+  const requesterIsMegaMaster = isMegaMasterEmail(requesterEmail, superAdminEmails);
+
   const { data: profiles, error: profileError } = await serviceClient
     .schema('RetificaPremium')
     .from('Usuarios')
-    .select('status, acesso, email')
+    .select('id_usuarios, status, acesso, email')
     .eq('email', requesterEmail)
     .limit(1);
 
@@ -379,15 +393,34 @@ async function getRequester(request: Request) {
     return { ok: false as const, response: jsonResponse({ error: 'Não foi possível validar o perfil interno do Super Admin.' }, 500, request) };
   }
 
-  const profile = profiles?.[0] as { status?: boolean; acesso?: string; email?: string } | undefined;
+  const profile = profiles?.[0] as { id_usuarios?: string; status?: boolean; acesso?: string; email?: string } | undefined;
   if (!profile || profile.status === false || profile.acesso !== 'administrador') {
-    return { ok: false as const, response: jsonResponse({ error: 'Super Admin sem perfil interno administrativo ativo.' }, 403, request) };
+    return { ok: false as const, response: jsonResponse({ error: 'Ação restrita a administradores ativos.' }, 403, request) };
+  }
+
+  if (!requesterIsMegaMaster) {
+    const { data: moduleRow, error: moduleError } = await serviceClient
+      .schema('RetificaPremium')
+      .from('Modulos')
+      .select('admin')
+      .eq('fk_usuarios', profile.id_usuarios)
+      .maybeSingle();
+
+    if (moduleError) {
+      return { ok: false as const, response: jsonResponse({ error: 'Não foi possível validar o módulo Admin do solicitante.' }, 500, request) };
+    }
+
+    if (moduleRow && moduleRow.admin === false) {
+      return { ok: false as const, response: jsonResponse({ error: 'Módulo Admin desativado para este usuário.' }, 403, request) };
+    }
   }
 
   return {
     ok: true as const,
     serviceClient,
     requesterEmail,
+    requesterIsMegaMaster,
+    superAdminEmails,
   };
 }
 
@@ -516,14 +549,14 @@ async function getInternalResetUser(serviceClient: ReturnType<typeof createClien
   const { data, error } = await serviceClient
     .schema('RetificaPremium')
     .from('Usuarios')
-    .select('id_usuarios, nome, email, status')
+    .select('id_usuarios, nome, email, acesso, status')
     .eq('id_usuarios', userId)
     .maybeSingle();
 
   if (error) throw new Error(`Falha ao carregar usuário: ${error.message}`);
   if (!data?.email) throw new Error('Usuário não encontrado.');
   if (data.status === false) throw new Error('Usuário inativo. Reative o usuário antes de resetar a senha.');
-  return data as { id_usuarios: string; nome: string | null; email: string; status: boolean };
+  return data as { id_usuarios: string; nome: string | null; email: string; acesso: string; status: boolean };
 }
 
 async function getInternalModuleUser(serviceClient: ReturnType<typeof createClient>, userId: string) {
@@ -537,6 +570,13 @@ async function getInternalModuleUser(serviceClient: ReturnType<typeof createClie
   if (error) throw new Error(`Falha ao carregar usuário: ${error.message}`);
   if (!data?.email) throw new Error('Usuário não encontrado.');
   return data as { id_usuarios: string; email: string; acesso: string; status: boolean };
+}
+
+function isProtectedMegaMasterTarget(
+  requester: { requesterIsMegaMaster: boolean; superAdminEmails: Set<string> },
+  targetEmail: string,
+) {
+  return !requester.requesterIsMegaMaster && isMegaMasterEmail(targetEmail, requester.superAdminEmails);
 }
 
 Deno.serve(async (request) => {
@@ -570,10 +610,20 @@ Deno.serve(async (request) => {
       const name = assertString(payload.name, 'name', 120);
       const phone = typeof payload.phone === 'string' ? payload.phone.trim().slice(0, 30) : '';
       const role = payload.action === 'create_admin' ? 'ADMIN' : assertRole(payload.role);
-      const modules = normalizeModules(payload.modules);
+      const modules = payload.action === 'create_admin'
+        ? MASTER_MODULE_ACCESS
+        : normalizeModules(payload.modules);
+
+      if (payload.action === 'create_admin' && !requester.requesterIsMegaMaster) {
+        return jsonResponse({ error: 'Somente o Mega Master pode criar outro usuário Master.' }, 403, request);
+      }
 
       if (payload.role === 'ADMIN' && payload.action !== 'create_admin') {
         return jsonResponse({ error: 'Use create_admin para criar administradores.' }, 400, request);
+      }
+
+      if (role !== 'ADMIN' && modules.admin === true) {
+        return jsonResponse({ error: 'Usuário cliente/operacional não pode receber módulo Admin.' }, 400, request);
       }
 
       const auth = await ensureAuthInvite(requester.serviceClient, email, name);
@@ -603,6 +653,11 @@ Deno.serve(async (request) => {
       const userId = assertUserId(payload.userId);
       const targetUser = await getInternalResetUser(requester.serviceClient, userId);
       const email = assertEmail(targetUser.email);
+
+      if (isProtectedMegaMasterTarget(requester, email)) {
+        return jsonResponse({ error: 'Usuário Master não pode resetar senha do Mega Master.' }, 403, request);
+      }
+
       const confirmationEmail = optionalEmail(payload.confirmationEmail);
       const redirectTo = Deno.env.get('AUTH_REDIRECT_TO') || Deno.env.get('APP_BASE_URL') || undefined;
 
@@ -646,6 +701,10 @@ Deno.serve(async (request) => {
       const modules = normalizeModules(payload.modules);
       const targetUser = await getInternalModuleUser(requester.serviceClient, userId);
 
+      if (isProtectedMegaMasterTarget(requester, targetUser.email)) {
+        return jsonResponse({ error: 'Usuário Master não pode alterar módulos do Mega Master.' }, 403, request);
+      }
+
       if (modules.admin === true && targetUser.acesso !== 'administrador') {
         return jsonResponse({ error: 'O módulo Admin só pode ser ligado para usuários administradores.' }, 400, request);
       }
@@ -660,6 +719,16 @@ Deno.serve(async (request) => {
 
     if (payload.action === 'deactivate_user' || payload.action === 'reactivate_user') {
       const userId = assertUserId(payload.userId);
+      const targetUser = await getInternalModuleUser(requester.serviceClient, userId);
+
+      if (isProtectedMegaMasterTarget(requester, targetUser.email)) {
+        return jsonResponse({ error: 'Usuário Master não pode alterar status do Mega Master.' }, 403, request);
+      }
+
+      if (payload.action === 'deactivate_user' && targetUser.email.trim().toLowerCase() === requester.requesterEmail) {
+        return jsonResponse({ error: 'Você não pode inativar seu próprio usuário.' }, 400, request);
+      }
+
       await callStatusRpc(
         requester.serviceClient,
         payload.action === 'deactivate_user' ? 'inativar_usuario' : 'reativar_usuario',

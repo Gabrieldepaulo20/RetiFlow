@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { isSuperAdmin, getConfiguredSuperAdminEmails } from '@/services/auth/superAdmin';
+import { isConfiguredSuperAdminEmail, isSuperAdmin, getConfiguredSuperAdminEmails } from '@/services/auth/superAdmin';
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -14,6 +14,7 @@ describe('super admin guard', () => {
   it('returns configured emails from env var', () => {
     vi.stubEnv('VITE_SUPER_ADMIN_EMAILS', 'admin@example.com, outro@example.com');
     expect(getConfiguredSuperAdminEmails()).toEqual(['admin@example.com', 'outro@example.com']);
+    expect(isConfiguredSuperAdminEmail(' ADMIN@example.com ')).toBe(true);
   });
 
   it('allows only active admin with authorized email in configured list', () => {
