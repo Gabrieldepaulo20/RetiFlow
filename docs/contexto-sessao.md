@@ -1,10 +1,10 @@
 # Contexto Técnico Completo — Retiflow / Retífica Premium
 
-> Atualizado em: 2026-04-27
+> Atualizado em: 2026-04-29
 > Repositório local: `/Users/gabrielwilliamdepaulo/Documents/RetificaPremium/retiflow`
 > GitHub: `Gabrieldepaulo20/RetiFlow`
 > Branch principal: `main`
-> Último commit validado neste contexto: `cc341b2 security: reduce auth token mirroring and configure function cors`
+> Último commit validado neste contexto: `a81ea76 feat: allow master admins to use operational login`
 > Escopo desta documentação: sistema Retiflow exceto Nota Fiscal, que ainda deve ser tratada como fora da v1/piloto.
 
 Este arquivo foi escrito para ser entregue a outro modelo de IA ou revisor técnico. A intenção é dar contexto suficiente para análise de arquitetura, segurança, banco, frontend, integração Supabase, riscos restantes e oportunidades de melhoria.
@@ -29,7 +29,8 @@ Estado atual honesto:
 | Sugestões de e-mail | Agora conectadas a RPC real, não mais local-only |
 | Logs/histórico | Agora lê e insere no Supabase via `get_logs`/`insert_log` |
 | Nota Fiscal | Fora da v1; rota mantém aviso de indisponibilidade e ações fake foram removidas |
-| Configurações | Parcial/local; seções locais foram explicitamente marcadas/bloqueadas para não parecer persistência real |
+| Configurações | Empresa, módulos e modelos persistem no Supabase; aparência/logo/senha seguem marcadas como prévias/indisponíveis |
+| Admin/Master | Hierarquia Mega Master/Master implementada via Edge Function `admin-users`; Mega Master é protegido |
 | Testes | Unit tests e integration tests reais passando; auth provider tem teste contra mock em produção |
 
 Validações executadas recentemente:
@@ -39,8 +40,8 @@ Validações executadas recentemente:
 | `npx tsc --noEmit` | Passou |
 | `npm run build` | Passou |
 | `npm run lint` | Passou com warnings, sem erros |
-| `npm test -- --run` | 185 testes passaram |
-| `npm run test:integration` | 5 arquivos, 24 testes passaram contra Supabase real |
+| `npm test -- --run` | 246 testes passaram |
+| `npm run test:integration` | 9 arquivos, 30 testes passaram contra Supabase real |
 
 Avisos ainda existentes:
 
@@ -109,6 +110,14 @@ src/
         Leitura e inserção de logs.
       usuarios.ts
         Usuários internos e módulos/permissões.
+      admin-users.ts
+        Chamada segura da Edge Function `admin-users` para convite/reset/módulos/status.
+      empresa.ts
+        Configurações persistidas de empresa por usuário.
+      modelos.ts
+        Configurações persistidas de templates de O.S. e fechamento por usuário.
+      support.ts
+        Chamados de suporte persistidos e envio via Edge Function.
       catalogo.ts
         Catálogos: tipos de motor, serviços, peças/produtos.
 
@@ -262,6 +271,7 @@ Recomendações para endurecer:
 Se alguém alterar a URL manualmente, por exemplo `/admin` ou `/contas-a-pagar`:
 
 - O `ProtectedRoute` verifica sessão, role e módulo no frontend.
+- Em modo real, rotas protegidas revalidam o perfil/módulos via Supabase antes de renderizar a página.
 - Usuário não autenticado é redirecionado para login.
 - Usuário sem módulo é redirecionado para `/acesso-negado`.
 
@@ -269,6 +279,16 @@ Limite:
 
 - Isso não impede chamadas diretas a RPCs se o atacante tiver token válido.
 - A proteção definitiva precisa estar nas RPCs/RLS.
+
+### 5.5 Login Master no portal operacional
+
+Regra atual:
+
+- Um usuário Master/Admin pode entrar por `/admin/login` para administrar a plataforma.
+- O mesmo Master/Admin também pode entrar por `/login` para testar o sistema como operação/cliente.
+- Ao entrar pelo portal operacional, o app redireciona para o primeiro módulo operacional liberado, normalmente `/dashboard`, e evita cair automaticamente em `/admin`.
+- Isso não dá acesso extra: módulos continuam respeitando `moduleAccess` e `ProtectedRoute`.
+- O objetivo é permitir teste real das funcionalidades sem criar uma conta operacional separada para cada validação.
 
 ---
 
@@ -346,6 +366,10 @@ Exceções conhecidas:
 | `sugestoes-email.ts` | `getSugestoesEmail`, `insertSugestaoEmail`, `aceitarSugestaoEmail`, `ignorarSugestaoEmail` | `get_sugestoes_email`, `insert_sugestao_email`, `aceitar_sugestao_email`, `ignorar_sugestao_email` |
 | `logs.ts` | `getLogs`, `insertLog` | `get_logs`, `insert_log` |
 | `usuarios.ts` | `getUsuarios`, `insertUsuario`, `updateUsuario`, `inativarUsuario`, `reativarUsuario`, `upsertModulo` | `get_usuarios`, `insert_usuario`, `update_usuario`, `inativar_usuario`, `reativar_usuario`, `upsert_modulo` |
+| `admin-users.ts` | `callAdminUsersFunction` | Edge Function `admin-users` para convite/criação, reset de senha, módulos e status |
+| `empresa.ts` | `getConfiguracaoEmpresaUsuario`, `upsertConfiguracaoEmpresaUsuario` | `get_configuracao_empresa_usuario`, `upsert_configuracao_empresa_usuario` |
+| `modelos.ts` | `getConfiguracaoModeloUsuario`, `upsertConfiguracaoModeloUsuario` | `get_configuracao_modelo_usuario`, `upsert_configuracao_modelo_usuario` |
+| `support.ts` | `getChamadosSuporte`, `enviarChamadoSuporte` | `get_chamados_suporte`, Edge Function `support-ticket` |
 | `catalogo.ts` | `getTiposDeMotor`, `getServicosItens`, `getPecasProdutos` | `get_tipos_de_motor`, `get_servicos_itens`, `get_pecas_produtos` |
 | `faturas.ts` | `getFaturas`, `getFaturaDetalhes`, `insertFatura`, `updateFatura`, `cancelarFatura` | RPCs de faturas, porém Nota Fiscal está fora da v1 |
 
@@ -379,6 +403,10 @@ Entidades centrais identificadas:
 | `Historico_Conta_Pagar` | Histórico de ações financeiras | Normalizada |
 | `Sugestoes_Email` | Sugestões vindas de e-mail/IA | Normalizada; aceita/ignora por RPC |
 | `Logs` | Log geral do sistema | Normalizada; lida por `get_logs` |
+| `Configuracoes_Empresa_Usuario` | Dados da empresa por usuário/cliente | Persistida por RPC; usada na aba Empresa de Settings |
+| `Configuracoes_Modelos_Usuario` | Modelos e cores de O.S./fechamento por usuário/cliente | Persistida por RPC; usada nos templates de PDF |
+| `Chamados_Suporte` | Chamados/sugestões enviados pelo usuário | Persistida por RPC/Edge Function; envio via SES |
+| `Gmail_Connections` / `Gmail_OAuth_States` / `Gmail_Scanned_Messages` | Base planejada para Gmail/Workspace | Estrutura preparada; ingestão automática ainda depende de configuração OAuth/Cron |
 | `Faturas` | Nota Fiscal/faturas | Fora da v1 |
 
 Sobre formas normais:
@@ -386,7 +414,7 @@ Sobre formas normais:
 - A maior parte do modelo parece aderir a 3FN: entidades separadas, relações por FK, catálogos isolados, anexos como metadados separados.
 - Exceção deliberada: `Fechamentos.dados_json` é um snapshot denormalizado da composição do fechamento. Isso é aceitável para documento financeiro congelado/versão impressa, desde que o fechamento não dependa desse JSON para ser fonte única de verdade editável.
 - Exceção operacional: rascunhos de fechamento ficam em `localStorage` antes de virar fechamento real no banco. Isso é aceitável como rascunho local, mas não como dado final.
-- Atenção: configuração da empresa/modelos/tema ainda não tem persistência real clara.
+- Configurações de empresa e modelos já possuem tabelas/RPCs próprias. Tema visual, logo persistida e troca de senha do próprio usuário ainda não têm persistência/fluxo completo na UI.
 
 ### 6.5 Buckets de Storage
 
@@ -711,21 +739,32 @@ Arquivos:
 
 - `src/pages/admin/AdminClients.tsx`
 - `src/api/supabase/usuarios.ts`
+- `src/api/supabase/admin-users.ts`
 - `src/services/auth/moduleAccess.ts`
 - `src/services/auth/supabaseUserMapping.ts`
+- `src/services/auth/superAdmin.ts`
+- `supabase/functions/admin-users/index.ts`
 
 Estado:
 
-- Lista usuários via hook/API.
-- Cria perfil interno via `insert_usuario`.
-- Ativa/inativa via RPC.
-- Atualiza módulos por usuário via `upsert_modulo`.
+- Lista usuários via hook/API e RPC `get_usuarios`, incluindo módulos persistidos.
+- Criação/convite de usuários em modo real passa pela Edge Function `admin-users`, não por service role no frontend.
+- Reset de senha por admin usa link temporário/recovery da Supabase Auth Admin API dentro da Edge Function.
+- Ativar/inativar usuário e alterar módulos passam pela Edge Function em modo real.
+- Controle de módulos em Settings permite selecionar cliente/usuário e ligar/desligar módulos persistidos.
+- Existe hierarquia:
+  - **Mega Master**: `gabrielwilliam208@gmail.com`, usuário raiz protegido.
+  - **Master/Admin**: usuário com role `ADMIN` e módulo `admin`, criado pelo Mega Master.
+  - **Cliente/operacional**: usuário sem privilégio administrativo global.
+- Somente o Mega Master autorizado pode criar outro Master/Admin.
+- Master/Admin tem acesso administrativo amplo, mas não pode alterar, resetar senha, desativar ou apagar o Mega Master.
+- Um Master/Admin pode logar também no portal operacional para testar funcionalidades como operação.
 
 Limite importante:
 
-- Criar usuário interno não necessariamente cria conta no Supabase Auth. A UI informa isso.
-- Reset de senha é pendente de integração segura com Supabase Auth/Admin API e não deve ser feito direto do frontend.
-- Permissões por módulo existem no frontend e em `Modulos`, mas é necessário garantir que RPCs sensíveis também respeitam permissões no banco.
+- A UI usa a Function para ações sensíveis, mas RPCs administrativas antigas (`insert_usuario`, `upsert_modulo`, `inativar_usuario`, `reativar_usuario`) ainda devem continuar auditadas para não permitir bypass por chamada direta.
+- A service role nunca deve ser exposta no frontend.
+- O primeiro Mega Master deve ser criado por Dashboard Supabase ou script local seguro, sem senha versionada.
 
 ### 8.10 Configurações
 
@@ -735,13 +774,17 @@ Arquivo:
 
 Estado honesto:
 
-- Dados da empresa, logo, tema, modelos e segurança são parcialmente locais/visuais.
-- A tela mostra aviso: "Algumas seções ainda são locais".
-- `COMPANY_SETTINGS_CONNECTED = false`.
-- `SECURITY_SETTINGS_CONNECTED = false`.
-- Prévia de modelos usa dados mock (`mockClient`, `mockNote`, `mockServicesShort`, `mockServicesLong`).
+- **Empresa**: persistência real via `Configuracoes_Empresa_Usuario`, `get_configuracao_empresa_usuario` e `upsert_configuracao_empresa_usuario`.
+- A aba Empresa busca CNPJ via BrasilAPI e, em modo real, salva automaticamente no Supabase ao preencher os dados.
+- O usuário Mega Master já possui dados GAWI persistidos: razão social `59.540.218 GABRIEL WILLIAM DE PAULO`, nome fantasia `GAWI`, CNPJ `59.540.218/0001-81`, telefone `(16) 98840-5275` e e-mail `gabrielwilliam208@gmail.com`.
+- **Módulos**: persistência real por usuário via Edge Function `admin-users` e RPCs de usuários/módulos.
+- **Modelos**: persistência real via `Configuracoes_Modelos_Usuario`, incluindo modelo de O.S., cor da O.S., modelo de fechamento e cor de fechamento.
+- **Aparência/tema**: ainda é prévia local.
+- **Logo**: upload ainda é prévia local, não persistência final.
+- **Segurança/troca de senha própria**: seção de troca direta segue indisponível; reset de senha de clientes pelo Mega Master usa fluxo seguro da Edge Function.
+- Prévia de modelos ainda usa dados mock (`mockClient`, `mockNote`, `mockServicesShort`, `mockServicesLong`) apenas para visualização de template.
 
-Não considerar 100% pronto para produção.
+Não considerar 100% pronto para produção ampla enquanto tema/logo/troca de senha própria não tiverem persistência real ou forem removidos/claramente marcados.
 
 ### 8.11 Nota Fiscal
 
@@ -785,7 +828,7 @@ Recomendação:
 | Proteção de rota só no frontend | Atacante com token pode chamar RPC direto | Validar role/módulo também no banco |
 | Bucket `notas` sem migration aplicada | PDFs de O.S. podem ficar públicos se o bucket ainda estiver público no projeto real | Aplicar migration `20260428110000_private_notas_storage.sql` e validar signed URL |
 | CORS sem allowlist configurada na Edge Function | Mantém compatibilidade com `*`; com env configurada restringe origem | Definir `CORS_ALLOWED_ORIGINS`/`ALLOWED_ORIGINS` no projeto Supabase de produção |
-| Configurações locais | Usuário pode achar que salvou configuração real | Manter avisos/desabilitar salvar até persistir |
+| Aparência/logo/senha própria ainda locais/parciais | Usuário pode achar que salvou configuração real | Manter avisos/desabilitar salvar até persistir de verdade |
 | Nota Fiscal fora da v1 | Usuário pode pedir/esperar uso fiscal | Manter bloqueada/indisponível até existir implementação real |
 | Projeto Supabase real usado em integration tests | Risco de sujeira/dados teste em ambiente principal | Criar Supabase Branch/projeto separado para testes |
 
@@ -812,9 +855,9 @@ npm test -- --run
 
 Resultado recente:
 
-- 15 arquivos
-- 185 testes
-- 185 passaram
+- 26 arquivos
+- 246 testes
+- 246 passaram
 
 Cobertura por intenção:
 
@@ -846,9 +889,9 @@ npm run test:integration
 
 Resultado recente:
 
-- 5 arquivos
-- 24 testes
-- 24 passaram
+- 9 arquivos
+- 30 testes
+- 30 passaram
 
 Arquivos:
 
@@ -859,6 +902,10 @@ Arquivos:
 | `storage.test.ts` | Upload PDF fechamento privado + signed URL; upload anexo conta + DB link + signed URL |
 | `sugestoes-email.test.ts` | Aceitar cria conta real; ignorar não cria conta |
 | `logs.test.ts` | `insert_log` persiste e `get_logs` lê |
+| `empresa.test.ts` | Salva e recarrega dados de empresa do usuário autenticado |
+| `modelos.test.ts` | Salva e recarrega modelos/cor de documento por usuário |
+| `usuarios.test.ts` | `get_usuarios` retorna módulos persistidos para controle administrativo |
+| `support-ticket.test.ts` | Lista chamados reais do usuário autenticado |
 
 Migration aplicada para testes/Auth Admin:
 
@@ -874,6 +921,14 @@ Principais commits recentes:
 
 | Commit | Resumo |
 |---|---|
+| `a81ea76` | Permite Master/Admin usar o login operacional para testar módulos como operação |
+| `d844a29` | Persiste dados da empresa no Supabase e conecta busca CNPJ + reload |
+| `7219e11` | Implementa hierarquia Mega Master/Master/Admin com proteção do usuário raiz |
+| `ea2c2e5` | Revalida acesso a módulos em rotas protegidas no modo real |
+| `d73ed5e` | Persiste e aplica controle de módulos por usuário |
+| `7757f14` | Adiciona fluxo master de reset de senha |
+| `ac5881d` | Persiste modelos/cor de documentos por usuário |
+| `420992e` | Controla módulos por usuário via Settings |
 | `cc341b2` | Remove espelhamento manual de tokens em modo real e adiciona CORS configurável na Edge Function |
 | `db15ea7` | Remove ações fake de Nota Fiscal na v1 e marca Settings locais/parciais de forma explícita |
 | `7397051` | Remove documento antigo de contas a pagar para manter um único contexto oficial |
@@ -904,8 +959,11 @@ O que foi feito recentemente:
 - Grants do schema customizado para service_role/supabase_auth_admin adicionados.
 - Nota Fiscal deixou de expor formulário/listas/ações visuais sem backend. A rota `/nota-fiscal` agora mostra aviso estático de módulo fora da v1/piloto.
 - Nota Fiscal foi removida do menu operacional para reduzir descoberta acidental por usuário final.
-- Settings foi ajustada para avisar que empresa, permissões, aparência, modelos, segurança e usuários ainda são locais/parciais.
-- Controles locais de permissões em Settings foram bloqueados para não parecerem configuração real de backend.
+- Settings foi ajustada para separar o que é real do que ainda é prévia: empresa, módulos e modelos persistem; aparência, logo e troca de senha própria seguem marcadas como parciais.
+- Controle de módulos por usuário foi conectado em modo real, com persistência no Supabase e proteção por Edge Function.
+- Hierarquia Mega Master/Master foi adicionada: apenas `gabrielwilliam208@gmail.com` pode criar outro Master/Admin, e nenhum Master pode alterar/desativar/resetar o Mega Master.
+- Login operacional para Master/Admin foi liberado para testes: o mesmo usuário pode entrar em `/login` e cair em módulos operacionais permitidos sem ir para `/admin`.
+- Dados da empresa GAWI foram persistidos para o login master via `Configuracoes_Empresa_Usuario`.
 - `auth.session` deixou de espelhar access/refresh tokens no modo real. Em produção, tokens ficam sob responsabilidade do Supabase SDK; `auth.session` fica restrito a mock/dev.
 - `realAuthProvider` não retorna mais tokens no objeto de sessão da aplicação.
 - Edge Function `analisar-conta-pagar` passou a aceitar allowlist por `CORS_ALLOWED_ORIGINS` ou `ALLOWED_ORIGINS`, preservando localhost para dev e `*` como fallback de compatibilidade quando a env não está definida.
@@ -931,11 +989,15 @@ Esta lista resume as principais frentes solicitadas pelo usuário ao longo da se
 | Contas a pagar reais | Feito para v1 | CRUD, pagamento, cancelamento, detalhes, histórico, anexos e storage privado conectados |
 | Importação de contas com IA | Feito para v1 | Edge Function com OpenAI, upload/anexo, múltiplos arquivos e status por arquivo; revisão humana continua necessária |
 | Sugestões de e-mail como tab | Feito | Sugestões passaram a usar RPC real e tab no módulo financeiro |
-| Settings segura/informativa | Feito na Fase 9D | Dados da empresa, módulos, aparência, modelos, segurança e usuários ficam marcados como prévia/local/indisponível quando não há backend real |
+| Settings segura/informativa | Feito e parcialmente conectado | Empresa, módulos e modelos persistem; aparência/logo/senha própria continuam explícitas como prévia/indisponíveis |
+| Dados da empresa GAWI no login master | Feito | CNPJ busca dados via BrasilAPI e salva no Supabase; recarregar mantém os dados |
+| Controle de módulos por usuário | Feito | Mega Master seleciona usuário/cliente e liga/desliga módulos persistidos |
+| Hierarquia Mega Master/Master | Feito | `gabrielwilliam208@gmail.com` é Mega Master; Masters têm acesso amplo, exceto alterar/desativar/resetar o Mega Master |
+| Login operacional para Master | Feito | Master pode usar `/login` com o mesmo e-mail/senha para testar módulos operacionais |
 | Agrupamento inteligente de parceladas/recorrentes | Parcial | Dados existem/foram previstos, mas UX avançada de agrupamento ainda é melhoria P2/P1 |
 | Logs/histórico reais | Feito | `insert_log` e `get_logs` validados em integration tests |
 | Nota Fiscal fora da v1 | Feito | Menu operacional ocultado e tela transformada em aviso de indisponibilidade sem ações fake |
-| Settings sem falsa persistência | Feito como mitigação | Seções locais/parciais estão marcadas/bloqueadas; persistência real ainda é futura |
+| Settings sem falsa persistência | Feito como mitigação | O que é real está marcado como Supabase; o que ainda é local/parcial está marcado como prévia/indisponível |
 | Segurança de auth/token | Melhorada | App não espelha mais access/refresh token em `auth.session` no modo real; Supabase SDK gerencia sessão |
 | CORS da Edge Function | Melhorado | Allowlist por env foi adicionada; produção precisa configurar `CORS_ALLOWED_ORIGINS`/`ALLOWED_ORIGINS` |
 | Testes de integração confiáveis | Feito | Sem credenciais deve pular limpo; com `.env.integration` roda contra Supabase real |
@@ -952,7 +1014,7 @@ Esta seção é intencionalmente transparente.
 | Local | Tipo | Observação |
 |---|---|---|
 | `src/pages/Invoices.tsx` | Nota Fiscal fora da v1 | Ações fake foram removidas; a tela agora mostra aviso de indisponibilidade |
-| `src/pages/Settings.tsx` | Preview de modelo com dados mock | Usado para prévia visual |
+| `src/pages/Settings.tsx` | Preview de modelo com dados mock | Usado apenas para prévia visual de template; configurações reais de modelos são persistidas |
 | `src/data/seed.ts` | Dados demo | Usado em `VITE_AUTH_MODE=mock` |
 | `src/services/auth/mockAuthProvider.ts` | Auth dev | Bloqueado em produção por `getAuthProvider()` |
 
@@ -970,8 +1032,8 @@ Esta seção é intencionalmente transparente.
 
 | Local | Problema | Recomendação |
 |---|---|---|
-| `Settings.tsx` empresa/logo/tema/senha | Configuração local/visual | Criar tabela/RPC `Configuracoes_Empresa` |
-| `moduleAccess.ts` role config | Parte das permissões por perfil ainda local | Persistir role-level config no banco ou remover UI se não usada |
+| `Settings.tsx` logo/tema/senha própria | Configuração local/visual | Criar persistência real ou manter como prévia/desabilitado |
+| `moduleAccess.ts` role config em mock/dev | Parte local é usada só para desenvolvimento | Em produção, preferir módulos persistidos por usuário no Supabase |
 | `useClosingRecords.ts` | Hook legado de fechamento local | Removido após busca confirmar ausência de uso no app |
 
 ---
@@ -991,6 +1053,7 @@ Veredito:
 Pronto para piloto:
 
 - Auth/login.
+- Login Master/Admin tanto no portal admin quanto no portal operacional de testes.
 - Clientes.
 - Notas de serviço/O.S.
 - Kanban.
@@ -999,13 +1062,15 @@ Pronto para piloto:
 - Anexos de contas.
 - Sugestões de e-mail como backend/UI.
 - Logs.
+- Controle de módulos por usuário.
+- Reset de senha de usuários pelo Mega Master.
+- Dados da empresa e modelos por usuário/cliente.
 
 Fora da v1:
 
 - Nota Fiscal.
-- Integração real com Gmail/e-mail automático.
-- Configurações avançadas persistidas.
-- Reset de senha por admin.
+- Ingestão Gmail automática completa em produção sem configuração OAuth/Cron.
+- Tema/logo persistidos e troca de senha própria dentro de Settings.
 
 ---
 
@@ -1042,8 +1107,8 @@ Fora da v1:
 
 - Validar bucket `notas` privado com upload real + signed URL no ambiente final.
 - Criar ambiente Supabase separado para integration tests.
-- Persistir configurações da empresa/modelos.
-- Implementar backend real de Settings antes de permitir salvar empresa, tema, logo, modelos, senha ou módulos por essa tela.
+- Persistir tema/logo e fluxo de troca de senha própria, ou manter essas seções indisponíveis.
+- Evoluir Settings para separar melhor configurações globais da GAWI e configurações por cliente.
 - Auditar permissões server-side por módulo/role em todas as RPCs.
 - Melhorar bundle splitting para `react-pdf`, `xlsx`, charts.
 - Corrigir warnings de lint.
@@ -1144,7 +1209,7 @@ Bootstrap do primeiro Super Admin:
 - Se a senha temporária não estiver presente, gera link de convite temporário.
 - O script não roda automaticamente e não contém senha.
 
-Pendências manuais no Supabase:
+Configuração esperada no Supabase:
 
 - Deploy da Function: `supabase functions deploy admin-users`.
 - Configurar secret/env da Function:
@@ -1156,16 +1221,18 @@ Pendências manuais no Supabase:
 
 Estado atual (2026-04-29):
 
-- Function `admin-users` está pronta para deploy: sem e-mail hardcoded, fail-closed quando `SUPER_ADMIN_EMAILS` não configurada (retorna 500 de configuração, não 403 silencioso).
-- Testes unitários criados em `src/test/admin-users.test.ts` (8 testes): session missing, Authorization header, sucesso, erros 401/403/400, body não-JSON, data nula.
+- Function `admin-users` foi deployada durante as fases recentes e deve ser redeployada sempre que `supabase/functions/admin-users/index.ts` mudar.
+- A Function não tem e-mail/senha hardcoded, usa `SUPER_ADMIN_EMAILS` e protege o Mega Master.
+- Testes unitários criados em `src/test/admin-users.test.ts` (9 testes): session missing, Authorization header, sucesso, erros 401/403/400, body não-JSON, data nula e regras administrativas.
 - Frontend (`AdminClients.tsx`) já trata function indisponível, estados de loading, confirmação antes de reset de senha, modal temporário para action_link, toast de erro, banner de aviso para não-Super Admin.
 - Nenhuma senha hardcoded em qualquer arquivo versionado.
 - Service role permanece exclusivamente dentro da Edge Function.
+- Integration test `usuarios.test.ts` valida que `get_usuarios` retorna módulos persistidos para controle administrativo.
 
 Risco remanescente:
 
 - RPCs administrativas antigas (`insert_usuario`, `upsert_modulo`, `inativar_usuario`, `reativar_usuario`) ainda devem ser auditadas server-side. A UI passou a usar a Function para ações sensíveis em modo real, mas a proteção definitiva contra chamadas diretas precisa existir nas próprias RPCs/RLS/grants.
-- A Edge Function `admin-users` precisa ser deployada e testada contra o projeto Supabase real antes de liberar a tela Admin em produção ampla.
+- Depois de qualquer mudança na Function `admin-users`, é obrigatório redeployar e rodar testes focados/admin + integração real quando possível.
 
 ---
 
@@ -1177,7 +1244,7 @@ Atualização desta fase:
 - Chamados passam por API real em `src/api/supabase/support.ts`, salvam no schema `RetificaPremium` e chamam a Edge Function `support-ticket`.
 - A Function `support-ticket` valida `Authorization: Bearer <access_token>`, identifica o usuário via Supabase Auth, aplica limite simples de envio e salva o chamado em `Chamados_Suporte`.
 - O envio transacional foi planejado/implementado via AWS SES dentro da Edge Function; credenciais ficam somente em secrets do Supabase, nunca no frontend.
-- Mesmo se o SES não estiver configurado, o chamado é salvo com `EMAIL_FAILED`, evitando perda da mensagem.
+- Regra atual de consistência: se o e-mail não for enviado com sucesso, a Function apaga o chamado recém-criado e retorna erro ao frontend. Assim o usuário não recebe sucesso falso e não fica chamado pendente invisível.
 - O destino inicial operacional é `gabrielwilliam208@gmail.com`, configurável por `SUPPORT_TO_EMAIL`.
 
 Novas estruturas planejadas/versionadas:
@@ -1235,3 +1302,140 @@ Limitações/Pendências:
 - O envio por SES depende de verificar domínio/remetente e, se a conta estiver em sandbox, verificar também o destinatário.
 - O scanner Gmail atual usa heurística simples de assunto/remetente/snippet; anexos/boletos PDF podem ser integrados depois com a IA já usada em Contas a Pagar.
 - Agendamento diário via Supabase Cron/pg_net ainda precisa ser configurado no Supabase após deploy.
+
+---
+
+## 19. Atualizações de 2026-04-29 — Admin, Empresa, Módulos e Login Master
+
+Esta seção registra as mudanças mais recentes que precisam permanecer como referência para próximos agentes.
+
+### 19.1 Hierarquia Mega Master / Master / Cliente
+
+Estado atual:
+
+- Mega Master único operacional: `gabrielwilliam208@gmail.com`.
+- Esse usuário é tratado como raiz do sistema e não deve ser apagado, desativado ou resetado por outros admins.
+- Apenas o Mega Master pode criar usuários do tipo Master/Admin.
+- Master/Admin tem acesso amplo aos módulos administrativos e operacionais, mas não pode alterar o Mega Master.
+- Cliente/operacional recebe apenas os módulos liberados.
+
+Arquivos principais:
+
+- `src/pages/admin/AdminClients.tsx`
+- `src/services/auth/superAdmin.ts`
+- `src/api/supabase/admin-users.ts`
+- `supabase/functions/admin-users/index.ts`
+- `src/test/admin-users.test.ts`
+- `src/test/super-admin.test.ts`
+
+Segurança:
+
+- Service role fica apenas na Edge Function `admin-users`.
+- Frontend nunca chama Supabase Auth Admin API diretamente.
+- Senhas não são hardcoded.
+- Convite/reset usam links temporários do Supabase Auth.
+- A Function valida token, perfil interno ativo, role/módulos e allowlist de Super Admin.
+
+### 19.2 Controle de módulos real
+
+Estado atual:
+
+- A aba `Configurações > Módulos` permite selecionar cliente/usuário e ligar/desligar módulos.
+- Alterações são enviadas para a Edge Function `admin-users` e persistidas no Supabase.
+- `get_usuarios` retorna módulos persistidos para a UI.
+- `ProtectedRoute` bloqueia acesso visual por URL e, em modo real, revalida perfil/módulos antes de renderizar.
+- Ainda é recomendado auditar todas as RPCs sensíveis para garantir que o backend também valide módulo/role.
+
+### 19.3 Empresa GAWI persistida para o login master
+
+Estado atual:
+
+- A aba `Configurações > Empresa` não é mais apenas local em modo real.
+- Foi criada a tabela/RPC de configurações de empresa por usuário:
+  - `Configuracoes_Empresa_Usuario`
+  - `get_configuracao_empresa_usuario`
+  - `upsert_configuracao_empresa_usuario`
+- Foi criado o wrapper:
+  - `src/api/supabase/empresa.ts`
+- O CNPJ pode ser consultado via BrasilAPI usando `lookupCnpj`.
+- Ao buscar CNPJ ou clicar em `Atualizar`, os dados são salvos no Supabase.
+- Ao recarregar a página, os dados voltam do Supabase.
+- O Mega Master já possui seed persistido:
+  - Nome fantasia: `GAWI`
+  - Razão social: `59.540.218 GABRIEL WILLIAM DE PAULO`
+  - CNPJ: `59.540.218/0001-81`
+  - Telefone: `(16) 98840-5275`
+  - E-mail: `gabrielwilliam208@gmail.com`
+
+Arquivos principais:
+
+- `src/pages/Settings.tsx`
+- `src/api/supabase/empresa.ts`
+- `supabase/migrations/20260429123000_user_company_settings.sql`
+- `src/test/supabase-empresa.test.ts`
+- `src/test/integration/empresa.test.ts`
+
+Observação sobre migration:
+
+- `supabase db push` encontrou divergência de histórico remoto/local.
+- A migration foi aplicada no banco remoto via `supabase db query --linked -f ...`, de forma idempotente.
+- A SQL permanece versionada para referência e futura reconciliação do histórico.
+
+### 19.4 Modelos de documento por cliente/usuário
+
+Estado atual:
+
+- A aba `Configurações > Modelos` persiste:
+  - modelo de O.S.;
+  - cor da O.S.;
+  - modelo de fechamento;
+  - cor do fechamento.
+- Mega Master pode selecionar cliente/usuário e ver/alterar o modelo usado por ele.
+- Os templates de O.S. e fechamento consomem essas configurações via `useDocumentTemplateSettings`.
+
+Arquivos principais:
+
+- `src/api/supabase/modelos.ts`
+- `src/hooks/useDocumentTemplateSettings.ts`
+- `supabase/migrations/20260429103000_user_template_settings.sql`
+- `src/test/supabase-modelos.test.ts`
+- `src/test/integration/modelos.test.ts`
+
+### 19.5 Login Master no portal operacional
+
+Estado atual:
+
+- Master/Admin pode entrar por `/admin/login` e acessar o painel administrativo.
+- O mesmo Master/Admin pode entrar por `/login` para testar as funcionalidades operacionais.
+- Ao entrar pelo login operacional, o redirect usa `getDefaultRedirect(user, { operationalOnly: true })`, evitando cair em `/admin`.
+- Segurança por módulo continua valendo.
+
+Arquivos principais:
+
+- `src/contexts/AuthContext.tsx`
+- `src/services/auth/defaultRedirect.ts`
+- `src/components/auth/AuthLoginScreen.tsx`
+- `src/test/auth-redirect.test.ts`
+- `src/test/app-auth-flow.test.tsx`
+
+### 19.6 Validações mais recentes
+
+Últimas validações executadas após essas mudanças:
+
+| Comando | Resultado |
+|---|---|
+| `npx tsc --noEmit` | Passou |
+| `npm run lint` | Passou com 8 warnings antigos de Fast Refresh |
+| `npm test -- --run` | 26 arquivos, 246 testes passaram |
+| `npm run build` | Passou com warnings conhecidos de chunks grandes |
+| `npm run test:integration` | 9 arquivos, 30 testes reais passaram contra Supabase |
+
+Últimos commits relevantes:
+
+| Commit | Resumo |
+|---|---|
+| `a81ea76` | Master/Admin pode usar login operacional para testes |
+| `d844a29` | Dados da empresa persistem no Supabase |
+| `7219e11` | Hierarquia Mega Master/Master/Admin |
+| `ea2c2e5` | Revalidação de módulos em rotas protegidas |
+| `d73ed5e` | Controle real de módulos por usuário |
