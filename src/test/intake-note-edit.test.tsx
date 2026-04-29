@@ -41,6 +41,7 @@ describe('Note edit flow', () => {
       login: vi.fn(),
       logout: vi.fn(),
       retryAuth: vi.fn(),
+      refreshProfile: vi.fn().mockResolvedValue(true),
       can: vi.fn(),
       canAccessModule: vi.fn(() => true),
       isAdmin: true,

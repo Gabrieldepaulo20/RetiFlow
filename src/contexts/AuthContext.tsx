@@ -36,6 +36,7 @@ interface AuthContextType {
   login: (credentials: LoginCredentials, portal?: LoginPortal) => Promise<LoginResult>;
   logout: () => void;
   retryAuth: () => void;
+  refreshProfile: (options?: { keepCurrentSessionOnTransientError?: boolean }) => Promise<boolean>;
   can: (permission: Permission) => boolean;
   canAccessModule: (moduleKey: Parameters<typeof getModulePermission>[0]) => boolean;
   isAdmin: boolean;
@@ -101,6 +102,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     sessionRef.current = session;
   }, [session]);
 
+  const applyProfileResult = useCallback((
+    result: { session: AuthSession | null; isTransientError: boolean },
+    options?: { keepCurrentSessionOnTransientError?: boolean },
+  ) => {
+    if (result.isTransientError) {
+      if (options?.keepCurrentSessionOnTransientError && sessionRef.current?.user) {
+        return true;
+      }
+      setProfileError('Não foi possível carregar seu perfil. Verifique sua conexão e tente novamente.');
+      return false;
+    }
+    if (!result.session) {
+      void supabase.auth.signOut();
+      setSession(null);
+      setProfileError(null);
+      return false;
+    }
+    removeStorageItem(AUTH_SESSION_STORAGE_KEY);
+    setSession(result.session);
+    setProfileError(null);
+    return true;
+  }, []);
+
+  const refreshProfile = useCallback(async (options?: { keepCurrentSessionOnTransientError?: boolean }) => {
+    if (!IS_REAL_AUTH) return true;
+
+    const { data: { session: sbSession } } = await supabase.auth.getSession();
+    if (!sbSession) {
+      setSession(null);
+      setProfileError(null);
+      return false;
+    }
+
+    const result = await fetchProfileFromSupabase();
+    return applyProfileResult(result, options);
+  }, [applyProfileResult]);
+
   useEffect(() => subscribeToModuleAccessChanges(() => setModuleAccessVersion((v) => v + 1)), []);
 
   // Modo mock: valida que o usuário ainda existe nos dados de seed
@@ -122,28 +160,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     let active = true;
-
-    const applyProfileResult = (
-      result: { session: AuthSession | null; isTransientError: boolean },
-      options?: { keepCurrentSessionOnTransientError?: boolean },
-    ) => {
-      if (result.isTransientError) {
-        if (options?.keepCurrentSessionOnTransientError && sessionRef.current?.user) {
-          return;
-        }
-        setProfileError('Não foi possível carregar seu perfil. Verifique sua conexão e tente novamente.');
-        return;
-      }
-      if (!result.session) {
-        void supabase.auth.signOut();
-        setSession(null);
-        setProfileError(null);
-        return;
-      }
-      removeStorageItem(AUTH_SESSION_STORAGE_KEY);
-      setSession(result.session);
-      setProfileError(null);
-    };
 
     // Restaura sessão antes de qualquer rota protegida decidir redirecionar.
     void supabase.auth.getSession().then(async ({ data: { session: sbSession } }) => {
@@ -196,7 +212,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       active = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [applyProfileResult]);
 
   const user = session?.user ?? null;
 
@@ -214,32 +230,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsAuthLoading(true);
     setProfileError(null);
 
-    void supabase.auth.getSession().then(async ({ data: { session: sbSession } }) => {
-      if (!sbSession) {
-        setSession(null);
-        setProfileError(null);
-        return;
-      }
-      const result = await fetchProfileFromSupabase();
-      if (result.isTransientError) {
-        setProfileError('Não foi possível carregar seu perfil. Verifique sua conexão e tente novamente.');
-        return;
-      }
-      if (!result.session) {
-        void supabase.auth.signOut();
-        setSession(null);
-        setProfileError(null);
-        return;
-      }
-      removeStorageItem(AUTH_SESSION_STORAGE_KEY);
-      setSession(result.session);
-      setProfileError(null);
-    }).catch(() => {
+    void refreshProfile().catch(() => {
       setProfileError('Erro inesperado ao verificar sessão. Tente novamente.');
     }).finally(() => {
       setIsAuthLoading(false);
     });
-  }, []);
+  }, [refreshProfile]);
 
   const login = useCallback(async (
     credentials: LoginCredentials,
@@ -299,12 +295,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       logout,
       retryAuth,
+      refreshProfile,
       can,
       canAccessModule,
       isAdmin: user?.role === 'ADMIN',
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [authMode, can, canAccessModule, isAuthLoading, profileError, login, logout, retryAuth, session, user, moduleAccessVersion],
+    [authMode, can, canAccessModule, isAuthLoading, profileError, login, logout, retryAuth, refreshProfile, session, user, moduleAccessVersion],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

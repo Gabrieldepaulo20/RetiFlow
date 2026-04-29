@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
@@ -94,6 +94,7 @@ describe('ProtectedRoute', () => {
       login: vi.fn(),
       logout: vi.fn(),
       retryAuth: vi.fn(),
+      refreshProfile: vi.fn().mockResolvedValue(true),
       can: vi.fn(),
       canAccessModule: vi.fn(),
       isAdmin: false,
@@ -115,6 +116,7 @@ describe('ProtectedRoute', () => {
       login: vi.fn(),
       logout: vi.fn(),
       retryAuth: vi.fn(),
+      refreshProfile: vi.fn().mockResolvedValue(true),
       can: vi.fn(),
       canAccessModule: vi.fn(),
       isAdmin: false,
@@ -137,6 +139,7 @@ describe('ProtectedRoute', () => {
       login: vi.fn(),
       logout: vi.fn(),
       retryAuth: vi.fn(),
+      refreshProfile: vi.fn().mockResolvedValue(true),
       can: vi.fn(),
       canAccessModule: vi.fn(() => false),
       isAdmin: false,
@@ -158,6 +161,7 @@ describe('ProtectedRoute', () => {
       login: vi.fn(),
       logout: vi.fn(),
       retryAuth: vi.fn(),
+      refreshProfile: vi.fn().mockResolvedValue(true),
       can: vi.fn(),
       canAccessModule: vi.fn(() => true),
       isAdmin: false,
@@ -179,6 +183,7 @@ describe('ProtectedRoute', () => {
       login: vi.fn(),
       logout: vi.fn(),
       retryAuth: vi.fn(),
+      refreshProfile: vi.fn().mockResolvedValue(true),
       can: vi.fn(),
       canAccessModule: vi.fn(() => true),
       isAdmin: false,
@@ -200,6 +205,7 @@ describe('ProtectedRoute', () => {
       login: vi.fn(),
       logout: vi.fn(),
       retryAuth: vi.fn(),
+      refreshProfile: vi.fn().mockResolvedValue(true),
       can: vi.fn(),
       canAccessModule: vi.fn(),
       isAdmin: false,
@@ -213,7 +219,8 @@ describe('ProtectedRoute', () => {
     expect(screen.queryByText('access-denied')).not.toBeInTheDocument();
   });
 
-  it('renders admin content for authenticated admin user', () => {
+  it('renders admin content for authenticated admin user after server access revalidation', async () => {
+    const refreshProfile = vi.fn().mockResolvedValue(true);
     mockedUseAuth.mockReturnValue({
       authMode: 'real',
       user: adminUser,
@@ -224,6 +231,7 @@ describe('ProtectedRoute', () => {
       login: vi.fn(),
       logout: vi.fn(),
       retryAuth: vi.fn(),
+      refreshProfile,
       can: vi.fn(),
       canAccessModule: vi.fn(() => true),
       isAdmin: true,
@@ -231,7 +239,9 @@ describe('ProtectedRoute', () => {
 
     renderAdminRoute();
 
-    expect(screen.getByText('admin-page')).toBeInTheDocument();
+    expect(screen.getByText('Verificando acesso')).toBeInTheDocument();
+    await waitFor(() => expect(refreshProfile).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('admin-page')).toBeInTheDocument();
     expect(screen.queryByText('admin-login-page')).not.toBeInTheDocument();
   });
 
@@ -246,6 +256,7 @@ describe('ProtectedRoute', () => {
       login: vi.fn(),
       logout: vi.fn(),
       retryAuth: vi.fn(),
+      refreshProfile: vi.fn().mockResolvedValue(true),
       can: vi.fn(),
       canAccessModule: vi.fn(() => true),
       isAdmin: false,
@@ -268,6 +279,7 @@ describe('ProtectedRoute', () => {
       login: vi.fn(),
       logout: vi.fn(),
       retryAuth: vi.fn(),
+      refreshProfile: vi.fn().mockResolvedValue(true),
       can: vi.fn(),
       canAccessModule: vi.fn(),
       isAdmin: false,
