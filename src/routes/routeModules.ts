@@ -1,5 +1,6 @@
 export const loadLoginPage = () => import('@/pages/Login');
 export const loadAdminLoginPage = () => import('@/pages/AdminLogin');
+export const loadResetPasswordPage = () => import('@/pages/ResetPassword');
 export const loadDashboardPage = () => import('@/pages/Dashboard');
 export const loadClientsPage = () => import('@/pages/Clients');
 export const loadClientFormPage = () => import('@/pages/ClientForm');
@@ -27,6 +28,7 @@ type RouteLoaderEntry = {
 const routeLoaderEntries: RouteLoaderEntry[] = [
   { matches: (pathname) => pathname === '/login', load: loadLoginPage },
   { matches: (pathname) => pathname === '/admin/login', load: loadAdminLoginPage },
+  { matches: (pathname) => pathname === '/definir-senha', load: loadResetPasswordPage },
   { matches: (pathname) => pathname === '/acesso-negado', load: loadAccessDeniedPage },
   { matches: (pathname) => pathname === '/dashboard', load: loadDashboardPage },
   { matches: (pathname) => pathname === '/clientes', load: loadClientsPage },

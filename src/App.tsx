@@ -31,11 +31,13 @@ import {
   loadLoginPage,
   loadMonthlyClosingPage,
   loadNotFoundPage,
+  loadResetPasswordPage,
   loadSettingsPage,
 } from '@/routes/routeModules';
 
 const Login = lazy(loadLoginPage);
 const AdminLogin = lazy(loadAdminLoginPage);
+const ResetPassword = lazy(loadResetPasswordPage);
 const Dashboard = lazy(loadDashboardPage);
 const Clients = lazy(loadClientsPage);
 const ClientForm = lazy(loadClientFormPage);
@@ -88,6 +90,7 @@ const App = () => (
               <Routes>
                 <Route path="/login" element={<SuspendedPage><Login /></SuspendedPage>} />
                 <Route path="/admin/login" element={<SuspendedPage><AdminLogin /></SuspendedPage>} />
+                <Route path="/definir-senha" element={<SuspendedPage><ResetPassword /></SuspendedPage>} />
                 <Route path="/acesso-negado" element={<SuspendedPage><AccessDenied /></SuspendedPage>} />
 
                 <Route

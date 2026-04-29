@@ -1,4 +1,31 @@
 project_id = "dqeoxxokvvcpssajycgq"
 
+[auth]
+enabled = true
+site_url = "https://main.d2uhqgjfktej3l.amplifyapp.com"
+additional_redirect_urls = [
+  "https://main.d2uhqgjfktej3l.amplifyapp.com",
+  "https://main.d2uhqgjfktej3l.amplifyapp.com/definir-senha",
+  "http://localhost:8080",
+  "http://localhost:8080/definir-senha",
+  "http://127.0.0.1:8080",
+  "http://127.0.0.1:8080/definir-senha",
+  "http://localhost:5173",
+  "http://localhost:5173/definir-senha",
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:5173/definir-senha",
+]
+
+[auth.email]
+max_frequency = "1m0s"
+otp_length = 8
+
+[auth.mfa]
+max_enrolled_factors = 10
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
 [functions.analisar-conta-pagar]
 verify_jwt = false
