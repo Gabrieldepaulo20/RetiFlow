@@ -42,8 +42,8 @@ export default function AdminLayout() {
         </div>
         {!collapsed && (
           <div>
-            <span className="font-display font-bold text-sidebar-primary-foreground text-base">Admin</span>
-            <p className="text-[10px] text-sidebar-foreground/50">Retífica Premium</p>
+            <span className="font-display font-bold text-sidebar-primary-foreground text-base">GAWI Admin</span>
+            <p className="text-[10px] text-sidebar-foreground/50">Gestão de empresas</p>
           </div>
         )}
       </div>

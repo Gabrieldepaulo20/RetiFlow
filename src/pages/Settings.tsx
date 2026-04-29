@@ -12,8 +12,9 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useAuth } from '@/contexts/AuthContext';
 import { users } from '@/data/seed';
 import { DEFAULT_ROLE_MODULE_CONFIG } from '@/services/auth/moduleAccess';
-import { Wrench, Building2, Users, Palette, Lock, Upload, Check, FileText, Eye, LayoutGrid, LayoutDashboard, KanbanSquare, Calendar, Receipt, Settings as SettingsIcon, Info } from 'lucide-react';
+import { Wrench, Building2, Users, Palette, Lock, Upload, Check, FileText, Eye, LayoutGrid, LayoutDashboard, KanbanSquare, Calendar, Receipt, Settings as SettingsIcon, Info, Loader2, Search } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { lookupCnpj, stripDigits } from '@/services/domain/customers';
 import type { IntakeNote, IntakeService, Client, RoleModuleConfig, UserRole } from '@/types';
 
 const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
@@ -87,19 +88,20 @@ export default function SettingsPage() {
   const activeTab = SETTINGS_TABS.has(tabFromUrl) ? tabFromUrl : 'empresa';
 
   // Company
-  const [companyName, setCompanyName] = useState('Retífica Premium');
-  const [fantasyName, setFantasyName] = useState('Premium Retífica de Cabeçote');
-  const [cnpj, setCnpj] = useState('12.345.678/0001-90');
-  const [ie, setIe] = useState('123.456.789.000');
-  const [im, setIm] = useState('98765');
-  const [companyAddress, setCompanyAddress] = useState('Rua das Indústrias, 450');
-  const [companyCity, setCompanyCity] = useState('São Paulo');
-  const [companyState, setCompanyState] = useState('SP');
-  const [companyCep, setCompanyCep] = useState('01234-567');
-  const [companyPhone, setCompanyPhone] = useState('(11) 3456-7890');
-  const [companyEmail, setCompanyEmail] = useState('contato@retificapremium.com.br');
-  const [companySite, setCompanySite] = useState('www.retificapremium.com.br');
+  const [companyName, setCompanyName] = useState('59.540.218 GABRIEL WILLIAM DE PAULO');
+  const [fantasyName, setFantasyName] = useState('GAWI');
+  const [cnpj, setCnpj] = useState('59.540.218/0001-81');
+  const [ie, setIe] = useState('');
+  const [im, setIm] = useState('');
+  const [companyAddress, setCompanyAddress] = useState('');
+  const [companyCity, setCompanyCity] = useState('');
+  const [companyState, setCompanyState] = useState('');
+  const [companyCep, setCompanyCep] = useState('');
+  const [companyPhone, setCompanyPhone] = useState('(16) 98840-5275');
+  const [companyEmail, setCompanyEmail] = useState('gabrielwilliam208@gmail.com');
+  const [companySite, setCompanySite] = useState('');
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [cnpjLoading, setCnpjLoading] = useState(false);
 
   // Security
   const [currentPassword, setCurrentPassword] = useState('');
@@ -129,6 +131,43 @@ export default function SettingsPage() {
       const reader = new FileReader();
       reader.onloadend = () => { setLogoPreview(reader.result as string); toast({ title: 'Logo carregada apenas como prévia local' }); };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const handleCompanyCnpjLookup = async () => {
+    if (stripDigits(cnpj).length !== 14) {
+      toast({
+        title: 'CNPJ incompleto',
+        description: 'Informe um CNPJ com 14 dígitos para consultar os dados da empresa.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setCnpjLoading(true);
+    try {
+      const company = await lookupCnpj(cnpj);
+      setCompanyName(company.name || '59.540.218 GABRIEL WILLIAM DE PAULO');
+      setFantasyName(company.tradeName || 'GAWI');
+      setCompanyEmail(company.email || 'gabrielwilliam208@gmail.com');
+      setCompanyPhone(company.phone || '(16) 98840-5275');
+      setCompanyCep(company.cep || '');
+      setCompanyAddress([
+        company.address,
+        company.addressNumber,
+        company.district,
+      ].filter(Boolean).join(', '));
+      setCompanyCity(company.city || '');
+      setCompanyState(company.state || '');
+      toast({ title: 'Dados da GAWI preenchidos pelo CNPJ.' });
+    } catch (error) {
+      toast({
+        title: 'Não foi possível consultar o CNPJ',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setCnpjLoading(false);
     }
   };
 
@@ -201,7 +240,22 @@ export default function SettingsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div><Label>Razão Social</Label><Input value={companyName} onChange={e => setCompanyName(e.target.value)} className="mt-1.5" /></div>
                 <div><Label>Nome Fantasia</Label><Input value={fantasyName} onChange={e => setFantasyName(e.target.value)} className="mt-1.5" /></div>
-                <div><Label>CNPJ</Label><Input value={cnpj} onChange={e => setCnpj(e.target.value)} className="mt-1.5" /></div>
+                <div>
+                  <Label>CNPJ</Label>
+                  <div className="mt-1.5 flex gap-2">
+                    <Input value={cnpj} onChange={e => setCnpj(e.target.value)} />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="shrink-0 gap-2"
+                      disabled={cnpjLoading}
+                      onClick={() => void handleCompanyCnpjLookup()}
+                    >
+                      {cnpjLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                      Buscar
+                    </Button>
+                  </div>
+                </div>
                 <div><Label>Inscrição Estadual</Label><Input value={ie} onChange={e => setIe(e.target.value)} className="mt-1.5" /></div>
                 <div><Label>Inscrição Municipal</Label><Input value={im} onChange={e => setIm(e.target.value)} className="mt-1.5" /></div>
               </div>

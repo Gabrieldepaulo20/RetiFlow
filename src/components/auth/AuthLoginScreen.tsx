@@ -99,7 +99,7 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
               {isAdminPortal ? <Shield className="w-6 h-6 text-primary" /> : <Wrench className="w-6 h-6 text-primary" />}
             </div>
             <span className="font-display font-bold text-xl text-sidebar-primary-foreground">
-              {isAdminPortal ? 'Acesso Administrativo' : 'Portal do Cliente'}
+              {isAdminPortal ? 'GAWI Admin' : 'Portal do Cliente'}
             </span>
           </motion.div>
 
@@ -113,12 +113,12 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
               {isAdminPortal ? 'Gestão interna' : 'Acompanhamento operacional'}
               <br />
               <span className="text-primary">
-                {isAdminPortal ? 'da sua retífica' : 'para seus clientes'}
+                {isAdminPortal ? 'das empresas' : 'para seus clientes'}
               </span>
             </h2>
             <p className="text-sidebar-foreground text-base leading-relaxed max-w-md">
               {isAdminPortal
-                ? 'Use este acesso somente para a administração do sistema e controle interno.'
+                ? 'Acesso master da GAWI para administrar usuários, módulos e empresas atendidas.'
                 : 'Acesse ordens de serviço, produção e informações liberadas para o usuário autenticado.'}
             </p>
           </motion.div>
@@ -129,7 +129,7 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
             transition={{ delay: 1.2 }}
             className="text-[11px] text-sidebar-foreground/40"
           >
-            © {new Date().getFullYear()} Retífica Premium · Software de Gestão
+            © {new Date().getFullYear()} {isAdminPortal ? 'GAWI · Gestão de sistemas' : 'Retífica Premium · Software de Gestão'}
           </motion.p>
         </div>
       </div>
@@ -148,7 +148,7 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
               {isAdminPortal ? <Shield className="w-7 h-7 text-primary" /> : <Wrench className="w-7 h-7 text-primary" />}
             </div>
             <h1 className="text-xl font-display font-bold text-foreground">
-              {isAdminPortal ? 'Acesso Administrativo' : 'Portal do Cliente'}
+              {isAdminPortal ? 'GAWI Admin' : 'Portal do Cliente'}
             </h1>
             <p className="text-sm text-muted-foreground mt-1">Sistema de gestão</p>
           </div>
@@ -159,7 +159,7 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
             </h2>
             <p className="text-sm text-muted-foreground">
               {isAdminPortal
-                ? 'Este acesso é exclusivo para administração da plataforma.'
+                ? 'Este acesso é exclusivo para administração da plataforma pela GAWI.'
                 : 'Use o e-mail e a senha da conta liberada para este usuário.'}
             </p>
           </div>
