@@ -4,7 +4,6 @@ import { motion } from 'framer-motion';
 import {
   ChevronDown,
   AlertTriangle,
-  Copy,
   KeyRound,
   LayoutGrid,
   Mail,
@@ -80,7 +79,6 @@ export default function AdminClients() {
   const [showModulesDialog, setShowModulesDialog] = useState<string | null>(null);
   const [showResetDialog, setShowResetDialog] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
-  const [temporaryActionLink, setTemporaryActionLink] = useState<{ title: string; url: string } | null>(null);
   const [newName, setNewName] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newPhone, setNewPhone] = useState('');
@@ -195,22 +193,14 @@ export default function AdminClients() {
     setPendingAction(`reset-${userId}`);
     try {
       if (IS_REAL_AUTH) {
-        const result = await callAdminUsersFunction({
+        await callAdminUsersFunction({
           action: 'reset_password',
           userId,
           email: user.email,
         });
-        if (result.action_link) {
-          setTemporaryActionLink({
-            title: `Link temporário de recuperação - ${user.name}`,
-            url: result.action_link,
-          });
-        }
         toast({
-          title: 'Link de recuperação gerado',
-          description: result.action_link
-            ? 'Copie o link temporário exibido na tela e envie pelo canal combinado. Ele expira conforme a configuração do Supabase.'
-            : 'O Supabase aceitou a solicitação de recuperação.',
+          title: 'E-mail de recuperação enviado',
+          description: `${user.name} receberá o link para definir uma nova senha. Nenhuma senha foi exibida ou armazenada.`,
         });
       } else {
         toast({
@@ -278,16 +268,10 @@ export default function AdminClients() {
       };
 
       persistSystemUsers([newUser, ...systemUsers]);
-      if (result?.action_link) {
-        setTemporaryActionLink({
-          title: `Link temporário de convite - ${newUser.name}`,
-          url: result.action_link,
-        });
-      }
       toast({
-        title: IS_REAL_AUTH ? 'Convite seguro criado' : 'Usuário do sistema criado',
+        title: IS_REAL_AUTH ? 'Convite enviado por e-mail' : 'Usuário do sistema criado',
         description: IS_REAL_AUTH
-          ? `${newUser.name} recebeu/tem um convite no Supabase Auth e o perfil interno foi configurado.`
+          ? `${newUser.name} receberá o convite para criar a própria senha. Você não precisa saber nem definir senha de ninguém.`
           : `${newUser.name} já pode acessar o ambiente de desenvolvimento com a senha demo123.`,
       });
       setShowCreateDialog(false);
@@ -718,7 +702,7 @@ export default function AdminClients() {
             Tem certeza que deseja resetar a senha de <strong>{systemUsers.find((user) => user.id === showResetDialog)?.name}</strong>?
             {IS_REAL_AUTH ? (
               <span className="mt-2 block text-xs">
-                Será gerado um link temporário de recuperação pelo Supabase Auth. Nenhuma senha será exibida ou salva.
+                O Supabase enviará um e-mail de recuperação diretamente para o usuário. Nenhuma senha será exibida ou salva.
               </span>
             ) : null}
           </p>
@@ -735,36 +719,6 @@ export default function AdminClients() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!temporaryActionLink} onOpenChange={() => setTemporaryActionLink(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <KeyRound className="w-5 h-5" /> {temporaryActionLink?.title}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <p className="text-sm text-muted-foreground">
-              Este link é sensível e temporário. Copie agora, envie por um canal seguro e não salve em arquivo ou conversa pública.
-            </p>
-            <Input readOnly value={temporaryActionLink?.url ?? ''} className="font-mono text-xs" />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setTemporaryActionLink(null)}>
-              Fechar
-            </Button>
-            <Button
-              className="gap-2"
-              onClick={() => {
-                if (!temporaryActionLink?.url) return;
-                void navigator.clipboard.writeText(temporaryActionLink.url);
-                toast({ title: 'Link copiado' });
-              }}
-            >
-              <Copy className="w-4 h-4" /> Copiar link
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

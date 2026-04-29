@@ -51,7 +51,6 @@ describe('callAdminUsersFunction', () => {
         mensagem: 'Usuário criado/convidado com segurança.',
         id_usuarios: 'uuid-interno',
         auth_user_id: 'auth-uuid',
-        action_link: 'https://app.example.com/invite?token=abc',
       },
       error: null,
     });
@@ -62,7 +61,7 @@ describe('callAdminUsersFunction', () => {
       role: 'RECEPCAO',
     });
     expect(result.id_usuarios).toBe('uuid-interno');
-    expect(result.action_link).toBe('https://app.example.com/invite?token=abc');
+    expect(result.action_link).toBeUndefined();
   });
 
   it('propagates error message from 401 response body', async () => {

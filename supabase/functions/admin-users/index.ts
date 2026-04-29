@@ -238,25 +238,21 @@ async function findAuthUserByEmail(serviceClient: ReturnType<typeof createClient
 
 async function ensureAuthInvite(serviceClient: ReturnType<typeof createClient>, email: string, name: string) {
   const existing = await findAuthUserByEmail(serviceClient, email);
-  if (existing) return { userId: existing.id, actionLink: undefined };
+  if (existing) return { userId: existing.id, emailSent: false };
 
   const redirectTo = Deno.env.get('AUTH_REDIRECT_TO') || Deno.env.get('APP_BASE_URL') || undefined;
-  const { data, error } = await serviceClient.auth.admin.generateLink({
-    type: 'invite',
-    email,
-    options: {
-      data: { name },
-      redirectTo,
-    },
+  const { data, error } = await serviceClient.auth.admin.inviteUserByEmail(email, {
+    data: { name },
+    redirectTo,
   });
 
   if (error || !data.user) {
-    throw new Error(`Falha ao gerar convite seguro: ${error?.message ?? 'sem usuário retornado'}`);
+    throw new Error(`Falha ao enviar convite seguro: ${error?.message ?? 'sem usuário retornado'}`);
   }
 
   return {
     userId: data.user.id,
-    actionLink: data.properties?.action_link,
+    emailSent: true,
   };
 }
 
@@ -407,27 +403,26 @@ Deno.serve(async (request) => {
       }
 
       return jsonResponse({
-        mensagem: 'Usuário criado/convidado com segurança.',
+        mensagem: auth.emailSent
+          ? 'Convite enviado por e-mail com segurança.'
+          : 'Usuário já existia no Supabase Auth; perfil interno atualizado.',
         id_usuarios: internalUserId,
         auth_user_id: auth.userId,
-        action_link: auth.actionLink,
       }, 200, request);
     }
 
     if (payload.action === 'reset_password') {
       const email = assertEmail(payload.email);
       const redirectTo = Deno.env.get('AUTH_REDIRECT_TO') || Deno.env.get('APP_BASE_URL') || undefined;
-      const { data, error } = await requester.serviceClient.auth.admin.generateLink({
-        type: 'recovery',
-        email,
-        options: { redirectTo },
+
+      const { error } = await requester.serviceClient.auth.resetPasswordForEmail(email, {
+        redirectTo,
       });
 
-      if (error) throw new Error(`Falha ao gerar recuperação de senha: ${error.message}`);
+      if (error) throw new Error(`Falha ao enviar recuperação de senha: ${error.message}`);
 
       return jsonResponse({
-        mensagem: 'Link temporário de recuperação gerado para o Super Admin.',
-        action_link: data.properties?.action_link,
+        mensagem: 'E-mail de recuperação enviado para o usuário.',
       }, 200, request);
     }
 
