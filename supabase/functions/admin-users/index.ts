@@ -526,6 +526,19 @@ async function getInternalResetUser(serviceClient: ReturnType<typeof createClien
   return data as { id_usuarios: string; nome: string | null; email: string; status: boolean };
 }
 
+async function getInternalModuleUser(serviceClient: ReturnType<typeof createClient>, userId: string) {
+  const { data, error } = await serviceClient
+    .schema('RetificaPremium')
+    .from('Usuarios')
+    .select('id_usuarios, email, acesso, status')
+    .eq('id_usuarios', userId)
+    .maybeSingle();
+
+  if (error) throw new Error(`Falha ao carregar usuário: ${error.message}`);
+  if (!data?.email) throw new Error('Usuário não encontrado.');
+  return data as { id_usuarios: string; email: string; acesso: string; status: boolean };
+}
+
 Deno.serve(async (request) => {
   const cors = getCorsHeaders(request);
   if (!cors.allowed) {
@@ -630,7 +643,18 @@ Deno.serve(async (request) => {
 
     if (payload.action === 'set_modules') {
       const userId = assertUserId(payload.userId);
-      await setModules(requester.serviceClient, userId, normalizeModules(payload.modules));
+      const modules = normalizeModules(payload.modules);
+      const targetUser = await getInternalModuleUser(requester.serviceClient, userId);
+
+      if (modules.admin === true && targetUser.acesso !== 'administrador') {
+        return jsonResponse({ error: 'O módulo Admin só pode ser ligado para usuários administradores.' }, 400, request);
+      }
+
+      if (modules.admin === false && targetUser.email.trim().toLowerCase() === requester.requesterEmail) {
+        return jsonResponse({ error: 'Você não pode remover seu próprio acesso administrativo.' }, 400, request);
+      }
+
+      await setModules(requester.serviceClient, userId, modules);
       return jsonResponse({ mensagem: 'Módulos atualizados.' }, 200, request);
     }
 

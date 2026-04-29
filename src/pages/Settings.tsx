@@ -241,6 +241,11 @@ export default function SettingsPage() {
         userId: selectedModuleUser.id,
         modules: nextModules,
       });
+      queryClient.setQueryData<SystemUser[]>(['auth', 'system-users'], (previous) =>
+        previous?.map((candidate) =>
+          candidate.id === selectedModuleUser.id ? { ...candidate, moduleAccess: nextModules } : candidate,
+        ) ?? previous,
+      );
       await queryClient.invalidateQueries({ queryKey: ['auth', 'system-users'] });
       toast({
         title: nextModules[moduleKey] ? 'Módulo ativado' : 'Módulo desativado',

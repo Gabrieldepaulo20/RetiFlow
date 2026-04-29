@@ -130,10 +130,13 @@ export default function AdminClients() {
 
   const getEffectiveModules = (user: SystemUser) => {
     return ALL_MODULES.reduce<Record<AppModuleKey, boolean>>((accumulator, module) => {
+      if (IS_REAL_AUTH) {
+        accumulator[module.key] = user.moduleAccess?.[module.key] ?? roleModuleConfig[user.role]?.[module.key] ?? false;
+        return accumulator;
+      }
+
       const roleAllowsModule = roleModuleConfig[user.role]?.[module.key] !== false;
-      const userAllowsModule = IS_REAL_AUTH && user.moduleAccess
-        ? user.moduleAccess[module.key] !== false
-        : userModuleOverrides[user.id]?.[module.key] !== false;
+      const userAllowsModule = userModuleOverrides[user.id]?.[module.key] !== false;
       accumulator[module.key] = roleAllowsModule && userAllowsModule;
       return accumulator;
     }, {} as Record<AppModuleKey, boolean>);
@@ -294,7 +297,7 @@ export default function AdminClients() {
   };
 
   const toggleUserModule = async (user: SystemUser, moduleKey: AppModuleKey) => {
-    if (roleModuleConfig[user.role]?.[moduleKey] === false) {
+    if (!IS_REAL_AUTH && roleModuleConfig[user.role]?.[moduleKey] === false) {
       return;
     }
 
@@ -326,7 +329,16 @@ export default function AdminClients() {
             candidate.id === user.id ? { ...candidate, moduleAccess: nextModuleAccess } : candidate,
           ),
         );
+        queryClient.setQueryData<SystemUser[]>(['auth', 'system-users'], (previous) =>
+          previous?.map((candidate) =>
+            candidate.id === user.id ? { ...candidate, moduleAccess: nextModuleAccess } : candidate,
+          ) ?? previous,
+        );
         queryClient.invalidateQueries({ queryKey: ['auth', 'system-users'] });
+        toast({
+          title: nextModuleAccess[moduleKey] ? 'Módulo ativado' : 'Módulo desativado',
+          description: `${moduleKey === 'notes' ? 'Notas de Entrada' : ALL_MODULES.find((module) => module.key === moduleKey)?.label} atualizado para ${user.name}.`,
+        });
       } catch (error) {
         toast({
           title: 'Não foi possível salvar módulos',
@@ -677,20 +689,25 @@ export default function AdminClients() {
                 </p>
                 <div className="space-y-3">
                   {ALL_MODULES.map((module) => {
-                    const roleAllowsModule = roleModuleConfig[user.role]?.[module.key] !== false;
                     const isEnabled = getEffectiveModules(user)[module.key];
+                    const isAdminModuleLocked = module.key === 'admin' && user.role !== 'ADMIN';
+                    const isOwnAdminLock = module.key === 'admin' && user.id === currentUser?.id;
+                    const isDisabled = pendingAction === `modules-${user.id}` || isAdminModuleLocked || isOwnAdminLock;
 
                     return (
                       <div key={module.key} className="flex items-center justify-between p-3 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors">
                         <div>
                           <span className="text-sm font-medium">{module.label}</span>
-                          {!roleAllowsModule && (
-                            <p className="text-[10px] text-muted-foreground mt-0.5">Bloqueado pelo perfil {ROLE_LABELS[user.role].toLowerCase()}</p>
+                          {isAdminModuleLocked && (
+                            <p className="text-[10px] text-muted-foreground mt-0.5">Admin só pode ser ligado para usuários administradores.</p>
+                          )}
+                          {isOwnAdminLock && (
+                            <p className="text-[10px] text-muted-foreground mt-0.5">Você não pode remover o próprio acesso admin por aqui.</p>
                           )}
                         </div>
                         <Switch
                           checked={isEnabled}
-                          disabled={!roleAllowsModule || pendingAction === `modules-${user.id}`}
+                          disabled={isDisabled}
                           onCheckedChange={() => void toggleUserModule(user, module.key)}
                         />
                       </div>

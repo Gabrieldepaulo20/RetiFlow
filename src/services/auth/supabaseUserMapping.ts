@@ -2,7 +2,7 @@ import type { AppModuleKey, SystemUser, UserRole } from '@/types';
 
 type DbModules = Partial<Record<
   'dashboard' | 'clientes' | 'notas_de_entrada' | 'kanban' | 'fechamento' | 'nota_fiscal' | 'configuracoes' | 'contas_a_pagar' | 'admin',
-  boolean
+  boolean | null
 >>;
 
 type DbUser = {
@@ -58,13 +58,15 @@ const APP_TO_RPC_MODULE: Partial<Record<AppModuleKey, string>> = {
 export function dbModulesToAppModules(modulos?: DbModules | null): Partial<Record<AppModuleKey, boolean>> | undefined {
   if (!modulos) return undefined;
 
-  return Object.entries(modulos).reduce<Partial<Record<AppModuleKey, boolean>>>((accumulator, [dbKey, value]) => {
+  const mapped = Object.entries(modulos).reduce<Partial<Record<AppModuleKey, boolean>>>((accumulator, [dbKey, value]) => {
     const appKey = DB_TO_APP_MODULE[dbKey as keyof DbModules];
     if (appKey && typeof value === 'boolean') {
       accumulator[appKey] = value;
     }
     return accumulator;
   }, {});
+
+  return Object.keys(mapped).length > 0 ? mapped : undefined;
 }
 
 export function appModulesToRpcPayload(moduleAccess: Partial<Record<AppModuleKey, boolean>>) {

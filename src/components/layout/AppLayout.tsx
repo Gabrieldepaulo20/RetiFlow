@@ -5,7 +5,6 @@ import { AnimatedPage } from './AnimatedPage';
 import { useAuth } from '@/contexts/AuthContext';
 import { useData } from '@/contexts/DataContext';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { useRoleModuleConfig, useUserModuleOverrides } from '@/hooks/useRoleModuleConfig';
 import { cn } from '@/lib/utils';
 import { getSupportTickets, submitSupportTicket, type SupportTicket, type SupportTicketStatus } from '@/api/supabase/support';
 import { validateSupportMessage } from '@/services/domain/supportTickets';
@@ -98,8 +97,6 @@ export default function AppLayout() {
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
   const [supportLoading, setSupportLoading] = useState(false);
   const [supportSubmitting, setSupportSubmitting] = useState(false);
-  const roleModuleConfig = useRoleModuleConfig();
-  const userModuleOverrides = useUserModuleOverrides();
 
   // ─── Must be before any conditional return (Rules of Hooks) ───
   const isKanbanRoute = location.pathname.startsWith('/kanban');
@@ -201,10 +198,7 @@ export default function AppLayout() {
 
   const isModuleVisible = (item: typeof navItems[0]) => {
     if (!user) return false;
-    if (!canAccessModule(item.moduleKey)) return false;
-    if (roleModuleConfig[user.role]?.[item.moduleKey] === false) return false;
-    if (userModuleOverrides[user.id]?.[item.moduleKey] === false) return false;
-    return true;
+    return canAccessModule(item.moduleKey);
   };
 
   const handleKanbanSearchChange = (value: string) => {
@@ -324,15 +318,9 @@ export default function AppLayout() {
   const visibleNavPaths = useMemo(
     () =>
       navItems
-        .filter((item) => {
-          if (!user) return false;
-          if (!canAccessModule(item.moduleKey)) return false;
-          if (roleModuleConfig[user.role]?.[item.moduleKey] === false) return false;
-          if (userModuleOverrides[user.id]?.[item.moduleKey] === false) return false;
-          return true;
-        })
+        .filter((item) => user && canAccessModule(item.moduleKey))
         .map((item) => item.path),
-    [canAccessModule, roleModuleConfig, user, userModuleOverrides],
+    [canAccessModule, user],
   );
 
   useEffect(() => {
