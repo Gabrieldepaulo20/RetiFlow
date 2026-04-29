@@ -39,6 +39,28 @@ function normalizeMessage(value: unknown) {
   return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, 2000);
 }
 
+function escapeHtml(value: string) {
+  return value.replace(/[<>&"]/g, (char) => ({
+    '<': '&lt;',
+    '>': '&gt;',
+    '&': '&amp;',
+    '"': '&quot;',
+  }[char]!));
+}
+
+function formatDateTime(value = new Date()) {
+  return new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+    timeZone: 'America/Sao_Paulo',
+  }).format(value);
+}
+
+function formatEmailAddress(email: string, displayName?: string) {
+  const safeName = (displayName ?? '').replace(/["\r\n]/g, '').trim();
+  return safeName ? `"${safeName}" <${email}>` : email;
+}
+
 async function sha256Hex(value: string) {
   const bytes = new TextEncoder().encode(value);
   const hash = await crypto.subtle.digest('SHA-256', bytes);
@@ -82,6 +104,7 @@ async function sendSesEmail(params: {
   const accessKey = Deno.env.get('AWS_ACCESS_KEY_ID') ?? '';
   const secretKey = Deno.env.get('AWS_SECRET_ACCESS_KEY') ?? '';
   const from = Deno.env.get('SUPPORT_FROM_EMAIL') ?? '';
+  const fromName = Deno.env.get('SUPPORT_FROM_NAME') ?? 'Sistema Retiflow';
   const to = Deno.env.get('SUPPORT_TO_EMAIL') ?? 'gabrielwilliam208@gmail.com';
   const replyTo = Deno.env.get('SUPPORT_REPLY_TO_EMAIL') ?? to;
 
@@ -92,7 +115,7 @@ async function sendSesEmail(params: {
   const host = `email.${region}.amazonaws.com`;
   const path = '/v2/email/outbound-emails';
   const body = JSON.stringify({
-    FromEmailAddress: from,
+    FromEmailAddress: formatEmailAddress(from, fromName),
     ReplyToAddresses: [replyTo],
     Destination: { ToAddresses: [to] },
     Content: {
@@ -183,6 +206,10 @@ Deno.serve(async (request) => {
 
   const userName = String(userData.user.user_metadata?.name ?? userData.user.email);
   const supportTo = Deno.env.get('SUPPORT_TO_EMAIL') ?? 'gabrielwilliam208@gmail.com';
+  const safeUserName = escapeHtml(userName);
+  const safeUserEmail = escapeHtml(userData.user.email);
+  const safeMessage = escapeHtml(message);
+  const createdAtLabel = formatDateTime();
   const { data: inserted, error: insertError } = await service
     .schema('RetificaPremium')
     .from('Chamados_Suporte')
@@ -208,9 +235,67 @@ Deno.serve(async (request) => {
   try {
     await sendSesEmail({
       request,
-      subject: `[Retiflow] Novo chamado de ${userName}`,
-      text: `Novo chamado no Retiflow\n\nUsuário: ${userName}\nE-mail: ${userData.user.email}\n\nMensagem:\n${message}`,
-      html: `<h2>Novo chamado no Retiflow</h2><p><strong>Usuário:</strong> ${userName}</p><p><strong>E-mail:</strong> ${userData.user.email}</p><p style="white-space:pre-wrap">${message.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]!))}</p>`,
+      subject: `Novo chamado Retiflow - ${userName}`,
+      text: [
+        'Novo chamado no Retiflow',
+        '',
+        `Usuário: ${userName}`,
+        `E-mail: ${userData.user.email}`,
+        `Enviado em: ${createdAtLabel}`,
+        '',
+        'Mensagem:',
+        message,
+        '',
+        'Responda este e-mail para falar diretamente com o responsável.',
+      ].join('\n'),
+      html: `
+        <!doctype html>
+        <html lang="pt-BR">
+          <body style="margin:0;background:#f3f6f8;font-family:Arial,Helvetica,sans-serif;color:#17202a;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f6f8;padding:28px 12px;">
+              <tr>
+                <td align="center">
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:22px;overflow:hidden;border:1px solid #dfe7ec;box-shadow:0 18px 45px rgba(15,23,42,.10);">
+                    <tr>
+                      <td style="background:linear-gradient(135deg,#0f6f7e,#1f9bb1);padding:26px 30px;color:#ffffff;">
+                        <div style="font-size:12px;letter-spacing:2.5px;text-transform:uppercase;opacity:.82;font-weight:700;">Retiflow</div>
+                        <h1 style="margin:8px 0 0;font-size:26px;line-height:1.2;font-weight:800;">Novo chamado recebido</h1>
+                        <p style="margin:10px 0 0;font-size:14px;line-height:1.6;opacity:.92;">Um cliente enviou uma mensagem pelo sistema.</p>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:26px 30px 8px;">
+                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                          <tr>
+                            <td style="padding:14px 16px;background:#f7fafb;border:1px solid #e2e8ee;border-radius:16px;">
+                              <div style="font-size:12px;color:#6b7787;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-bottom:8px;">Solicitante</div>
+                              <div style="font-size:18px;font-weight:800;color:#17202a;">${safeUserName}</div>
+                              <div style="font-size:14px;color:#5f6b7a;margin-top:4px;">${safeUserEmail}</div>
+                              <div style="font-size:12px;color:#7a8796;margin-top:10px;">Enviado em ${createdAtLabel}</div>
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:16px 30px 8px;">
+                        <div style="font-size:12px;color:#6b7787;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-bottom:10px;">Mensagem</div>
+                        <div style="white-space:pre-wrap;font-size:16px;line-height:1.7;background:#ffffff;border-left:5px solid #1f9bb1;padding:16px 18px;border-radius:12px;color:#1f2937;box-shadow:inset 0 0 0 1px #e5edf2;">${safeMessage}</div>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:18px 30px 30px;">
+                        <a href="mailto:${safeUserEmail}?subject=Re:%20Chamado%20Retiflow" style="display:inline-block;background:#17202a;color:#ffffff;text-decoration:none;border-radius:14px;padding:13px 18px;font-size:14px;font-weight:800;">Responder cliente</a>
+                        <p style="margin:16px 0 0;font-size:12px;line-height:1.6;color:#7a8796;">Este e-mail foi enviado automaticamente pelo Retiflow. Ao responder, a mensagem vai para o e-mail do solicitante.</p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </body>
+        </html>
+      `,
     });
   } catch (error) {
     const emailError = error instanceof Error ? error.message : 'Falha desconhecida ao enviar e-mail.';
