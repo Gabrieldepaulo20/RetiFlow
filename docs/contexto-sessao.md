@@ -1158,3 +1158,72 @@ Risco remanescente:
 
 - RPCs administrativas antigas (`insert_usuario`, `upsert_modulo`, `inativar_usuario`, `reativar_usuario`) ainda devem ser auditadas server-side. A UI passou a usar a Function para ações sensíveis em modo real, mas a proteção definitiva contra chamadas diretas precisa existir nas próprias RPCs/RLS/grants.
 - A Edge Function `admin-users` precisa ser deployada e testada contra o projeto Supabase real antes de liberar a tela Admin em produção ampla.
+
+---
+
+## 18. Chamados por E-mail e Sugestões Automáticas via Gmail
+
+Atualização desta fase:
+
+- O modal global `Sugestões / Chamado` deixou de ser estado local fake.
+- Chamados passam por API real em `src/api/supabase/support.ts`, salvam no schema `RetificaPremium` e chamam a Edge Function `support-ticket`.
+- A Function `support-ticket` valida `Authorization: Bearer <access_token>`, identifica o usuário via Supabase Auth, aplica limite simples de envio e salva o chamado em `Chamados_Suporte`.
+- O envio transacional foi planejado/implementado via AWS SES dentro da Edge Function; credenciais ficam somente em secrets do Supabase, nunca no frontend.
+- Mesmo se o SES não estiver configurado, o chamado é salvo com `EMAIL_FAILED`, evitando perda da mensagem.
+- O destino inicial operacional é `gabrielwilliam208@gmail.com`, configurável por `SUPPORT_TO_EMAIL`.
+
+Novas estruturas planejadas/versionadas:
+
+- `RetificaPremium.Chamados_Suporte`: chamados/sugestões enviados pelo usuário.
+- `RetificaPremium.Gmail_Connections`: conexão Gmail/Workspace por usuário, com refresh token criptografado server-side.
+- `RetificaPremium.Gmail_OAuth_States`: estados temporários do OAuth.
+- `RetificaPremium.Gmail_Scanned_Messages`: deduplicação de mensagens analisadas.
+- RPC `get_chamados_suporte()`: lista chamados do usuário autenticado.
+- RPC `get_gmail_connection_status()`: retorna status da conexão Gmail do usuário.
+
+Edge Functions criadas:
+
+| Function | Objetivo | Segurança |
+|---|---|---|
+| `support-ticket` | Salvar chamado e enviar e-mail via SES | Auth obrigatória, service role só server-side |
+| `gmail-oauth-start` | Gerar URL OAuth Google com `gmail.readonly` | Auth obrigatória, state salvo server-side |
+| `gmail-oauth-callback` | Trocar `code` por refresh token e salvar conexão | Token criptografado com `GOOGLE_TOKEN_ENCRYPTION_KEY` |
+| `gmail-scan-payables` | Ler Gmail conectado e criar sugestões revisáveis | Auth obrigatória, deduplicação por `gmail_message_id` |
+
+Frontend afetado:
+
+- `AppLayout.tsx`: modal de suporte carrega chamados reais, envia chamado real e mostra status salvo/enviado/pendente.
+- `PayableEmailSuggestions.tsx`: ganhou card de conexão Gmail, botão `Conectar Gmail` e botão `Buscar agora`.
+- `DataContext.tsx`: expõe `refreshEmailSuggestions()` para recarregar sugestões após varredura.
+- `ContasAPagar.tsx`: suporta `?view=sugestoes`, útil para retorno do OAuth.
+
+Secrets necessários no Supabase:
+
+- SES:
+  - `AWS_ACCESS_KEY_ID`
+  - `AWS_SECRET_ACCESS_KEY`
+  - `AWS_REGION` ou `AWS_SES_REGION`
+  - `SUPPORT_FROM_EMAIL`
+  - `SUPPORT_TO_EMAIL=gabrielwilliam208@gmail.com`
+- Google:
+  - `GOOGLE_CLIENT_ID`
+  - `GOOGLE_CLIENT_SECRET`
+  - `GOOGLE_REDIRECT_URI`
+  - `GOOGLE_TOKEN_ENCRYPTION_KEY`
+  - `APP_ORIGIN`
+- CORS:
+  - `CORS_ALLOWED_ORIGINS=<domínio Amplify>,http://localhost:8080`
+
+Notas de segurança:
+
+- Refresh token do Google nunca vai para o frontend.
+- A service role é usada apenas em Edge Functions.
+- O escopo inicial Google é mínimo: `gmail.readonly`.
+- A leitura do Gmail cria apenas sugestões revisáveis; não cria contas automaticamente.
+- Deduplicação inicial usa `gmail_message_id`; recomenda-se evoluir depois para hash semântico de remetente/valor/vencimento.
+
+Limitações/Pendências:
+
+- O envio por SES depende de verificar domínio/remetente e, se a conta estiver em sandbox, verificar também o destinatário.
+- O scanner Gmail atual usa heurística simples de assunto/remetente/snippet; anexos/boletos PDF podem ser integrados depois com a IA já usada em Contas a Pagar.
+- Agendamento diário via Supabase Cron/pg_net ainda precisa ser configurado no Supabase após deploy.

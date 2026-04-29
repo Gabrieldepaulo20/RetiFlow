@@ -222,6 +222,7 @@ interface DataCtx {
 
   // ── Sugestões de E-mail ──────────────────────────────────────────────────
   emailSuggestions: EmailSuggestion[];
+  refreshEmailSuggestions: () => Promise<void>;
   acceptEmailSuggestion: (id: string) => Promise<AccountPayable | null>;
   dismissEmailSuggestion: (id: string) => Promise<void>;
 }
@@ -287,6 +288,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const statusDbIdRef = useRef<Map<NoteStatus, number>>(new Map());
 
+  const refreshEmailSuggestions = useCallback(async () => {
+    if (!IS_REAL_AUTH) return;
+    const dados = await getSugestoesEmail();
+    setEmailSuggestions(dados.map(supabaseToEmailSuggestion));
+  }, []);
+
   // Em modo real, carrega dados do Supabase na montagem.
   useEffect(() => {
     if (!IS_REAL_AUTH) return;
@@ -313,10 +320,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     getLogs({ p_limite: 50 }).then(({ dados }) => {
       setActivities(dados.map(supabaseToActivityLog));
     }).catch(() => {});
-    getSugestoesEmail().then((dados) => {
-      setEmailSuggestions(dados.map(supabaseToEmailSuggestion));
-    }).catch(() => {});
-  }, []);
+    refreshEmailSuggestions().catch(() => {});
+  }, [refreshEmailSuggestions]);
 
   // Grava estado relevante no localStorage após 400ms de inatividade.
   // payableCategories/payableSuppliers são catálogos estáticos do seed — não precisam persistir.
@@ -989,6 +994,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     getHistoryForPayable,
     getInstallmentSiblings,
     emailSuggestions,
+    refreshEmailSuggestions,
     acceptEmailSuggestion,
     dismissEmailSuggestion,
   }), [
@@ -1037,6 +1043,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     getHistoryForPayable,
     getInstallmentSiblings,
     emailSuggestions,
+    refreshEmailSuggestions,
     acceptEmailSuggestion,
     dismissEmailSuggestion,
   ]);

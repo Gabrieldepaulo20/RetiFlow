@@ -1,8 +1,8 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BadgeCheck, Bot, CheckCircle2, ChevronRight, MailOpen, Sparkles, X } from 'lucide-react';
+import { AlertCircle, BadgeCheck, Bot, CheckCircle2, ChevronRight, Link2, MailOpen, RefreshCw, Sparkles, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { EmailSuggestion } from '@/types';
 import { buildPayableHistoryDescription } from '@/services/domain/payables';
+import { getGmailConnectionStatus, scanGmailPayables, startGmailOAuth, type GmailConnectionStatus } from '@/api/supabase/gmail-payables';
 
 function fmtBRL(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -85,14 +86,76 @@ type PayableEmailSuggestionsProps = {
 };
 
 export default function PayableEmailSuggestions({ onCreated }: PayableEmailSuggestionsProps) {
-  const { emailSuggestions, acceptEmailSuggestion, dismissEmailSuggestion, payableCategories, addPayableHistoryEntry } = useData();
+  const { emailSuggestions, refreshEmailSuggestions, acceptEmailSuggestion, dismissEmailSuggestion, payableCategories, addPayableHistoryEntry } = useData();
   const { user } = useAuth();
   const { toast } = useToast();
+  const [gmailStatus, setGmailStatus] = useState<GmailConnectionStatus | null>(null);
+  const [gmailLoading, setGmailLoading] = useState(true);
+  const [gmailActionLoading, setGmailActionLoading] = useState(false);
 
   const categoryById = useMemo(() => new Map(payableCategories.map((c) => [c.id, c])), [payableCategories]);
   const pending = useMemo(() => emailSuggestions.filter((s) => s.status === 'PENDING'), [emailSuggestions]);
   const dismissed = useMemo(() => emailSuggestions.filter((s) => s.status === 'DISMISSED'), [emailSuggestions]);
   const accepted = useMemo(() => emailSuggestions.filter((s) => s.status === 'ACCEPTED'), [emailSuggestions]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setGmailLoading(true);
+    getGmailConnectionStatus()
+      .then((status) => {
+        if (!cancelled) setGmailStatus(status);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setGmailStatus({ connected: false, status: 'ERROR', last_error: error instanceof Error ? error.message : 'Falha ao consultar Gmail.' });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setGmailLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleConnectGmail() {
+    setGmailActionLoading(true);
+    try {
+      const { authUrl } = await startGmailOAuth();
+      window.location.href = authUrl;
+    } catch (error) {
+      toast({
+        title: 'Não foi possível conectar o Gmail',
+        description: error instanceof Error ? error.message : 'Verifique a configuração OAuth.',
+        variant: 'destructive',
+      });
+      setGmailActionLoading(false);
+    }
+  }
+
+  async function handleScanGmail() {
+    setGmailActionLoading(true);
+    try {
+      const result = await scanGmailPayables();
+      await refreshEmailSuggestions();
+      const status = await getGmailConnectionStatus();
+      setGmailStatus(status);
+      toast({
+        title: result.created > 0 ? 'Sugestões atualizadas' : 'Busca concluída',
+        description: `${result.created} sugestão${result.created === 1 ? '' : 'ões'} criada${result.created === 1 ? '' : 's'} · ${result.skipped} ignorada${result.skipped === 1 ? '' : 's'}.`,
+        variant: result.errors.length > 0 ? 'destructive' : 'default',
+      });
+    } catch (error) {
+      toast({
+        title: 'Não foi possível buscar no Gmail',
+        description: error instanceof Error ? error.message : 'Tente novamente em instantes.',
+        variant: 'destructive',
+      });
+    } finally {
+      setGmailActionLoading(false);
+    }
+  }
 
   async function handleAccept(suggestion: EmailSuggestion) {
     const payable = await acceptEmailSuggestion(suggestion.id);
@@ -113,6 +176,41 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
 
   return (
     <div className="space-y-6">
+      <Card className="border-border/60 bg-muted/20">
+        <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className={cn('mt-0.5 rounded-xl p-2.5', gmailStatus?.connected ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary')}>
+              {gmailStatus?.connected ? <CheckCircle2 className="h-4 w-4" /> : <Link2 className="h-4 w-4" />}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">
+                {gmailStatus?.connected ? 'Gmail conectado' : 'Conectar Gmail / Google Workspace'}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {gmailStatus?.connected
+                  ? `${gmailStatus.email ?? 'Conta conectada'}${gmailStatus.last_sync_at ? ` · última busca ${format(parseISO(gmailStatus.last_sync_at), "dd/MM/yyyy 'às' HH:mm")}` : ''}`
+                  : 'Leia boletos, faturas e notas do e-mail com revisão antes de virar conta.'}
+              </p>
+              {gmailStatus?.last_error ? (
+                <p className="mt-2 inline-flex items-center gap-1 text-xs text-destructive">
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  {gmailStatus.last_error}
+                </p>
+              ) : null}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 sm:justify-end">
+            <Button variant={gmailStatus?.connected ? 'outline' : 'default'} size="sm" onClick={() => void handleConnectGmail()} disabled={gmailLoading || gmailActionLoading}>
+              {gmailStatus?.connected ? 'Reconectar' : 'Conectar Gmail'}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => void handleScanGmail()} disabled={!gmailStatus?.connected || gmailActionLoading}>
+              <RefreshCw className={cn('mr-2 h-3.5 w-3.5', gmailActionLoading && 'animate-spin')} />
+              Buscar agora
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <div className="rounded-xl bg-primary/10 p-2 text-primary">

@@ -16,7 +16,7 @@ import { dbUserToSystemUser } from '@/services/auth/supabaseUserMapping';
 import { canUserAccessModule, getDefaultRedirect } from '@/services/auth/defaultRedirect';
 
 const AUTH_SESSION_STORAGE_KEY = 'auth.session';
-const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
+export const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
 interface LoginResult {
   success: boolean;
@@ -31,9 +31,11 @@ interface AuthContextType {
   user: SystemUser | null;
   session: AuthSession | null;
   isAuthLoading: boolean;
+  profileError: string | null;
   isAuthenticated: boolean;
   login: (credentials: LoginCredentials, portal?: LoginPortal) => Promise<LoginResult>;
   logout: () => void;
+  retryAuth: () => void;
   can: (permission: Permission) => boolean;
   canAccessModule: (moduleKey: Parameters<typeof getModulePermission>[0]) => boolean;
   isAdmin: boolean;
@@ -62,9 +64,34 @@ function createRealSession(user: SystemUser): AuthSession {
   };
 }
 
+async function fetchProfileFromSupabase(): Promise<{
+  session: AuthSession | null;
+  isTransientError: boolean;
+}> {
+  const { data: envelope, error: rpcError } = await supabase
+    .schema('RetificaPremium')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .rpc('get_usuario_por_auth_id') as { data: any; error: unknown };
+
+  if (rpcError) {
+    return { session: null, isTransientError: true };
+  }
+
+  if (!envelope || envelope.status !== 200) {
+    return { session: null, isTransientError: false };
+  }
+
+  if (envelope.dados?.status === false) {
+    return { session: null, isTransientError: false };
+  }
+
+  return { session: createRealSession(dbUserToSystemUser(envelope.dados)), isTransientError: false };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(() => loadStoredSession());
   const [isAuthLoading, setIsAuthLoading] = useState(IS_REAL_AUTH);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [moduleAccessVersion, setModuleAccessVersion] = useState(0);
 
   const authMode: AuthMode = IS_REAL_AUTH ? 'real' : 'development';
@@ -91,10 +118,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let active = true;
 
-    const restoreProfileFromSupabase = async () => {
-      const { data: envelope } = await supabase.schema('RetificaPremium').rpc('get_usuario_por_auth_id');
-      if (!envelope || envelope.status !== 200) return null;
-      return createRealSession(dbUserToSystemUser(envelope.dados));
+    const applyProfileResult = (result: { session: AuthSession | null; isTransientError: boolean }) => {
+      if (result.isTransientError) {
+        setProfileError('Não foi possível carregar seu perfil. Verifique sua conexão e tente novamente.');
+        return;
+      }
+      if (!result.session) {
+        void supabase.auth.signOut();
+        setSession(null);
+        setProfileError(null);
+        return;
+      }
+      removeStorageItem(AUTH_SESSION_STORAGE_KEY);
+      setSession(result.session);
+      setProfileError(null);
     };
 
     // Restaura sessão antes de qualquer rota protegida decidir redirecionar.
@@ -103,16 +140,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!sbSession) {
         setSession(null);
+        setProfileError(null);
         return;
       }
 
-      const restoredSession = await restoreProfileFromSupabase();
+      const result = await fetchProfileFromSupabase();
       if (!active) return;
-
-      removeStorageItem(AUTH_SESSION_STORAGE_KEY);
-      setSession(restoredSession);
+      applyProfileResult(result);
     }).catch(() => {
-      if (active) setSession(null);
+      if (active) setProfileError('Erro inesperado ao verificar sessão. Tente novamente.');
     }).finally(() => {
       if (active) setIsAuthLoading(false);
     });
@@ -124,16 +160,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (event === 'SIGNED_OUT') {
         setSession(null);
         setIsAuthLoading(false);
+        setProfileError(null);
         return;
       }
 
       if (event === 'SIGNED_IN' && sbSession) {
         setIsAuthLoading(true);
-        void restoreProfileFromSupabase().then((restoredSession) => {
+        setProfileError(null);
+        void fetchProfileFromSupabase().then((result) => {
           if (!active) return;
-          setSession(restoredSession);
+          applyProfileResult(result);
         }).catch(() => {
-          if (active) setSession(null);
+          if (active) setProfileError('Erro inesperado ao carregar perfil. Tente novamente.');
         }).finally(() => {
           if (active) setIsAuthLoading(false);
         });
@@ -155,6 +193,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     removeStorageItem(AUTH_SESSION_STORAGE_KEY);
+  }, []);
+
+  const retryAuth = useCallback(() => {
+    if (!IS_REAL_AUTH) return;
+    setIsAuthLoading(true);
+    setProfileError(null);
+
+    void supabase.auth.getSession().then(async ({ data: { session: sbSession } }) => {
+      if (!sbSession) {
+        setSession(null);
+        setProfileError(null);
+        return;
+      }
+      const result = await fetchProfileFromSupabase();
+      if (result.isTransientError) {
+        setProfileError('Não foi possível carregar seu perfil. Verifique sua conexão e tente novamente.');
+        return;
+      }
+      if (!result.session) {
+        void supabase.auth.signOut();
+        setSession(null);
+        setProfileError(null);
+        return;
+      }
+      removeStorageItem(AUTH_SESSION_STORAGE_KEY);
+      setSession(result.session);
+      setProfileError(null);
+    }).catch(() => {
+      setProfileError('Erro inesperado ao verificar sessão. Tente novamente.');
+    }).finally(() => {
+      setIsAuthLoading(false);
+    });
   }, []);
 
   const login = useCallback(async (
@@ -210,15 +280,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       session,
       isAuthLoading,
+      profileError,
       isAuthenticated: Boolean(user),
       login,
       logout,
+      retryAuth,
       can,
       canAccessModule,
       isAdmin: user?.role === 'ADMIN',
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [authMode, can, canAccessModule, isAuthLoading, login, logout, session, user, moduleAccessVersion],
+    [authMode, can, canAccessModule, isAuthLoading, profileError, login, logout, retryAuth, session, user, moduleAccessVersion],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

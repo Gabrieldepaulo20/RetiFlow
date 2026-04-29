@@ -1,7 +1,5 @@
 import type { SystemUser } from '@/types';
 
-const FALLBACK_SUPER_ADMIN_EMAILS = ['gabrielwilliam208@gmail.com'];
-
 function parseEmails(raw: string | undefined) {
   return (raw ?? '')
     .split(',')
@@ -10,8 +8,7 @@ function parseEmails(raw: string | undefined) {
 }
 
 export function getConfiguredSuperAdminEmails() {
-  const configured = parseEmails(import.meta.env.VITE_SUPER_ADMIN_EMAILS as string | undefined);
-  return configured.length > 0 ? configured : FALLBACK_SUPER_ADMIN_EMAILS;
+  return parseEmails(import.meta.env.VITE_SUPER_ADMIN_EMAILS as string | undefined);
 }
 
 export function isSuperAdmin(user: Pick<SystemUser, 'email' | 'role' | 'isActive'> | null | undefined) {

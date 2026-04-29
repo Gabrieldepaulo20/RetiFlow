@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { endOfMonth, format, startOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -70,7 +70,7 @@ export default function ContasAPagar() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [pageView, setPageView] = useState<PageView>('contas');
+  const [pageView, setPageView] = useState<PageView>(() => searchParams.get('view') === 'sugestoes' ? 'sugestoes' : 'contas');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all');
   const [originFilter, setOriginFilter] = useState<OriginFilter>('all');
@@ -102,6 +102,10 @@ export default function ContasAPagar() {
   const selectedPayable = useMemo(() => selectedPayableId ? payables.find((payable) => payable.id === selectedPayableId) ?? null : null, [payables, selectedPayableId]);
   const routeModal = searchParams.get('modal');
   const routeDetailsId = searchParams.get('id');
+
+  useEffect(() => {
+    setPageView(searchParams.get('view') === 'sugestoes' ? 'sugestoes' : 'contas');
+  }, [searchParams]);
 
   const pendingLike = useMemo(() => activePayables.filter((payable) => ['PENDENTE', 'PARCIAL', 'AGENDADO'].includes(payable.status)), [activePayables]);
   const overduePayables = useMemo(() => pendingLike.filter((payable) => isPayableOverdue(payable)), [pendingLike]);
@@ -156,6 +160,17 @@ export default function ContasAPagar() {
     next.delete('id');
     if (modal) next.set('modal', modal);
     if (id) next.set('id', id);
+    setSearchParams(next, { replace: true });
+  }
+
+  function updatePageView(value: PageView) {
+    const next = new URLSearchParams(searchParams);
+    if (value === 'sugestoes') {
+      next.set('view', 'sugestoes');
+    } else {
+      next.delete('view');
+    }
+    setPageView(value);
     setSearchParams(next, { replace: true });
   }
 
@@ -364,7 +379,7 @@ export default function ContasAPagar() {
             <p className="mt-0.5 text-sm text-muted-foreground">Gerencie boletos, notas e despesas da retífica com entrada manual rápida ou importação assistida.</p>
           </div>
           <div className="flex flex-col items-stretch gap-3 sm:items-end">
-            <Tabs value={pageView} onValueChange={(value) => setPageView(value as PageView)}>
+            <Tabs value={pageView} onValueChange={(value) => updatePageView(value as PageView)}>
               <TabsList className="grid h-10 grid-cols-2 rounded-xl">
                 <TabsTrigger value="contas">Contas</TabsTrigger>
                 <TabsTrigger value="sugestoes" className="relative gap-2">
@@ -391,7 +406,14 @@ export default function ContasAPagar() {
           <ErrorBoundary>
             <Card>
               <CardContent className="p-6">
-                <PayableEmailSuggestions onCreated={(id) => { setPageView('contas'); updateRouteModal('details', id); }} />
+                <PayableEmailSuggestions onCreated={(id) => {
+                  const next = new URLSearchParams(searchParams);
+                  next.delete('view');
+                  next.set('modal', 'details');
+                  next.set('id', id);
+                  setPageView('contas');
+                  setSearchParams(next, { replace: true });
+                }} />
               </CardContent>
             </Card>
           </ErrorBoundary>

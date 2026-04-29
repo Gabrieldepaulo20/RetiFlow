@@ -6,8 +6,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useData } from '@/contexts/DataContext';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useRoleModuleConfig, useUserModuleOverrides } from '@/hooks/useRoleModuleConfig';
-import { generateId } from '@/lib/generateId';
 import { cn } from '@/lib/utils';
+import { getSupportTickets, submitSupportTicket, type SupportTicket, type SupportTicketStatus } from '@/api/supabase/support';
+import { validateSupportMessage } from '@/services/domain/supportTickets';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -94,9 +95,9 @@ export default function AppLayout() {
   const [readCount, setReadCount] = useState(0);
   const [supportOpen, setSupportOpen] = useState(false);
   const [supportMessage, setSupportMessage] = useState('');
-  const [supportTickets, setSupportTickets] = useState<Array<{
-    id: string; message: string; date: string; status: 'pendente' | 'em_analise' | 'resolvido';
-  }>>([]);
+  const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
+  const [supportLoading, setSupportLoading] = useState(false);
+  const [supportSubmitting, setSupportSubmitting] = useState(false);
   const roleModuleConfig = useRoleModuleConfig();
   const userModuleOverrides = useUserModuleOverrides();
 
@@ -118,24 +119,87 @@ export default function AppLayout() {
     if (open) setReadCount(recentActivities.length);
   };
 
-  const submitSupportRequest = () => {
-    if (!supportMessage.trim()) {
+  useEffect(() => {
+    if (!supportOpen) return;
+    let cancelled = false;
+
+    setSupportLoading(true);
+    getSupportTickets()
+      .then((tickets) => {
+        if (!cancelled) setSupportTickets(tickets);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          toast({
+            title: 'Não foi possível carregar seus chamados',
+            description: error instanceof Error ? error.message : 'Tente novamente em instantes.',
+            variant: 'destructive',
+          });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSupportLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [supportOpen, toast]);
+
+  const submitSupportRequest = async () => {
+    const validation = validateSupportMessage(supportMessage);
+    if (!validation.ok) {
       toast({
-        title: 'Escreva sua mensagem',
-        description: 'Descreva o problema, melhoria ou dúvida para conseguirmos te ajudar.',
+        title: 'Descreva melhor o chamado',
+        description: validation.error,
         variant: 'destructive',
       });
       return;
     }
-    const ticket = {
-      id: generateId('support'),
-      message: supportMessage.trim(),
-      date: new Date().toISOString(),
-      status: 'pendente' as const,
-    };
-    setSupportTickets(prev => [ticket, ...prev]);
-    toast({ title: 'Chamado enviado!', description: 'Em breve entraremos em contato.' });
-    setSupportMessage('');
+
+    setSupportSubmitting(true);
+    try {
+      const result = await submitSupportTicket(validation.message);
+      setSupportTickets((previous) => [
+        result.ticket,
+        ...previous.filter((ticket) => ticket.id_chamados_suporte !== result.ticket.id_chamados_suporte),
+      ]);
+      toast({
+        title: result.emailStatus === 'sent' ? 'Chamado enviado' : 'Chamado salvo',
+        description: result.emailStatus === 'sent'
+          ? 'Recebemos sua mensagem e ela foi enviada para o suporte.'
+          : 'Seu chamado foi registrado, mas o envio por e-mail precisa de configuração do SES.',
+        variant: result.emailStatus === 'sent' ? 'default' : 'destructive',
+      });
+      setSupportMessage('');
+    } catch (error) {
+      toast({
+        title: 'Não foi possível enviar o chamado',
+        description: error instanceof Error ? error.message : 'Tente novamente em instantes.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSupportSubmitting(false);
+    }
+  };
+
+  const supportStatusMap: Record<SupportTicketStatus, { label: string; className: string }> = {
+    PENDING: {
+      label: 'Registrado',
+      className: 'bg-amber-50 text-amber-700 border-amber-200/60',
+    },
+    EMAIL_SENT: {
+      label: 'Enviado',
+      className: 'bg-blue-50 text-blue-700 border-blue-200/60',
+    },
+    EMAIL_FAILED: {
+      label: 'E-mail pendente',
+      className: 'bg-destructive/10 text-destructive border-destructive/30',
+    },
+    RESOLVED: {
+      label: 'Resolvido',
+      className: 'bg-emerald-50 text-emerald-700 border-emerald-200/60',
+    },
   };
 
   const isModuleVisible = (item: typeof navItems[0]) => {
@@ -547,18 +611,19 @@ export default function AppLayout() {
                 value={supportMessage}
                 onChange={(e) => setSupportMessage(e.target.value)}
                 placeholder="Descreva o problema, melhoria ou dúvida..."
+                maxLength={2000}
                 className="min-h-[130px] resize-none text-sm leading-relaxed"
               />
               <div className="flex items-center justify-between gap-3">
                 <p className="text-[11.5px] text-muted-foreground/60 leading-relaxed hidden sm:block">
-                  Sua mensagem será enviada por e-mail.
+                  Sua mensagem será salva e enviada por e-mail ao suporte.
                 </p>
                 <div className="flex gap-2 ml-auto">
                   <Button variant="ghost" size="sm" onClick={() => setSupportOpen(false)} className="text-muted-foreground">
                     Cancelar
                   </Button>
-                  <Button size="sm" onClick={submitSupportRequest} className="gap-1.5 px-4">
-                    Enviar chamado
+                  <Button size="sm" onClick={() => void submitSupportRequest()} disabled={supportSubmitting} className="gap-1.5 px-4">
+                    {supportSubmitting ? 'Enviando...' : 'Enviar chamado'}
                   </Button>
                 </div>
               </div>
@@ -566,7 +631,12 @@ export default function AppLayout() {
 
             {/* Tab: Chamados abertos */}
             <TabsContent value="abertos" className="mt-0">
-              {supportTickets.length === 0 ? (
+              {supportLoading ? (
+                <div className="flex flex-col items-center justify-center py-12 px-5 text-center">
+                  <p className="text-sm font-medium text-foreground/70">Carregando chamados...</p>
+                  <p className="text-xs text-muted-foreground/60 mt-1">Buscando registros salvos no sistema.</p>
+                </div>
+              ) : supportTickets.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 px-5 text-center">
                   <div className="w-10 h-10 rounded-full bg-muted/60 flex items-center justify-center mb-3">
                     <MessageSquarePlus className="w-5 h-5 text-muted-foreground/40" />
@@ -577,25 +647,23 @@ export default function AppLayout() {
               ) : (
                 <div className="divide-y divide-border/40 max-h-72 overflow-y-auto">
                   {supportTickets.map(ticket => {
-                    const statusMap = {
-                      pendente: { label: 'Pendente', class: 'bg-amber-50 text-amber-700 border-amber-200/60' },
-                      em_analise: { label: 'Em análise', class: 'bg-blue-50 text-blue-700 border-blue-200/60' },
-                      resolvido: { label: 'Resolvido', class: 'bg-emerald-50 text-emerald-700 border-emerald-200/60' },
-                    };
-                    const s = statusMap[ticket.status];
+                    const s = supportStatusMap[ticket.status] ?? supportStatusMap.PENDING;
                     return (
-                      <div key={ticket.id} className="px-5 py-3.5 hover:bg-muted/20 transition-colors">
+                      <div key={ticket.id_chamados_suporte} className="px-5 py-3.5 hover:bg-muted/20 transition-colors">
                         <div className="flex items-start justify-between gap-3 mb-1.5">
                           <p className="text-[11px] text-muted-foreground/60 tabular-nums">
-                            {new Date(ticket.date).toLocaleString('pt-BR', {
+                            {new Date(ticket.created_at).toLocaleString('pt-BR', {
                               day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
                             })}
                           </p>
-                          <Badge variant="outline" className={`text-[10px] shrink-0 px-2 py-0.5 leading-none font-semibold ${s.class}`}>
+                          <Badge variant="outline" className={`text-[10px] shrink-0 px-2 py-0.5 leading-none font-semibold ${s.className}`}>
                             {s.label}
                           </Badge>
                         </div>
-                        <p className="text-[13px] text-foreground/80 leading-snug line-clamp-2">{ticket.message}</p>
+                        <p className="text-[13px] text-foreground/80 leading-snug line-clamp-2">{ticket.mensagem}</p>
+                        {ticket.email_error ? (
+                          <p className="mt-1 text-[11px] text-destructive/80 line-clamp-1">{ticket.email_error}</p>
+                        ) : null}
                       </div>
                     );
                   })}

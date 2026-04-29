@@ -1,6 +1,8 @@
 import type { AppModuleKey, SystemUser } from '@/types';
 import { getModulePermission, hasPermission } from '@/services/auth/permissions';
-import { isRoleModuleEnabled, isUserModuleEnabled } from '@/services/auth/moduleAccess';
+import { DEFAULT_ROLE_MODULE_CONFIG, isRoleModuleEnabled, isUserModuleEnabled } from '@/services/auth/moduleAccess';
+
+const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
 const MODULE_PATHS: Record<AppModuleKey, string> = {
   admin: '/admin',
@@ -38,6 +40,15 @@ export function canUserAccessModule(user: SystemUser | null, moduleKey: AppModul
   const useRealModuleAccess = shouldUseRealModuleAccess(user);
   if (useRealModuleAccess && user.moduleAccess?.[moduleKey] === false) return false;
   if (useRealModuleAccess) return true;
+
+  // No explicit DB module access — fall back to role-based defaults.
+  // In real auth mode, use the static role config to prevent localStorage manipulation
+  // from affecting permissions in production.
+  if (IS_REAL_AUTH) {
+    return DEFAULT_ROLE_MODULE_CONFIG[user.role]?.[moduleKey] !== false;
+  }
+
+  // In mock/dev mode, respect localStorage-based config with per-user overrides.
   if (!isRoleModuleEnabled(user.role, moduleKey)) return false;
   if (!isUserModuleEnabled(user.id, moduleKey)) return false;
   return true;

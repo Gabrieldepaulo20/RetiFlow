@@ -60,3 +60,6 @@ playwright-report/
 .cache/
 .parcel-cache/
 .turbo/
+
+# ── Scripts de bootstrap (operações privilegiadas, nunca versionar) ───────────
+scripts/
