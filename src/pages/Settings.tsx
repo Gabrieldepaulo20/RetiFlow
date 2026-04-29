@@ -27,6 +27,12 @@ import {
   type ClosingTemplateMode,
   type OsTemplateMode,
 } from '@/api/supabase/modelos';
+import {
+  DEFAULT_USER_COMPANY_SETTINGS,
+  getConfiguracaoEmpresaUsuario,
+  upsertConfiguracaoEmpresaUsuario,
+  type UserCompanySettings,
+} from '@/api/supabase/empresa';
 import type { AppModuleKey, IntakeNote, IntakeService, Client, SystemUser } from '@/types';
 
 const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
@@ -81,12 +87,12 @@ const MODULE_DEFS: { key: AppModuleKey; label: string; description: string; icon
   { key: 'admin', label: 'Admin', description: 'Usuários e permissões administrativas.', icon: Shield },
 ];
 
-const COMPANY_SETTINGS_CONNECTED = false;
+const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
+const COMPANY_SETTINGS_CONNECTED = IS_REAL_AUTH;
 const APPEARANCE_SETTINGS_CONNECTED = false;
 const SECURITY_SETTINGS_CONNECTED = false;
 const SETTINGS_TABS = new Set(['empresa', 'modulos', 'aparencia', 'modelos', 'seguranca', 'usuarios']);
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
-const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -100,20 +106,22 @@ export default function SettingsPage() {
   const isSuperAdmin = checkIsSuperAdmin(user);
 
   // Company
-  const [companyName, setCompanyName] = useState('59.540.218 GABRIEL WILLIAM DE PAULO');
-  const [fantasyName, setFantasyName] = useState('GAWI');
-  const [cnpj, setCnpj] = useState('59.540.218/0001-81');
-  const [ie, setIe] = useState('');
-  const [im, setIm] = useState('');
-  const [companyAddress, setCompanyAddress] = useState('');
-  const [companyCity, setCompanyCity] = useState('');
-  const [companyState, setCompanyState] = useState('');
-  const [companyCep, setCompanyCep] = useState('');
-  const [companyPhone, setCompanyPhone] = useState('(16) 98840-5275');
-  const [companyEmail, setCompanyEmail] = useState('gabrielwilliam208@gmail.com');
-  const [companySite, setCompanySite] = useState('');
+  const [companyName, setCompanyName] = useState(DEFAULT_USER_COMPANY_SETTINGS.razaoSocial);
+  const [fantasyName, setFantasyName] = useState(DEFAULT_USER_COMPANY_SETTINGS.nomeFantasia);
+  const [cnpj, setCnpj] = useState(DEFAULT_USER_COMPANY_SETTINGS.cnpj);
+  const [ie, setIe] = useState(DEFAULT_USER_COMPANY_SETTINGS.inscricaoEstadual);
+  const [im, setIm] = useState(DEFAULT_USER_COMPANY_SETTINGS.inscricaoMunicipal);
+  const [companyAddress, setCompanyAddress] = useState(DEFAULT_USER_COMPANY_SETTINGS.endereco);
+  const [companyCity, setCompanyCity] = useState(DEFAULT_USER_COMPANY_SETTINGS.cidade);
+  const [companyState, setCompanyState] = useState(DEFAULT_USER_COMPANY_SETTINGS.estado);
+  const [companyCep, setCompanyCep] = useState(DEFAULT_USER_COMPANY_SETTINGS.cep);
+  const [companyPhone, setCompanyPhone] = useState(DEFAULT_USER_COMPANY_SETTINGS.telefone);
+  const [companyEmail, setCompanyEmail] = useState(DEFAULT_USER_COMPANY_SETTINGS.email);
+  const [companySite, setCompanySite] = useState(DEFAULT_USER_COMPANY_SETTINGS.site);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [cnpjLoading, setCnpjLoading] = useState(false);
+  const [companyLoading, setCompanyLoading] = useState(false);
+  const [companySaving, setCompanySaving] = useState(false);
 
   // Security
   const [currentPassword, setCurrentPassword] = useState('');
@@ -144,6 +152,59 @@ export default function SettingsPage() {
     () => systemUsers.find((candidate) => candidate.id === selectedModuleUserId) ?? null,
     [selectedModuleUserId, systemUsers],
   );
+
+  const applyCompanySettings = (settings: UserCompanySettings) => {
+    setCompanyName(settings.razaoSocial);
+    setFantasyName(settings.nomeFantasia);
+    setCnpj(settings.cnpj);
+    setIe(settings.inscricaoEstadual);
+    setIm(settings.inscricaoMunicipal);
+    setCompanyAddress(settings.endereco);
+    setCompanyCity(settings.cidade);
+    setCompanyState(settings.estado);
+    setCompanyCep(settings.cep);
+    setCompanyPhone(settings.telefone);
+    setCompanyEmail(settings.email);
+    setCompanySite(settings.site);
+  };
+
+  const buildCompanyPayload = () => ({
+    razaoSocial: companyName,
+    nomeFantasia: fantasyName,
+    cnpj,
+    inscricaoEstadual: ie,
+    inscricaoMunicipal: im,
+    endereco: companyAddress,
+    cidade: companyCity,
+    estado: companyState,
+    cep: companyCep,
+    telefone: companyPhone,
+    email: companyEmail,
+    site: companySite,
+  });
+
+  useEffect(() => {
+    if (!IS_REAL_AUTH) return;
+    let active = true;
+    setCompanyLoading(true);
+    getConfiguracaoEmpresaUsuario()
+      .then((settings) => {
+        if (!active) return;
+        applyCompanySettings(settings);
+      })
+      .catch((error) => {
+        if (!active) return;
+        toast({
+          title: 'Não foi possível carregar a empresa',
+          description: error instanceof Error ? error.message : 'Tente novamente.',
+          variant: 'destructive',
+        });
+      })
+      .finally(() => {
+        if (active) setCompanyLoading(false);
+      });
+    return () => { active = false; };
+  }, [toast]);
 
   useEffect(() => {
     if (!selectedModuleUserId && systemUsers.length > 0) {
@@ -325,6 +386,43 @@ export default function SettingsPage() {
     }
   };
 
+  const handleSaveCompanySettings = async () => {
+    if (!IS_REAL_AUTH) {
+      toast({
+        title: 'Prévia local',
+        description: 'Em modo de desenvolvimento, os dados da empresa não são persistidos no Supabase.',
+      });
+      return;
+    }
+
+    if (stripDigits(cnpj).length !== 14) {
+      toast({
+        title: 'CNPJ incompleto',
+        description: 'Informe um CNPJ com 14 dígitos antes de atualizar.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setCompanySaving(true);
+    try {
+      const saved = await upsertConfiguracaoEmpresaUsuario(buildCompanyPayload());
+      applyCompanySettings(saved);
+      toast({
+        title: 'Empresa atualizada',
+        description: 'Dados salvos no Supabase e mantidos após recarregar a página.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Não foi possível salvar a empresa',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setCompanySaving(false);
+    }
+  };
+
   const handleCompanyCnpjLookup = async () => {
     if (stripDigits(cnpj).length !== 14) {
       toast({
@@ -338,18 +436,43 @@ export default function SettingsPage() {
     setCnpjLoading(true);
     try {
       const company = await lookupCnpj(cnpj);
-      setCompanyName(company.name || '59.540.218 GABRIEL WILLIAM DE PAULO');
-      setFantasyName(company.tradeName || 'GAWI');
-      setCompanyEmail(company.email || 'gabrielwilliam208@gmail.com');
-      setCompanyPhone(company.phone || '(16) 98840-5275');
-      setCompanyCep(company.cep || '');
-      setCompanyAddress([
+      const nextCompany = {
+        razaoSocial: company.name || companyName || DEFAULT_USER_COMPANY_SETTINGS.razaoSocial,
+        nomeFantasia: company.tradeName || fantasyName || DEFAULT_USER_COMPANY_SETTINGS.nomeFantasia,
+        cnpj,
+        inscricaoEstadual: ie,
+        inscricaoMunicipal: im,
+        email: company.email || companyEmail || DEFAULT_USER_COMPANY_SETTINGS.email,
+        telefone: company.phone || companyPhone || DEFAULT_USER_COMPANY_SETTINGS.telefone,
+        cep: company.cep || companyCep,
+        endereco: [
         company.address,
         company.addressNumber,
         company.district,
-      ].filter(Boolean).join(', '));
-      setCompanyCity(company.city || '');
-      setCompanyState(company.state || '');
+        ].filter(Boolean).join(', ') || companyAddress,
+        cidade: company.city || companyCity,
+        estado: company.state || companyState,
+        site: companySite,
+      };
+      setCompanyName(nextCompany.razaoSocial);
+      setFantasyName(nextCompany.nomeFantasia);
+      setCompanyEmail(nextCompany.email);
+      setCompanyPhone(nextCompany.telefone);
+      setCompanyCep(nextCompany.cep);
+      setCompanyAddress(nextCompany.endereco);
+      setCompanyCity(nextCompany.cidade);
+      setCompanyState(nextCompany.estado);
+
+      if (IS_REAL_AUTH) {
+        const saved = await upsertConfiguracaoEmpresaUsuario(nextCompany);
+        applyCompanySettings(saved);
+        toast({
+          title: 'Dados da empresa preenchidos e salvos',
+          description: 'As informações serão mantidas ao recarregar a página.',
+        });
+        return;
+      }
+
       toast({ title: 'Dados da GAWI preenchidos pelo CNPJ.' });
     } catch (error) {
       toast({
@@ -442,10 +565,10 @@ export default function SettingsPage() {
 
       <Alert>
         <Info className="h-4 w-4" />
-        <AlertTitle>Algumas seções ainda são locais</AlertTitle>
+        <AlertTitle>Configurações reais e prévias locais</AlertTitle>
         <AlertDescription>
-          Dados da empresa, aparência e segurança ainda não persistem no backend.
-          O que aparecer como prévia local não deve ser considerado configuração real de produção; módulos e modelos já salvam no Supabase.
+          Aparência e segurança ainda não persistem no backend. O que aparecer como prévia local não deve ser considerado configuração real de produção;
+          empresa, módulos e modelos já salvam no Supabase quando o sistema está em modo real.
         </AlertDescription>
       </Alert>
 
@@ -465,18 +588,24 @@ export default function SettingsPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Building2 className="w-5 h-5" /> Dados da Empresa
-                <Badge variant="outline">Prévia local</Badge>
+                <Badge variant="outline">{COMPANY_SETTINGS_CONNECTED ? 'Supabase' : 'Prévia local'}</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
-              {!COMPANY_SETTINGS_CONNECTED && (
-                <Alert>
-                  <Info className="h-4 w-4" />
-                  <AlertTitle>Prévia local</AlertTitle>
-                  <AlertDescription>
-                    Esta seção ainda serve apenas para pré-visualização no navegador atual. O botão de salvar fica desabilitado até a persistência real ser conectada.
-                  </AlertDescription>
-                </Alert>
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertTitle>{COMPANY_SETTINGS_CONNECTED ? 'Persistência real conectada' : 'Prévia local'}</AlertTitle>
+                <AlertDescription>
+                  {COMPANY_SETTINGS_CONNECTED
+                    ? 'Informe o CNPJ para buscar os dados públicos da empresa. Ao buscar ou atualizar, as informações ficam salvas no Supabase e voltam após recarregar a página.'
+                    : 'Esta seção ainda serve apenas para pré-visualização no navegador atual. O botão de salvar fica desabilitado em modo mock/desenvolvimento.'}
+                </AlertDescription>
+              </Alert>
+              {companyLoading && (
+                <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-muted/30 p-4 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Carregando dados da empresa...
+                </div>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div><Label>Razão Social</Label><Input value={companyName} onChange={e => setCompanyName(e.target.value)} className="mt-1.5" /></div>
@@ -536,7 +665,13 @@ export default function SettingsPage() {
                   </div>
                 </div>
               </div>
-              <Button disabled={!COMPANY_SETTINGS_CONNECTED} aria-disabled={!COMPANY_SETTINGS_CONNECTED}>
+              <Button
+                onClick={() => void handleSaveCompanySettings()}
+                disabled={!COMPANY_SETTINGS_CONNECTED || companySaving || companyLoading}
+                aria-disabled={!COMPANY_SETTINGS_CONNECTED || companySaving || companyLoading}
+                className="gap-2"
+              >
+                {companySaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                 Atualizar
               </Button>
             </CardContent>
