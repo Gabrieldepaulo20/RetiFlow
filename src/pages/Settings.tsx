@@ -16,6 +16,7 @@ import { DEFAULT_ROLE_MODULE_CONFIG } from '@/services/auth/moduleAccess';
 import { Wrench, Building2, Users, Palette, Lock, Upload, Check, FileText, Eye, LayoutGrid, LayoutDashboard, KanbanSquare, Calendar, Receipt, Settings as SettingsIcon, Info, Loader2, Search, Wallet, Shield, KeyRound } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { lookupCnpj, stripDigits } from '@/services/domain/customers';
+import { normalizeEmail, normalizeWhitespace, onlyDigits, toTitleCasePtBr } from '@/services/domain/textNormalization';
 import { useSystemUsersQuery } from '@/hooks/useSystemUsersQuery';
 import { callAdminUsersFunction } from '@/api/supabase/admin-users';
 import { isSuperAdmin as checkIsSuperAdmin } from '@/services/auth/superAdmin';
@@ -168,18 +169,18 @@ export default function SettingsPage() {
   };
 
   const buildCompanyPayload = () => ({
-    razaoSocial: companyName,
-    nomeFantasia: fantasyName,
-    cnpj,
-    inscricaoEstadual: ie,
-    inscricaoMunicipal: im,
-    endereco: companyAddress,
-    cidade: companyCity,
-    estado: companyState,
-    cep: companyCep,
-    telefone: companyPhone,
-    email: companyEmail,
-    site: companySite,
+    razaoSocial: toTitleCasePtBr(companyName),
+    nomeFantasia: toTitleCasePtBr(fantasyName),
+    cnpj: onlyDigits(cnpj),
+    inscricaoEstadual: normalizeWhitespace(ie),
+    inscricaoMunicipal: normalizeWhitespace(im),
+    endereco: toTitleCasePtBr(companyAddress),
+    cidade: toTitleCasePtBr(companyCity),
+    estado: normalizeWhitespace(companyState).toUpperCase(),
+    cep: onlyDigits(companyCep),
+    telefone: onlyDigits(companyPhone),
+    email: normalizeEmail(companyEmail),
+    site: normalizeWhitespace(companySite),
   });
 
   useEffect(() => {
@@ -438,20 +439,20 @@ export default function SettingsPage() {
       const nextCompany = {
         razaoSocial: company.name || companyName || DEFAULT_USER_COMPANY_SETTINGS.razaoSocial,
         nomeFantasia: company.tradeName || fantasyName || DEFAULT_USER_COMPANY_SETTINGS.nomeFantasia,
-        cnpj,
-        inscricaoEstadual: ie,
-        inscricaoMunicipal: im,
-        email: company.email || companyEmail || DEFAULT_USER_COMPANY_SETTINGS.email,
-        telefone: company.phone || companyPhone || DEFAULT_USER_COMPANY_SETTINGS.telefone,
-        cep: company.cep || companyCep,
+        cnpj: onlyDigits(cnpj),
+        inscricaoEstadual: normalizeWhitespace(ie),
+        inscricaoMunicipal: normalizeWhitespace(im),
+        email: normalizeEmail(company.email || companyEmail || DEFAULT_USER_COMPANY_SETTINGS.email),
+        telefone: onlyDigits(company.phone || companyPhone || DEFAULT_USER_COMPANY_SETTINGS.telefone),
+        cep: onlyDigits(company.cep || companyCep),
         endereco: [
         company.address,
         company.addressNumber,
         company.district,
         ].filter(Boolean).join(', ') || companyAddress,
-        cidade: company.city || companyCity,
-        estado: company.state || companyState,
-        site: companySite,
+        cidade: toTitleCasePtBr(company.city || companyCity),
+        estado: normalizeWhitespace(company.state || companyState).toUpperCase(),
+        site: normalizeWhitespace(companySite),
       };
       setCompanyName(nextCompany.razaoSocial);
       setFantasyName(nextCompany.nomeFantasia);
@@ -511,12 +512,12 @@ export default function SettingsPage() {
       const result = await callAdminUsersFunction({
         action: 'reset_password',
         userId: targetUser.id,
-        confirmationEmail: resetConfirmationEmail.trim() || undefined,
+        confirmationEmail: normalizeEmail(resetConfirmationEmail) || undefined,
       });
       toast({
         title: 'Reset de senha enviado',
         description: result.confirmationSent
-          ? `Link enviado para ${targetUser.email}; confirmação enviada para ${resetConfirmationEmail.trim()}.`
+          ? `Link enviado para ${targetUser.email}; confirmação enviada para ${normalizeEmail(resetConfirmationEmail)}.`
           : result.confirmationWarning
             ? `Link enviado para ${targetUser.email}. Confirmação extra não foi enviada: ${result.confirmationWarning}`
             : `Link enviado para ${targetUser.email}.`,
@@ -607,12 +608,12 @@ export default function SettingsPage() {
                 </div>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div><Label>Razão Social</Label><Input value={companyName} onChange={e => setCompanyName(e.target.value)} className="mt-1.5" /></div>
-                <div><Label>Nome Fantasia</Label><Input value={fantasyName} onChange={e => setFantasyName(e.target.value)} className="mt-1.5" /></div>
+                <div><Label>Razão Social</Label><Input value={companyName} onChange={e => setCompanyName(e.target.value)} onBlur={() => setCompanyName(toTitleCasePtBr(companyName))} className="mt-1.5" /></div>
+                <div><Label>Nome Fantasia</Label><Input value={fantasyName} onChange={e => setFantasyName(e.target.value)} onBlur={() => setFantasyName(toTitleCasePtBr(fantasyName))} className="mt-1.5" /></div>
                 <div>
                   <Label>CNPJ</Label>
                   <div className="mt-1.5 flex gap-2">
-                    <Input value={cnpj} onChange={e => setCnpj(e.target.value)} />
+                    <Input value={cnpj} onChange={e => setCnpj(e.target.value.replace(/[^\d./-]/g, ''))} onBlur={() => setCnpj(onlyDigits(cnpj))} />
                     <Button
                       type="button"
                       variant="outline"
@@ -625,27 +626,27 @@ export default function SettingsPage() {
                     </Button>
                   </div>
                 </div>
-                <div><Label>Inscrição Estadual</Label><Input value={ie} onChange={e => setIe(e.target.value)} className="mt-1.5" /></div>
-                <div><Label>Inscrição Municipal</Label><Input value={im} onChange={e => setIm(e.target.value)} className="mt-1.5" /></div>
+                <div><Label>Inscrição Estadual</Label><Input value={ie} onChange={e => setIe(e.target.value)} onBlur={() => setIe(normalizeWhitespace(ie))} className="mt-1.5" /></div>
+                <div><Label>Inscrição Municipal</Label><Input value={im} onChange={e => setIm(e.target.value)} onBlur={() => setIm(normalizeWhitespace(im))} className="mt-1.5" /></div>
               </div>
 
               <Separator />
               <p className="text-sm font-semibold text-foreground">Endereço</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="sm:col-span-2"><Label>Endereço</Label><Input value={companyAddress} onChange={e => setCompanyAddress(e.target.value)} className="mt-1.5" /></div>
-                <div><Label>Cidade</Label><Input value={companyCity} onChange={e => setCompanyCity(e.target.value)} className="mt-1.5" /></div>
+                <div className="sm:col-span-2"><Label>Endereço</Label><Input value={companyAddress} onChange={e => setCompanyAddress(e.target.value)} onBlur={() => setCompanyAddress(toTitleCasePtBr(companyAddress))} className="mt-1.5" /></div>
+                <div><Label>Cidade</Label><Input value={companyCity} onChange={e => setCompanyCity(e.target.value)} onBlur={() => setCompanyCity(toTitleCasePtBr(companyCity))} className="mt-1.5" /></div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div><Label>Estado</Label><Input value={companyState} onChange={e => setCompanyState(e.target.value)} className="mt-1.5" /></div>
-                  <div><Label>CEP</Label><Input value={companyCep} onChange={e => setCompanyCep(e.target.value)} className="mt-1.5" /></div>
+                  <div><Label>Estado</Label><Input value={companyState} onChange={e => setCompanyState(e.target.value.toUpperCase().slice(0, 2))} className="mt-1.5" /></div>
+                  <div><Label>CEP</Label><Input value={companyCep} onChange={e => setCompanyCep(onlyDigits(e.target.value).slice(0, 8))} className="mt-1.5" /></div>
                 </div>
               </div>
 
               <Separator />
               <p className="text-sm font-semibold text-foreground">Contato</p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div><Label>Telefone</Label><Input value={companyPhone} onChange={e => setCompanyPhone(e.target.value)} className="mt-1.5" /></div>
-                <div><Label>E-mail</Label><Input value={companyEmail} onChange={e => setCompanyEmail(e.target.value)} className="mt-1.5" /></div>
-                <div><Label>Site</Label><Input value={companySite} onChange={e => setCompanySite(e.target.value)} className="mt-1.5" /></div>
+                <div><Label>Telefone</Label><Input value={companyPhone} onChange={e => setCompanyPhone(onlyDigits(e.target.value).slice(0, 11))} className="mt-1.5" /></div>
+                <div><Label>E-mail</Label><Input value={companyEmail} onChange={e => setCompanyEmail(e.target.value)} onBlur={() => setCompanyEmail(normalizeEmail(companyEmail))} className="mt-1.5" /></div>
+                <div><Label>Site</Label><Input value={companySite} onChange={e => setCompanySite(e.target.value)} onBlur={() => setCompanySite(normalizeWhitespace(companySite))} className="mt-1.5" /></div>
               </div>
 
               <Separator />
@@ -1149,6 +1150,7 @@ export default function SettingsPage() {
                     type="email"
                     value={resetConfirmationEmail}
                     onChange={(event) => setResetConfirmationEmail(event.target.value)}
+                    onBlur={() => setResetConfirmationEmail(normalizeEmail(resetConfirmationEmail))}
                     placeholder="exemplo@cliente.com"
                     disabled={resetSending}
                   />

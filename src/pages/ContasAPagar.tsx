@@ -22,6 +22,13 @@ import { cn } from '@/lib/utils';
 import { AccountPayable, PaymentMethod, PAYABLE_ENTRY_SOURCE_LABELS, PAYABLE_STATUS_COLORS, PAYABLE_STATUS_LABELS, PAYMENT_METHOD_LABELS, RECURRENCE_TYPE_LABELS } from '@/types';
 import { buildPayableHistoryDescription, calculatePayableFinalAmount, calculatePayableRemainingBalance, canCancelPayable, canEditPayable, canRegisterPayment, formatPayableDueDateLabel, getDueDateUrgencyLevel, getPayableDisplayStatus, isPayableEditRestricted, isPayableOverdue } from '@/services/domain/payables';
 import { getGmailOAuthFeedback } from '@/services/domain/gmailOAuth';
+import {
+  normalizeDecimalInputDraft,
+  normalizeMoneyInput,
+  normalizeWhitespace,
+  parsePositiveNumber,
+  toTitleCasePtBr,
+} from '@/services/domain/textNormalization';
 import PayableCreateModal from '@/components/payables/PayableCreateModal';
 import PayableImportModal from '@/components/payables/PayableImportModal';
 import PayableDetailsModal from '@/components/payables/PayableDetailsModal';
@@ -38,10 +45,7 @@ type OriginFilter = 'all' | 'MANUAL' | 'IA_IMPORT' | 'CAMERA_CAPTURE' | 'AUTO_SE
 type DialogMode = 'payment' | 'edit' | 'cancel' | 'delete' | null;
 
 function parseMoneyInput(value: string) {
-  const normalized = value.replace(/\./g, '').replace(',', '.').trim();
-  if (!normalized) return 0;
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
+  return normalizeMoneyInput(value).value ?? 0;
 }
 
 function PayableStatusBadge({ payable }: { payable: AccountPayable }) {
@@ -261,10 +265,11 @@ export default function ContasAPagar() {
 
   async function handleSubmitPayment() {
     if (!selectedPayable) return;
-    const paymentValue = parseMoneyInput(paymentAmountInput);
+    const paymentResult = parsePositiveNumber(paymentAmountInput, { allowZero: false, fieldLabel: 'valor pago' });
+    const paymentValue = paymentResult.value ?? 0;
     const remaining = calculatePayableRemainingBalance(selectedPayable);
-    if (paymentValue <= 0) {
-      toast({ title: 'Informe um valor válido', description: 'O valor pago precisa ser maior que zero.', variant: 'destructive' });
+    if (paymentResult.error) {
+      toast({ title: 'Informe um valor válido', description: paymentResult.error, variant: 'destructive' });
       return;
     }
     const nextPaidAmount = Number(((selectedPayable.paidAmount ?? 0) + paymentValue).toFixed(2));
@@ -275,7 +280,7 @@ export default function ContasAPagar() {
         paidAmount: nextPaidAmount,
         paidAt: new Date().toISOString(),
         paidWith: paymentMethod,
-        paymentNotes: paymentNotes.trim() || undefined,
+        paymentNotes: normalizeWhitespace(paymentNotes) || undefined,
       });
       addPayableHistoryEntry(buildPayableHistoryDescription({ payableId: selectedPayable.id, action: settled ? 'PAID' : 'PARTIAL_PAID', userId: user?.id ?? 'user-2', extra: { paidAmount: paymentValue, finalAmount: remaining } }));
       toast({ title: settled ? 'Pagamento registrado' : 'Pagamento parcial registrado', description: settled ? 'A conta foi marcada como paga.' : 'O saldo restante continua em aberto para acompanhamento.' });
@@ -291,29 +296,35 @@ export default function ContasAPagar() {
   }
 
   async function handleSubmitEdit() {
-    if (!selectedPayable || !editTitle.trim() || !editCategoryId || !editDueDate) {
+    const normalizedTitle = toTitleCasePtBr(editTitle);
+    const normalizedSupplierName = toTitleCasePtBr(editSupplierName);
+    const normalizedDocNumber = normalizeWhitespace(editDocNumber);
+    const normalizedObservations = normalizeWhitespace(editObservations);
+
+    if (!selectedPayable || !normalizedTitle || !editCategoryId || !editDueDate) {
       toast({ title: 'Campos obrigatórios', description: 'Título, categoria e vencimento precisam estar preenchidos.', variant: 'destructive' });
       return;
     }
     const restricted = isPayableEditRestricted(selectedPayable);
-    const parsedAmount = parseMoneyInput(editOriginalAmount);
-    if (!restricted && parsedAmount <= 0) {
-      toast({ title: 'Informe um valor válido', description: 'O valor da conta precisa ser maior que zero.', variant: 'destructive' });
+    const amountResult = parsePositiveNumber(editOriginalAmount, { allowZero: false, fieldLabel: 'valor da conta' });
+    const parsedAmount = amountResult.value ?? 0;
+    if (!restricted && amountResult.error) {
+      toast({ title: 'Informe um valor válido', description: amountResult.error, variant: 'destructive' });
       return;
     }
     try {
       const patch: Partial<AccountPayable> = {
-        title: editTitle.trim(),
+        title: normalizedTitle,
         categoryId: editCategoryId,
         dueDate: editDueDate,
-        observations: editObservations.trim() || undefined,
+        observations: normalizedObservations || undefined,
         isUrgent: editUrgent,
       };
       if (!restricted) {
-        if (editSupplierName.trim()) patch.supplierName = editSupplierName.trim();
+        if (normalizedSupplierName) patch.supplierName = normalizedSupplierName;
         patch.originalAmount = parsedAmount;
         patch.finalAmount = calculatePayableFinalAmount(parsedAmount, selectedPayable.interest, selectedPayable.discount);
-        if (editDocNumber.trim()) patch.docNumber = editDocNumber.trim();
+        if (normalizedDocNumber) patch.docNumber = normalizedDocNumber;
         patch.paymentMethod = editPaymentMethod;
       }
       await updatePayable(selectedPayable.id, patch);
@@ -499,7 +510,7 @@ export default function ContasAPagar() {
       <Dialog open={dialogMode === 'payment'} onOpenChange={(open) => !open && resetDialogs()}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>Registrar pagamento</DialogTitle><DialogDescription>Popup rápido para pagamento total ou parcial.</DialogDescription></DialogHeader>
-          {selectedPayable ? <div className="space-y-4"><div className="rounded-xl border border-border/60 bg-muted/20 p-4 text-sm"><p className="font-medium">{selectedPayable.title}</p><p className="mt-1 text-muted-foreground">Saldo em aberto: {fmtBRL(calculatePayableRemainingBalance(selectedPayable))}</p></div><div className="space-y-2"><Label>Valor pago</Label><Input value={paymentAmountInput} onChange={(event) => setPaymentAmountInput(event.target.value)} placeholder="0,00" /></div><div className="space-y-2"><Label>Forma de pagamento</Label><Select value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as PaymentMethod)}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Observações</Label><Textarea value={paymentNotes} onChange={(event) => setPaymentNotes(event.target.value)} rows={4} placeholder="Ex.: pagamento feito via PIX do caixa do dia" /></div></div> : null}
+          {selectedPayable ? <div className="space-y-4"><div className="rounded-xl border border-border/60 bg-muted/20 p-4 text-sm"><p className="font-medium">{selectedPayable.title}</p><p className="mt-1 text-muted-foreground">Saldo em aberto: {fmtBRL(calculatePayableRemainingBalance(selectedPayable))}</p></div><div className="space-y-2"><Label>Valor pago</Label><Input value={paymentAmountInput} onChange={(event) => setPaymentAmountInput(normalizeDecimalInputDraft(event.target.value))} placeholder="0,00" /></div><div className="space-y-2"><Label>Forma de pagamento</Label><Select value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as PaymentMethod)}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Observações</Label><Textarea value={paymentNotes} onChange={(event) => setPaymentNotes(event.target.value)} onBlur={() => setPaymentNotes(normalizeWhitespace(paymentNotes))} rows={4} placeholder="Ex.: pagamento feito via PIX do caixa do dia" /></div></div> : null}
           <DialogFooter><Button variant="outline" onClick={resetDialogs}>Cancelar</Button><Button onClick={() => void handleSubmitPayment()}>Salvar pagamento</Button></DialogFooter>
         </DialogContent>
       </Dialog>
@@ -515,14 +526,14 @@ export default function ContasAPagar() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2 md:col-span-2"><Label>Título *</Label><Input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} /></div>
-            <div className="space-y-2"><Label>Fornecedor</Label><Input value={editSupplierName} onChange={(event) => setEditSupplierName(event.target.value)} disabled={!!(selectedPayable && isPayableEditRestricted(selectedPayable))} placeholder="Nome do fornecedor" /></div>
-            <div className="space-y-2"><Label>Nº do documento</Label><Input value={editDocNumber} onChange={(event) => setEditDocNumber(event.target.value)} disabled={!!(selectedPayable && isPayableEditRestricted(selectedPayable))} placeholder="Número do boleto, NF..." /></div>
+            <div className="space-y-2 md:col-span-2"><Label>Título *</Label><Input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} onBlur={() => setEditTitle(toTitleCasePtBr(editTitle))} /></div>
+            <div className="space-y-2"><Label>Fornecedor</Label><Input value={editSupplierName} onChange={(event) => setEditSupplierName(event.target.value)} onBlur={() => setEditSupplierName(toTitleCasePtBr(editSupplierName))} disabled={!!(selectedPayable && isPayableEditRestricted(selectedPayable))} placeholder="Nome do fornecedor" /></div>
+            <div className="space-y-2"><Label>Nº do documento</Label><Input value={editDocNumber} onChange={(event) => setEditDocNumber(event.target.value)} onBlur={() => setEditDocNumber(normalizeWhitespace(editDocNumber))} disabled={!!(selectedPayable && isPayableEditRestricted(selectedPayable))} placeholder="Número do boleto, NF..." /></div>
             <div className="space-y-2"><Label>Categoria *</Label><Select value={editCategoryId} onValueChange={setEditCategoryId}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{payableCategories.filter((category) => category.isActive).map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-2"><Label>Vencimento *</Label><Input type="date" value={editDueDate} onChange={(event) => setEditDueDate(event.target.value)} /></div>
-            <div className="space-y-2"><Label>Valor (R$)</Label><Input value={editOriginalAmount} onChange={(event) => setEditOriginalAmount(event.target.value)} disabled={!!(selectedPayable && isPayableEditRestricted(selectedPayable))} placeholder="0,00" /></div>
+            <div className="space-y-2"><Label>Valor (R$)</Label><Input value={editOriginalAmount} onChange={(event) => setEditOriginalAmount(normalizeDecimalInputDraft(event.target.value))} disabled={!!(selectedPayable && isPayableEditRestricted(selectedPayable))} placeholder="0,00" /></div>
             <div className="space-y-2"><Label>Forma de pagamento</Label><Select value={editPaymentMethod} onValueChange={(v) => setEditPaymentMethod(v as PaymentMethod)} disabled={!!(selectedPayable && isPayableEditRestricted(selectedPayable))}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2 md:col-span-2"><Label>Observações</Label><Textarea value={editObservations} onChange={(event) => setEditObservations(event.target.value)} rows={3} /></div>
+            <div className="space-y-2 md:col-span-2"><Label>Observações</Label><Textarea value={editObservations} onChange={(event) => setEditObservations(event.target.value)} onBlur={() => setEditObservations(normalizeWhitespace(editObservations))} rows={3} /></div>
             <label className="flex items-center gap-3 rounded-xl border border-border/60 px-4 py-3 text-sm md:col-span-2"><input type="checkbox" checked={editUrgent} onChange={(event) => setEditUrgent(event.target.checked)} className="h-4 w-4 rounded border-input" />Marcar esta conta como urgente</label>
           </div>
           <DialogFooter><Button variant="outline" onClick={resetDialogs}>Cancelar</Button><Button onClick={() => void handleSubmitEdit()}>Salvar alterações</Button></DialogFooter>

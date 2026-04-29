@@ -204,8 +204,8 @@ describe('Note edit flow', () => {
       expect(updateNote).toHaveBeenCalledWith(
         'note-1',
         expect.objectContaining({
-          vehicleModel: 'Gol 1.6 atualizado',
-          complaint: 'Plaina completa',
+          vehicleModel: 'Gol 1.6 Atualizado',
+          complaint: 'Plaina Completa',
           totalAmount: 350,
         }),
         expect.any(Array),
@@ -217,7 +217,7 @@ describe('Note edit flow', () => {
       expect.arrayContaining([
         expect.objectContaining({
           noteId: 'note-1',
-          name: 'Plaina completa',
+          name: 'Plaina Completa',
           price: 350,
           quantity: 1,
         }),

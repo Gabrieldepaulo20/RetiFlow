@@ -24,6 +24,7 @@ import { saveUserModuleOverrides } from '@/services/auth/moduleAccess';
 import { callAdminUsersFunction } from '@/api/supabase/admin-users';
 import { useAuth } from '@/contexts/AuthContext';
 import { isConfiguredSuperAdminEmail, isSuperAdmin as checkIsSuperAdmin } from '@/services/auth/superAdmin';
+import { normalizeEmail, onlyDigits, toTitleCasePtBr } from '@/services/domain/textNormalization';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -259,8 +260,10 @@ export default function AdminClients() {
   };
 
   const handleCreateUser = async () => {
-    const normalizedEmail = newEmail.trim().toLowerCase();
-    if (!newName.trim() || !normalizedEmail) {
+    const normalizedName = toTitleCasePtBr(newName);
+    const normalizedEmail = normalizeEmail(newEmail);
+    const normalizedPhone = onlyDigits(newPhone);
+    if (!normalizedName || !normalizedEmail) {
       toast({ title: 'Preencha nome e e-mail', variant: 'destructive' });
       return;
     }
@@ -295,9 +298,9 @@ export default function AdminClients() {
       const result = IS_REAL_AUTH
         ? await callAdminUsersFunction({
             action: accountRole === 'ADMIN' ? 'create_admin' : 'create_user',
-            name: newName.trim(),
+            name: normalizedName,
             email: normalizedEmail,
-            phone: newPhone.trim(),
+            phone: normalizedPhone,
             role: accountRole,
             modules: accountRole === 'ADMIN' ? MASTER_MODULE_ACCESS : roleModuleConfig[accountRole],
           })
@@ -307,9 +310,9 @@ export default function AdminClients() {
 
       const newUser: SystemUser = {
         id: createdId,
-        name: newName.trim(),
+        name: normalizedName,
         email: normalizedEmail,
-        phone: newPhone.trim() || undefined,
+        phone: normalizedPhone || undefined,
         role: accountRole,
         isActive: true,
         createdAt: new Date().toISOString(),
@@ -685,15 +688,15 @@ export default function AdminClients() {
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label>Nome completo</Label>
-              <Input value={newName} onChange={(event) => setNewName(event.target.value)} placeholder="Nome do usuário" className="h-11 rounded-xl" />
+              <Input value={newName} onChange={(event) => setNewName(event.target.value)} onBlur={() => setNewName(toTitleCasePtBr(newName))} placeholder="Nome do usuário" className="h-11 rounded-xl" />
             </div>
             <div className="space-y-2">
               <Label>E-mail</Label>
-              <Input type="email" value={newEmail} onChange={(event) => setNewEmail(event.target.value)} placeholder="email@exemplo.com" className="h-11 rounded-xl" />
+              <Input type="email" value={newEmail} onChange={(event) => setNewEmail(event.target.value)} onBlur={() => setNewEmail(normalizeEmail(newEmail))} placeholder="email@exemplo.com" className="h-11 rounded-xl" />
             </div>
             <div className="space-y-2">
               <Label>Telefone</Label>
-              <Input value={newPhone} onChange={(event) => setNewPhone(event.target.value)} placeholder="(00) 00000-0000" className="h-11 rounded-xl" />
+              <Input value={newPhone} onChange={(event) => setNewPhone(onlyDigits(event.target.value).slice(0, 11))} placeholder="(00) 00000-0000" className="h-11 rounded-xl" />
             </div>
             <div className="space-y-2">
               <Label>Tipo de conta</Label>

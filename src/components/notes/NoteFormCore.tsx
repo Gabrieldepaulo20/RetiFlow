@@ -32,6 +32,17 @@ import { NoteType, FINAL_STATUSES, IntakeNote } from '@/types';
 import { generateId } from '@/lib/generateId';
 import { cn } from '@/lib/utils';
 import { buildCustomerAddressLabel } from '@/services/domain/customers';
+import {
+  isValidBrazilianPlate,
+  normalizeDecimalInputDraft,
+  normalizeMoneyInput,
+  normalizePlate,
+  normalizeWhitespace,
+  onlyDigits,
+  parsePositiveNumber,
+  toTitleCasePtBr,
+  validateDueDateNotBeforeBaseDate,
+} from '@/services/domain/textNormalization';
 import { formatNoteNumber, normalizeNoteNumber } from '@/lib/noteNumbers';
 import { getNotaServicoDetalhes, uploadNotaPDF, updateNotaPdfUrl } from '@/api/supabase/notas';
 import { getTiposDeMotor, getServicosItens } from '@/api/supabase/catalogo';
@@ -96,11 +107,6 @@ export function FormSection({ children }: { children: React.ReactNode }) {
 
 const numberInputClassName =
   '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none';
-
-const validarPlaca = (p: string): boolean => {
-  const s = p.replace(/[-\s]/g, '').toUpperCase();
-  return /^[A-Z]{3}\d{4}$/.test(s) || /^[A-Z]{3}\d[A-Z]\d{2}$/.test(s);
-};
 
 /* ─── Item types ─── */
 
@@ -379,6 +385,18 @@ export default function NoteFormCore({
   const updateItem = (id: string, field: keyof ServiceItem, value: string | number) =>
     setItems((prev) => prev.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
 
+  const normalizeItemText = (id: string) =>
+    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, description: toTitleCasePtBr(item.description) } : item)));
+
+  const normalizeSubLineText = (itemId: string, subId: string) =>
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === itemId
+          ? { ...item, subLines: item.subLines.map((s) => (s.id === subId ? { ...s, text: normalizeWhitespace(s.text) } : s)) }
+          : item,
+      ),
+    );
+
   const removeItem = (id: string) => {
     if (items.length <= 1) return;
     setItems((prev) => prev.filter((item) => item.id !== id));
@@ -414,9 +432,9 @@ export default function NoteFormCore({
   const itemTotals = useMemo(
     () =>
       items.map((item) => {
-        const price = parseFloat(item.unitPrice) || 0;
-        const disc = parseFloat(item.discount) || 0;
-        const qty = parseFloat(item.quantity) || 0;
+        const price = normalizeMoneyInput(item.unitPrice).value ?? 0;
+        const disc = normalizeMoneyInput(item.discount).value ?? 0;
+        const qty = normalizeMoneyInput(item.quantity).value ?? 0;
         const sub = qty * price;
         return sub - sub * (disc / 100);
       }),
@@ -427,9 +445,9 @@ export default function NoteFormCore({
   const totalDiscount = useMemo(
     () =>
       items.reduce((acc, item) => {
-        const price = parseFloat(item.unitPrice) || 0;
-        const disc = parseFloat(item.discount) || 0;
-        const qty = parseFloat(item.quantity) || 0;
+        const price = normalizeMoneyInput(item.unitPrice).value ?? 0;
+        const disc = normalizeMoneyInput(item.discount).value ?? 0;
+        const qty = normalizeMoneyInput(item.quantity).value ?? 0;
         return acc + (qty * price * disc) / 100;
       }, 0),
     [items],
@@ -441,20 +459,50 @@ export default function NoteFormCore({
       toast({ title: 'Preencha cliente e data', variant: 'destructive' });
       return;
     }
-    if (plate && !validarPlaca(plate)) {
+    if (prazo && !validateDueDateNotBeforeBaseDate(prazo, data)) {
+      toast({ title: 'Prazo inválido', description: 'O prazo não pode ser anterior à data de entrada.', variant: 'destructive' });
+      return;
+    }
+    const normalizedPlate = normalizePlate(plate);
+    if (normalizedPlate && !isValidBrazilianPlate(normalizedPlate)) {
       toast({ title: 'Placa inválida', description: 'Use o formato ABC-1234 ou ABC1D23 (Mercosul)', variant: 'destructive' });
       return;
     }
-    if (items.every((i) => !i.description)) {
+    const normalizedItems = items.map((item) => ({
+      ...item,
+      description: toTitleCasePtBr(item.description),
+      subLines: item.subLines.map((sub) => ({ ...sub, text: normalizeWhitespace(sub.text) })),
+    }));
+    if (normalizedItems.every((i) => !i.description)) {
       toast({ title: 'Adicione pelo menos um item', variant: 'destructive' });
       return;
     }
 
-    const validItems = items.filter((i) => i.description && (parseFloat(i.unitPrice) || 0) > 0);
+    for (const item of normalizedItems.filter((i) => i.description)) {
+      const qty = parsePositiveNumber(item.quantity || '1', { allowZero: false, fieldLabel: 'quantidade' });
+      if (qty.error) {
+        toast({ title: 'Quantidade inválida', description: 'A quantidade deve ser maior que zero.', variant: 'destructive' });
+        return;
+      }
+
+      const unitPrice = parsePositiveNumber(item.unitPrice, { allowZero: false, fieldLabel: 'valor unitário' });
+      if (unitPrice.error) {
+        toast({ title: 'Valor unitário inválido', description: 'Informe um valor unitário válido.', variant: 'destructive' });
+        return;
+      }
+
+      const discount = parsePositiveNumber(item.discount || '0', { allowZero: true, fieldLabel: 'desconto' });
+      if (discount.error || (discount.value ?? 0) > 100) {
+        toast({ title: 'Desconto inválido', description: 'O desconto deve ficar entre 0 e 100%.', variant: 'destructive' });
+        return;
+      }
+    }
+
+    const validItems = normalizedItems.filter((i) => i.description && (normalizeMoneyInput(i.unitPrice).value || 0) > 0);
     const totalAmount = validItems.reduce((acc, item) => {
-      const price = parseFloat(item.unitPrice) || 0;
-      const disc = parseFloat(item.discount) || 0;
-      const qty = parseFloat(item.quantity) || 1;
+      const price = normalizeMoneyInput(item.unitPrice).value || 0;
+      const disc = normalizeMoneyInput(item.discount).value || 0;
+      const qty = normalizeMoneyInput(item.quantity).value || 1;
       const sub = qty * price;
       return acc + sub - (sub * disc) / 100;
     }, 0);
@@ -469,13 +517,13 @@ export default function NoteFormCore({
       status: editingNote?.status || ('ABERTO' as const),
       type: noteType,
       parentNoteId: parentNoteId || undefined,
-      engineType: engineType || 'Cabeçote',
-      vehicleModel: vehicleModel || '-',
-      plate: plate || undefined,
-      km: km ? parseInt(km) : undefined,
+      engineType: toTitleCasePtBr(engineType) || 'Cabeçote',
+      vehicleModel: toTitleCasePtBr(vehicleModel) || '-',
+      plate: normalizedPlate || undefined,
+      km: km ? parseInt(onlyDigits(km), 10) : undefined,
       complaint: generatedComplaint || complaint.trim() || 'Serviços conforme descrição dos itens',
-      observations: observations.trim(),
-      responsavel: responsavel.trim() || undefined,
+      observations: normalizeWhitespace(observations),
+      responsavel: toTitleCasePtBr(responsavel) || undefined,
       createdByUserId: editingNote?.createdByUserId || user!.id,
       totalServices: noteType === 'SERVICO' ? totalAmount : 0,
       totalProducts: noteType === 'COMPRA' ? totalAmount : 0,
@@ -483,9 +531,9 @@ export default function NoteFormCore({
     };
 
     const itemPayload = validItems.map((item) => {
-      const price = parseFloat(item.unitPrice) || 0;
-      const disc = parseFloat(item.discount) || 0;
-      const qty = parseFloat(item.quantity) || 1;
+      const price = normalizeMoneyInput(item.unitPrice).value || 0;
+      const disc = normalizeMoneyInput(item.discount).value || 0;
+      const qty = normalizeMoneyInput(item.quantity).value || 1;
       const sub = qty * price;
       const subText = item.subLines.map((s) => s.text).filter(Boolean).join('\n');
       const fullDescription = subText ? `${item.description}\n${subText}` : item.description;
@@ -844,6 +892,7 @@ export default function NoteFormCore({
           <Input
             value={responsavel}
             onChange={(e) => setResponsavel(e.target.value)}
+            onBlur={() => setResponsavel(toTitleCasePtBr(responsavel))}
             placeholder="Quem trouxe o veículo (funcionário, familiar...)"
           />
         </Field>
@@ -859,6 +908,7 @@ export default function NoteFormCore({
           <Input
             value={vehicleModel}
             onChange={(e) => setVehicleModel(e.target.value)}
+            onBlur={() => setVehicleModel(toTitleCasePtBr(vehicleModel))}
             placeholder="Ex: Gol 1.0 8v"
           />
         </Field>
@@ -867,6 +917,7 @@ export default function NoteFormCore({
             list="engine-type-catalog"
             value={engineType}
             onChange={(e) => setEngineType(e.target.value)}
+            onBlur={() => setEngineType(toTitleCasePtBr(engineType))}
             placeholder="Ex: Cabeçote"
           />
           <datalist id="engine-type-catalog">
@@ -876,18 +927,18 @@ export default function NoteFormCore({
         <Field label="Placa">
           <Input
             value={plate}
-            onChange={(e) => setPlate(e.target.value.toUpperCase())}
-            placeholder="ABC-1234"
-            maxLength={8}
+            onChange={(e) => setPlate(normalizePlate(e.target.value).slice(0, 7))}
+            onBlur={() => setPlate(normalizePlate(plate))}
+            placeholder="ABC1234"
+            maxLength={7}
           />
         </Field>
         <Field label="KM Atual">
           <Input
-            type="number"
+            inputMode="numeric"
             value={km}
-            onChange={(e) => setKm(e.target.value)}
+            onChange={(e) => setKm(onlyDigits(e.target.value))}
             placeholder="0"
-            min={0}
             className={numberInputClassName}
           />
         </Field>
@@ -948,9 +999,9 @@ export default function NoteFormCore({
 
       <div className="space-y-2">
         {items.map((item) => {
-          const price = parseFloat(item.unitPrice.replace(',', '.')) || 0;
-          const disc  = parseFloat(item.discount.replace(',', '.'))  || 0;
-          const rowTotal = (parseFloat(item.quantity) || 0) * price * (1 - disc / 100);
+          const price = normalizeMoneyInput(item.unitPrice).value ?? 0;
+          const disc = normalizeMoneyInput(item.discount).value ?? 0;
+          const rowTotal = (normalizeMoneyInput(item.quantity).value ?? 0) * price * (1 - disc / 100);
 
           return (
             <div key={item.id}>
@@ -960,6 +1011,7 @@ export default function NoteFormCore({
                   list={serviceCatalog.length > 0 ? 'service-catalog' : undefined}
                   value={item.description}
                   onChange={(e) => updateItem(item.id, 'description', e.target.value)}
+                  onBlur={() => normalizeItemText(item.id)}
                   placeholder={noteType === 'COMPRA' ? 'Nome da peça / produto' : 'Descrição do serviço'}
                   className="h-9 text-sm"
                 />
@@ -967,20 +1019,20 @@ export default function NoteFormCore({
                   type="number"
                   min="0"
                   value={item.quantity}
-                  onChange={(e) => updateItem(item.id, 'quantity', e.target.value)}
+                  onChange={(e) => updateItem(item.id, 'quantity', onlyDigits(e.target.value))}
                   className={cn('h-9 text-sm text-center', numberInputClassName)}
                 />
                 <Input
                   inputMode="decimal"
                   value={item.unitPrice}
-                  onChange={(e) => updateItem(item.id, 'unitPrice', e.target.value)}
+                  onChange={(e) => updateItem(item.id, 'unitPrice', normalizeDecimalInputDraft(e.target.value))}
                   placeholder="0,00"
                   className={cn('h-9 text-sm text-right', numberInputClassName)}
                 />
                 <Input
                   inputMode="decimal"
                   value={item.discount}
-                  onChange={(e) => updateItem(item.id, 'discount', e.target.value)}
+                  onChange={(e) => updateItem(item.id, 'discount', normalizeDecimalInputDraft(e.target.value))}
                   placeholder="0"
                   className={cn('h-9 text-sm text-center', numberInputClassName)}
                 />
@@ -1038,6 +1090,7 @@ export default function NoteFormCore({
                 <Textarea
                   value={item.description}
                   onChange={(e) => updateItem(item.id, 'description', e.target.value)}
+                  onBlur={() => normalizeItemText(item.id)}
                   placeholder={noteType === 'COMPRA' ? 'Nome da peça / produto' : 'Descrição do serviço'}
                   className="min-h-[36px] resize-none text-sm"
                   rows={1}
@@ -1046,10 +1099,10 @@ export default function NoteFormCore({
                   <div>
                     <p className="text-[10px] text-muted-foreground mb-1">Qtd</p>
                     <Input
-                      type="number"
+                      inputMode="numeric"
                       min="1"
                       value={item.quantity}
-                      onChange={(e) => updateItem(item.id, 'quantity', e.target.value)}
+                      onChange={(e) => updateItem(item.id, 'quantity', onlyDigits(e.target.value))}
                       className={cn('h-9 text-sm text-center', numberInputClassName)}
                     />
                   </div>
@@ -1058,7 +1111,7 @@ export default function NoteFormCore({
                     <Input
                       inputMode="decimal"
                       value={item.unitPrice}
-                      onChange={(e) => updateItem(item.id, 'unitPrice', e.target.value)}
+                      onChange={(e) => updateItem(item.id, 'unitPrice', normalizeDecimalInputDraft(e.target.value))}
                       placeholder="0,00"
                       className={cn('h-9 text-sm text-right', numberInputClassName)}
                     />
@@ -1068,7 +1121,7 @@ export default function NoteFormCore({
                     <Input
                       inputMode="decimal"
                       value={item.discount}
-                      onChange={(e) => updateItem(item.id, 'discount', e.target.value)}
+                      onChange={(e) => updateItem(item.id, 'discount', normalizeDecimalInputDraft(e.target.value))}
                       placeholder="0"
                       className={cn('h-9 text-sm text-center', numberInputClassName)}
                     />
@@ -1087,6 +1140,7 @@ export default function NoteFormCore({
                       <Input
                         value={sub.text}
                         onChange={(e) => updateSubLine(item.id, sub.id, e.target.value)}
+                        onBlur={() => normalizeSubLineText(item.id, sub.id)}
                         placeholder="Detalhe adicional..."
                         className="h-7 text-xs flex-1"
                       />
@@ -1116,6 +1170,7 @@ export default function NoteFormCore({
       <Textarea
         value={observations}
         onChange={(e) => setObservations(e.target.value)}
+        onBlur={() => setObservations(normalizeWhitespace(observations))}
         placeholder="Anotações internas sobre esta O.S. Não aparecem na notinha/PDF."
         className="min-h-[92px] resize-y text-sm"
       />

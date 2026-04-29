@@ -1,6 +1,7 @@
 import { Client, DocType } from '@/types';
 import { fetchCep, fetchCnpj } from '@/api/endpoints/brazilian';
 import { ApiError } from '@/api/errors';
+import { normalizeEmail, normalizeWhitespace, onlyDigits, toTitleCasePtBr } from './textNormalization';
 
 export const CUSTOMER_FIELD_LIMITS = {
   name: 80,
@@ -40,7 +41,7 @@ export interface CnpjLookupResult {
 }
 
 export function stripDigits(value: string) {
-  return value.replace(/\D/g, '');
+  return onlyDigits(value);
 }
 
 export function clamp(value: string, limit: number) {
@@ -110,18 +111,18 @@ export function buildCustomerAddressLabel(client?: Partial<Client> | null) {
 export function sanitizeClientInput(client: Omit<Client, 'id' | 'createdAt'>): Omit<Client, 'id' | 'createdAt'> {
   return {
     ...client,
-    name: clamp(client.name.trim(), CUSTOMER_FIELD_LIMITS.name),
-    tradeName: clamp((client.tradeName || '').trim(), CUSTOMER_FIELD_LIMITS.tradeName),
+    name: clamp(toTitleCasePtBr(client.name), CUSTOMER_FIELD_LIMITS.name),
+    tradeName: clamp(toTitleCasePtBr(client.tradeName || ''), CUSTOMER_FIELD_LIMITS.tradeName),
     docNumber: clamp(client.docNumber.trim(), CUSTOMER_FIELD_LIMITS.docNumber),
     phone: clamp(client.phone.trim(), CUSTOMER_FIELD_LIMITS.phone),
-    email: clamp(client.email.trim().toLowerCase(), CUSTOMER_FIELD_LIMITS.email),
+    email: clamp(normalizeEmail(client.email), CUSTOMER_FIELD_LIMITS.email),
     cep: clamp((client.cep || '').trim(), CUSTOMER_FIELD_LIMITS.cep),
-    address: clamp(client.address.trim(), CUSTOMER_FIELD_LIMITS.address),
-    addressNumber: clamp((client.addressNumber || '').trim(), CUSTOMER_FIELD_LIMITS.addressNumber),
-    district: clamp((client.district || '').trim(), CUSTOMER_FIELD_LIMITS.district),
-    city: clamp(client.city.trim(), CUSTOMER_FIELD_LIMITS.city),
+    address: clamp(toTitleCasePtBr(client.address), CUSTOMER_FIELD_LIMITS.address),
+    addressNumber: clamp(normalizeWhitespace(client.addressNumber || ''), CUSTOMER_FIELD_LIMITS.addressNumber),
+    district: clamp(toTitleCasePtBr(client.district || ''), CUSTOMER_FIELD_LIMITS.district),
+    city: clamp(toTitleCasePtBr(client.city), CUSTOMER_FIELD_LIMITS.city),
     state: clamp(client.state.trim().toUpperCase(), CUSTOMER_FIELD_LIMITS.state),
-    notes: clamp(client.notes.trim(), CUSTOMER_FIELD_LIMITS.notes),
+    notes: clamp(normalizeWhitespace(client.notes), CUSTOMER_FIELD_LIMITS.notes),
   };
 }
 
@@ -138,9 +139,9 @@ export async function lookupCep(cep: string, signal?: AbortSignal): Promise<CepL
     }
     return {
       cep: formatCep(data.cep || digits),
-      address: data.logradouro || '',
-      district: data.bairro || '',
-      city: data.localidade || '',
+      address: toTitleCasePtBr(data.logradouro || ''),
+      district: toTitleCasePtBr(data.bairro || ''),
+      city: toTitleCasePtBr(data.localidade || ''),
       state: (data.uf || '').toUpperCase(),
     };
   } catch (error) {
@@ -161,15 +162,15 @@ export async function lookupCnpj(cnpj: string, signal?: AbortSignal): Promise<Cn
     const data = await fetchCnpj(digits, signal);
     const phone = formatPhone(data.ddd_telefone_1 || data.ddd_telefone_2 || '');
     return {
-      name: clamp((data.nome_fantasia || data.razao_social || '').trim(), CUSTOMER_FIELD_LIMITS.name),
-      tradeName: clamp((data.nome_fantasia || '').trim(), CUSTOMER_FIELD_LIMITS.tradeName),
-      email: clamp((data.email || '').trim().toLowerCase(), CUSTOMER_FIELD_LIMITS.email),
+      name: clamp(toTitleCasePtBr(data.nome_fantasia || data.razao_social || ''), CUSTOMER_FIELD_LIMITS.name),
+      tradeName: clamp(toTitleCasePtBr(data.nome_fantasia || ''), CUSTOMER_FIELD_LIMITS.tradeName),
+      email: clamp(normalizeEmail(data.email || ''), CUSTOMER_FIELD_LIMITS.email),
       phone,
       cep: formatCep(data.cep || ''),
-      address: clamp((data.logradouro || '').trim(), CUSTOMER_FIELD_LIMITS.address),
-      addressNumber: clamp((data.numero || '').trim(), CUSTOMER_FIELD_LIMITS.addressNumber),
-      district: clamp((data.bairro || '').trim(), CUSTOMER_FIELD_LIMITS.district),
-      city: clamp((data.municipio || '').trim(), CUSTOMER_FIELD_LIMITS.city),
+      address: clamp(toTitleCasePtBr(data.logradouro || ''), CUSTOMER_FIELD_LIMITS.address),
+      addressNumber: clamp(normalizeWhitespace(data.numero || ''), CUSTOMER_FIELD_LIMITS.addressNumber),
+      district: clamp(toTitleCasePtBr(data.bairro || ''), CUSTOMER_FIELD_LIMITS.district),
+      city: clamp(toTitleCasePtBr(data.municipio || ''), CUSTOMER_FIELD_LIMITS.city),
       state: clamp((data.uf || '').trim().toUpperCase(), CUSTOMER_FIELD_LIMITS.state),
     };
   } catch (error) {

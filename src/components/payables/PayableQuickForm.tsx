@@ -26,6 +26,14 @@ import {
   findPayableDuplicate,
   PAYABLE_FIELD_LIMITS,
 } from '@/services/domain/payables';
+import {
+  normalizeDecimalInputDraft,
+  normalizeMoneyInput,
+  normalizeWhitespace,
+  onlyDigits,
+  parsePositiveNumber,
+  toTitleCasePtBr,
+} from '@/services/domain/textNormalization';
 import { insertAnexoContaPagar, uploadAnexoContaPagar } from '@/api/supabase/contas-pagar';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
@@ -83,10 +91,7 @@ const PAYMENT_METHOD_OPTIONS: PaymentMethod[] = [
 ];
 
 function parseMoneyInput(value: string): number {
-  const normalized = value.replace(/\./g, '').replace(',', '.').trim();
-  if (!normalized) return 0;
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
+  return normalizeMoneyInput(value).value ?? 0;
 }
 
 function inferAttachmentType(file: File): PayableAttachmentFileType {
@@ -161,18 +166,20 @@ export default function PayableQuickForm({
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
 
-    const title = form.title.trim();
-    const supplierName = form.supplierName.trim();
-    const originalAmount = parseMoneyInput(form.amount);
+    const title = toTitleCasePtBr(form.title);
+    const supplierName = toTitleCasePtBr(form.supplierName);
+    const amountResult = parsePositiveNumber(form.amount, { allowZero: false, fieldLabel: 'valor' });
 
-    if (!title || !form.categoryId || !supplierName || !form.dueDate || originalAmount <= 0) {
+    if (!title || !form.categoryId || !supplierName || !form.dueDate || amountResult.error) {
       toast({
         title: 'Preencha os campos obrigatórios',
-        description: 'Descrição, categoria, fornecedor, valor e vencimento são essenciais para cadastrar a conta.',
+        description: amountResult.error ?? 'Descrição, categoria, fornecedor, valor e vencimento são essenciais para cadastrar a conta.',
         variant: 'destructive',
       });
       return;
     }
+
+    const originalAmount = amountResult.value ?? 0;
 
     const matchedSupplier = payableSuppliers.find(
       (supplier) => supplier.name.toLowerCase() === supplierName.toLowerCase(),
@@ -199,8 +206,34 @@ export default function PayableQuickForm({
     }
 
     const isPaid = form.initialStatus === 'PAGO';
-    const totalInstallments = form.isInstallment ? Math.max(2, Number(form.totalInstallments) || 2) : undefined;
-    const recurrenceIndex = form.isInstallment ? Math.max(1, Number(form.recurrenceIndex) || 1) : undefined;
+    const totalInstallmentsResult = form.isInstallment
+      ? parsePositiveNumber(form.totalInstallments, { allowZero: false, integer: true, fieldLabel: 'total de parcelas' })
+      : { value: undefined, error: null };
+    const recurrenceIndexResult = form.isInstallment
+      ? parsePositiveNumber(form.recurrenceIndex, { allowZero: false, integer: true, fieldLabel: 'parcela atual' })
+      : { value: undefined, error: null };
+
+    if (form.isInstallment && (totalInstallmentsResult.error || recurrenceIndexResult.error)) {
+      toast({
+        title: 'Parcelamento inválido',
+        description: totalInstallmentsResult.error ?? recurrenceIndexResult.error ?? 'Informe parcelas válidas.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const totalInstallments = form.isInstallment ? Math.max(2, totalInstallmentsResult.value ?? 2) : undefined;
+    const recurrenceIndex = form.isInstallment ? Math.max(1, recurrenceIndexResult.value ?? 1) : undefined;
+
+    if (form.isInstallment && recurrenceIndex && totalInstallments && recurrenceIndex > totalInstallments) {
+      toast({
+        title: 'Parcelamento inválido',
+        description: 'A parcela atual não pode ser maior que o total de parcelas.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const recurrence = form.isInstallment && form.recurrence === 'NENHUMA' ? 'MENSAL' : form.recurrence;
 
     const payable = await addPayable({
@@ -208,7 +241,7 @@ export default function PayableQuickForm({
       supplierId: matchedSupplier?.id,
       supplierName,
       categoryId: form.categoryId,
-      docNumber: form.docNumber.trim() || undefined,
+      docNumber: normalizeWhitespace(form.docNumber) || undefined,
       dueDate: form.dueDate,
       issueDate: new Date().toISOString().slice(0, 10),
       originalAmount,
@@ -221,7 +254,7 @@ export default function PayableQuickForm({
       recurrence,
       recurrenceIndex,
       totalInstallments,
-      observations: form.observations.trim() || undefined,
+      observations: normalizeWhitespace(form.observations) || undefined,
       isUrgent: form.isUrgent,
       entrySource,
       paymentExecutionStatus: 'MANUAL',
@@ -300,6 +333,7 @@ export default function PayableQuickForm({
               <Input
                 value={form.title}
                 onChange={(event) => setField('title', event.target.value.slice(0, PAYABLE_FIELD_LIMITS.title))}
+                onBlur={() => setField('title', toTitleCasePtBr(form.title))}
                 placeholder="Ex.: Boleto peças abril, reforma do barracão, notinha do mercado"
                 maxLength={PAYABLE_FIELD_LIMITS.title}
               />
@@ -321,6 +355,7 @@ export default function PayableQuickForm({
                 list="payable-suppliers"
                 value={form.supplierName}
                 onChange={(event) => setField('supplierName', event.target.value.slice(0, PAYABLE_FIELD_LIMITS.supplierName))}
+                onBlur={() => setField('supplierName', toTitleCasePtBr(form.supplierName))}
                 placeholder="Digite ou escolha um fornecedor"
               />
               <datalist id="payable-suppliers">
@@ -329,7 +364,7 @@ export default function PayableQuickForm({
             </div>
             <div className="space-y-1.5">
               <Label>Valor *</Label>
-              <Input inputMode="decimal" value={form.amount} onChange={(event) => setField('amount', event.target.value)} placeholder="0,00" />
+              <Input inputMode="decimal" value={form.amount} onChange={(event) => setField('amount', normalizeDecimalInputDraft(event.target.value))} placeholder="0,00" />
             </div>
             <div className="space-y-1.5">
               <Label>Vencimento *</Label>
@@ -366,7 +401,7 @@ export default function PayableQuickForm({
               </div>
               <div className="space-y-1.5">
                 <Label>Valor pago</Label>
-                <Input inputMode="decimal" value={form.paidAmount} onChange={(event) => setField('paidAmount', event.target.value)} placeholder="0,00" />
+                <Input inputMode="decimal" value={form.paidAmount} onChange={(event) => setField('paidAmount', normalizeDecimalInputDraft(event.target.value))} placeholder="0,00" />
               </div>
               <div className="space-y-1.5">
                 <Label>Forma de pagamento</Label>
@@ -396,6 +431,7 @@ export default function PayableQuickForm({
                   <Input
                     value={form.docNumber}
                     onChange={(event) => setField('docNumber', event.target.value.slice(0, PAYABLE_FIELD_LIMITS.docNumber))}
+                    onBlur={() => setField('docNumber', normalizeWhitespace(form.docNumber))}
                     placeholder="NF, boleto, guia ou recibo"
                   />
                 </div>
@@ -424,11 +460,11 @@ export default function PayableQuickForm({
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-1.5">
                       <Label>Total de parcelas</Label>
-                      <Input inputMode="numeric" value={form.totalInstallments} onChange={(event) => setField('totalInstallments', event.target.value)} />
+                      <Input inputMode="numeric" value={form.totalInstallments} onChange={(event) => setField('totalInstallments', onlyDigits(event.target.value))} />
                     </div>
                     <div className="space-y-1.5">
                       <Label>Parcela atual</Label>
-                      <Input inputMode="numeric" value={form.recurrenceIndex} onChange={(event) => setField('recurrenceIndex', event.target.value)} />
+                      <Input inputMode="numeric" value={form.recurrenceIndex} onChange={(event) => setField('recurrenceIndex', onlyDigits(event.target.value))} />
                     </div>
                   </div>
                 ) : null}
@@ -439,6 +475,7 @@ export default function PayableQuickForm({
                 <Textarea
                   value={form.observations}
                   onChange={(event) => setField('observations', event.target.value.slice(0, PAYABLE_FIELD_LIMITS.observations))}
+                  onBlur={() => setField('observations', normalizeWhitespace(form.observations))}
                   placeholder="Informações úteis para o financeiro, negociação, vínculo com obra ou fornecedor."
                   rows={4}
                 />
