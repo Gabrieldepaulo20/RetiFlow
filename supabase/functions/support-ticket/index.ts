@@ -205,8 +205,6 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: `Falha ao salvar chamado: ${insertError?.message ?? 'sem retorno'}` }, 500, request);
   }
 
-  let emailStatus: 'sent' | 'failed' = 'failed';
-  let emailError: string | null = null;
   try {
     await sendSesEmail({
       request,
@@ -214,18 +212,27 @@ Deno.serve(async (request) => {
       text: `Novo chamado no Retiflow\n\nUsuário: ${userName}\nE-mail: ${userData.user.email}\n\nMensagem:\n${message}`,
       html: `<h2>Novo chamado no Retiflow</h2><p><strong>Usuário:</strong> ${userName}</p><p><strong>E-mail:</strong> ${userData.user.email}</p><p style="white-space:pre-wrap">${message.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]!))}</p>`,
     });
-    emailStatus = 'sent';
   } catch (error) {
-    emailError = error instanceof Error ? error.message : 'Falha desconhecida ao enviar e-mail.';
+    const emailError = error instanceof Error ? error.message : 'Falha desconhecida ao enviar e-mail.';
+    await service
+      .schema('RetificaPremium')
+      .from('Chamados_Suporte')
+      .delete()
+      .eq('id_chamados_suporte', inserted.id_chamados_suporte);
+
+    return jsonResponse({
+      error: 'Não foi possível enviar o e-mail do chamado. Nada foi salvo.',
+      details: emailError,
+    }, 502, request);
   }
 
   const { data: updated } = await service
     .schema('RetificaPremium')
     .from('Chamados_Suporte')
     .update({
-      status: emailStatus === 'sent' ? 'EMAIL_SENT' : 'EMAIL_FAILED',
-      email_sent_at: emailStatus === 'sent' ? new Date().toISOString() : null,
-      email_error: emailError,
+      status: 'EMAIL_SENT',
+      email_sent_at: new Date().toISOString(),
+      email_error: null,
       updated_at: new Date().toISOString(),
     })
     .eq('id_chamados_suporte', inserted.id_chamados_suporte)
@@ -233,8 +240,8 @@ Deno.serve(async (request) => {
     .single();
 
   return jsonResponse({
-    mensagem: emailStatus === 'sent' ? 'Chamado salvo e e-mail enviado.' : 'Chamado salvo, mas e-mail ainda precisa de configuração.',
-    emailStatus,
+    mensagem: 'Chamado salvo e e-mail enviado.',
+    emailStatus: 'sent',
     ticket: updated ?? inserted,
   }, 200, request);
 });

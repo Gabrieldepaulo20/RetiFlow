@@ -165,11 +165,8 @@ export default function AppLayout() {
         ...previous.filter((ticket) => ticket.id_chamados_suporte !== result.ticket.id_chamados_suporte),
       ]);
       toast({
-        title: result.emailStatus === 'sent' ? 'Chamado enviado' : 'Chamado salvo',
-        description: result.emailStatus === 'sent'
-          ? 'Recebemos sua mensagem e ela foi enviada para o suporte.'
-          : 'Seu chamado foi registrado, mas o envio por e-mail precisa de configuração do SES.',
-        variant: result.emailStatus === 'sent' ? 'default' : 'destructive',
+        title: 'Chamado enviado',
+        description: 'Recebemos sua mensagem e ela foi enviada para o suporte.',
       });
       setSupportMessage('');
     } catch (error) {

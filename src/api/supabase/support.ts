@@ -35,7 +35,7 @@ export async function submitSupportTicket(message: string) {
   const accessToken = await getAccessToken();
   const { data, error } = await supabase.functions.invoke<{
     ticket: SupportTicket;
-    emailStatus: 'sent' | 'failed';
+    emailStatus: 'sent';
     mensagem?: string;
   }>('support-ticket', {
     body: { message },
