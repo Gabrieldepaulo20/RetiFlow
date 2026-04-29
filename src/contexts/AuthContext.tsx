@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AuthMode, AuthSession, LoginCredentials, Permission, SystemUser } from '@/types';
 import { getAuthProvider } from '@/services/auth/authProvider';
 import { getModulePermission, hasPermission } from '@/services/auth/permissions';
@@ -93,8 +93,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthLoading, setIsAuthLoading] = useState(IS_REAL_AUTH);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [moduleAccessVersion, setModuleAccessVersion] = useState(0);
+  const sessionRef = useRef<AuthSession | null>(session);
 
   const authMode: AuthMode = IS_REAL_AUTH ? 'real' : 'development';
+
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
 
   useEffect(() => subscribeToModuleAccessChanges(() => setModuleAccessVersion((v) => v + 1)), []);
 
@@ -118,8 +123,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let active = true;
 
-    const applyProfileResult = (result: { session: AuthSession | null; isTransientError: boolean }) => {
+    const applyProfileResult = (
+      result: { session: AuthSession | null; isTransientError: boolean },
+      options?: { keepCurrentSessionOnTransientError?: boolean },
+    ) => {
       if (result.isTransientError) {
+        if (options?.keepCurrentSessionOnTransientError && sessionRef.current?.user) {
+          return;
+        }
         setProfileError('Não foi possível carregar seu perfil. Verifique sua conexão e tente novamente.');
         return;
       }
@@ -165,15 +176,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (event === 'SIGNED_IN' && sbSession) {
-        setIsAuthLoading(true);
+        const hasCurrentSession = Boolean(sessionRef.current?.user);
+        if (!hasCurrentSession) {
+          setIsAuthLoading(true);
+        }
         setProfileError(null);
         void fetchProfileFromSupabase().then((result) => {
           if (!active) return;
-          applyProfileResult(result);
+          applyProfileResult(result, { keepCurrentSessionOnTransientError: hasCurrentSession });
         }).catch(() => {
-          if (active) setProfileError('Erro inesperado ao carregar perfil. Tente novamente.');
+          if (active && !hasCurrentSession) setProfileError('Erro inesperado ao carregar perfil. Tente novamente.');
         }).finally(() => {
-          if (active) setIsAuthLoading(false);
+          if (active && !hasCurrentSession) setIsAuthLoading(false);
         });
       }
     });
