@@ -1,4 +1,5 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -9,13 +10,17 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
 import { users } from '@/data/seed';
 import { DEFAULT_ROLE_MODULE_CONFIG } from '@/services/auth/moduleAccess';
-import { Wrench, Building2, Users, Palette, Lock, Upload, Check, FileText, Eye, LayoutGrid, LayoutDashboard, KanbanSquare, Calendar, Receipt, Settings as SettingsIcon, Info, Loader2, Search } from 'lucide-react';
+import { Wrench, Building2, Users, Palette, Lock, Upload, Check, FileText, Eye, LayoutGrid, LayoutDashboard, KanbanSquare, Calendar, Receipt, Settings as SettingsIcon, Info, Loader2, Search, Wallet, Shield } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { lookupCnpj, stripDigits } from '@/services/domain/customers';
-import type { IntakeNote, IntakeService, Client, RoleModuleConfig, UserRole } from '@/types';
+import { useSystemUsersQuery } from '@/hooks/useSystemUsersQuery';
+import { callAdminUsersFunction } from '@/api/supabase/admin-users';
+import { isSuperAdmin as checkIsSuperAdmin } from '@/services/auth/superAdmin';
+import type { AppModuleKey, IntakeNote, IntakeService, Client, SystemUser } from '@/types';
 
 const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
 
@@ -57,24 +62,19 @@ const mockServicesLong: IntakeService[] = [
 ];
 
 // Module definitions for RBAC
-const MODULE_DEFS = [
-  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { key: 'clients', label: 'Clientes', icon: Users },
-  { key: 'notes', label: 'Notas de Entrada', icon: FileText },
-  { key: 'kanban', label: 'Kanban', icon: KanbanSquare },
-  { key: 'closing', label: 'Fechamento', icon: Calendar },
-  { key: 'invoices', label: 'Nota Fiscal (fora da v1)', icon: Receipt },
-  { key: 'settings', label: 'Configurações', icon: SettingsIcon },
-];
-
-const CONFIGURABLE_ROLES: { key: UserRole; label: string }[] = [
-  { key: 'FINANCEIRO', label: 'Financeiro' },
-  { key: 'PRODUCAO', label: 'Produção' },
-  { key: 'RECEPCAO', label: 'Recepção' },
+const MODULE_DEFS: { key: AppModuleKey; label: string; description: string; icon: typeof LayoutDashboard }[] = [
+  { key: 'dashboard', label: 'Dashboard', description: 'Indicadores operacionais do sistema.', icon: LayoutDashboard },
+  { key: 'clients', label: 'Clientes', description: 'Cadastro e consulta de clientes.', icon: Users },
+  { key: 'notes', label: 'Notas de Entrada', description: 'Ordens de serviço, edição, preview e PDF.', icon: FileText },
+  { key: 'kanban', label: 'Kanban', description: 'Acompanhamento da produção por status.', icon: KanbanSquare },
+  { key: 'closing', label: 'Fechamento', description: 'Geração de fechamento mensal.', icon: Calendar },
+  { key: 'payables', label: 'Contas a Pagar', description: 'Financeiro, anexos e importação com IA.', icon: Wallet },
+  { key: 'invoices', label: 'Nota Fiscal', description: 'Fora da v1; manter desligado até liberação.', icon: Receipt },
+  { key: 'settings', label: 'Configurações', description: 'Ajustes e prévias do sistema.', icon: SettingsIcon },
+  { key: 'admin', label: 'Admin', description: 'Usuários e permissões administrativas.', icon: Shield },
 ];
 
 const COMPANY_SETTINGS_CONNECTED = false;
-const MODULE_SETTINGS_CONNECTED = false;
 const APPEARANCE_SETTINGS_CONNECTED = false;
 const DOCUMENT_MODEL_SETTINGS_CONNECTED = false;
 const SECURITY_SETTINGS_CONNECTED = false;
@@ -83,9 +83,12 @@ const SETTINGS_TABS = new Set(['empresa', 'modulos', 'aparencia', 'modelos', 'se
 export default function SettingsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabFromUrl = searchParams.get('tab') ?? 'empresa';
   const activeTab = SETTINGS_TABS.has(tabFromUrl) ? tabFromUrl : 'empresa';
+  const { data: systemUsers = [], isLoading: usersLoading } = useSystemUsersQuery();
+  const isSuperAdmin = checkIsSuperAdmin(user);
 
   // Company
   const [companyName, setCompanyName] = useState('59.540.218 GABRIEL WILLIAM DE PAULO');
@@ -115,14 +118,64 @@ export default function SettingsPage() {
   const [showA4Preview, setShowA4Preview] = useState(false);
 
   // Modules
-  const [moduleConfig, setModuleConfig] = useState<RoleModuleConfig>(DEFAULT_ROLE_MODULE_CONFIG);
+  const [selectedModuleUserId, setSelectedModuleUserId] = useState('');
+  const [moduleSavingKey, setModuleSavingKey] = useState<AppModuleKey | null>(null);
+  const selectedModuleUser = useMemo(
+    () => systemUsers.find((candidate) => candidate.id === selectedModuleUserId) ?? null,
+    [selectedModuleUserId, systemUsers],
+  );
 
-  const toggleModule = (role: UserRole, mod: keyof typeof DEFAULT_ROLE_MODULE_CONFIG.ADMIN) => {
-    if (!MODULE_SETTINGS_CONNECTED) return;
-    setModuleConfig(prev => ({
-      ...prev,
-      [role]: { ...prev[role], [mod]: !prev[role]?.[mod] },
-    }));
+  useEffect(() => {
+    if (!selectedModuleUserId && systemUsers.length > 0) {
+      setSelectedModuleUserId(systemUsers[0].id);
+    }
+  }, [selectedModuleUserId, systemUsers]);
+
+  const getModulesForUser = (targetUser: SystemUser) => {
+    return MODULE_DEFS.reduce<Record<AppModuleKey, boolean>>((accumulator, module) => {
+      accumulator[module.key] = targetUser.moduleAccess?.[module.key] ?? DEFAULT_ROLE_MODULE_CONFIG[targetUser.role]?.[module.key] ?? false;
+      return accumulator;
+    }, {} as Record<AppModuleKey, boolean>);
+  };
+
+  const toggleModule = async (moduleKey: AppModuleKey) => {
+    if (!selectedModuleUser) return;
+    if (!isSuperAdmin) {
+      toast({
+        title: 'Ação restrita ao Super Admin',
+        description: 'Somente o admin master pode alterar módulos de usuários.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const currentModules = getModulesForUser(selectedModuleUser);
+    const nextModules = {
+      ...currentModules,
+      [moduleKey]: !currentModules[moduleKey],
+    };
+
+    setModuleSavingKey(moduleKey);
+    try {
+      await callAdminUsersFunction({
+        action: 'set_modules',
+        userId: selectedModuleUser.id,
+        modules: nextModules,
+      });
+      await queryClient.invalidateQueries({ queryKey: ['auth', 'system-users'] });
+      toast({
+        title: nextModules[moduleKey] ? 'Módulo ativado' : 'Módulo desativado',
+        description: `${MODULE_DEFS.find((module) => module.key === moduleKey)?.label} atualizado para ${selectedModuleUser.name}.`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Não foi possível atualizar o módulo',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setModuleSavingKey(null);
+    }
   };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -203,8 +256,8 @@ export default function SettingsPage() {
         <Info className="h-4 w-4" />
         <AlertTitle>Algumas seções ainda são locais</AlertTitle>
         <AlertDescription>
-          Dados da empresa, permissões por perfil, aparência, modelos e segurança ainda não persistem no backend.
-          O que aparecer como prévia local não deve ser considerado configuração real de produção.
+          Dados da empresa, aparência, modelos e segurança ainda não persistem no backend.
+          O que aparecer como prévia local não deve ser considerado configuração real de produção; o controle de módulos já salva no Supabase.
         </AlertDescription>
       </Alert>
 
@@ -307,62 +360,119 @@ export default function SettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <LayoutGrid className="w-5 h-5" /> Controle de Módulos por Perfil
-                <Badge variant="outline">Bloqueado na v1</Badge>
+                <LayoutGrid className="w-5 h-5" /> Controle de Módulos por Usuário
+                <Badge variant="outline">Supabase</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
               <Alert>
-                <Info className="h-4 w-4" />
-                <AlertTitle>Permissões reais ainda não conectadas nesta tela</AlertTitle>
+                <Shield className="h-4 w-4" />
+                <AlertTitle>Controle real por cliente/usuário</AlertTitle>
                 <AlertDescription>
-                  Estes controles estão bloqueados para não parecerem alteração de backend. A autorização real deve continuar vindo
-                  das permissões do usuário no Supabase/RPCs.
+                  Escolha um usuário abaixo e ligue ou desligue módulos específicos. A alteração é salva no Supabase
+                  pela função administrativa segura e passa a valer no próximo carregamento da sessão desse usuário.
                 </AlertDescription>
               </Alert>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left py-3 pr-4 font-semibold text-muted-foreground">Módulo</th>
-                      {CONFIGURABLE_ROLES.map(r => (
-                        <th key={r.key} className="text-center py-3 px-4 font-semibold text-muted-foreground">{r.label}</th>
+              {!isSuperAdmin && (
+                <Alert className="border-amber-200 bg-amber-50/80 text-amber-900">
+                  <Info className="h-4 w-4" />
+                  <AlertTitle>Ação restrita ao admin master</AlertTitle>
+                  <AlertDescription>
+                    Você pode visualizar os acessos, mas apenas o Super Admin autorizado pode alterar módulos.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+                <div className="space-y-2">
+                  <Label>Cliente / usuário</Label>
+                  <Select value={selectedModuleUserId} onValueChange={setSelectedModuleUserId} disabled={usersLoading || systemUsers.length === 0}>
+                    <SelectTrigger className="h-11">
+                      <SelectValue placeholder={usersLoading ? 'Carregando usuários...' : 'Selecione um usuário'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {systemUsers.map((systemUser) => (
+                        <SelectItem key={systemUser.id} value={systemUser.id}>
+                          {systemUser.name} · {systemUser.email}
+                        </SelectItem>
                       ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {MODULE_DEFS.map(mod => (
-                      <tr key={mod.key} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
-                        <td className="py-3 pr-4">
-                          <div className="flex items-center gap-2.5">
-                            <mod.icon className="w-4 h-4 text-muted-foreground" />
-                            <span className="font-medium">{mod.label}</span>
-                          </div>
-                        </td>
-                        {CONFIGURABLE_ROLES.map(r => (
-                          <td key={r.key} className="text-center py-3 px-4">
-                            <Switch
-                              checked={moduleConfig[r.key]?.[mod.key] ?? false}
-                              disabled={!MODULE_SETTINGS_CONNECTED}
-                              onCheckedChange={() => toggleModule(r.key, mod.key)}
-                            />
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="rounded-xl border border-border/70 bg-muted/30 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Módulos ativos</p>
+                  <p className="mt-1 text-2xl font-display font-bold">
+                    {selectedModuleUser ? Object.values(getModulesForUser(selectedModuleUser)).filter(Boolean).length : 0}
+                    <span className="text-sm font-medium text-muted-foreground"> / {MODULE_DEFS.length}</span>
+                  </p>
+                </div>
               </div>
 
-              <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Check className="w-4 h-4 text-primary" />
+              {usersLoading ? (
+                <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-muted/30 p-4 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Carregando usuários e permissões...
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Bloqueado na v1 para evitar configuração local enganosa. Alterações reais exigem persistência no banco.
-                </p>
-              </div>
+              ) : selectedModuleUser ? (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {MODULE_DEFS.map((module) => {
+                    const Icon = module.icon;
+                    const modules = getModulesForUser(selectedModuleUser);
+                    const isEnabled = modules[module.key];
+                    const isSaving = moduleSavingKey === module.key;
+                    const isAdminModuleLocked = module.key === 'admin' && selectedModuleUser.role !== 'ADMIN';
+                    const isOwnAdminLock = module.key === 'admin' && selectedModuleUser.id === user?.id;
+
+                    return (
+                      <div
+                        key={module.key}
+                        className="flex items-start justify-between gap-4 rounded-2xl border border-border/70 bg-background p-4 shadow-sm"
+                      >
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                              <Icon className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold">{module.label}</p>
+                              <Badge variant={isEnabled ? 'default' : 'secondary'} className="mt-1 h-5 text-[10px]">
+                                {isEnabled ? 'Ativo' : 'Bloqueado'}
+                              </Badge>
+                            </div>
+                          </div>
+                          <p className="text-xs leading-relaxed text-muted-foreground">{module.description}</p>
+                          {isAdminModuleLocked && (
+                            <p className="text-[11px] text-muted-foreground">
+                              O módulo Admin só pode ser ligado para usuários administradores.
+                            </p>
+                          )}
+                          {isOwnAdminLock && (
+                            <p className="text-[11px] text-muted-foreground">
+                              Você não pode remover o próprio acesso administrativo por esta tela.
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 pt-1">
+                          {isSaving && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                          <Switch
+                            checked={isEnabled}
+                            disabled={!isSuperAdmin || isSaving || isAdminModuleLocked || isOwnAdminLock}
+                            onCheckedChange={() => void toggleModule(module.key)}
+                            aria-label={`${isEnabled ? 'Desativar' : 'Ativar'} módulo ${module.label} para ${selectedModuleUser.name}`}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                  Nenhum usuário encontrado para configurar módulos.
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

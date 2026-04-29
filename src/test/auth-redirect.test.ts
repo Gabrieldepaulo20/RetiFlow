@@ -22,8 +22,9 @@ describe('auth default redirect', () => {
     window.localStorage.clear();
   });
 
-  it('keeps admin users able to enter the admin area even if moduleAccess.admin is false', () => {
-    expect(getDefaultRedirect(makeUser('ADMIN', { admin: false }))).toBe('/admin');
+  it('uses explicit DB module access for admin routes', () => {
+    expect(getDefaultRedirect(makeUser('ADMIN', { admin: false, dashboard: true }))).toBe('/dashboard');
+    expect(canUserAccessModule(makeUser('ADMIN', { admin: false, dashboard: true }), 'admin')).toBe(false);
   });
 
   it('redirects operational users to the first enabled module when dashboard is disabled', () => {
@@ -48,7 +49,20 @@ describe('auth default redirect', () => {
     }))).toBe('/notas-entrada');
   });
 
-  it('falls back to role defaults when real module access is fully disabled by invalid config', () => {
+  it('allows explicit module grants independent of the static role defaults', () => {
+    const user = makeUser('RECEPCAO', {
+      dashboard: false,
+      clients: false,
+      notes: false,
+      kanban: false,
+      payables: true,
+    });
+
+    expect(canUserAccessModule(user, 'payables')).toBe(true);
+    expect(getDefaultRedirect(user)).toBe('/contas-a-pagar');
+  });
+
+  it('blocks users when explicit DB module access disables every available module', () => {
     const user = makeUser('FINANCEIRO', {
       dashboard: false,
       payables: false,
@@ -58,7 +72,7 @@ describe('auth default redirect', () => {
       kanban: false,
     });
 
-    expect(getDefaultRedirect(user)).toBe('/dashboard');
-    expect(canUserAccessModule(user, 'dashboard')).toBe(true);
+    expect(getDefaultRedirect(user)).toBe('/acesso-negado');
+    expect(canUserAccessModule(user, 'dashboard')).toBe(false);
   });
 });

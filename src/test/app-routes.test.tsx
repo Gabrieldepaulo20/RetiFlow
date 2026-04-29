@@ -163,7 +163,8 @@ describe('App routes', () => {
 
     const modulesTab = screen.getByRole('tab', { name: /módulos/i });
     fireEvent.keyDown(modulesTab, { key: 'Enter', code: 'Enter' });
-    await waitFor(() => expect(screen.getAllByText(/permissões reais ainda não conectadas/i).length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText(/controle real por cliente\/usuário/i).length).toBeGreaterThan(0));
+    expect(screen.getByText(/apenas o Super Admin autorizado pode alterar módulos/i)).toBeInTheDocument();
     for (const toggle of screen.getAllByRole('switch')) {
       expect(toggle).toBeDisabled();
     }
