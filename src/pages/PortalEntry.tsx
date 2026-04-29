@@ -4,12 +4,13 @@ import { ArrowRight, Shield, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
+import { getDefaultRedirect } from '@/services/auth/defaultRedirect';
 
 export default function PortalEntry() {
   const { isAuthenticated, user } = useAuth();
 
   if (isAuthenticated && user) {
-    return <Navigate to={user.role === 'ADMIN' ? '/admin' : '/dashboard'} replace />;
+    return <Navigate to={getDefaultRedirect(user)} replace />;
   }
 
   return (

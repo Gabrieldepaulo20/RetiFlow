@@ -51,10 +51,12 @@ describe('App auth flow', () => {
     window.history.pushState({}, '', '/');
   });
 
-  it('redirects the root route to the regular login page', async () => {
+  it('shows the portal chooser on the root route', async () => {
     renderAt('/');
 
-    expect(await screen.findByText('Entrar na área do cliente')).toBeInTheDocument();
+    expect(await screen.findByText('Escolha o portal de acesso adequado para continuar.')).toBeInTheDocument();
+    expect(screen.getByText('Entrar no portal do cliente')).toBeInTheDocument();
+    expect(screen.getByText('Entrar na área administrativa')).toBeInTheDocument();
   });
 
   it('logs an operational user in and redirects to the dashboard', async () => {

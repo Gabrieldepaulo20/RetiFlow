@@ -6,10 +6,12 @@ test.describe('Auth — login and access control', () => {
     await clearSession(page);
   });
 
-  test('redirects / to /login when unauthenticated', async ({ page }) => {
+  test('shows portal chooser at / when unauthenticated', async ({ page }) => {
     await page.goto('/');
-    await expect(page).toHaveURL('/login');
-    await expect(page.getByText('Entrar na área do cliente')).toBeVisible();
+    await expect(page).toHaveURL('/');
+    await expect(page.getByText('Escolha o portal de acesso adequado para continuar.')).toBeVisible();
+    await expect(page.getByText('Entrar no portal do cliente')).toBeVisible();
+    await expect(page.getByText('Entrar na área administrativa')).toBeVisible();
   });
 
   test('redirects protected route to /login when unauthenticated', async ({ page }) => {
@@ -48,14 +50,13 @@ test.describe('Auth — login and access control', () => {
     await expect(page.getByRole('heading', { name: 'Painel Administrativo' })).toBeVisible();
   });
 
-  test('admin is blocked from client portal (/login)', async ({ page }) => {
+  test('admin can use /login as operational test portal', async ({ page }) => {
     await page.goto('/login');
     await page.getByLabel(/e-mail/i).fill(USERS.admin.email);
     await page.getByLabel(/senha/i).fill(USERS.admin.password);
     await page.getByRole('button', { name: /entrar/i }).click();
-    // Error: "Use a tela administrativa para acessar a área de gestão."
-    await expect(page.getByText(/tela administrativa/i).first()).toBeVisible();
-    await expect(page).toHaveURL('/login');
+    await expect(page).toHaveURL('/dashboard');
+    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   });
 
   test('financeiro is blocked from /admin/login portal', async ({ page }) => {

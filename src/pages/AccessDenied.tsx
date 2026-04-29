@@ -24,9 +24,10 @@ export default function AccessDenied() {
           Você está autenticado, mas não possui permissão para acessar este módulo.
         </p>
         {location.state && typeof location.state === 'object' && 'from' in location.state && (
-          <p className="mt-3 text-xs text-muted-foreground">
-            Origem: {String(location.state.from)}
-          </p>
+          <div className="mt-3 rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            <p>Rota solicitada: <span className="font-mono text-foreground">{String(location.state.from)}</span></p>
+            <p className="mt-1">Se você deveria acessar esta área, peça ao administrador para revisar seus módulos.</p>
+          </div>
         )}
 
         <div className="mt-6 flex flex-col gap-2">
