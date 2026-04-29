@@ -174,6 +174,12 @@ describe('App routes', () => {
     await waitFor(() => expect(screen.getByText(/fluxo ainda indisponível/i)).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /integração em implementação/i })).toBeDisabled();
     expect(screen.queryByRole('button', { name: /^alterar senha$/i })).not.toBeInTheDocument();
+
+    const usersTab = screen.getByRole('tab', { name: /usuários/i });
+    fireEvent.keyDown(usersTab, { key: 'Enter', code: 'Enter' });
+    await waitFor(() => expect(screen.getByText(/gestão real centralizada no admin/i)).toBeInTheDocument());
+    expect(screen.getByRole('link', { name: /abrir usuários no admin/i })).toHaveAttribute('href', '/admin/usuarios');
+    expect(screen.queryByText(/admin@retifica.com/i)).not.toBeInTheDocument();
   });
 
   it('redirects /admin/clientes to /admin/usuarios', async () => {

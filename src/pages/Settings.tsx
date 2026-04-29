@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,7 +12,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
-import { users } from '@/data/seed';
 import { DEFAULT_ROLE_MODULE_CONFIG } from '@/services/auth/moduleAccess';
 import { Wrench, Building2, Users, Palette, Lock, Upload, Check, FileText, Eye, LayoutGrid, LayoutDashboard, KanbanSquare, Calendar, Receipt, Settings as SettingsIcon, Info, Loader2, Search, Wallet, Shield, KeyRound } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -1205,26 +1204,38 @@ export default function SettingsPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Users className="w-5 h-5" /> Usuários do Sistema
-                <Badge variant="outline">Lista ilustrativa</Badge>
+                <Badge variant="outline">Admin real</Badge>
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <Alert className="mb-4">
-                <Info className="h-4 w-4" />
-                <AlertTitle>Lista ilustrativa nesta tela</AlertTitle>
+            <CardContent className="space-y-4">
+              <Alert>
+                <Shield className="h-4 w-4" />
+                <AlertTitle>Gestão real centralizada no Admin</AlertTitle>
                 <AlertDescription>
-                  Esta aba ainda usa dados locais de referência. A gestão real de usuários deve ser feita pelo módulo administrativo conectado ao Supabase.
+                  Para evitar dados locais ou duplicação de permissões, a criação de usuários, convites,
+                  reset de senha, ativação e controle de módulos ficam exclusivamente no módulo administrativo
+                  conectado ao Supabase.
                 </AlertDescription>
               </Alert>
-              <div className="space-y-3">
-                {users.map(u => (
-                  <div key={u.id} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div><p className="font-medium">{u.name}</p><p className="text-sm text-muted-foreground">{u.email}</p></div>
-                    <Badge variant={u.role === 'ADMIN' ? 'default' : 'secondary'}>{u.role}</Badge>
-                  </div>
-                ))}
+              <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
+                <p className="text-sm font-semibold">O que fazer aqui?</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Use esta aba apenas como ponte para a gestão real. Nenhum usuário é listado por seed,
+                  localStorage ou mock dentro de Configurações.
+                </p>
               </div>
-              {user?.role !== 'ADMIN' && <p className="text-sm text-muted-foreground mt-4">Apenas administradores podem alterar perfis.</p>}
+              {user?.role === 'ADMIN' ? (
+                <Button asChild className="gap-2">
+                  <Link to="/admin/usuarios">
+                    <Users className="h-4 w-4" />
+                    Abrir usuários no Admin
+                  </Link>
+                </Button>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Apenas administradores podem acessar a gestão real de usuários.
+                </p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
