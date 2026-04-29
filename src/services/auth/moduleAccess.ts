@@ -11,7 +11,7 @@ export const DEFAULT_ROLE_MODULE_CONFIG: RoleModuleConfig = {
     notes: true,
     kanban: true,
     closing: true,
-    invoices: true,
+    invoices: false,
     payables: true,
     settings: true,
     admin: true,
