@@ -61,6 +61,7 @@ import {
   ignorarSugestaoEmail,
   type SugestaoEmail,
 } from '@/api/supabase/sugestoes-email';
+import { dashboardResumoToDomainData, getDashboardResumo } from '@/api/supabase/dashboard';
 import { toast } from '@/hooks/use-toast';
 
 // ── Supabase adapters ─────────────────────────────────────────────────────────
@@ -297,22 +298,42 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // Em modo real, carrega dados do Supabase na montagem.
   useEffect(() => {
     if (!IS_REAL_AUTH) return;
-    getClientes({ p_limite: 500 }).then(({ dados }) => {
-      setCustomers(dados.map(supabaseToClient));
-    }).catch(() => {});
-    getNotasServico({ p_limite: 500 }).then(({ dados }) => {
-      const loaded = dados.map(supabaseToIntakeNote);
-      setNotes(loaded);
-      setNoteCounter(getNextNoteCounter(loaded.map((n) => n.number)));
-    }).catch(() => {});
+
+    const loadCoreDashboardData = async () => {
+      try {
+        const resumo = await getDashboardResumo({ p_limite: 500 });
+        const loaded = dashboardResumoToDomainData(resumo);
+        setCustomers(loaded.clients);
+        setNotes(loaded.notes);
+        setServices(loaded.services);
+        setPayables(loaded.payables);
+        if (loaded.payableCategories.length > 0) setPayableCategories(loaded.payableCategories);
+        setNoteCounter(getNextNoteCounter(loaded.notes.map((n) => n.number)));
+        return;
+      } catch {
+        // Fallback compatível caso a Function ainda não tenha sido publicada no ambiente.
+      }
+
+      getClientes({ p_limite: 500 }).then(({ dados }) => {
+        setCustomers(dados.map(supabaseToClient));
+      }).catch(() => {});
+      getNotasServico({ p_limite: 500 }).then(({ dados }) => {
+        const loaded = dados.map(supabaseToIntakeNote);
+        setNotes(loaded);
+        setNoteCounter(getNextNoteCounter(loaded.map((n) => n.number)));
+      }).catch(() => {});
+      getContasPagar({ p_limite: 500 }).then(({ dados }) => {
+        setPayables(dados.map(supabaseToAccountPayable));
+      }).catch(() => {});
+      getCategorias(true).then((cats) => {
+        if (cats.length > 0) setPayableCategories(cats.map(supabaseToPayableCategory));
+      }).catch(() => {});
+    };
+
+    void loadCoreDashboardData();
+
     getStatusNotas({ p_tipo_nota: 'Serviço' }).then((statuses) => {
       statusDbIdRef.current = buildStatusIdMap(statuses);
-    }).catch(() => {});
-    getContasPagar({ p_limite: 500 }).then(({ dados }) => {
-      setPayables(dados.map(supabaseToAccountPayable));
-    }).catch(() => {});
-    getCategorias(true).then((cats) => {
-      if (cats.length > 0) setPayableCategories(cats.map(supabaseToPayableCategory));
     }).catch(() => {});
     getFornecedores({ p_ativo: true, p_limite: 200 }).then(({ dados }) => {
       if (dados.length > 0) setPayableSuppliers(dados.map(supabaseToPayableSupplier));

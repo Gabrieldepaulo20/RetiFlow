@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '@/contexts/DataContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { STATUS_LABELS, STATUS_COLORS, NoteStatus, FINAL_STATUSES, PAYABLE_STATUS_LABELS, PAYABLE_STATUS_COLORS, RECURRENCE_TYPE_LABELS } from '@/types';
+import { STATUS_LABELS, NoteStatus, FINAL_STATUSES, PAYABLE_STATUS_LABELS, PAYABLE_STATUS_COLORS, RECURRENCE_TYPE_LABELS } from '@/types';
 import {
   FileText, DollarSign, Clock, TrendingUp, AlertCircle,
   CheckCircle2, Timer, Users, Receipt,
@@ -19,21 +19,19 @@ import {
 } from '@/components/ui/tooltip';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer,
-  LineChart, Line, CartesianGrid, Cell, PieChart, Pie, Legend,
+  LineChart, Line, CartesianGrid, Cell, PieChart, Pie,
   AreaChart, Area,
 } from 'recharts';
 import { motion } from 'framer-motion';
 import { useReducedMotion } from 'framer-motion';
 import {
   format, subMonths, startOfMonth, endOfMonth,
-  startOfDay, differenceInDays, parseISO,
+  differenceInDays, parseISO,
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { formatPayableRecurrenceLabel, isPayableOverdue } from '@/services/domain/payables';
 import { SectionEmptyState, SectionErrorState } from '@/components/ui/section-state';
-import { getNotaServicoDetalhes } from '@/api/supabase/notas';
-import type { IntakeService } from '@/types';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -57,8 +55,6 @@ const BAR_COLORS: Partial<Record<NoteStatus, string>> = {
 };
 
 const TYPE_COLORS = ['hsl(var(--primary))', '#f97316'];
-const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
-const SERVICE_DETAILS_CONCURRENCY = 8;
 
 function fmtBRL(value: number) {
   return value.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -82,9 +78,8 @@ export default function Dashboard() {
   const { notes, clients, services, activities, payables, payableCategories } = useData();
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
-  const [dbServices, setDbServices] = useState<IntakeService[]>([]);
-  const [serviceMetricsLoading, setServiceMetricsLoading] = useState(IS_REAL_AUTH);
-  const [serviceMetricsError, setServiceMetricsError] = useState(false);
+  const serviceMetricsLoading = false;
+  const serviceMetricsError = false;
 
   const now = useMemo(() => new Date(), []);
   const startCurrent = startOfMonth(now).getTime();
@@ -228,71 +223,6 @@ export default function Dashboard() {
     });
   }, [finalizedNotes, now]);
 
-  useEffect(() => {
-    if (!IS_REAL_AUTH) {
-      setDbServices([]);
-      setServiceMetricsLoading(false);
-      setServiceMetricsError(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    const loadRealServiceItems = async () => {
-      if (notes.length === 0) {
-        setDbServices([]);
-        setServiceMetricsLoading(false);
-        setServiceMetricsError(false);
-        return;
-      }
-
-      setServiceMetricsLoading(true);
-      setServiceMetricsError(false);
-
-      try {
-        const orderedNotes = [...notes].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-        const loadedServices: IntakeService[] = [];
-
-        for (let index = 0; index < orderedNotes.length; index += SERVICE_DETAILS_CONCURRENCY) {
-          const chunk = orderedNotes.slice(index, index + SERVICE_DETAILS_CONCURRENCY);
-          const detailsList = await Promise.all(chunk.map((note) => getNotaServicoDetalhes(note.id)));
-
-          if (cancelled) return;
-
-          detailsList.forEach((details) => {
-            if (!details) return;
-            details.itens_servico.forEach((item) => {
-              loadedServices.push({
-                id: item.id_rel,
-                noteId: details.cabecalho.id_nota,
-                name: item.descricao,
-                description: item.detalhes ?? '',
-                price: item.preco_unitario,
-                quantity: item.quantidade,
-                subtotal: item.subtotal_item,
-              });
-            });
-          });
-        }
-
-        setDbServices(loadedServices);
-      } catch {
-        if (!cancelled) {
-          setServiceMetricsError(true);
-          setDbServices([]);
-        }
-      } finally {
-        if (!cancelled) setServiceMetricsLoading(false);
-      }
-    };
-
-    void loadRealServiceItems();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [notes]);
-
   // ── Top 5 clientes por faturamento ──────────────────────────────────────
   const topClients = useMemo(() => {
     const map = new Map<string, { revenue: number; count: number }>();
@@ -311,7 +241,7 @@ export default function Dashboard() {
   }, [finalizedNotes, clients]);
 
   // ── Top serviços ─────────────────────────────────────────────────────────
-  const servicesForMetrics = IS_REAL_AUTH ? dbServices : services;
+  const servicesForMetrics = services;
 
   const topServices = useMemo(() => {
     const map = new Map<string, { count: number; revenue: number }>();

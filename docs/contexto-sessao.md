@@ -1445,7 +1445,25 @@ Pendência operacional:
 
 - Antes de testar em produção, aplicar a migration `20260429170000_support_impersonation_sessions.sql` no Supabase e fazer deploy da Edge Function `admin-users`.
 
-### 19.7 Validações mais recentes
+### 19.7 Dashboard consolidado
+
+Estado atual:
+
+- O Dashboard deixou de buscar detalhes de cada O.S. no navegador para montar o ranking de serviços.
+- Foi criada a Edge Function `dashboard-resumo`, que valida `Authorization: Bearer <access_token>` e consolida dados server-side usando os RPCs reais existentes.
+- O `DataContext` chama `dashboard-resumo` uma única vez em modo real e usa esse payload para hidratar notas, clientes, contas, categorias e serviços.
+- Se a Function falhar, o `DataContext` cai para os RPCs legados individuais, sem quebrar a tela inteira.
+- A Function não usa service role; ela chama os RPCs com o token do próprio usuário autenticado.
+- Próxima melhoria possível: criar uma RPC/view nativa no Postgres para mover também o N+1 interno da Function para uma agregação SQL única.
+
+Arquivos principais:
+
+- `src/pages/Dashboard.tsx`
+- `src/api/supabase/dashboard.ts`
+- `supabase/functions/dashboard-resumo/index.ts`
+- `src/test/integration/dashboard.test.ts`
+
+### 19.8 Validações mais recentes
 
 Últimas validações executadas após essas mudanças:
 
@@ -1455,7 +1473,7 @@ Pendência operacional:
 | `npm run lint` | Passou com 8 warnings antigos de Fast Refresh |
 | `npm test -- --run` | 28 arquivos, 256 testes passaram |
 | `npm run build` | Passou com warnings conhecidos de chunks grandes |
-| `npm run test:integration` | 9 arquivos, 30 testes reais passaram contra Supabase |
+| `npm run test:integration` | 10 arquivos, 31 testes reais passaram contra Supabase |
 
 Últimos commits relevantes:
 
