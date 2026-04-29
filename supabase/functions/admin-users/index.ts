@@ -73,7 +73,7 @@ function getConfiguredOrigins() {
 }
 
 function getSuperAdminEmails() {
-  const raw = Deno.env.get('SUPER_ADMIN_EMAILS') ?? Deno.env.get('SUPER_ADMIN_EMAIL') ?? 'gabrielwilliam208@gmail.com';
+  const raw = Deno.env.get('SUPER_ADMIN_EMAILS') ?? Deno.env.get('SUPER_ADMIN_EMAIL') ?? '';
   return new Set(raw.split(',').map((email) => email.trim().toLowerCase()).filter(Boolean));
 }
 
@@ -193,8 +193,13 @@ async function getRequester(request: Request) {
     return { ok: false as const, response: jsonResponse({ error: 'Usuário autenticado obrigatório.' }, 401, request) };
   }
 
+  const superAdminEmails = getSuperAdminEmails();
+  if (superAdminEmails.size === 0) {
+    return { ok: false as const, response: jsonResponse({ error: 'Allowlist de Super Admin não configurada no servidor.' }, 500, request) };
+  }
+
   const requesterEmail = authUserData.user.email.trim().toLowerCase();
-  if (!getSuperAdminEmails().has(requesterEmail)) {
+  if (!superAdminEmails.has(requesterEmail)) {
     return { ok: false as const, response: jsonResponse({ error: 'Ação restrita ao Super Admin autorizado.' }, 403, request) };
   }
 

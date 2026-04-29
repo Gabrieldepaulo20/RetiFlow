@@ -1154,6 +1154,14 @@ Pendências manuais no Supabase:
 - Garantir `SUPABASE_SERVICE_ROLE_KEY` disponível apenas no ambiente da Function.
 - Criar o primeiro Super Admin via Dashboard Supabase ou `scripts/bootstrap-super-admin.mjs`.
 
+Estado atual (2026-04-29):
+
+- Function `admin-users` está pronta para deploy: sem e-mail hardcoded, fail-closed quando `SUPER_ADMIN_EMAILS` não configurada (retorna 500 de configuração, não 403 silencioso).
+- Testes unitários criados em `src/test/admin-users.test.ts` (8 testes): session missing, Authorization header, sucesso, erros 401/403/400, body não-JSON, data nula.
+- Frontend (`AdminClients.tsx`) já trata function indisponível, estados de loading, confirmação antes de reset de senha, modal temporário para action_link, toast de erro, banner de aviso para não-Super Admin.
+- Nenhuma senha hardcoded em qualquer arquivo versionado.
+- Service role permanece exclusivamente dentro da Edge Function.
+
 Risco remanescente:
 
 - RPCs administrativas antigas (`insert_usuario`, `upsert_modulo`, `inativar_usuario`, `reativar_usuario`) ainda devem ser auditadas server-side. A UI passou a usar a Function para ações sensíveis em modo real, mas a proteção definitiva contra chamadas diretas precisa existir nas próprias RPCs/RLS/grants.
