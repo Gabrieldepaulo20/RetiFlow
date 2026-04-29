@@ -74,7 +74,8 @@ describe('App auth flow', () => {
       expect(window.location.pathname).toBe('/dashboard');
     }, { timeout: 4000 });
     expect(await screen.findByRole('heading', { name: 'Dashboard' }, { timeout: 4000 })).toBeInTheDocument();
-    expect(screen.getByText(/notas no sistema/i)).toBeInTheDocument();
+    expect(screen.getByText(/O\.S\. no escopo atual/i)).toBeInTheDocument();
+    expect(screen.getByText(/Escopo do Dashboard/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Kanban' })).toBeInTheDocument();
   });
 

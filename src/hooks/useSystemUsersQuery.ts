@@ -5,5 +5,9 @@ export function useSystemUsersQuery() {
   return useQuery({
     queryKey: ['auth', 'system-users'],
     queryFn: listSystemUsers,
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    placeholderData: (previous) => previous,
   });
 }

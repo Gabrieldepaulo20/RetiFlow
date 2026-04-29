@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import { useData } from '@/contexts/DataContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -76,6 +77,7 @@ const ACTIVE_STATUSES_PARAM = 'ABERTO,EM_ANALISE,ORCAMENTO,APROVADO,EM_EXECUCAO,
 
 export default function Dashboard() {
   const { notes, clients, services, activities, payables, payableCategories } = useData();
+  const { user, realUser, isSupportImpersonating, supportSession } = useAuth();
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
   const serviceMetricsLoading = false;
@@ -159,6 +161,10 @@ export default function Dashboard() {
     () => clients.filter(c => c.isActive).length,
     [clients],
   );
+
+  const inactiveClientsCount = clients.length - activeClientsCount;
+  const scopeName = user?.name || user?.email || 'usuário atual';
+  const actorName = realUser?.name || realUser?.email || 'Mega Master';
 
   // ── Taxa de conclusão ────────────────────────────────────────────────────
   const closedNotes = useMemo(
@@ -329,14 +335,14 @@ export default function Dashboard() {
       href: '/notas-entrada?status=FINALIZADO',
     },
     {
-      label: 'Clientes ativos',
-      value: activeClientsCount,
-      sub: `${clients.length} cadastrados no total`,
+      label: 'Clientes cadastrados',
+      value: clients.length,
+      sub: `${activeClientsCount} ativos${inactiveClientsCount > 0 ? ` · ${inactiveClientsCount} inativos` : ''}`,
       icon: Users,
       iconClass: 'text-teal-600 bg-teal-50',
       subClass: 'text-muted-foreground',
       trend: null,
-      tooltip: 'Clientes marcados como ativos no cadastro. O total inclui clientes ativos e inativos.',
+      tooltip: 'Clientes cadastrados na operação visível para o login atual. Em modo Mega Master/suporte, este número não representa empresas SaaS administradas, e sim clientes da operação selecionada.',
       href: '/clientes',
     },
     {
@@ -538,10 +544,31 @@ export default function Dashboard() {
         <div>
           <h1 className="text-2xl font-display font-bold">Dashboard</h1>
           <p className="text-muted-foreground text-sm mt-0.5">
-            {format(now, "MMMM 'de' yyyy", { locale: ptBR })} · {notes.length} notas no sistema
+            {format(now, "MMMM 'de' yyyy", { locale: ptBR })} · {notes.length} O.S. no escopo atual
           </p>
         </div>
       </div>
+
+      <Card className="border-primary/15 bg-primary/[0.03]">
+        <CardContent className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold text-foreground">Escopo do Dashboard</span>
+              <Badge variant={isSupportImpersonating ? 'default' : 'outline'} className="rounded-full">
+                {isSupportImpersonating ? 'Modo suporte' : user?.role === 'ADMIN' ? 'Admin operacional' : 'Operação atual'}
+              </Badge>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {isSupportImpersonating
+                ? `${actorName} está visualizando os dados operacionais de ${supportSession?.targetUser.name ?? scopeName}.`
+                : `Mostrando dados operacionais disponíveis para ${scopeName}.`}
+            </p>
+          </div>
+          <p className="text-xs leading-relaxed text-muted-foreground sm:max-w-md">
+            Clientes aqui são clientes cadastrados dentro da operação selecionada. Não é a contagem de empresas/clientes SaaS administrados pelo Mega Master.
+          </p>
+        </CardContent>
+      </Card>
 
       {/* KPI rows */}
       <TooltipProvider delayDuration={400}>

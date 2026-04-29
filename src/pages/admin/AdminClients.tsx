@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   KeyRound,
   LayoutGrid,
+  Loader2,
   LogIn,
   Mail,
   Palette,
@@ -99,6 +100,7 @@ export default function AdminClients() {
   const [showResetDialog, setShowResetDialog] = useState<string | null>(null);
   const [showSupportAccessDialog, setShowSupportAccessDialog] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [invitedUserIds, setInvitedUserIds] = useState<Set<string>>(() => new Set());
   const [supportReason, setSupportReason] = useState('');
   const [newName, setNewName] = useState('');
   const [newEmail, setNewEmail] = useState('');
@@ -148,6 +150,8 @@ export default function AdminClients() {
   const canUseSensitiveAdminActions = !IS_REAL_AUTH || (currentUser?.role === 'ADMIN' && currentUser.isActive);
   const isCurrentUserMegaMaster = isSuperAdmin;
   const isMegaMasterUser = (targetUser: SystemUser) => isConfiguredSuperAdminEmail(targetUser.email);
+  const isInvitePendingUser = (targetUser: SystemUser) =>
+    IS_REAL_AUTH && targetUser.isActive && !isMegaMasterUser(targetUser) && invitedUserIds.has(targetUser.id);
 
   const getEffectiveModules = (user: SystemUser) => {
     return ALL_MODULES.reduce<Record<AppModuleKey, boolean>>((accumulator, module) => {
@@ -325,6 +329,9 @@ export default function AdminClients() {
           : undefined,
       };
 
+      if (IS_REAL_AUTH) {
+        setInvitedUserIds((previous) => new Set(previous).add(createdId));
+      }
       persistSystemUsers([newUser, ...systemUsers]);
       toast({
         title: IS_REAL_AUTH ? 'Convite enviado por e-mail' : 'Usuário do sistema criado',
@@ -554,6 +561,7 @@ export default function AdminClients() {
           const isExpanded = expandedId === user.id;
           const isMutatingUser = pendingAction?.endsWith(user.id);
           const isProtectedMegaMaster = IS_REAL_AUTH && !isCurrentUserMegaMaster && isMegaMasterUser(user);
+          const isInvitePending = isInvitePendingUser(user);
 
           return (
             <motion.div
@@ -577,8 +585,14 @@ export default function AdminClients() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="font-semibold text-foreground truncate">{user.name}</p>
-                        <Badge variant={user.isActive ? 'default' : 'secondary'} className="text-[10px] h-5">
-                          {user.isActive ? 'Ativo' : 'Inativo'}
+                        <Badge
+                          variant={user.isActive && !isInvitePending ? 'default' : 'secondary'}
+                          className={cn(
+                            'text-[10px] h-5',
+                            isInvitePending && 'border-amber-200 bg-amber-50 text-amber-800',
+                          )}
+                        >
+                          {isInvitePending ? 'Convite pendente' : user.isActive ? 'Ativo' : 'Inativo'}
                         </Badge>
                         <Badge variant="outline" className="text-[10px]">
                           {isMegaMasterUser(user) ? 'Mega Master' : user.role === 'ADMIN' ? 'Master' : ROLE_LABELS[user.role]}
@@ -734,7 +748,13 @@ export default function AdminClients() {
         )}
       </div>
 
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+      <Dialog
+        open={showCreateDialog}
+        onOpenChange={(open) => {
+          if (pendingAction === 'create-user') return;
+          setShowCreateDialog(open);
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -809,9 +829,16 @@ export default function AdminClients() {
             ) : null}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => setShowCreateDialog(false)} disabled={pendingAction === 'create-user'}>
+              Cancelar
+            </Button>
             <Button onClick={handleCreateUser} className="gap-2" disabled={pendingAction === 'create-user'}>
-              <UserPlus className="w-4 h-4" /> Criar Usuário
+              {pendingAction === 'create-user' ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <UserPlus className="w-4 h-4" />
+              )}
+              {pendingAction === 'create-user' ? 'Enviando convite...' : 'Criar Usuário'}
             </Button>
           </DialogFooter>
         </DialogContent>
