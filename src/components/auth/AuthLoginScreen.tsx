@@ -71,7 +71,7 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
   }
 
   if (isAuthenticated && user) {
-    return <Navigate to={getDefaultRedirect(user)} replace />;
+    return <Navigate to={getDefaultRedirect(user, { operationalOnly: !isAdminPortal && user.role === 'ADMIN' })} replace />;
   }
 
   return (

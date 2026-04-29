@@ -24,6 +24,15 @@ const DEFAULT_MODULE_ORDER: Record<SystemUser['role'], AppModuleKey[]> = {
 };
 
 const ALL_MODULES: AppModuleKey[] = ['dashboard', 'clients', 'notes', 'kanban', 'closing', 'payables', 'invoices', 'settings', 'admin'];
+const OPERATIONAL_MODULES: AppModuleKey[] = ALL_MODULES.filter((moduleKey) => moduleKey !== 'admin');
+
+interface DefaultRedirectOptions {
+  /**
+   * Usado quando um Master entra pelo portal operacional para testar o sistema
+   * como usuário de operação, sem cair automaticamente no painel administrativo.
+   */
+  operationalOnly?: boolean;
+}
 
 export function canUserAccessModule(user: SystemUser | null, moduleKey: AppModuleKey) {
   if (!user) return false;
@@ -52,10 +61,13 @@ export function canUserAccessModule(user: SystemUser | null, moduleKey: AppModul
   return true;
 }
 
-export function getDefaultRedirect(user: SystemUser) {
+export function getDefaultRedirect(user: SystemUser, options: DefaultRedirectOptions = {}) {
   const orderedModules = user.moduleAccess
     ? Array.from(new Set([...DEFAULT_MODULE_ORDER[user.role], ...ALL_MODULES]))
     : DEFAULT_MODULE_ORDER[user.role];
-  const moduleKey = orderedModules.find((candidate) => canUserAccessModule(user, candidate));
+  const candidateModules = options.operationalOnly
+    ? orderedModules.filter((candidate) => OPERATIONAL_MODULES.includes(candidate))
+    : orderedModules;
+  const moduleKey = candidateModules.find((candidate) => canUserAccessModule(user, candidate));
   return moduleKey ? MODULE_PATHS[moduleKey] : '/acesso-negado';
 }

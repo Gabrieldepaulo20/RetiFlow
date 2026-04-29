@@ -261,16 +261,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
     }
 
-    if (portal === 'client' && isAdminUser) {
-      return {
-        success: false,
-        redirect: '/admin/login',
-        error: 'Use a tela administrativa para acessar a área de gestão.',
-      };
-    }
-
     commitSession(response.session);
-    return { success: true, redirect: getDefaultRedirect(response.session.user) };
+    return {
+      success: true,
+      redirect: getDefaultRedirect(response.session.user, {
+        operationalOnly: portal === 'client' && isAdminUser,
+      }),
+    };
   }, [commitSession]);
 
   const logout = useCallback(async () => {

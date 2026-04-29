@@ -27,6 +27,23 @@ describe('auth default redirect', () => {
     expect(canUserAccessModule(makeUser('ADMIN', { admin: false, dashboard: true }), 'admin')).toBe(false);
   });
 
+  it('can redirect a master/admin to the operational portal without choosing /admin', () => {
+    expect(getDefaultRedirect(makeUser('ADMIN', {
+      admin: true,
+      dashboard: true,
+      clients: true,
+    }), { operationalOnly: true })).toBe('/dashboard');
+  });
+
+  it('uses the next operational module for master/admin test login when dashboard is disabled', () => {
+    expect(getDefaultRedirect(makeUser('ADMIN', {
+      admin: true,
+      dashboard: false,
+      clients: true,
+      notes: true,
+    }), { operationalOnly: true })).toBe('/clientes');
+  });
+
   it('redirects operational users to the first enabled module when dashboard is disabled', () => {
     expect(getDefaultRedirect(makeUser('FINANCEIRO', {
       dashboard: false,

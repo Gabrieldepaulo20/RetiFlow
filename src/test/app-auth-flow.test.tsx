@@ -91,6 +91,24 @@ describe('App auth flow', () => {
     expect(screen.getByText('Visão geral da plataforma e análise de uso')).toBeInTheDocument();
   });
 
+  it('lets an admin use the operational login as a master test user', async () => {
+    renderAt('/login');
+
+    fireEvent.change(await screen.findByPlaceholderText('seu@email.com'), {
+      target: { value: 'admin@retifica.com' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), {
+      target: { value: 'demo123' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /entrar/i }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/dashboard');
+    }, { timeout: 4000 });
+    expect(await screen.findByRole('heading', { name: 'Dashboard' }, { timeout: 4000 })).toBeInTheDocument();
+    expect(screen.queryByText('Painel Administrativo')).not.toBeInTheDocument();
+  });
+
   it('allows admin users to open the operational kanban when needed', async () => {
     window.localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(createSession('ADMIN')));
 
