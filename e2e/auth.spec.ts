@@ -71,15 +71,44 @@ test.describe('Auth — login and access control', () => {
   test('logout clears session and redirects to login', async ({ page }) => {
     await loginAs(page, 'financeiro');
     await expect(page).toHaveURL('/dashboard');
+    await page.goto('/clientes');
+    await expect(page.getByRole('heading', { name: 'Clientes' })).toBeVisible();
 
     // Open user dropdown (last button in header contains avatar + name)
     await page.locator('header').getByRole('button').last().click();
     await page.getByText('Sair').click();
     await expect(page).toHaveURL('/login');
 
+    await page.goBack();
+    await expect(page).toHaveURL('/login');
+    await expect(page.getByRole('heading', { name: 'Clientes', exact: true })).not.toBeVisible();
+    await expect(page.getByRole('row', { name: /José Carlos Mendes/i })).not.toBeVisible();
+
     // After logout, protected route redirects again
     await page.goto('/dashboard');
     await expect(page).toHaveURL('/login');
+  });
+
+  test('admin stays in operational portal after logging in through /login', async ({ page }) => {
+    await page.goto('/login');
+    await page.getByLabel(/e-mail/i).fill(USERS.admin.email);
+    await page.getByLabel(/senha/i).fill(USERS.admin.password);
+    await page.getByRole('button', { name: /entrar/i }).click();
+
+    await expect(page).toHaveURL('/dashboard');
+    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+
+    for (const [path, heading] of [
+      ['/clientes', 'Clientes'],
+      ['/notas-entrada', 'Notas de Entrada'],
+      ['/kanban', 'Produção'],
+      ['/contas-a-pagar', 'Contas a Pagar'],
+    ] as const) {
+      await page.goto(path);
+      await expect(page).toHaveURL(path);
+      await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+      await expect(page).not.toHaveURL('/admin');
+    }
   });
 
   test('financeiro blocked from /configuracoes (module disabled)', async ({ page }) => {

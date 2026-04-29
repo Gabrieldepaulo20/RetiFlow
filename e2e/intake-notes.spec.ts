@@ -42,6 +42,21 @@ test.describe('Notas de Entrada', () => {
     await expect(dialog.getByText(/plaqueamento de superfície/i).first()).toBeVisible();
   });
 
+  test('ação de baixar nota não expõe href público direto na listagem', async ({ page }) => {
+    await openNotes(page);
+
+    await page.getByPlaceholder(/buscar por o\.s\. ou cliente/i).fill('OS-1');
+    const row = page.locator('tr').filter({ hasText: 'OS-1' }).first();
+    await expect(row).toBeVisible();
+
+    await row.getByRole('button', { name: /mais ações/i }).click();
+    const downloadAction = page.getByRole('menuitem', { name: /baixar nota/i });
+
+    await expect(downloadAction).toBeVisible();
+    await expect(downloadAction).not.toHaveAttribute('href', /./);
+    await expect(page.locator('a[href*="/mock/pdf"], a[href*="/storage/v1/object/public/notas"]')).toHaveCount(0);
+  });
+
   test('cadastra uma nova O.S. com serviço', async ({ page }) => {
     await openNotes(page);
 
