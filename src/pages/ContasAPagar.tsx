@@ -21,6 +21,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { AccountPayable, PaymentMethod, PAYABLE_ENTRY_SOURCE_LABELS, PAYABLE_STATUS_COLORS, PAYABLE_STATUS_LABELS, PAYMENT_METHOD_LABELS, RECURRENCE_TYPE_LABELS } from '@/types';
 import { buildPayableHistoryDescription, calculatePayableFinalAmount, calculatePayableRemainingBalance, canCancelPayable, canEditPayable, canRegisterPayment, formatPayableDueDateLabel, getDueDateUrgencyLevel, getPayableDisplayStatus, isPayableEditRestricted, isPayableOverdue } from '@/services/domain/payables';
+import { getGmailOAuthFeedback } from '@/services/domain/gmailOAuth';
 import PayableCreateModal from '@/components/payables/PayableCreateModal';
 import PayableImportModal from '@/components/payables/PayableImportModal';
 import PayableDetailsModal from '@/components/payables/PayableDetailsModal';
@@ -106,6 +107,18 @@ export default function ContasAPagar() {
   useEffect(() => {
     setPageView(searchParams.get('view') === 'sugestoes' ? 'sugestoes' : 'contas');
   }, [searchParams]);
+
+  useEffect(() => {
+    const feedback = getGmailOAuthFeedback(searchParams.get('gmail'), searchParams.get('message'));
+    if (!feedback) return;
+
+    toast(feedback);
+
+    const next = new URLSearchParams(searchParams);
+    next.delete('gmail');
+    next.delete('message');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, toast]);
 
   const pendingLike = useMemo(() => activePayables.filter((payable) => ['PENDENTE', 'PARCIAL', 'AGENDADO'].includes(payable.status)), [activePayables]);
   const overduePayables = useMemo(() => pendingLike.filter((payable) => isPayableOverdue(payable)), [pendingLike]);
