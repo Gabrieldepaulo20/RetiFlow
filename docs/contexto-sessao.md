@@ -1418,7 +1418,34 @@ Arquivos principais:
 - `src/test/auth-redirect.test.ts`
 - `src/test/app-auth-flow.test.tsx`
 
-### 19.6 Validações mais recentes
+### 19.6 Modo suporte auditado do Mega Master
+
+Estado atual:
+
+- Apenas o Mega Master autorizado (`gabrielwilliam208@gmail.com`) pode iniciar acesso assistido a uma conta de cliente/usuário sem saber a senha dele.
+- O acesso assistido é iniciado pela tela admin de usuários, com justificativa obrigatória.
+- A Edge Function `admin-users` valida `Authorization: Bearer <access_token>`, confirma a allowlist de Super Admin e usa service role apenas no backend.
+- A sessão de suporte é registrada em `RetificaPremium.Sessoes_Suporte` com ator, alvo, e-mail, motivo, início, expiração e encerramento.
+- A sessão expira em 1 hora e fica apenas em `sessionStorage` no navegador do Mega Master.
+- O app mostra banner visual de “Modo suporte ativo” e permite sair do modo suporte sem fazer logout.
+- Mesmo se o usuário-alvo for admin, o modo suporte força `moduleAccess.admin = false`, evitando acesso administrativo acidental durante suporte operacional.
+- Ao sair do modo suporte, o usuário volta para `/admin/usuarios`.
+
+Arquivos principais:
+
+- `src/contexts/AuthContext.tsx`
+- `src/components/layout/AppLayout.tsx`
+- `src/pages/admin/AdminClients.tsx`
+- `src/api/supabase/admin-users.ts`
+- `supabase/functions/admin-users/index.ts`
+- `supabase/migrations/20260429170000_support_impersonation_sessions.sql`
+- `src/test/admin-users.test.ts`
+
+Pendência operacional:
+
+- Antes de testar em produção, aplicar a migration `20260429170000_support_impersonation_sessions.sql` no Supabase e fazer deploy da Edge Function `admin-users`.
+
+### 19.7 Validações mais recentes
 
 Últimas validações executadas após essas mudanças:
 
@@ -1426,7 +1453,7 @@ Arquivos principais:
 |---|---|
 | `npx tsc --noEmit` | Passou |
 | `npm run lint` | Passou com 8 warnings antigos de Fast Refresh |
-| `npm test -- --run` | 26 arquivos, 246 testes passaram |
+| `npm test -- --run` | 28 arquivos, 256 testes passaram |
 | `npm run build` | Passou com warnings conhecidos de chunks grandes |
 | `npm run test:integration` | 9 arquivos, 30 testes reais passaram contra Supabase |
 

@@ -83,7 +83,7 @@ const navItems = [
 const mobileNav = navItems.slice(0, 4);
 
 export default function AppLayout() {
-  const { user, logout, canAccessModule } = useAuth();
+  const { user, realUser, supportSession, isSupportImpersonating, endSupportImpersonation, logout, canAccessModule } = useAuth();
   const { activities } = useData();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -175,6 +175,15 @@ export default function AppLayout() {
     } finally {
       setSupportSubmitting(false);
     }
+  };
+
+  const handleEndSupportMode = async () => {
+    await endSupportImpersonation();
+    toast({
+      title: 'Modo suporte encerrado',
+      description: 'Você voltou para sua conta master.',
+    });
+    navigate('/admin/usuarios');
   };
 
   const supportStatusMap: Record<SupportTicketStatus, { label: string; className: string }> = {
@@ -280,6 +289,11 @@ export default function AppLayout() {
             <DropdownMenuLabel className="leading-tight">
               <span className="block truncate text-sm">{user.name}</span>
               <span className="block truncate text-xs font-normal text-muted-foreground">{user.email}</span>
+              {isSupportImpersonating ? (
+                <span className="mt-1 block truncate text-[11px] font-normal text-amber-600">
+                  Suporte por {realUser?.name}
+                </span>
+              ) : null}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             {canAccessModule('settings') ? (
@@ -301,6 +315,11 @@ export default function AppLayout() {
               </DropdownMenuItem>
             ) : null}
             <DropdownMenuSeparator />
+            {isSupportImpersonating ? (
+              <DropdownMenuItem onClick={() => void handleEndSupportMode()}>
+                <AlertCircle className="w-4 h-4 mr-2" /> Sair do modo suporte
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuItem onClick={() => setSupportOpen(true)}>
               <MessageSquarePlus className="w-4 h-4 mr-2" /> Sugestões / Chamado
             </DropdownMenuItem>
@@ -352,8 +371,31 @@ export default function AppLayout() {
 
       {/* Main */}
       <div className={cn('flex-1 flex flex-col min-h-screen', !isMobile && (collapsed ? 'ml-[68px]' : 'ml-64'))}>
+        {isSupportImpersonating && supportSession ? (
+          <div className="sticky top-0 z-50 border-b border-amber-300 bg-amber-50 px-4 py-2 text-amber-950 shadow-sm">
+            <div className="mx-auto flex max-w-7xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">
+                  Modo suporte ativo: acessando como {supportSession.targetUser.name}
+                </p>
+                <p className="truncate text-xs text-amber-800">
+                  Operador real: {supportSession.actorUser.email} · Motivo: {supportSession.reason}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="shrink-0 border-amber-300 bg-white/80 text-amber-950 hover:bg-white"
+                onClick={() => void handleEndSupportMode()}
+              >
+                Sair do modo suporte
+              </Button>
+            </div>
+          </div>
+        ) : null}
         {/* Top bar */}
-        <header className="h-16 border-b bg-card flex items-center px-4 gap-3 sticky top-0 z-30 shadow-sm">
+        <header className={cn('h-16 border-b bg-card flex items-center px-4 gap-3 sticky z-30 shadow-sm', isSupportImpersonating ? 'top-[73px] sm:top-[57px]' : 'top-0')}>
           {isMobile && (
             <Sheet>
               <SheetTrigger asChild>
@@ -493,6 +535,16 @@ export default function AppLayout() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem className="text-muted-foreground text-xs" disabled>{user.email}</DropdownMenuItem>
+                {isSupportImpersonating ? (
+                  <>
+                    <DropdownMenuItem className="text-amber-700 text-xs" disabled>
+                      Modo suporte por {realUser?.email}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => void handleEndSupportMode()}>
+                      <AlertCircle className="w-4 h-4 mr-2" /> Sair do modo suporte
+                    </DropdownMenuItem>
+                  </>
+                ) : null}
                 <DropdownMenuItem onClick={() => setSupportOpen(true)}>
                   <MessageSquarePlus className="w-4 h-4 mr-2" /> Sugestões / Chamado
                 </DropdownMenuItem>

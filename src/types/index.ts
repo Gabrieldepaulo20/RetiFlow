@@ -55,6 +55,15 @@ export interface AuthSession {
   authenticatedAt: string;
 }
 
+export interface SupportImpersonationSession {
+  id: string;
+  actorUser: SystemUser;
+  targetUser: SystemUser;
+  reason: string;
+  startedAt: string;
+  expiresAt: string;
+}
+
 export interface LoginCredentials {
   email: string;
   password: string;

@@ -1,5 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { AuthMode, AuthSession, LoginCredentials, Permission, SystemUser } from '@/types';
+import { AuthMode, AuthSession, LoginCredentials, Permission, SupportImpersonationSession, SystemUser } from '@/types';
 import { getAuthProvider } from '@/services/auth/authProvider';
 import { getModulePermission, hasPermission } from '@/services/auth/permissions';
 import {
@@ -14,8 +14,11 @@ import { loadSystemUsers } from '@/services/auth/systemUsers';
 import { supabase } from '@/lib/supabase';
 import { dbUserToSystemUser } from '@/services/auth/supabaseUserMapping';
 import { canUserAccessModule, getDefaultRedirect } from '@/services/auth/defaultRedirect';
+import { isSuperAdmin } from '@/services/auth/superAdmin';
+import { callAdminUsersFunction } from '@/api/supabase/admin-users';
 
 const AUTH_SESSION_STORAGE_KEY = 'auth.session';
+const SUPPORT_SESSION_STORAGE_KEY = 'support.impersonation';
 export const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
 interface LoginResult {
@@ -28,13 +31,18 @@ export type LoginPortal = 'client' | 'admin';
 
 interface AuthContextType {
   authMode: AuthMode;
+  realUser: SystemUser | null;
   user: SystemUser | null;
   session: AuthSession | null;
+  supportSession: SupportImpersonationSession | null;
+  isSupportImpersonating: boolean;
   isAuthLoading: boolean;
   profileError: string | null;
   isAuthenticated: boolean;
   login: (credentials: LoginCredentials, portal?: LoginPortal) => Promise<LoginResult>;
   logout: () => void;
+  startSupportImpersonation: (targetUserId: string, reason: string) => Promise<SupportImpersonationSession>;
+  endSupportImpersonation: () => Promise<void>;
   retryAuth: () => void;
   refreshProfile: (options?: { keepCurrentSessionOnTransientError?: boolean }) => Promise<boolean>;
   can: (permission: Permission) => boolean;
@@ -65,6 +73,34 @@ function createRealSession(user: SystemUser): AuthSession {
   };
 }
 
+function readStoredSupportSession() {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.sessionStorage.getItem(SUPPORT_SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as SupportImpersonationSession;
+    if (!parsed?.id || !parsed?.actorUser?.id || !parsed?.targetUser?.id || !parsed.expiresAt) return null;
+    if (new Date(parsed.expiresAt).getTime() <= Date.now()) {
+      window.sessionStorage.removeItem(SUPPORT_SESSION_STORAGE_KEY);
+      return null;
+    }
+    return parsed;
+  } catch {
+    window.sessionStorage.removeItem(SUPPORT_SESSION_STORAGE_KEY);
+    return null;
+  }
+}
+
+function writeStoredSupportSession(supportSession: SupportImpersonationSession | null) {
+  if (typeof window === 'undefined') return;
+  if (!supportSession) {
+    window.sessionStorage.removeItem(SUPPORT_SESSION_STORAGE_KEY);
+    return;
+  }
+  window.sessionStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify(supportSession));
+}
+
 async function fetchProfileFromSupabase(): Promise<{
   session: AuthSession | null;
   isTransientError: boolean;
@@ -91,6 +127,7 @@ async function fetchProfileFromSupabase(): Promise<{
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(() => loadStoredSession());
+  const [supportSession, setSupportSession] = useState<SupportImpersonationSession | null>(() => readStoredSupportSession());
   const [isAuthLoading, setIsAuthLoading] = useState(IS_REAL_AUTH);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [moduleAccessVersion, setModuleAccessVersion] = useState(0);
@@ -101,6 +138,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     sessionRef.current = session;
   }, [session]);
+
+  useEffect(() => {
+    const realUser = session?.user ?? null;
+    if (!supportSession) return;
+    const expired = new Date(supportSession.expiresAt).getTime() <= Date.now();
+    const actorMismatch = supportSession.actorUser.id !== realUser?.id;
+    const requesterCannotImpersonate = !isSuperAdmin(realUser);
+
+    if (!realUser || expired || actorMismatch || requesterCannotImpersonate) {
+      setSupportSession(null);
+      writeStoredSupportSession(null);
+    }
+  }, [session, supportSession]);
 
   const applyProfileResult = useCallback((
     result: { session: AuthSession | null; isTransientError: boolean },
@@ -116,6 +166,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!result.session) {
       void supabase.auth.signOut();
       setSession(null);
+      setSupportSession(null);
+      writeStoredSupportSession(null);
       setProfileError(null);
       return false;
     }
@@ -131,6 +183,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { session: sbSession } } = await supabase.auth.getSession();
     if (!sbSession) {
       setSession(null);
+      setSupportSession(null);
+      writeStoredSupportSession(null);
       setProfileError(null);
       return false;
     }
@@ -186,6 +240,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (event === 'SIGNED_OUT') {
         setSession(null);
+        setSupportSession(null);
+        writeStoredSupportSession(null);
         setIsAuthLoading(false);
         setProfileError(null);
         return;
@@ -214,7 +270,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [applyProfileResult]);
 
-  const user = session?.user ?? null;
+  const realUser = session?.user ?? null;
+  const user = realUser && supportSession ? supportSession.targetUser : realUser;
 
   const commitSession = useCallback((nextSession: AuthSession | null) => {
     setSession(nextSession);
@@ -272,8 +329,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     if (IS_REAL_AUTH) await supabase.auth.signOut();
+    setSupportSession(null);
+    writeStoredSupportSession(null);
     commitSession(null);
   }, [commitSession]);
+
+  const startSupportImpersonation = useCallback(async (targetUserId: string, reason: string) => {
+    if (!isSuperAdmin(sessionRef.current?.user)) {
+      throw new Error('Somente o Mega Master autorizado pode acessar clientes em modo suporte.');
+    }
+
+    const result = await callAdminUsersFunction({
+      action: 'start_support_impersonation',
+      targetUserId,
+      reason,
+    });
+
+    if (!result.supportSession) {
+      throw new Error('A Function não retornou a sessão de suporte.');
+    }
+
+    setSupportSession(result.supportSession);
+    writeStoredSupportSession(result.supportSession);
+    return result.supportSession;
+  }, []);
+
+  const endSupportImpersonation = useCallback(async () => {
+    const current = supportSession;
+    setSupportSession(null);
+    writeStoredSupportSession(null);
+
+    if (!current || !IS_REAL_AUTH) return;
+    try {
+      await callAdminUsersFunction({
+        action: 'end_support_impersonation',
+        sessionId: current.id,
+      });
+    } catch {
+      // Não mantém o usuário preso no modo suporte por falha transitória de rede.
+    }
+  }, [supportSession]);
 
   const can = useCallback((permission: Permission) => hasPermission(user, permission), [user]);
 
@@ -284,13 +379,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextType>(
     () => ({
       authMode,
+      realUser,
       user,
       session,
+      supportSession,
+      isSupportImpersonating: Boolean(realUser && supportSession),
       isAuthLoading,
       profileError,
       isAuthenticated: Boolean(user),
       login,
       logout,
+      startSupportImpersonation,
+      endSupportImpersonation,
       retryAuth,
       refreshProfile,
       can,
@@ -298,7 +398,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAdmin: user?.role === 'ADMIN',
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [authMode, can, canAccessModule, isAuthLoading, profileError, login, logout, retryAuth, refreshProfile, session, user, moduleAccessVersion],
+    [authMode, realUser, user, session, supportSession, isAuthLoading, profileError, login, logout, startSupportImpersonation, endSupportImpersonation, retryAuth, refreshProfile, can, canAccessModule, moduleAccessVersion],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

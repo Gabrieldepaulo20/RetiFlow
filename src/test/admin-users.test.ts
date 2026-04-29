@@ -93,6 +93,56 @@ describe('callAdminUsersFunction', () => {
     expect(result.action_link).toBeUndefined();
   });
 
+  it('supports starting an audited support impersonation session', async () => {
+    mocks.invoke.mockResolvedValue({
+      data: {
+        mensagem: 'Modo suporte iniciado.',
+        supportSession: {
+          id: 'session-1',
+          reason: 'Cliente pediu ajuda com uma O.S.',
+          startedAt: '2026-04-29T12:00:00.000Z',
+          expiresAt: '2026-04-29T13:00:00.000Z',
+          actorUser: {
+            id: 'user-master',
+            name: 'Gabriel Master',
+            email: 'gabrielwilliam208@gmail.com',
+            role: 'ADMIN',
+            isActive: true,
+            createdAt: '2026-01-01T00:00:00.000Z',
+          },
+          targetUser: {
+            id: VALID_UUID,
+            name: 'Cliente Teste',
+            email: 'cliente@example.com',
+            role: 'RECEPCAO',
+            isActive: true,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            moduleAccess: { dashboard: true, clients: true },
+          },
+        },
+      },
+      error: null,
+    });
+
+    await expect(callAdminUsersFunction({
+      action: 'start_support_impersonation',
+      targetUserId: VALID_UUID,
+      reason: 'Cliente pediu ajuda com uma O.S.',
+    })).resolves.toMatchObject({
+      supportSession: {
+        targetUser: { email: 'cliente@example.com' },
+      },
+    });
+
+    expect(mocks.invoke).toHaveBeenCalledWith('admin-users', expect.objectContaining({
+      body: {
+        action: 'start_support_impersonation',
+        targetUserId: VALID_UUID,
+        reason: 'Cliente pediu ajuda com uma O.S.',
+      },
+    }));
+  });
+
   it('propagates error message from 401 response body', async () => {
     mocks.invoke.mockResolvedValue({
       data: null,

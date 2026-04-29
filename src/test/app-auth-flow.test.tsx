@@ -87,7 +87,10 @@ describe('App auth flow', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /entrar/i }));
 
-    expect(await screen.findByText('Painel Administrativo')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/admin');
+    }, { timeout: 4000 });
+    expect(await screen.findByRole('heading', { name: 'Painel Administrativo' }, { timeout: 4000 })).toBeInTheDocument();
     expect(screen.getByText('Visão geral da plataforma e análise de uso')).toBeInTheDocument();
   });
 

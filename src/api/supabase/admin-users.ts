@@ -1,4 +1,4 @@
-import type { AppModuleKey, UserRole } from '@/types';
+import type { AppModuleKey, SupportImpersonationSession, UserRole } from '@/types';
 import { supabase } from '@/lib/supabase';
 
 type ModuleAccess = Partial<Record<AppModuleKey, boolean>>;
@@ -12,6 +12,7 @@ export type AdminUserActionResult = {
   confirmationEmail?: string | null;
   confirmationSent?: boolean;
   confirmationWarning?: string | null;
+  supportSession?: SupportImpersonationSession;
 };
 
 type AdminUserAction =
@@ -33,6 +34,15 @@ type AdminUserAction =
       action: 'set_modules';
       userId: string;
       modules: ModuleAccess;
+    }
+  | {
+      action: 'start_support_impersonation';
+      targetUserId: string;
+      reason: string;
+    }
+  | {
+      action: 'end_support_impersonation';
+      sessionId: string;
     };
 
 async function getAccessToken() {

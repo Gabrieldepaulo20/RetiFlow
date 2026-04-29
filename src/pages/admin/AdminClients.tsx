@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   KeyRound,
   LayoutGrid,
+  LogIn,
   Mail,
   Palette,
   Phone,
@@ -37,6 +38,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import { LoadingScreen } from '@/components/ui/loading-screen';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -80,7 +82,7 @@ function buildUserId() {
 
 export default function AdminClients() {
   const { data: systemUsersData = [], isLoading } = useSystemUsersQuery();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, startSupportImpersonation } = useAuth();
   const roleModuleConfig = useRoleModuleConfig();
   const storedOverrides = useUserModuleOverrides();
   const queryClient = useQueryClient();
@@ -95,7 +97,9 @@ export default function AdminClients() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showModulesDialog, setShowModulesDialog] = useState<string | null>(null);
   const [showResetDialog, setShowResetDialog] = useState<string | null>(null);
+  const [showSupportAccessDialog, setShowSupportAccessDialog] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [supportReason, setSupportReason] = useState('');
   const [newName, setNewName] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newPhone, setNewPhone] = useState('');
@@ -337,6 +341,41 @@ export default function AdminClients() {
     } catch (error) {
       toast({
         title: 'Não foi possível criar o usuário',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const handleStartSupportAccess = async () => {
+    const targetUser = systemUsers.find((candidate) => candidate.id === showSupportAccessDialog);
+    if (!targetUser) return;
+
+    const reason = supportReason.trim();
+    if (reason.length < 8) {
+      toast({
+        title: 'Informe o motivo do acesso',
+        description: 'Descreva rapidamente o chamado, bug ou suporte solicitado pelo cliente.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setPendingAction(`support-${targetUser.id}`);
+    try {
+      await startSupportImpersonation(targetUser.id, reason);
+      toast({
+        title: 'Modo suporte iniciado',
+        description: `Você está acessando o sistema como ${targetUser.name}.`,
+      });
+      setShowSupportAccessDialog(null);
+      setSupportReason('');
+      navigate('/dashboard');
+    } catch (error) {
+      toast({
+        title: 'Não foi possível iniciar modo suporte',
         description: error instanceof Error ? error.message : 'Tente novamente.',
         variant: 'destructive',
       });
@@ -602,6 +641,23 @@ export default function AdminClients() {
                             <TooltipContent>Resetar Senha</TooltipContent>
                           </Tooltip>
 
+                          {isCurrentUserMegaMaster && !isMegaMasterUser(user) ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  disabled={isMutatingUser || !user.isActive}
+                                  onClick={() => setShowSupportAccessDialog(user.id)}
+                                >
+                                  <LogIn className="w-4 h-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Acessar em modo suporte</TooltipContent>
+                            </Tooltip>
+                          ) : null}
+
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
@@ -842,6 +898,67 @@ export default function AdminClients() {
               Resetar Senha
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!showSupportAccessDialog} onOpenChange={(open) => {
+        if (!open) {
+          setShowSupportAccessDialog(null);
+          setSupportReason('');
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <LogIn className="w-5 h-5" /> Acessar como cliente
+            </DialogTitle>
+          </DialogHeader>
+          {showSupportAccessDialog && (() => {
+            const targetUser = systemUsers.find((candidate) => candidate.id === showSupportAccessDialog);
+            if (!targetUser) return null;
+            const isStarting = pendingAction === `support-${targetUser.id}`;
+
+            return (
+              <div className="space-y-4 py-2">
+                <Alert className="border-amber-200 bg-amber-50/80 text-amber-950">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Modo suporte auditado</AlertTitle>
+                  <AlertDescription>
+                    Você continuará autenticado como Mega Master, mas a interface carregará os módulos de {targetUser.name}. O acesso fica registrado para auditoria.
+                  </AlertDescription>
+                </Alert>
+
+                <div className="rounded-xl border border-border/70 bg-muted/30 p-3 text-sm">
+                  <p className="font-semibold">{targetUser.name}</p>
+                  <p className="text-muted-foreground">{targetUser.email}</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Motivo do acesso *</Label>
+                  <Textarea
+                    value={supportReason}
+                    onChange={(event) => setSupportReason(event.target.value)}
+                    placeholder="Ex.: cliente pediu ajuda para conferir uma O.S. que não consegue finalizar"
+                    rows={4}
+                    maxLength={500}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Esse motivo será salvo no registro de auditoria da sessão de suporte.
+                  </p>
+                </div>
+
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowSupportAccessDialog(null)} disabled={isStarting}>
+                    Cancelar
+                  </Button>
+                  <Button onClick={() => void handleStartSupportAccess()} disabled={isStarting} className="gap-2">
+                    <LogIn className="w-4 h-4" />
+                    {isStarting ? 'Iniciando...' : 'Acessar'}
+                  </Button>
+                </DialogFooter>
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 

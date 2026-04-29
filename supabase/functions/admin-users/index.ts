@@ -46,6 +46,15 @@ type ActionPayload =
       action: 'set_modules';
       userId: string;
       modules: ModuleAccess;
+    }
+  | {
+      action: 'start_support_impersonation';
+      targetUserId: string;
+      reason: string;
+    }
+  | {
+      action: 'end_support_impersonation';
+      sessionId: string;
     };
 
 const localDevOrigins = new Set([
@@ -161,6 +170,22 @@ function assertUserId(value: unknown) {
     throw new Error('Identificador de usuário inválido.');
   }
   return id;
+}
+
+function assertSessionId(value: unknown) {
+  const id = assertString(value, 'sessionId', 80);
+  if (!/^[0-9a-f-]{36}$/i.test(id)) {
+    throw new Error('Identificador de sessão inválido.');
+  }
+  return id;
+}
+
+function assertReason(value: unknown) {
+  const reason = assertString(value, 'reason', 500);
+  if (reason.length < 8) {
+    throw new Error('Informe um motivo com pelo menos 8 caracteres.');
+  }
+  return reason;
 }
 
 function assertRole(value: unknown): UserRole {
@@ -572,6 +597,144 @@ async function getInternalModuleUser(serviceClient: ReturnType<typeof createClie
   return data as { id_usuarios: string; email: string; acesso: string; status: boolean };
 }
 
+async function getSupportTargetUser(serviceClient: ReturnType<typeof createClient>, userId: string) {
+  const { data, error } = await serviceClient
+    .schema('RetificaPremium')
+    .from('Usuarios')
+    .select('id_usuarios, nome, email, telefone, acesso, status, created_at')
+    .eq('id_usuarios', userId)
+    .maybeSingle();
+
+  if (error) throw new Error(`Falha ao carregar cliente/usuário: ${error.message}`);
+  if (!data?.email) throw new Error('Cliente/usuário não encontrado.');
+  if (data.status === false) throw new Error('Cliente/usuário inativo não pode ser acessado em modo suporte.');
+
+  const { data: moduleRow, error: moduleError } = await serviceClient
+    .schema('RetificaPremium')
+    .from('Modulos')
+    .select('dashboard, clientes, notas_de_entrada, kanban, fechamento, contas_a_pagar, nota_fiscal, configuracoes, admin')
+    .eq('fk_usuarios', userId)
+    .maybeSingle();
+
+  if (moduleError) throw new Error(`Falha ao carregar módulos do usuário: ${moduleError.message}`);
+
+  const access = String(data.acesso ?? '').toLowerCase();
+  const role: UserRole =
+    access === 'administrador' ? 'ADMIN'
+    : access === 'financeiro' ? 'FINANCEIRO'
+    : access === 'produção' || access === 'producao' ? 'PRODUCAO'
+    : 'RECEPCAO';
+
+  const moduleAccess: ModuleAccess = moduleRow
+    ? {
+        dashboard: moduleRow.dashboard === true,
+        clients: moduleRow.clientes === true,
+        notes: moduleRow.notas_de_entrada === true,
+        kanban: moduleRow.kanban === true,
+        closing: moduleRow.fechamento === true,
+        payables: moduleRow.contas_a_pagar === true,
+        invoices: moduleRow.nota_fiscal === true,
+        settings: moduleRow.configuracoes === true,
+        admin: false,
+      }
+    : {};
+
+  return {
+    id: data.id_usuarios as string,
+    name: (data.nome as string | null) || data.email as string,
+    email: data.email as string,
+    phone: (data.telefone as string | null) || undefined,
+    role,
+    isActive: data.status !== false,
+    createdAt: (data.created_at as string | null) || new Date().toISOString(),
+    moduleAccess,
+  };
+}
+
+async function getRequesterInternalUser(serviceClient: ReturnType<typeof createClient>, requesterEmail: string) {
+  const { data, error } = await serviceClient
+    .schema('RetificaPremium')
+    .from('Usuarios')
+    .select('id_usuarios')
+    .eq('email', requesterEmail)
+    .maybeSingle();
+
+  if (error) throw new Error(`Falha ao carregar usuário solicitante: ${error.message}`);
+  if (!data?.id_usuarios) throw new Error('Usuário solicitante não encontrado.');
+  return getSupportTargetUser(serviceClient, data.id_usuarios as string);
+}
+
+async function startSupportImpersonation(
+  requester: {
+    serviceClient: ReturnType<typeof createClient>;
+    requesterEmail: string;
+    requesterIsMegaMaster: boolean;
+  },
+  targetUserId: string,
+  reason: string,
+) {
+  if (!requester.requesterIsMegaMaster) {
+    throw new Error('Somente o Mega Master autorizado pode iniciar modo suporte.');
+  }
+
+  const actorUser = await getRequesterInternalUser(requester.serviceClient, requester.requesterEmail);
+  const targetUser = await getSupportTargetUser(requester.serviceClient, targetUserId);
+
+  if (actorUser.id === targetUser.id) {
+    throw new Error('Não é necessário iniciar modo suporte para o próprio usuário.');
+  }
+
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const { data, error } = await requester.serviceClient
+    .schema('RetificaPremium')
+    .from('Sessoes_Suporte')
+    .insert({
+      fk_actor_usuarios: actorUser.id,
+      fk_target_usuarios: targetUser.id,
+      actor_email: actorUser.email,
+      target_email: targetUser.email,
+      motivo: reason,
+      expires_at: expiresAt,
+    })
+    .select('id_sessao_suporte, started_at, expires_at')
+    .single();
+
+  if (error) throw new Error(`Falha ao registrar sessão de suporte: ${error.message}`);
+
+  return {
+    id: data.id_sessao_suporte as string,
+    actorUser,
+    targetUser,
+    reason,
+    startedAt: data.started_at as string,
+    expiresAt: data.expires_at as string,
+  };
+}
+
+async function endSupportImpersonation(
+  requester: {
+    serviceClient: ReturnType<typeof createClient>;
+    requesterEmail: string;
+    requesterIsMegaMaster: boolean;
+  },
+  sessionId: string,
+) {
+  if (!requester.requesterIsMegaMaster) {
+    throw new Error('Somente o Mega Master autorizado pode encerrar modo suporte.');
+  }
+
+  const actorUser = await getRequesterInternalUser(requester.serviceClient, requester.requesterEmail);
+  const { error } = await requester.serviceClient
+    .schema('RetificaPremium')
+    .from('Sessoes_Suporte')
+    .update({ ended_at: new Date().toISOString() })
+    .eq('id_sessao_suporte', sessionId)
+    .eq('fk_actor_usuarios', actorUser.id)
+    .is('ended_at', null);
+
+  if (error) throw new Error(`Falha ao encerrar sessão de suporte: ${error.message}`);
+}
+
 function isProtectedMegaMasterTarget(
   requester: { requesterIsMegaMaster: boolean; superAdminEmails: Set<string> },
   targetEmail: string,
@@ -715,6 +878,22 @@ Deno.serve(async (request) => {
 
       await setModules(requester.serviceClient, userId, modules);
       return jsonResponse({ mensagem: 'Módulos atualizados.' }, 200, request);
+    }
+
+    if (payload.action === 'start_support_impersonation') {
+      const targetUserId = assertUserId(payload.targetUserId);
+      const reason = assertReason(payload.reason);
+      const supportSession = await startSupportImpersonation(requester, targetUserId, reason);
+      return jsonResponse({
+        mensagem: 'Modo suporte iniciado.',
+        supportSession,
+      }, 200, request);
+    }
+
+    if (payload.action === 'end_support_impersonation') {
+      const sessionId = assertSessionId(payload.sessionId);
+      await endSupportImpersonation(requester, sessionId);
+      return jsonResponse({ mensagem: 'Modo suporte encerrado.' }, 200, request);
     }
 
     if (payload.action === 'deactivate_user' || payload.action === 'reactivate_user') {
