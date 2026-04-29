@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   ChevronDown,
@@ -7,6 +8,7 @@ import {
   KeyRound,
   LayoutGrid,
   Mail,
+  Palette,
   Phone,
   Power,
   Search,
@@ -68,6 +70,7 @@ export default function AdminClients() {
   const roleModuleConfig = useRoleModuleConfig();
   const storedOverrides = useUserModuleOverrides();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { toast } = useToast();
 
   const [systemUsers, setSystemUsers] = useState<SystemUser[]>(systemUsersData);
@@ -498,6 +501,20 @@ export default function AdminClients() {
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>Módulos</TooltipContent>
+                          </Tooltip>
+
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => navigate(`/configuracoes?tab=modelos&user=${user.id}`)}
+                              >
+                                <Palette className="w-4 h-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Modelos e cores</TooltipContent>
                           </Tooltip>
 
                           <Tooltip>

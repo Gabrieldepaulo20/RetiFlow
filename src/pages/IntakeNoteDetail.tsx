@@ -17,6 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { buildWhatsAppUrl, openExternalUrl } from '@/lib/browserShare';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
+import { useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 
 const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
 
@@ -29,6 +30,7 @@ export default function IntakeNoteDetail() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { data: templateSettings } = useDocumentTemplateSettings();
   const [showPreview, setShowPreview] = useState(false);
   const [realDetalhes, setRealDetalhes] = useState<NotaServicoDetalhes | null>(null);
   const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
@@ -156,7 +158,10 @@ export default function IntakeNoteDetail() {
                   a.target = '_blank';
                   a.click();
                 } else if (source) {
-                  const blob = await generateNotaPdfBlob(source);
+                  const blob = await generateNotaPdfBlob(source, templateSettings ? {
+                    accentColor: templateSettings.corDocumento,
+                    templateMode: templateSettings.osModelo,
+                  } : undefined);
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement('a');
                   a.href = url;

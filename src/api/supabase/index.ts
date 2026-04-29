@@ -20,3 +20,4 @@ export * from './categorias';
 export * from './sugestoes-email';
 export * from './catalogo';
 export * from './logs';
+export * from './modelos';

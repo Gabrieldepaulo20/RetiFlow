@@ -28,6 +28,7 @@ import {
   type NotaServicoDetalhes,
 } from '@/api/supabase/notas';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
+import { useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
@@ -41,6 +42,7 @@ function initStatusFilters(searchParams: URLSearchParams): Set<string> {
 export default function IntakeNotes() {
   const { notes, clients, getServicesForNote, getProductsForNote } = useData();
   const { toast } = useToast();
+  const { data: templateSettings } = useDocumentTemplateSettings();
   const [urlParams] = useSearchParams();
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 250);
@@ -147,7 +149,10 @@ export default function IntakeNotes() {
         throw new Error('Não foi possível carregar os dados atuais da O.S.');
       }
 
-      const blob = await generateNotaPdfBlob(detalhes);
+      const blob = await generateNotaPdfBlob(detalhes, templateSettings ? {
+        accentColor: templateSettings.corDocumento,
+        templateMode: templateSettings.osModelo,
+      } : undefined);
       const path = await uploadNotaPDF(blob, note.number);
       await updateNotaPdfUrl(note.id, path);
 

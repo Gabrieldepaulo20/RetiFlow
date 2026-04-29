@@ -6,6 +6,14 @@ const MAX_ITEMS_PER_OS_BLOCK = 12;
 const brl = (v: number) =>
   v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const rgba = (hex: string, alpha: number) => {
+  const normalized = /^#[0-9a-fA-F]{6}$/.test(hex) ? hex.slice(1) : '0f7f95';
+  const r = parseInt(normalized.slice(0, 2), 16);
+  const g = parseInt(normalized.slice(2, 4), 16);
+  const b = parseInt(normalized.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
 const chunkItems = <T,>(items: T[], size: number) => {
   if (items.length === 0) return [[]];
   const chunks: T[][] = [];
@@ -69,9 +77,10 @@ const s = StyleSheet.create({
 interface Props {
   dados: FechamentoDadosJson;
   geradoEm: string;
+  accentColor?: string;
 }
 
-export function ClosingPDFTemplate({ dados, geradoEm }: Props) {
+export function ClosingPDFTemplate({ dados, geradoEm, accentColor = '#0f7f95' }: Props) {
   const dataFormatada = new Date(geradoEm).toLocaleDateString('pt-BR', {
     day: '2-digit', month: 'long', year: 'numeric',
   });
@@ -89,7 +98,7 @@ export function ClosingPDFTemplate({ dados, geradoEm }: Props) {
     <Document title={`Fechamento ${dados.periodo} — ${dados.cliente.nome}`}>
       <Page size="A4" orientation="portrait" style={s.page}>
         {/* Header */}
-        <View style={s.headerCard} fixed>
+        <View style={{ ...s.headerCard, backgroundColor: accentColor }} fixed>
           <View style={s.headerRow}>
             <View>
               <Text style={s.company}>RETÍFICA PREMIUM</Text>
@@ -104,15 +113,15 @@ export function ClosingPDFTemplate({ dados, geradoEm }: Props) {
           <View style={s.summaryStrip}>
             <View style={s.summaryPill}>
               <Text style={s.summaryLabel}>Ordens</Text>
-              <Text style={s.summaryValue}>{dados.notas.length} O.S.</Text>
+              <Text style={{ ...s.summaryValue, color: accentColor }}>{dados.notas.length} O.S.</Text>
             </View>
             <View style={s.summaryPill}>
               <Text style={s.summaryLabel}>Subtotal</Text>
-              <Text style={s.summaryValue}>R$ {brl(dados.total_original)}</Text>
+              <Text style={{ ...s.summaryValue, color: accentColor }}>R$ {brl(dados.total_original)}</Text>
             </View>
             <View style={s.summaryPill}>
               <Text style={s.summaryLabel}>Total</Text>
-              <Text style={s.summaryValue}>R$ {brl(dados.total_com_desconto)}</Text>
+              <Text style={{ ...s.summaryValue, color: accentColor }}>R$ {brl(dados.total_com_desconto)}</Text>
             </View>
           </View>
         </View>
@@ -125,15 +134,15 @@ export function ClosingPDFTemplate({ dados, geradoEm }: Props) {
           return (
             <View key={`${nota.id}-${chunkIndex}`} style={s.osBlock} wrap={false}>
               {/* OS header */}
-              <View style={s.osHeader}>
+              <View style={{ ...s.osHeader, backgroundColor: rgba(accentColor, 0.09), borderBottomColor: rgba(accentColor, 0.2) }}>
                 <View>
-                  <Text style={s.osNumber}>{nota.os}{isContinuation ? ' · continuação' : ''}</Text>
+                  <Text style={{ ...s.osNumber, color: accentColor }}>{nota.os}{isContinuation ? ' · continuação' : ''}</Text>
                   <Text style={s.osVehicle}>{nota.veiculo}</Text>
                   {chunksTotal > 1 && (
                     <Text style={s.continuation}>Parte {chunkIndex + 1} de {chunksTotal}</Text>
                   )}
                 </View>
-                <Text style={s.osPlate}>{nota.placa || '—'}</Text>
+                <Text style={{ ...s.osPlate, color: accentColor }}>{nota.placa || '—'}</Text>
               </View>
 
               {/* Items table header */}
@@ -173,7 +182,7 @@ export function ClosingPDFTemplate({ dados, geradoEm }: Props) {
                   )}
                   <View style={temDesconto ? s.footGroup : s.footGroupFirst}>
                     <Text style={{ ...s.footLabel, fontWeight: 700 }}>Total {nota.os}:</Text>
-                    <Text style={s.footTotal}>R$ {brl(nota.total_com_desconto)}</Text>
+                    <Text style={{ ...s.footTotal, color: accentColor }}>R$ {brl(nota.total_com_desconto)}</Text>
                   </View>
                 </View>
               ) : (
@@ -184,7 +193,7 @@ export function ClosingPDFTemplate({ dados, geradoEm }: Props) {
         })}
 
         {/* Grand total */}
-        <View style={s.totalSection}>
+        <View style={{ ...s.totalSection, backgroundColor: rgba(accentColor, 0.08), borderColor: rgba(accentColor, 0.2) }}>
           <View>
             <Text style={{ fontSize: 8, color: '#555' }}>
               {dados.notas.length} ordem{dados.notas.length !== 1 ? 's' : ''} de serviço · Período: {dados.periodo}
@@ -197,7 +206,7 @@ export function ClosingPDFTemplate({ dados, geradoEm }: Props) {
           </View>
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={{ fontSize: 8, color: '#555' }}>TOTAL GERAL</Text>
-            <Text style={s.totalValue}>R$ {brl(dados.total_com_desconto)}</Text>
+            <Text style={{ ...s.totalValue, color: accentColor }}>R$ {brl(dados.total_com_desconto)}</Text>
           </View>
         </View>
 

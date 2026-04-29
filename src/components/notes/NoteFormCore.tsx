@@ -36,6 +36,7 @@ import { formatNoteNumber, normalizeNoteNumber } from '@/lib/noteNumbers';
 import { getNotaServicoDetalhes, uploadNotaPDF, updateNotaPdfUrl } from '@/api/supabase/notas';
 import { getTiposDeMotor, getServicosItens } from '@/api/supabase/catalogo';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
+import { useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
@@ -173,6 +174,7 @@ export default function NoteFormCore({
   } = useData();
   const { user } = useAuth();
   const { toast } = useToast();
+  const { data: templateSettings } = useDocumentTemplateSettings();
 
   const isEditing = Boolean(editingNote);
   const isLocked = editingNote?.status === 'FINALIZADO';
@@ -539,7 +541,10 @@ export default function NoteFormCore({
         try {
           const detalhes = await getNotaServicoDetalhes(editingNote.id);
           if (detalhes) {
-            const blob = await generateNotaPdfBlob(detalhes);
+            const blob = await generateNotaPdfBlob(detalhes, templateSettings ? {
+              accentColor: templateSettings.corDocumento,
+              templateMode: templateSettings.osModelo,
+            } : undefined);
             const url = await uploadNotaPDF(blob, editingNote.number);
             await updateNotaPdfUrl(editingNote.id, url);
           } else {
@@ -614,7 +619,10 @@ export default function NoteFormCore({
         try {
           const detalhes = await getNotaServicoDetalhes(note.id);
           if (detalhes) {
-            const blob = await generateNotaPdfBlob(detalhes);
+            const blob = await generateNotaPdfBlob(detalhes, templateSettings ? {
+              accentColor: templateSettings.corDocumento,
+              templateMode: templateSettings.osModelo,
+            } : undefined);
             const url = await uploadNotaPDF(blob, note.number);
             await updateNotaPdfUrl(note.id, url);
           } else {

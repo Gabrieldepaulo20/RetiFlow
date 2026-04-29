@@ -17,9 +17,10 @@ const chunkItems = <T,>(items: T[], size: number) => {
 
 interface Props {
   dados: FechamentoDadosJson;
+  accentColor?: string;
 }
 
-export function ClosingHtmlPreview({ dados }: Props) {
+export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95' }: Props) {
   const generatedAt = new Date(dados.gerado_em).toLocaleDateString('pt-BR', {
     day: '2-digit',
     month: 'long',
@@ -39,7 +40,7 @@ export function ClosingHtmlPreview({ dados }: Props) {
   return (
     <div className="mx-auto w-full max-w-[860px] space-y-4 px-3 py-4 sm:px-5 sm:py-6">
       <div className="rounded-[22px] bg-white p-5 text-slate-900 shadow-sm ring-1 ring-slate-200 sm:p-7">
-        <div className="rounded-2xl bg-gradient-to-r from-cyan-700 to-teal-600 p-5 text-white">
+        <div className="rounded-2xl p-5 text-white" style={{ background: `linear-gradient(135deg, ${accentColor}, #0f172a)` }}>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-lg font-bold tracking-wide">RETÍFICA PREMIUM</p>
@@ -69,9 +70,9 @@ export function ClosingHtmlPreview({ dados }: Props) {
                 key={`${nota.id}-${chunkIndex}`}
                 className="break-inside-avoid overflow-hidden rounded-xl border border-slate-200 bg-white"
               >
-                <div className="flex items-start justify-between gap-3 border-b border-cyan-100 bg-cyan-50 px-4 py-3">
+                <div className="flex items-start justify-between gap-3 border-b px-4 py-3" style={{ backgroundColor: `${accentColor}12`, borderBottomColor: `${accentColor}25` }}>
                   <div className="min-w-0">
-                    <p className="font-bold text-cyan-800">
+                    <p className="font-bold" style={{ color: accentColor }}>
                       {nota.os}{isContinuation ? ' · continuação' : ''}
                     </p>
                     <p className="truncate text-xs text-slate-600">{nota.veiculo || 'Veículo não informado'}</p>
@@ -79,7 +80,7 @@ export function ClosingHtmlPreview({ dados }: Props) {
                       <p className="mt-1 text-[11px] text-slate-500">Parte {chunkIndex + 1} de {chunksTotal}</p>
                     )}
                   </div>
-                  <p className="shrink-0 rounded-full bg-white px-3 py-1 text-xs font-semibold text-cyan-800 ring-1 ring-cyan-100">
+                  <p className="shrink-0 rounded-full bg-white px-3 py-1 text-xs font-semibold ring-1" style={{ color: accentColor, borderColor: `${accentColor}25` }}>
                     {nota.placa || 'Sem placa'}
                   </p>
                 </div>
@@ -117,7 +118,7 @@ export function ClosingHtmlPreview({ dados }: Props) {
                         <p><span className="text-slate-500">Desconto:</span> {nota.desconto_nota}%</p>
                       </>
                     )}
-                    <p className="font-bold text-cyan-800">Total {nota.os}: R$ {brl(nota.total_com_desconto)}</p>
+                    <p className="font-bold" style={{ color: accentColor }}>Total {nota.os}: R$ {brl(nota.total_com_desconto)}</p>
                   </div>
                 ) : (
                   <p className="border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
@@ -129,7 +130,7 @@ export function ClosingHtmlPreview({ dados }: Props) {
           })}
         </div>
 
-        <div className="mt-5 flex flex-col gap-2 rounded-2xl border border-cyan-100 bg-cyan-50 px-5 py-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="mt-5 flex flex-col gap-2 rounded-2xl border px-5 py-4 sm:flex-row sm:items-end sm:justify-between" style={{ backgroundColor: `${accentColor}12`, borderColor: `${accentColor}25` }}>
           <div className="text-sm text-slate-600">
             <p>{dados.notas.length} ordem{dados.notas.length !== 1 ? 's' : ''} de serviço · {dados.periodo}</p>
             {dados.total_original !== dados.total_com_desconto && (
@@ -137,8 +138,8 @@ export function ClosingHtmlPreview({ dados }: Props) {
             )}
           </div>
           <div className="text-right">
-            <p className="text-xs font-semibold uppercase tracking-wide text-cyan-700">Total geral</p>
-            <p className="text-2xl font-bold text-cyan-800">R$ {brl(dados.total_com_desconto)}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: accentColor }}>Total geral</p>
+            <p className="text-2xl font-bold" style={{ color: accentColor }}>R$ {brl(dados.total_com_desconto)}</p>
           </div>
         </div>
       </div>

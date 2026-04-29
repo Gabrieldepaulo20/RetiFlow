@@ -64,6 +64,7 @@ import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
+import { useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 
 /** Main workflow statuses for timeline display */
 const MAIN_FLOW: NoteStatus[] = [
@@ -161,6 +162,7 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { data: templateSettings } = useDocumentTemplateSettings();
 
   const [realItens, setRealItens] = useState<NotaServicoDetalhesItem[]>([]);
   const [realDetalhes, setRealDetalhes] = useState<NotaServicoDetalhes | null>(null);
@@ -934,7 +936,10 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
                       a.target = '_blank';
                       a.click();
                     } else {
-                      const blob = await generateNotaPdfBlob(pdfDados);
+                      const blob = await generateNotaPdfBlob(pdfDados, templateSettings ? {
+                        accentColor: templateSettings.corDocumento,
+                        templateMode: templateSettings.osModelo,
+                      } : undefined);
                       const url = URL.createObjectURL(blob);
                       const a = document.createElement('a');
                       a.href = url;

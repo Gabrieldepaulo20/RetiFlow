@@ -19,6 +19,8 @@ import {
 import { openPdfPrintDialog } from '@/lib/printPdf';
 import { shareOrCopyText } from '@/lib/browserShare';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
+import { useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
+import type { OsTemplateMode } from '@/api/supabase/modelos';
 
 const MAX_ROWS = NOTA_PRINT_MAX_ROWS;
 const LONG_MAX_ROWS = NOTA_PRINT_LONG_MAX_ROWS;
@@ -31,6 +33,7 @@ interface OSPreviewModalProps {
   services: IntakeService[];
   products: IntakeProduct[];
   accentColor?: string;
+  templateMode?: OsTemplateMode;
   dados?: NotaServicoDetalhes | null;
   loadingDados?: boolean;
 }
@@ -172,12 +175,14 @@ function PreviewVia({
   maxRows = MAX_ROWS,
   fullPage = false,
   copyLabel,
+  accentColor = '#1a7a8a',
 }: {
   dados: NotaServicoDetalhes;
   itens: NotaServicoDetalhesItem[];
   maxRows?: number;
   fullPage?: boolean;
   copyLabel?: string;
+  accentColor?: string;
 }) {
   const { cabecalho, financeiro_servicos } = dados;
   const paddingRows = Math.max(0, maxRows - itens.length);
@@ -194,15 +199,15 @@ function PreviewVia({
         fullPage ? 'min-h-[126px]' : 'min-h-[92px]',
       )}>
         <div className="flex w-[48%] flex-col items-center justify-center p-2 text-center">
-          <h2 className={cn('m-0 font-bold leading-tight', fullPage ? 'text-[30px]' : 'text-[21px]')}>
+          <h2 className={cn('m-0 font-bold leading-tight', fullPage ? 'text-[30px]' : 'text-[21px]')} style={{ color: accentColor }}>
             PREMIUM
           </h2>
           <p className={cn('m-0 text-neutral-700', fullPage ? 'text-[18px]' : 'text-[14px]')}>
             RETÍFICA DE CABEÇOTE
           </p>
         </div>
-        <div className="flex w-[52%] flex-col items-center justify-center border-l border-[#cfcfcf] px-3 py-2 text-center text-[13px] text-neutral-700">
-          <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-500">Ordem de Serviço</p>
+        <div className="flex w-[52%] flex-col items-center justify-center border-l px-3 py-2 text-center text-[13px] text-neutral-700" style={{ borderLeftColor: accentColor }}>
+          <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: accentColor }}>Ordem de Serviço</p>
           {copyLabel && (
             <p className="mb-1 rounded-full border border-[#d2d2d2] bg-white px-3 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-neutral-700">
               {copyLabel}
@@ -222,9 +227,10 @@ function PreviewVia({
       >
         <div
           className={cn(
-            'absolute inset-x-0 top-0 grid grid-cols-3 items-center bg-[#dcdcdc] text-center text-neutral-700',
+            'absolute inset-x-0 top-0 grid grid-cols-3 items-center text-center text-neutral-700',
             fullPage ? 'px-4 py-2' : 'px-2.5 py-1',
           )}
+          style={{ backgroundColor: `${accentColor}22` }}
         >
           <div className="whitespace-nowrap">
             <strong className="mr-1.5">O.S:</strong>
@@ -280,7 +286,7 @@ function PreviewVia({
             <col className="w-[19%]" />
           </colgroup>
           <thead>
-            <tr className="bg-[#efefef]">
+            <tr style={{ backgroundColor: `${accentColor}18` }}>
               <th className="border border-[#d0d0d0] px-1 py-[5px] text-center text-[12px] font-bold">QTD.</th>
               <th className="border border-[#d0d0d0] px-1 py-[5px] text-center text-[12px] font-bold">DESCRIÇÃO DOS PRODUTOS</th>
               <th className="border border-[#d0d0d0] px-1 py-[5px] text-center text-[11px] font-bold">VALOR UNI.</th>
@@ -341,7 +347,7 @@ function PreviewVia({
   );
 }
 
-function PreviewPage({ dados, itens }: { dados: NotaServicoDetalhes; itens: NotaServicoDetalhesItem[] }) {
+function PreviewPage({ dados, itens, accentColor }: { dados: NotaServicoDetalhes; itens: NotaServicoDetalhesItem[]; accentColor: string }) {
   return (
     <div
       className="mx-auto flex shrink-0 overflow-hidden bg-white shadow-sm ring-1 ring-black/10"
@@ -350,9 +356,9 @@ function PreviewPage({ dados, itens }: { dados: NotaServicoDetalhes; itens: Nota
         height: NOTA_PRINT_PAGE.height,
       }}
     >
-      <PreviewVia dados={dados} itens={itens} />
+      <PreviewVia dados={dados} itens={itens} accentColor={accentColor} />
       <div className="my-5 w-px border-l border-dashed border-[#cccccc]" />
-      <PreviewVia dados={dados} itens={itens} />
+      <PreviewVia dados={dados} itens={itens} accentColor={accentColor} />
     </div>
   );
 }
@@ -361,10 +367,12 @@ function PreviewPortraitPage({
   dados,
   itens,
   copyLabel,
+  accentColor,
 }: {
   dados: NotaServicoDetalhes;
   itens: NotaServicoDetalhesItem[];
   copyLabel: string;
+  accentColor: string;
 }) {
   return (
     <div
@@ -374,7 +382,7 @@ function PreviewPortraitPage({
         height: NOTA_PRINT_PORTRAIT_PAGE.height,
       }}
     >
-      <PreviewVia dados={dados} itens={itens} maxRows={LONG_MAX_ROWS} fullPage copyLabel={copyLabel} />
+      <PreviewVia dados={dados} itens={itens} maxRows={LONG_MAX_ROWS} fullPage copyLabel={copyLabel} accentColor={accentColor} />
     </div>
   );
 }
@@ -386,18 +394,23 @@ export default function OSPreviewModal({
   client,
   services,
   products,
+  accentColor,
+  templateMode,
   dados,
   loadingDados = false,
 }: OSPreviewModalProps) {
   const { toast } = useToast();
   const [busyAction, setBusyAction] = useState<'download' | 'print' | null>(null);
   const [previewViewportRef, previewViewportSize] = useElementSize<HTMLDivElement>();
+  const { data: savedTemplate } = useDocumentTemplateSettings(null, open && (!accentColor || !templateMode));
+  const effectiveAccentColor = accentColor ?? savedTemplate?.corDocumento ?? '#1a7a8a';
+  const effectiveTemplateMode = templateMode ?? savedTemplate?.osModelo ?? 'auto';
 
   const pdfDados = useMemo(
     () => dados ?? buildPdfDados(note, client, services, products),
     [dados, note, client, services, products],
   );
-  const usePortraitLayout = pdfDados.itens_servico.length > MAX_ROWS;
+  const usePortraitLayout = effectiveTemplateMode === 'a4_vertical' || (effectiveTemplateMode === 'auto' && pdfDados.itens_servico.length > MAX_ROWS);
   const pageLayout = usePortraitLayout ? NOTA_PRINT_PORTRAIT_PAGE : NOTA_PRINT_PAGE;
   const pageMaxRows = usePortraitLayout ? LONG_MAX_ROWS : MAX_ROWS;
   const itemPages = useMemo(() => chunkItems(pdfDados.itens_servico, pageMaxRows), [pageMaxRows, pdfDados.itens_servico]);
@@ -431,7 +444,10 @@ export default function OSPreviewModal({
   }), [pageLayout.height, pageLayout.width, previewScale]);
 
   const buildBlobUrl = async () => {
-    const blob = await generateNotaPdfBlob(pdfDados);
+    const blob = await generateNotaPdfBlob(pdfDados, {
+      accentColor: effectiveAccentColor,
+      templateMode: effectiveTemplateMode,
+    });
     return URL.createObjectURL(blob);
   };
 
@@ -546,8 +562,8 @@ export default function OSPreviewModal({
                     }}
                   >
                     {usePortraitLayout
-                      ? <PreviewPortraitPage dados={pdfDados} itens={page.items} copyLabel={page.copyLabel ?? 'Via'} />
-                      : <PreviewPage dados={pdfDados} itens={page.items} />
+                      ? <PreviewPortraitPage dados={pdfDados} itens={page.items} copyLabel={page.copyLabel ?? 'Via'} accentColor={effectiveAccentColor} />
+                      : <PreviewPage dados={pdfDados} itens={page.items} accentColor={effectiveAccentColor} />
                     }
                   </div>
                 </div>

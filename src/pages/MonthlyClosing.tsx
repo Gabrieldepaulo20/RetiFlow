@@ -28,6 +28,7 @@ import {
   type FechamentoNota,
 } from '@/api/supabase/fechamentos';
 import { getNotasServico } from '@/api/supabase/notas';
+import { useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 import type { IntakeNote } from '@/types';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
@@ -195,6 +196,7 @@ function getDivergencias(fechamento: FechamentoListItem, notes: IntakeNote[]) {
 export default function MonthlyClosing() {
   const { notes, clients } = useData();
   const { toast } = useToast();
+  const { data: templateSettings } = useDocumentTemplateSettings();
 
   const now = new Date();
   const defaultMonth = String(now.getMonth() + 1);
@@ -547,8 +549,14 @@ export default function MonthlyClosing() {
       import('@/components/closing/ClosingPDFTemplate'),
     ]);
 
-    return pdf(<ClosingPDFTemplate dados={dados} geradoEm={geradoEm} />).toBlob();
-  }, []);
+    return pdf(
+      <ClosingPDFTemplate
+        dados={dados}
+        geradoEm={geradoEm}
+        accentColor={templateSettings?.corFechamento}
+      />,
+    ).toBlob();
+  }, [templateSettings?.corFechamento]);
 
   /* ── Gerar fechamento ── */
   const generateDraft = useCallback(async (draft: ClosingDraft) => {
@@ -1078,7 +1086,7 @@ export default function MonthlyClosing() {
             <div className="min-h-0 flex-1 bg-muted/40">
               {modalPreviewDados ? (
                 <div className="h-full overflow-y-auto overscroll-contain scrollbar-thin">
-                  <ClosingHtmlPreview dados={modalPreviewDados} />
+                  <ClosingHtmlPreview dados={modalPreviewDados} accentColor={templateSettings?.corFechamento} />
                 </div>
               ) : (
                 <div className="flex h-full items-center justify-center text-sm text-muted-foreground">

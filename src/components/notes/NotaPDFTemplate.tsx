@@ -1,5 +1,6 @@
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { NotaServicoDetalhes, NotaServicoDetalhesItem } from '@/api/supabase/notas';
+import type { OsTemplateMode } from '@/api/supabase/modelos';
 import {
   NOTA_PRINT_LONG_MAX_ROWS,
   NOTA_PRINT_MAX_ROWS,
@@ -330,12 +331,14 @@ function Via({
   maxRows = MAX_ROWS,
   fullPage = false,
   copyLabel,
+  accentColor = '#1a7a8a',
 }: {
   dados: NotaServicoDetalhes;
   itens: NotaServicoDetalhesItem[];
   maxRows?: number;
   fullPage?: boolean;
   copyLabel?: string;
+  accentColor?: string;
 }) {
   const { cabecalho, financeiro_servicos } = dados;
   const paddingRows = Math.max(0, maxRows - itens.length);
@@ -344,11 +347,11 @@ function Via({
     <View style={[styles.nota, fullPage && styles.notaFullPage]}>
       <View style={[styles.notaHeader, fullPage && { minHeight: 116 }]}>
         <View style={styles.headerSide}>
-          <Text style={[styles.headerTitle, fullPage && styles.headerTitleFull]}>PREMIUM</Text>
+          <Text style={[styles.headerTitle, fullPage && styles.headerTitleFull, { color: accentColor }]}>PREMIUM</Text>
           <Text style={[styles.headerSubtitle, fullPage && styles.headerSubtitleFull]}>RETÍFICA DE CABEÇOTE</Text>
         </View>
-        <View style={[styles.headerSide, styles.headerRight]}>
-          <Text style={styles.headerEyebrow}>ORDEM DE SERVIÇO</Text>
+        <View style={[styles.headerSide, styles.headerRight, { borderLeftColor: accentColor }]}>
+          <Text style={[styles.headerEyebrow, { color: accentColor }]}>ORDEM DE SERVIÇO</Text>
           {copyLabel && <Text style={[styles.headerInfo, styles.headerInfoStrong]}>{copyLabel.toUpperCase()}</Text>}
           <Text style={[styles.headerInfo, styles.headerInfoStrong]}>Av. Fioravante Magro, 1059</Text>
           <Text style={styles.headerInfo}>Jardim Boa Vista · Sertãozinho/SP</Text>
@@ -456,10 +459,12 @@ function Via({
 
 interface Props {
   dados: NotaServicoDetalhes;
+  accentColor?: string;
+  templateMode?: OsTemplateMode;
 }
 
-export function NotaPDFTemplate({ dados }: Props) {
-  const usePortraitLayout = dados.itens_servico.length > MAX_ROWS;
+export function NotaPDFTemplate({ dados, accentColor = '#1a7a8a', templateMode = 'auto' }: Props) {
+  const usePortraitLayout = templateMode === 'a4_vertical' || (templateMode === 'auto' && dados.itens_servico.length > MAX_ROWS);
   const itemPages = chunkItems(dados.itens_servico, usePortraitLayout ? LONG_MAX_ROWS : MAX_ROWS);
   const portraitPages = itemPages.flatMap((itens, index) => [
     { itens, copyLabel: 'Via cliente', key: `cliente-${index}` },
@@ -477,13 +482,13 @@ export function NotaPDFTemplate({ dados }: Props) {
         >
           {usePortraitLayout ? (
             <View style={styles.notaContainer}>
-              <Via dados={dados} itens={page.itens} maxRows={LONG_MAX_ROWS} fullPage copyLabel={page.copyLabel ?? undefined} />
+              <Via dados={dados} itens={page.itens} maxRows={LONG_MAX_ROWS} fullPage copyLabel={page.copyLabel ?? undefined} accentColor={accentColor} />
             </View>
           ) : (
             <View style={styles.notaContainer}>
-              <Via dados={dados} itens={page.itens} />
+              <Via dados={dados} itens={page.itens} accentColor={accentColor} />
               <View style={styles.divider} />
-              <Via dados={dados} itens={page.itens} />
+              <Via dados={dados} itens={page.itens} accentColor={accentColor} />
             </View>
           )}
         </Page>

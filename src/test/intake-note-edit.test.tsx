@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import NoteFormCore from '@/components/notes/NoteFormCore';
 import { useData } from '@/contexts/DataContext';
@@ -169,12 +170,21 @@ describe('Note edit flow', () => {
       dismissEmailSuggestion: vi.fn(),
     });
 
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+
     render(
-      <NoteFormCore
-        editingNote={editingNote}
-        onSuccess={onSuccess}
-        onCancel={vi.fn()}
-      />,
+      <QueryClientProvider client={queryClient}>
+        <NoteFormCore
+          editingNote={editingNote}
+          onSuccess={onSuccess}
+          onCancel={vi.fn()}
+        />
+      </QueryClientProvider>,
     );
 
     await screen.findByDisplayValue('Gol 1.0');
