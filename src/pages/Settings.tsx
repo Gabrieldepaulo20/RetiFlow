@@ -296,7 +296,7 @@ export default function SettingsPage() {
                 </div>
               </div>
               <Button disabled={!COMPANY_SETTINGS_CONNECTED} aria-disabled={!COMPANY_SETTINGS_CONNECTED}>
-                {COMPANY_SETTINGS_CONNECTED ? 'Salvar Alterações' : 'Persistência em implementação'}
+                Atualizar
               </Button>
             </CardContent>
           </Card>

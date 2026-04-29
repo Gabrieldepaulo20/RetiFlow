@@ -150,7 +150,7 @@ describe('App routes', () => {
     expect(await screen.findByRole('heading', { name: 'Configurações' })).toBeInTheDocument();
     expect(screen.getByText(/ainda não persistem no backend/i)).toBeInTheDocument();
     expect(screen.getByText(/não deve ser considerado configuração real de produção/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /persistência em implementação/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /atualizar/i })).toBeDisabled();
     expect(screen.getAllByText(/prévia local/i).length).toBeGreaterThan(0);
     expect(window.localStorage.getItem('moduleConfig')).toBeNull();
   });
