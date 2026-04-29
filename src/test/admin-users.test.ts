@@ -45,6 +45,35 @@ describe('callAdminUsersFunction', () => {
     }));
   });
 
+  it('sends optional reset confirmation email only through the admin function payload', async () => {
+    mocks.invoke.mockResolvedValue({
+      data: {
+        mensagem: 'E-mail de recuperação enviado para o usuário.',
+        resetEmail: 'cliente@example.com',
+        confirmationEmail: 'responsavel@example.com',
+        confirmationSent: true,
+      },
+      error: null,
+    });
+
+    await expect(callAdminUsersFunction({
+      action: 'reset_password',
+      userId: VALID_UUID,
+      confirmationEmail: 'responsavel@example.com',
+    })).resolves.toMatchObject({
+      resetEmail: 'cliente@example.com',
+      confirmationSent: true,
+    });
+
+    expect(mocks.invoke).toHaveBeenCalledWith('admin-users', expect.objectContaining({
+      body: {
+        action: 'reset_password',
+        userId: VALID_UUID,
+        confirmationEmail: 'responsavel@example.com',
+      },
+    }));
+  });
+
   it('returns result data on success', async () => {
     mocks.invoke.mockResolvedValue({
       data: {

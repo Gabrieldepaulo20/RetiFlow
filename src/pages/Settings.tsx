@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAuth } from '@/contexts/AuthContext';
 import { users } from '@/data/seed';
 import { DEFAULT_ROLE_MODULE_CONFIG } from '@/services/auth/moduleAccess';
-import { Wrench, Building2, Users, Palette, Lock, Upload, Check, FileText, Eye, LayoutGrid, LayoutDashboard, KanbanSquare, Calendar, Receipt, Settings as SettingsIcon, Info, Loader2, Search, Wallet, Shield } from 'lucide-react';
+import { Wrench, Building2, Users, Palette, Lock, Upload, Check, FileText, Eye, LayoutGrid, LayoutDashboard, KanbanSquare, Calendar, Receipt, Settings as SettingsIcon, Info, Loader2, Search, Wallet, Shield, KeyRound } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { lookupCnpj, stripDigits } from '@/services/domain/customers';
 import { useSystemUsersQuery } from '@/hooks/useSystemUsersQuery';
@@ -119,6 +119,9 @@ export default function SettingsPage() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [selectedResetUserId, setSelectedResetUserId] = useState('');
+  const [resetConfirmationEmail, setResetConfirmationEmail] = useState('');
+  const [resetSending, setResetSending] = useState(false);
 
   // Theme
   const [selectedTheme, setSelectedTheme] = useState(0);
@@ -147,6 +150,12 @@ export default function SettingsPage() {
       setSelectedModuleUserId(systemUsers[0].id);
     }
   }, [selectedModuleUserId, systemUsers]);
+
+  useEffect(() => {
+    if (!selectedResetUserId && systemUsers.length > 0) {
+      setSelectedResetUserId(systemUsers[0].id);
+    }
+  }, [selectedResetUserId, systemUsers]);
 
   useEffect(() => {
     if (isSuperAdmin && templateUserFromUrl && systemUsers.some((candidate) => candidate.id === templateUserFromUrl)) {
@@ -353,6 +362,48 @@ export default function SettingsPage() {
     if (newPassword.length < 6) { toast({ title: 'Mínimo 6 caracteres', variant: 'destructive' }); return; }
     if (newPassword !== confirmPassword) { toast({ title: 'Senhas não coincidem', variant: 'destructive' }); return; }
     toast({ title: 'Senha alterada!' }); setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
+  };
+
+  const handleAdminPasswordReset = async () => {
+    const targetUser = systemUsers.find((candidate) => candidate.id === selectedResetUserId);
+    if (!targetUser) {
+      toast({ title: 'Selecione um cliente/usuário', variant: 'destructive' });
+      return;
+    }
+    if (!isSuperAdmin) {
+      toast({
+        title: 'Ação restrita ao Admin master',
+        description: 'Somente o Super Admin autorizado pode reenviar recuperação de senha.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setResetSending(true);
+    try {
+      const result = await callAdminUsersFunction({
+        action: 'reset_password',
+        userId: targetUser.id,
+        confirmationEmail: resetConfirmationEmail.trim() || undefined,
+      });
+      toast({
+        title: 'Reset de senha enviado',
+        description: result.confirmationSent
+          ? `Link enviado para ${targetUser.email}; confirmação enviada para ${resetConfirmationEmail.trim()}.`
+          : result.confirmationWarning
+            ? `Link enviado para ${targetUser.email}. Confirmação extra não foi enviada: ${result.confirmationWarning}`
+            : `Link enviado para ${targetUser.email}.`,
+      });
+      setResetConfirmationEmail('');
+    } catch (error) {
+      toast({
+        title: 'Não foi possível enviar reset',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setResetSending(false);
+    }
   };
 
   const applyTheme = (idx: number) => {
@@ -906,6 +957,80 @@ export default function SettingsPage() {
 
         {/* SEGURANÇA */}
         <TabsContent value="seguranca">
+          <div className="space-y-5">
+          {isSuperAdmin && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <KeyRound className="w-5 h-5" /> Reset de senha de cliente
+                  <Badge variant="outline">Supabase Auth</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <Alert>
+                  <Shield className="h-4 w-4" />
+                  <AlertTitle>Fluxo seguro pelo Admin master</AlertTitle>
+                  <AlertDescription>
+                    Selecione o cliente/usuário e reenvie o e-mail de recuperação. O link de troca de senha vai somente para o e-mail principal da conta; o e-mail extra recebe apenas uma confirmação administrativa.
+                  </AlertDescription>
+                </Alert>
+
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_240px]">
+                  <div className="space-y-2">
+                    <Label>Cliente / usuário</Label>
+                    <Select
+                      value={selectedResetUserId}
+                      onValueChange={setSelectedResetUserId}
+                      disabled={usersLoading || systemUsers.length === 0 || resetSending}
+                    >
+                      <SelectTrigger className="h-11">
+                        <SelectValue placeholder={usersLoading ? 'Carregando usuários...' : 'Selecione um usuário'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {systemUsers.map((systemUser) => (
+                          <SelectItem key={systemUser.id} value={systemUser.id}>
+                            {systemUser.name} · {systemUser.email}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="rounded-xl border border-border/70 bg-muted/30 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Reset será enviado para</p>
+                    <p className="mt-1 truncate text-sm font-semibold">
+                      {systemUsers.find((candidate) => candidate.id === selectedResetUserId)?.email ?? '—'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>E-mail alternativo de confirmação (opcional)</Label>
+                  <Input
+                    type="email"
+                    value={resetConfirmationEmail}
+                    onChange={(event) => setResetConfirmationEmail(event.target.value)}
+                    placeholder="exemplo@cliente.com"
+                    disabled={resetSending}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Este endereço recebe apenas a confirmação de que o reset foi solicitado. O link de redefinição não é enviado para e-mail alternativo.
+                  </p>
+                </div>
+
+                <Button
+                  variant="destructive"
+                  onClick={() => void handleAdminPasswordReset()}
+                  disabled={resetSending || !selectedResetUserId}
+                  className="gap-2"
+                >
+                  {resetSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+                  Reenviar reset de senha
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -931,6 +1056,7 @@ export default function SettingsPage() {
               </Button>
             </CardContent>
           </Card>
+          </div>
         </TabsContent>
 
         {/* USUÁRIOS */}

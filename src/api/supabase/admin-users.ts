@@ -8,6 +8,10 @@ export type AdminUserActionResult = {
   auth_user_id?: string;
   action_link?: string;
   mensagem?: string;
+  resetEmail?: string;
+  confirmationEmail?: string | null;
+  confirmationSent?: boolean;
+  confirmationWarning?: string | null;
 };
 
 type AdminUserAction =
@@ -23,6 +27,7 @@ type AdminUserAction =
       action: 'reset_password' | 'deactivate_user' | 'reactivate_user';
       userId: string;
       email?: string;
+      confirmationEmail?: string;
     }
   | {
       action: 'set_modules';
@@ -67,4 +72,3 @@ export async function callAdminUsersFunction(payload: AdminUserAction): Promise<
 
   return data ?? {};
 }
-

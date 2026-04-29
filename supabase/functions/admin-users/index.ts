@@ -28,6 +28,7 @@ type ActionPayload =
       action: 'reset_password' | 'deactivate_user' | 'reactivate_user';
       userId: string;
       email?: string;
+      confirmationEmail?: string;
     }
   | {
       action: 'set_modules';
@@ -133,6 +134,11 @@ function assertEmail(value: unknown) {
   return email;
 }
 
+function optionalEmail(value: unknown) {
+  if (value === undefined || value === null || value === '') return null;
+  return assertEmail(value);
+}
+
 function assertUserId(value: unknown) {
   const id = assertString(value, 'userId', 80);
   if (!/^[0-9a-f-]{36}$/i.test(id)) {
@@ -156,6 +162,161 @@ function normalizeModules(value: unknown): ModuleAccess {
     }
     return accumulator;
   }, {});
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[<>&"]/g, (char) => ({
+    '<': '&lt;',
+    '>': '&gt;',
+    '&': '&amp;',
+    '"': '&quot;',
+  }[char]!));
+}
+
+function formatEmailAddress(email: string, displayName?: string) {
+  const safeName = (displayName ?? '').replace(/["\r\n]/g, '').trim();
+  return safeName ? `"${safeName}" <${email}>` : email;
+}
+
+async function sha256Hex(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  const hash = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(hash)).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function hmac(key: ArrayBuffer | Uint8Array, value: string) {
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    key,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  return crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(value));
+}
+
+function hex(buffer: ArrayBuffer) {
+  return Array.from(new Uint8Array(buffer)).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function signingKey(secret: string, date: string, region: string) {
+  const kDate = await hmac(new TextEncoder().encode(`AWS4${secret}`), date);
+  const kRegion = await hmac(kDate, region);
+  const kService = await hmac(kRegion, 'ses');
+  return hmac(kService, 'aws4_request');
+}
+
+function amzDates(now = new Date()) {
+  const iso = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
+  return { amzDate: iso, dateStamp: iso.slice(0, 8) };
+}
+
+async function sendResetConfirmationEmail(params: {
+  to: string;
+  targetEmail: string;
+  targetName: string;
+  requesterEmail: string;
+}) {
+  const region = Deno.env.get('AWS_REGION') ?? Deno.env.get('AWS_SES_REGION') ?? 'us-east-1';
+  const accessKey = Deno.env.get('AWS_ACCESS_KEY_ID') ?? '';
+  const secretKey = Deno.env.get('AWS_SECRET_ACCESS_KEY') ?? '';
+  const from = Deno.env.get('ADMIN_FROM_EMAIL') ?? Deno.env.get('SUPPORT_FROM_EMAIL') ?? '';
+  const fromName = Deno.env.get('ADMIN_FROM_NAME') ?? 'Sistema Retiflow';
+
+  if (!accessKey || !secretKey || !from) {
+    throw new Error('SES não configurado para confirmação administrativa.');
+  }
+
+  const safeTargetName = escapeHtml(params.targetName);
+  const safeTargetEmail = escapeHtml(params.targetEmail);
+  const safeRequesterEmail = escapeHtml(params.requesterEmail);
+  const subject = `Retiflow - reset de senha solicitado para ${params.targetName}`;
+  const text = [
+    'Reset de senha solicitado no Retiflow',
+    '',
+    `Usuário: ${params.targetName}`,
+    `E-mail da conta: ${params.targetEmail}`,
+    `Solicitado por: ${params.requesterEmail}`,
+    '',
+    'Por segurança, o link de redefinição foi enviado somente para o e-mail da conta do usuário.',
+  ].join('\n');
+  const html = `
+    <!doctype html>
+    <html lang="pt-BR">
+      <body style="margin:0;background:#f4f7f8;font-family:Arial,Helvetica,sans-serif;color:#17202a;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f7f8;padding:28px 12px;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border-radius:20px;overflow:hidden;border:1px solid #dfe7ec;">
+                <tr>
+                  <td style="background:#0f6f7e;padding:24px 28px;color:#ffffff;">
+                    <div style="font-size:20px;font-weight:800;">Reset de senha solicitado</div>
+                    <div style="font-size:13px;opacity:.9;margin-top:6px;">Confirmação administrativa Retiflow</div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:26px 28px;">
+                    <p style="margin:0 0 14px;font-size:15px;line-height:1.6;">O reset de senha foi solicitado para:</p>
+                    <div style="background:#f4f7f8;border:1px solid #e2eaef;border-radius:14px;padding:16px;margin-bottom:18px;">
+                      <div style="font-size:16px;font-weight:700;">${safeTargetName}</div>
+                      <div style="font-size:14px;color:#52657a;margin-top:4px;">${safeTargetEmail}</div>
+                    </div>
+                    <p style="margin:0 0 10px;font-size:14px;line-height:1.6;color:#334155;">Solicitado por: <strong>${safeRequesterEmail}</strong></p>
+                    <p style="margin:0;font-size:13px;line-height:1.6;color:#64748b;">Por segurança, o link de redefinição foi enviado somente para o e-mail principal da conta do usuário.</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
+  `;
+
+  const host = `email.${region}.amazonaws.com`;
+  const path = '/v2/email/outbound-emails';
+  const body = JSON.stringify({
+    FromEmailAddress: formatEmailAddress(from, fromName),
+    Destination: { ToAddresses: [params.to] },
+    Content: {
+      Simple: {
+        Subject: { Data: subject, Charset: 'UTF-8' },
+        Body: {
+          Text: { Data: text, Charset: 'UTF-8' },
+          Html: { Data: html, Charset: 'UTF-8' },
+        },
+      },
+    },
+  });
+
+  const { amzDate, dateStamp } = amzDates();
+  const payloadHash = await sha256Hex(body);
+  const canonicalHeaders = `content-type:application/json\nhost:${host}\nx-amz-date:${amzDate}\n`;
+  const signedHeaders = 'content-type;host;x-amz-date';
+  const canonicalRequest = ['POST', path, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
+  const credentialScope = `${dateStamp}/${region}/ses/aws4_request`;
+  const stringToSign = [
+    'AWS4-HMAC-SHA256',
+    amzDate,
+    credentialScope,
+    await sha256Hex(canonicalRequest),
+  ].join('\n');
+  const signature = hex(await hmac(await signingKey(secretKey, dateStamp, region), stringToSign));
+  const authorization = `AWS4-HMAC-SHA256 Credential=${accessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+  const response = await fetch(`https://${host}${path}`, {
+    method: 'POST',
+    headers: {
+      Authorization: authorization,
+      'Content-Type': 'application/json',
+      'X-Amz-Date': amzDate,
+    },
+    body,
+  });
+
+  if (!response.ok) {
+    throw new Error(`SES retornou ${response.status}: ${await response.text()}`);
+  }
 }
 
 function modulesToRpcPayload(modules: ModuleAccess) {
@@ -351,6 +512,20 @@ async function callStatusRpc(serviceClient: ReturnType<typeof createClient>, rpc
   }
 }
 
+async function getInternalResetUser(serviceClient: ReturnType<typeof createClient>, userId: string) {
+  const { data, error } = await serviceClient
+    .schema('RetificaPremium')
+    .from('Usuarios')
+    .select('id_usuarios, nome, email, status')
+    .eq('id_usuarios', userId)
+    .maybeSingle();
+
+  if (error) throw new Error(`Falha ao carregar usuário: ${error.message}`);
+  if (!data?.email) throw new Error('Usuário não encontrado.');
+  if (data.status === false) throw new Error('Usuário inativo. Reative o usuário antes de resetar a senha.');
+  return data as { id_usuarios: string; nome: string | null; email: string; status: boolean };
+}
+
 Deno.serve(async (request) => {
   const cors = getCorsHeaders(request);
   if (!cors.allowed) {
@@ -412,7 +587,10 @@ Deno.serve(async (request) => {
     }
 
     if (payload.action === 'reset_password') {
-      const email = assertEmail(payload.email);
+      const userId = assertUserId(payload.userId);
+      const targetUser = await getInternalResetUser(requester.serviceClient, userId);
+      const email = assertEmail(targetUser.email);
+      const confirmationEmail = optionalEmail(payload.confirmationEmail);
       const redirectTo = Deno.env.get('AUTH_REDIRECT_TO') || Deno.env.get('APP_BASE_URL') || undefined;
 
       const { error } = await requester.serviceClient.auth.resetPasswordForEmail(email, {
@@ -421,8 +599,32 @@ Deno.serve(async (request) => {
 
       if (error) throw new Error(`Falha ao enviar recuperação de senha: ${error.message}`);
 
+      let confirmationSent = false;
+      let confirmationWarning: string | null = null;
+      if (confirmationEmail) {
+        try {
+          await sendResetConfirmationEmail({
+            to: confirmationEmail,
+            targetEmail: email,
+            targetName: targetUser.nome ?? email,
+            requesterEmail: requester.requesterEmail,
+          });
+          confirmationSent = true;
+        } catch (confirmationError) {
+          confirmationWarning = confirmationError instanceof Error
+            ? confirmationError.message
+            : 'Falha ao enviar confirmação administrativa.';
+        }
+      }
+
       return jsonResponse({
-        mensagem: 'E-mail de recuperação enviado para o usuário.',
+        mensagem: confirmationSent
+          ? 'E-mail de recuperação enviado ao usuário e confirmação enviada.'
+          : 'E-mail de recuperação enviado para o usuário.',
+        resetEmail: email,
+        confirmationEmail,
+        confirmationSent,
+        confirmationWarning,
       }, 200, request);
     }
 
