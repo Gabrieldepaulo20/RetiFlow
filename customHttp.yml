@@ -31,3 +31,7 @@ customHeaders:
           frame-ancestors 'none';
           base-uri 'self';
           form-action 'self'
+      # Evita HTML/manifest antigo apontando para assets com hash que já não existem
+      # após um novo deploy. Sem isso, o browser pode tentar baixar CSS/JS 404.
+      - key: Cache-Control
+        value: no-cache, no-store, must-revalidate
