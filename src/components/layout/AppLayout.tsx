@@ -107,6 +107,7 @@ export default function AppLayout() {
 
   const isActive = (path: string) => location.pathname.startsWith(path);
   const initials = user?.name.split(' ').map(w => w[0]).join('').slice(0, 2) ?? '';
+  const isAdminOperationalPortal = user?.role === 'ADMIN' && !isSupportImpersonating;
 
   const recentActivities = activities.slice(0, 20);
   const unreadCount = Math.max(0, recentActivities.length - readCount);
@@ -207,6 +208,7 @@ export default function AppLayout() {
 
   const isModuleVisible = (item: typeof navItems[0]) => {
     if (!user) return false;
+    if (isAdminOperationalPortal && item.moduleKey === 'settings') return false;
     return canAccessModule(item.moduleKey);
   };
 
@@ -296,7 +298,11 @@ export default function AppLayout() {
               ) : null}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            {canAccessModule('settings') ? (
+            {isAdminOperationalPortal ? (
+              <DropdownMenuItem onClick={() => navigate('/admin')}>
+                <LayoutDashboard className="w-4 h-4 mr-2" /> Voltar para o ADM
+              </DropdownMenuItem>
+            ) : canAccessModule('settings') ? (
               <>
                 <DropdownMenuItem onClick={() => navigate('/configuracoes?tab=empresa')}>
                   <Settings className="w-4 h-4 mr-2" /> Configurações da empresa
@@ -309,7 +315,7 @@ export default function AppLayout() {
                 </DropdownMenuItem>
               </>
             ) : null}
-            {canAccessModule('admin') && user.role === 'ADMIN' ? (
+            {!isAdminOperationalPortal && canAccessModule('admin') && user.role === 'ADMIN' ? (
               <DropdownMenuItem onClick={() => navigate('/admin/usuarios')}>
                 <Users className="w-4 h-4 mr-2" /> Acessos de funcionários
               </DropdownMenuItem>
@@ -544,6 +550,11 @@ export default function AppLayout() {
                       <AlertCircle className="w-4 h-4 mr-2" /> Sair do modo suporte
                     </DropdownMenuItem>
                   </>
+                ) : null}
+                {isAdminOperationalPortal ? (
+                  <DropdownMenuItem onClick={() => navigate('/admin')}>
+                    <LayoutDashboard className="w-4 h-4 mr-2" /> Voltar para o ADM
+                  </DropdownMenuItem>
                 ) : null}
                 <DropdownMenuItem onClick={() => setSupportOpen(true)}>
                   <MessageSquarePlus className="w-4 h-4 mr-2" /> Sugestões / Chamado

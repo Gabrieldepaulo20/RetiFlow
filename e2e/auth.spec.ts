@@ -108,6 +108,13 @@ test.describe('Auth — login and access control', () => {
       await expect(page.getByRole('heading', { name: heading })).toBeVisible();
       await expect(page).not.toHaveURL('/admin');
     }
+
+    await expect(page.getByRole('link', { name: 'Configurações' })).not.toBeVisible();
+
+    await page.getByRole('button', { name: 'Abrir menu da conta' }).click();
+    await expect(page.getByRole('menuitem', { name: /Voltar para o ADM/i })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: /Acessos de funcionários/i })).not.toBeVisible();
+    await expect(page.getByRole('menuitem', { name: /Modelos e templates/i })).not.toBeVisible();
   });
 
   test('financeiro blocked from /configuracoes (module disabled)', async ({ page }) => {
