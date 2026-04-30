@@ -77,6 +77,18 @@ const MASTER_MODULE_ACCESS: Record<AppModuleKey, boolean> = {
   admin: true,
 };
 
+const OPERATIONAL_DEFAULT_MODULE_ACCESS: Record<AppModuleKey, boolean> = {
+  dashboard: true,
+  clients: true,
+  notes: true,
+  kanban: true,
+  closing: true,
+  payables: true,
+  invoices: false,
+  settings: true,
+  admin: false,
+};
+
 type NewAccountKind = 'client' | 'master';
 
 function buildUserId() {
@@ -111,7 +123,6 @@ export default function AdminClients() {
   const [newName, setNewName] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newPhone, setNewPhone] = useState('');
-  const [newRole, setNewRole] = useState<UserRole>('RECEPCAO');
   const [newAccountKind, setNewAccountKind] = useState<NewAccountKind>('client');
 
   useEffect(() => {
@@ -359,7 +370,10 @@ export default function AdminClients() {
       return;
     }
 
-    const accountRole = newAccountKind === 'master' ? 'ADMIN' : newRole;
+    const accountRole: UserRole = newAccountKind === 'master' ? 'ADMIN' : 'RECEPCAO';
+    const accountModules = accountRole === 'ADMIN'
+      ? MASTER_MODULE_ACCESS
+      : OPERATIONAL_DEFAULT_MODULE_ACCESS;
 
     if (accountRole === 'ADMIN' && IS_REAL_AUTH && !isCurrentUserMegaMaster) {
       toast({
@@ -388,7 +402,7 @@ export default function AdminClients() {
             email: normalizedEmail,
             phone: normalizedPhone,
             role: accountRole,
-            modules: accountRole === 'ADMIN' ? MASTER_MODULE_ACCESS : roleModuleConfig[accountRole],
+            modules: accountModules,
           })
         : null;
 
@@ -402,9 +416,7 @@ export default function AdminClients() {
         role: accountRole,
         isActive: true,
         createdAt: new Date().toISOString(),
-        moduleAccess: IS_REAL_AUTH
-          ? accountRole === 'ADMIN' ? MASTER_MODULE_ACCESS : roleModuleConfig[accountRole]
-          : undefined,
+        moduleAccess: accountModules,
       };
 
       if (IS_REAL_AUTH) {
@@ -421,7 +433,6 @@ export default function AdminClients() {
       setNewName('');
       setNewEmail('');
       setNewPhone('');
-      setNewRole('RECEPCAO');
       setNewAccountKind('client');
     } catch (error) {
       toast({
@@ -1018,15 +1029,7 @@ export default function AdminClients() {
               <Label>Tipo de conta</Label>
               <Select
                 value={newAccountKind}
-                onValueChange={(value) => {
-                  const nextKind = value as NewAccountKind;
-                  setNewAccountKind(nextKind);
-                  if (nextKind === 'master') {
-                    setNewRole('ADMIN');
-                  } else if (newRole === 'ADMIN') {
-                    setNewRole('RECEPCAO');
-                  }
-                }}
+                onValueChange={(value) => setNewAccountKind(value as NewAccountKind)}
               >
                 <SelectTrigger className="h-11 rounded-xl">
                   <SelectValue />
@@ -1039,23 +1042,14 @@ export default function AdminClients() {
                 </SelectContent>
               </Select>
               <p className="text-[11px] leading-relaxed text-muted-foreground">
-                Master tem acesso administrativo amplo. Apenas o Mega Master pode criar outro Master.
+                Usuário operacional nasce com os módulos reais ligados; depois você pode desligar o que não quiser.
+                Master tem acesso administrativo amplo e só pode ser criado pelo Mega Master.
               </p>
             </div>
 
             {newAccountKind === 'client' ? (
-              <div className="space-y-2">
-                <Label>Perfil de Acesso</Label>
-                <Select value={newRole} onValueChange={(value) => setNewRole(value as UserRole)}>
-                  <SelectTrigger className="h-11 rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="RECEPCAO">Recepção</SelectItem>
-                    <SelectItem value="PRODUCAO">Produção</SelectItem>
-                    <SelectItem value="FINANCEIRO">Financeiro</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs leading-relaxed text-muted-foreground">
+                O convite será criado como usuário operacional padrão. O controle de módulos fica na própria lista de usuários, onde você pode ligar ou desligar acessos individualmente.
               </div>
             ) : (
               <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs leading-relaxed text-muted-foreground">
