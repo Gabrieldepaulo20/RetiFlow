@@ -124,6 +124,6 @@ describe('App auth flow', () => {
       expect(window.location.pathname).toBe('/kanban');
     });
     expect(await screen.findByRole('heading', { name: 'Produção' })).toBeInTheDocument();
-    expect(screen.getByText('Arraste os cards para mover entre etapas')).toBeInTheDocument();
+    expect(screen.getByText(/Arraste os cards para mover entre etapas/i)).toBeInTheDocument();
   });
 });

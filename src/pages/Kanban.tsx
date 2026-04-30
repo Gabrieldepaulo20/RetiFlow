@@ -148,9 +148,18 @@ export default function Kanban() {
   const searchQuery = (searchParams.get("q") ?? "").trim().toLowerCase();
 
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("all");
+  const currentYear = new Date().getFullYear().toString();
+  const [yearFilter, setYearFilter] = useState<string>(currentYear);
   const [visibleStatuses, setVisibleStatuses] = useState<Set<NoteStatus>>(
     loadVisibleStatuses,
   );
+
+  const availableYears = useMemo(() => {
+    const years = Array.from(
+      new Set(notes.map((note) => new Date(note.createdAt).getFullYear().toString())),
+    ).sort((a, b) => Number(b) - Number(a));
+    return years.length > 0 ? years : [currentYear];
+  }, [currentYear, notes]);
 
   /* ── Column visibility helpers ── */
 
@@ -191,6 +200,12 @@ export default function Kanban() {
       );
     }
 
+    if (yearFilter !== "all") {
+      result = result.filter(
+        (n) => new Date(n.createdAt).getFullYear().toString() === yearFilter,
+      );
+    }
+
     // Search filter
     if (searchQuery) {
       result = result.filter((note) => {
@@ -209,7 +224,7 @@ export default function Kanban() {
     }
 
     return result;
-  }, [notes, clients, searchQuery, periodFilter]);
+  }, [notes, clients, searchQuery, periodFilter, yearFilter]);
 
   /* ── Columns ── */
 
@@ -293,7 +308,7 @@ export default function Kanban() {
             <p className="text-sm text-muted-foreground mt-0.5">
               {searchQuery
                 ? "Resultados filtrados pela busca da barra superior"
-                : "Arraste os cards para mover entre etapas"}
+                : `Arraste os cards para mover entre etapas · ${yearFilter === "all" ? "todos os anos" : yearFilter}`}
             </p>
           </div>
           <span className="text-sm text-muted-foreground tabular-nums">
@@ -320,6 +335,34 @@ export default function Kanban() {
                 )}
               >
                 {opt.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1 bg-muted/60 rounded-lg p-1">
+            <button
+              onClick={() => setYearFilter("all")}
+              className={cn(
+                "text-[12px] font-medium px-3 py-1.5 rounded-md transition-all duration-150 leading-none",
+                yearFilter === "all"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              Todos
+            </button>
+            {availableYears.map((year) => (
+              <button
+                key={year}
+                onClick={() => setYearFilter(year)}
+                className={cn(
+                  "text-[12px] font-medium px-3 py-1.5 rounded-md transition-all duration-150 leading-none",
+                  yearFilter === year
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {year}
               </button>
             ))}
           </div>
