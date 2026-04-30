@@ -93,6 +93,34 @@ describe('callAdminUsersFunction', () => {
     expect(result.action_link).toBeUndefined();
   });
 
+  it('supports resending an invite through the admin function', async () => {
+    mocks.invoke.mockResolvedValue({
+      data: {
+        mensagem: 'Convite reenviado por e-mail com segurança.',
+        resetEmail: 'novo@example.com',
+        auth_user_id: 'auth-uuid',
+      },
+      error: null,
+    });
+
+    await expect(callAdminUsersFunction({
+      action: 'resend_invite',
+      userId: VALID_UUID,
+      email: 'novo@example.com',
+    })).resolves.toMatchObject({
+      resetEmail: 'novo@example.com',
+      auth_user_id: 'auth-uuid',
+    });
+
+    expect(mocks.invoke).toHaveBeenCalledWith('admin-users', expect.objectContaining({
+      body: {
+        action: 'resend_invite',
+        userId: VALID_UUID,
+        email: 'novo@example.com',
+      },
+    }));
+  });
+
   it('supports starting an audited support impersonation session', async () => {
     mocks.invoke.mockResolvedValue({
       data: {

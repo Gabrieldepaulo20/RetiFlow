@@ -37,7 +37,7 @@ type ActionPayload =
       modules?: ModuleAccess;
     }
   | {
-      action: 'reset_password' | 'deactivate_user' | 'reactivate_user';
+      action: 'reset_password' | 'resend_invite' | 'deactivate_user' | 'reactivate_user';
       userId: string;
       email?: string;
       confirmationEmail?: string;
@@ -76,6 +76,14 @@ const roleToAccess: Record<UserRole, string> = {
   PRODUCAO: 'produção',
   RECEPCAO: 'recepção',
 };
+
+function accessToRole(access: string): UserRole {
+  const normalized = access.trim().toLowerCase();
+  if (normalized === 'administrador') return 'ADMIN';
+  if (normalized === 'financeiro') return 'FINANCEIRO';
+  if (normalized === 'produção' || normalized === 'producao') return 'PRODUCAO';
+  return 'RECEPCAO';
+}
 
 const moduleToRpcParam: Record<AppModuleKey, string> = {
   dashboard: 'p_dashboard',
@@ -252,11 +260,11 @@ function amzDates(now = new Date()) {
   return { amzDate: iso, dateStamp: iso.slice(0, 8) };
 }
 
-async function sendResetConfirmationEmail(params: {
+async function sendSesEmail(params: {
   to: string;
-  targetEmail: string;
-  targetName: string;
-  requesterEmail: string;
+  subject: string;
+  text: string;
+  html: string;
 }) {
   const region = Deno.env.get('AWS_REGION') ?? Deno.env.get('AWS_SES_REGION') ?? 'us-east-1';
   const accessKey = Deno.env.get('AWS_ACCESS_KEY_ID') ?? '';
@@ -265,9 +273,61 @@ async function sendResetConfirmationEmail(params: {
   const fromName = Deno.env.get('ADMIN_FROM_NAME') ?? 'Sistema Retiflow';
 
   if (!accessKey || !secretKey || !from) {
-    throw new Error('SES não configurado para confirmação administrativa.');
+    throw new Error('SES não configurado para e-mails administrativos.');
   }
 
+  const host = `email.${region}.amazonaws.com`;
+  const path = '/v2/email/outbound-emails';
+  const body = JSON.stringify({
+    FromEmailAddress: formatEmailAddress(from, fromName),
+    Destination: { ToAddresses: [params.to] },
+    Content: {
+      Simple: {
+        Subject: { Data: params.subject, Charset: 'UTF-8' },
+        Body: {
+          Text: { Data: params.text, Charset: 'UTF-8' },
+          Html: { Data: params.html, Charset: 'UTF-8' },
+        },
+      },
+    },
+  });
+
+  const { amzDate, dateStamp } = amzDates();
+  const payloadHash = await sha256Hex(body);
+  const canonicalHeaders = `content-type:application/json\nhost:${host}\nx-amz-date:${amzDate}\n`;
+  const signedHeaders = 'content-type;host;x-amz-date';
+  const canonicalRequest = ['POST', path, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
+  const credentialScope = `${dateStamp}/${region}/ses/aws4_request`;
+  const stringToSign = [
+    'AWS4-HMAC-SHA256',
+    amzDate,
+    credentialScope,
+    await sha256Hex(canonicalRequest),
+  ].join('\n');
+  const signature = hex(await hmac(await signingKey(secretKey, dateStamp, region), stringToSign));
+  const authorization = `AWS4-HMAC-SHA256 Credential=${accessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+  const response = await fetch(`https://${host}${path}`, {
+    method: 'POST',
+    headers: {
+      Authorization: authorization,
+      'Content-Type': 'application/json',
+      'X-Amz-Date': amzDate,
+    },
+    body,
+  });
+
+  if (!response.ok) {
+    throw new Error(`SES retornou ${response.status}: ${await response.text()}`);
+  }
+}
+
+async function sendResetConfirmationEmail(params: {
+  to: string;
+  targetEmail: string;
+  targetName: string;
+  requesterEmail: string;
+}) {
   const safeTargetName = escapeHtml(params.targetName);
   const safeTargetEmail = escapeHtml(params.targetEmail);
   const safeRequesterEmail = escapeHtml(params.requesterEmail);
@@ -314,50 +374,64 @@ async function sendResetConfirmationEmail(params: {
     </html>
   `;
 
-  const host = `email.${region}.amazonaws.com`;
-  const path = '/v2/email/outbound-emails';
-  const body = JSON.stringify({
-    FromEmailAddress: formatEmailAddress(from, fromName),
-    Destination: { ToAddresses: [params.to] },
-    Content: {
-      Simple: {
-        Subject: { Data: subject, Charset: 'UTF-8' },
-        Body: {
-          Text: { Data: text, Charset: 'UTF-8' },
-          Html: { Data: html, Charset: 'UTF-8' },
-        },
-      },
-    },
-  });
+  await sendSesEmail({ to: params.to, subject, text, html });
+}
 
-  const { amzDate, dateStamp } = amzDates();
-  const payloadHash = await sha256Hex(body);
-  const canonicalHeaders = `content-type:application/json\nhost:${host}\nx-amz-date:${amzDate}\n`;
-  const signedHeaders = 'content-type;host;x-amz-date';
-  const canonicalRequest = ['POST', path, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
-  const credentialScope = `${dateStamp}/${region}/ses/aws4_request`;
-  const stringToSign = [
-    'AWS4-HMAC-SHA256',
-    amzDate,
-    credentialScope,
-    await sha256Hex(canonicalRequest),
+async function sendInviteEmail(params: {
+  to: string;
+  targetName: string;
+  actionLink: string;
+  requesterEmail: string;
+}) {
+  const safeTargetName = escapeHtml(params.targetName);
+  const safeActionLink = escapeHtml(params.actionLink);
+  const safeRequesterEmail = escapeHtml(params.requesterEmail);
+  const subject = 'Seu convite de acesso ao Retiflow';
+  const text = [
+    `Olá, ${params.targetName}.`,
+    '',
+    'Você recebeu um novo convite para acessar o Retiflow e criar sua senha com segurança.',
+    `Link do convite: ${params.actionLink}`,
+    '',
+    `Convite reenviado por: ${params.requesterEmail}`,
+    '',
+    'Se você não esperava este convite, ignore esta mensagem.',
   ].join('\n');
-  const signature = hex(await hmac(await signingKey(secretKey, dateStamp, region), stringToSign));
-  const authorization = `AWS4-HMAC-SHA256 Credential=${accessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+  const html = `
+    <!doctype html>
+    <html lang="pt-BR">
+      <body style="margin:0;background:#f4f7f8;font-family:Arial,Helvetica,sans-serif;color:#17202a;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f7f8;padding:28px 12px;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border-radius:20px;overflow:hidden;border:1px solid #dfe7ec;">
+                <tr>
+                  <td style="background:#0f6f7e;padding:26px 28px;color:#ffffff;">
+                    <div style="font-size:22px;font-weight:800;">Convite de acesso Retiflow</div>
+                    <div style="font-size:13px;opacity:.9;margin-top:6px;">Crie sua senha para entrar no sistema</div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:28px;">
+                    <p style="margin:0 0 16px;font-size:15px;line-height:1.6;">Olá, <strong>${safeTargetName}</strong>.</p>
+                    <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#334155;">Você recebeu um novo convite para acessar o Retiflow. Clique no botão abaixo para criar sua senha com segurança.</p>
+                    <p style="margin:0 0 22px;">
+                      <a href="${safeActionLink}" style="display:inline-block;background:#0f6f7e;color:#ffffff;text-decoration:none;font-weight:700;border-radius:14px;padding:13px 20px;">Aceitar convite</a>
+                    </p>
+                    <p style="margin:0 0 10px;font-size:13px;line-height:1.6;color:#64748b;">Se o botão não funcionar, copie e cole este link no navegador:</p>
+                    <p style="word-break:break-all;margin:0 0 18px;font-size:12px;line-height:1.6;color:#475569;">${safeActionLink}</p>
+                    <p style="margin:0;font-size:12px;line-height:1.6;color:#64748b;">Convite reenviado por ${safeRequesterEmail}. Se você não esperava este convite, ignore esta mensagem.</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
+  `;
 
-  const response = await fetch(`https://${host}${path}`, {
-    method: 'POST',
-    headers: {
-      Authorization: authorization,
-      'Content-Type': 'application/json',
-      'X-Amz-Date': amzDate,
-    },
-    body,
-  });
-
-  if (!response.ok) {
-    throw new Error(`SES retornou ${response.status}: ${await response.text()}`);
-  }
+  await sendSesEmail({ to: params.to, subject, text, html });
 }
 
 function modulesToRpcPayload(modules: ModuleAccess) {
@@ -475,6 +549,45 @@ async function ensureAuthInvite(serviceClient: ReturnType<typeof createClient>, 
   };
 }
 
+async function resendAuthInvite(
+  serviceClient: ReturnType<typeof createClient>,
+  params: {
+    email: string;
+    name: string;
+    requesterEmail: string;
+  },
+) {
+  const existing = await findAuthUserByEmail(serviceClient, params.email);
+  if (existing && (existing as { email_confirmed_at?: string | null }).email_confirmed_at) {
+    throw new Error('Este usuário já aceitou o convite. Use reset de senha caso ele tenha perdido o acesso.');
+  }
+
+  const redirectTo = Deno.env.get('AUTH_REDIRECT_TO') || Deno.env.get('APP_BASE_URL') || undefined;
+  const { data, error } = await serviceClient.auth.admin.generateLink({
+    type: 'invite',
+    email: params.email,
+    options: {
+      data: { name: params.name },
+      redirectTo,
+    },
+  });
+
+  if (error || !data.properties?.action_link || !data.user?.id) {
+    throw new Error(`Falha ao gerar novo convite: ${error?.message ?? 'link ausente'}`);
+  }
+
+  await sendInviteEmail({
+    to: params.email,
+    targetName: params.name,
+    actionLink: data.properties.action_link,
+    requesterEmail: params.requesterEmail,
+  });
+
+  return {
+    authUserId: data.user.id,
+  };
+}
+
 async function findInternalUserId(
   serviceClient: ReturnType<typeof createClient>,
   authUserId: string,
@@ -574,14 +687,21 @@ async function getInternalResetUser(serviceClient: ReturnType<typeof createClien
   const { data, error } = await serviceClient
     .schema('RetificaPremium')
     .from('Usuarios')
-    .select('id_usuarios, nome, email, acesso, status')
+    .select('id_usuarios, nome, email, telefone, acesso, status')
     .eq('id_usuarios', userId)
     .maybeSingle();
 
   if (error) throw new Error(`Falha ao carregar usuário: ${error.message}`);
   if (!data?.email) throw new Error('Usuário não encontrado.');
   if (data.status === false) throw new Error('Usuário inativo. Reative o usuário antes de resetar a senha.');
-  return data as { id_usuarios: string; nome: string | null; email: string; acesso: string; status: boolean };
+  return data as {
+    id_usuarios: string;
+    nome: string | null;
+    email: string;
+    telefone: string | null;
+    acesso: string;
+    status: boolean;
+  };
 }
 
 async function getInternalModuleUser(serviceClient: ReturnType<typeof createClient>, userId: string) {
@@ -809,6 +929,38 @@ Deno.serve(async (request) => {
           : 'Usuário já existia no Supabase Auth; perfil interno atualizado.',
         id_usuarios: internalUserId,
         auth_user_id: auth.userId,
+      }, 200, request);
+    }
+
+    if (payload.action === 'resend_invite') {
+      const userId = assertUserId(payload.userId);
+      const targetUser = await getInternalResetUser(requester.serviceClient, userId);
+      const email = assertEmail(targetUser.email);
+
+      if (isProtectedMegaMasterTarget(requester, email)) {
+        return jsonResponse({ error: 'Usuário Master não pode reenviar convite do Mega Master.' }, 403, request);
+      }
+
+      const name = targetUser.nome ?? email;
+      const invite = await resendAuthInvite(requester.serviceClient, {
+        email,
+        name,
+        requesterEmail: requester.requesterEmail,
+      });
+
+      await upsertInternalUser(requester.serviceClient, {
+        authUserId: invite.authUserId,
+        email,
+        name,
+        phone: targetUser.telefone ?? '',
+        role: accessToRole(targetUser.acesso),
+        status: targetUser.status,
+      });
+
+      return jsonResponse({
+        mensagem: 'Convite reenviado por e-mail com segurança.',
+        resetEmail: email,
+        auth_user_id: invite.authUserId,
       }, 200, request);
     }
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   ChevronDown,
   AlertTriangle,
@@ -151,7 +151,16 @@ export default function AdminClients() {
   const isCurrentUserMegaMaster = isSuperAdmin;
   const isMegaMasterUser = (targetUser: SystemUser) => isConfiguredSuperAdminEmail(targetUser.email);
   const isInvitePendingUser = (targetUser: SystemUser) =>
-    IS_REAL_AUTH && targetUser.isActive && !isMegaMasterUser(targetUser) && invitedUserIds.has(targetUser.id);
+    IS_REAL_AUTH
+    && targetUser.isActive
+    && !isMegaMasterUser(targetUser)
+    && invitedUserIds.has(targetUser.id);
+
+  const canResendInviteUser = (targetUser: SystemUser) =>
+    IS_REAL_AUTH
+    && targetUser.isActive
+    && !isMegaMasterUser(targetUser)
+    && (invitedUserIds.has(targetUser.id) || !targetUser.lastLogin);
 
   const getEffectiveModules = (user: SystemUser) => {
     return ALL_MODULES.reduce<Record<AppModuleKey, boolean>>((accumulator, module) => {
@@ -259,6 +268,57 @@ export default function AdminClients() {
     } catch (error) {
       toast({
         title: 'Não foi possível resetar a senha',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const handleResendInvite = async (userId: string) => {
+    const user = systemUsers.find((candidate) => candidate.id === userId);
+    if (!user) return;
+
+    if (IS_REAL_AUTH && !canUseSensitiveAdminActions) {
+      toast({
+        title: 'Ação restrita a administradores',
+        description: 'Reenviar convite exige acesso administrativo.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (IS_REAL_AUTH && !isCurrentUserMegaMaster && isMegaMasterUser(user)) {
+      toast({
+        title: 'Mega Master protegido',
+        description: 'Usuários Master não podem reenviar convite do Mega Master.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setPendingAction(`invite-${userId}`);
+    try {
+      if (IS_REAL_AUTH) {
+        await callAdminUsersFunction({
+          action: 'resend_invite',
+          userId,
+          email: user.email,
+        });
+        setInvitedUserIds((previous) => new Set(previous).add(userId));
+        toast({
+          title: 'Convite reenviado',
+          description: `${user.name} receberá um novo link para criar a senha. Nenhuma senha foi exibida ou armazenada.`,
+        });
+      } else {
+        toast({
+          title: 'Convite simulado no desenvolvimento',
+          description: `${user.name} continua usando a senha demo123 no modo mock.`,
+        });
+      }
+    } catch (error) {
+      toast({
+        title: 'Não foi possível reenviar o convite',
         description: error instanceof Error ? error.message : 'Tente novamente.',
         variant: 'destructive',
       });
@@ -562,6 +622,7 @@ export default function AdminClients() {
           const isMutatingUser = pendingAction?.endsWith(user.id);
           const isProtectedMegaMaster = IS_REAL_AUTH && !isCurrentUserMegaMaster && isMegaMasterUser(user);
           const isInvitePending = isInvitePendingUser(user);
+          const canResendInvite = canResendInviteUser(user);
 
           return (
             <motion.div
@@ -655,6 +716,28 @@ export default function AdminClients() {
                             <TooltipContent>Resetar Senha</TooltipContent>
                           </Tooltip>
 
+                          {canResendInvite ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-amber-700 hover:text-amber-800"
+                                  disabled={isMutatingUser || isProtectedMegaMaster}
+                                  onClick={() => void handleResendInvite(user.id)}
+                                  aria-label={`Reenviar convite para ${user.name}`}
+                                >
+                                  {pendingAction === `invite-${user.id}` ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    <Mail className="w-4 h-4" />
+                                  )}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Reenviar convite</TooltipContent>
+                            </Tooltip>
+                          ) : null}
+
                           {isCurrentUserMegaMaster && !isMegaMasterUser(user) ? (
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -694,46 +777,55 @@ export default function AdminClients() {
                         size="icon"
                         className="h-8 w-8"
                         onClick={() => setExpandedId(isExpanded ? null : user.id)}
+                        aria-expanded={isExpanded}
+                        aria-label={isExpanded ? `Recolher detalhes de ${user.name}` : `Expandir detalhes de ${user.name}`}
                       >
                         <ChevronDown className={cn('w-4 h-4 transition-transform', isExpanded && 'rotate-180')} />
                       </Button>
                     </div>
                   </div>
 
-                  {isExpanded && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      className="border-t px-4 py-4 bg-muted/20"
-                    >
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
-                        <div className="flex items-center gap-2 text-muted-foreground">
-                          <Mail className="w-4 h-4" /> {user.email}
+                  <AnimatePresence initial={false}>
+                    {isExpanded ? (
+                      <motion.div
+                        key="details"
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.18, ease: 'easeOut' }}
+                        className="overflow-hidden border-t bg-muted/20"
+                      >
+                        <div className="px-4 py-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+                            <div className="flex items-center gap-2 text-muted-foreground">
+                              <Mail className="w-4 h-4" /> {user.email}
+                            </div>
+                            <div className="flex items-center gap-2 text-muted-foreground">
+                              <Phone className="w-4 h-4" /> {user.phone || 'Não informado'}
+                            </div>
+                            <div className="flex items-center gap-2 text-muted-foreground">
+                              <Shield className="w-4 h-4" /> Criado em: {new Date(user.createdAt).toLocaleDateString('pt-BR')}
+                            </div>
+                          </div>
+                          <Separator className="my-3" />
+                          <div>
+                            <p className="text-xs font-semibold text-muted-foreground mb-2">MÓDULOS EFETIVOS</p>
+                            <div className="flex flex-wrap gap-2">
+                              {ALL_MODULES.map((module) => (
+                                <Badge
+                                  key={module.key}
+                                  variant={modules[module.key] ? 'default' : 'outline'}
+                                  className={cn('text-xs', !modules[module.key] && 'opacity-50')}
+                                >
+                                  {module.label}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2 text-muted-foreground">
-                          <Phone className="w-4 h-4" /> {user.phone || 'Não informado'}
-                        </div>
-                        <div className="flex items-center gap-2 text-muted-foreground">
-                          <Shield className="w-4 h-4" /> Criado em: {new Date(user.createdAt).toLocaleDateString('pt-BR')}
-                        </div>
-                      </div>
-                      <Separator className="my-3" />
-                      <div>
-                        <p className="text-xs font-semibold text-muted-foreground mb-2">MÓDULOS EFETIVOS</p>
-                        <div className="flex flex-wrap gap-2">
-                          {ALL_MODULES.map((module) => (
-                            <Badge
-                              key={module.key}
-                              variant={modules[module.key] ? 'default' : 'outline'}
-                              className={cn('text-xs', !modules[module.key] && 'opacity-50')}
-                            >
-                              {module.label}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
+                      </motion.div>
+                    ) : null}
+                  </AnimatePresence>
                 </CardContent>
               </Card>
             </motion.div>

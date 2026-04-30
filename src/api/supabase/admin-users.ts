@@ -25,7 +25,7 @@ type AdminUserAction =
       modules?: ModuleAccess;
     }
   | {
-      action: 'reset_password' | 'deactivate_user' | 'reactivate_user';
+      action: 'reset_password' | 'resend_invite' | 'deactivate_user' | 'reactivate_user';
       userId: string;
       email?: string;
       confirmationEmail?: string;
