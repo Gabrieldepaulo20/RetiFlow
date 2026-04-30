@@ -63,6 +63,7 @@ import {
 } from '@/api/supabase/sugestoes-email';
 import { dashboardResumoToDomainData, getDashboardResumo } from '@/api/supabase/dashboard';
 import { toast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
 
 // ── Supabase adapters ─────────────────────────────────────────────────────────
 
@@ -233,6 +234,9 @@ const Ctx = createContext<DataCtx | null>(null);
 const uid = () => generateId();
 
 export function DataProvider({ children }: { children: ReactNode }) {
+  const { user, isAuthLoading } = useAuth();
+  const activeUserId = IS_REAL_AUTH ? user?.id ?? null : null;
+
   // Carrega estado do localStorage uma única vez na montagem.
   // useRef garante execução única mesmo em StrictMode double-render.
   const initRef = useRef<PersistedData | null>(null);
@@ -289,6 +293,29 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const statusDbIdRef = useRef<Map<NoteStatus, number>>(new Map());
 
+  const bumpDataVersion = useCallback(() => {
+    setDataVersion((value) => value + 1);
+  }, []);
+
+  const resetRealData = useCallback(() => {
+    setCustomers([]);
+    setNotes([]);
+    setServices([]);
+    setProducts([]);
+    setAttachments([]);
+    setInvoices([]);
+    setActivities([]);
+    setPayables([]);
+    setPayableAttachments([]);
+    setPayableHistory([]);
+    setEmailSuggestions([]);
+    setPayableCategories([]);
+    setPayableSuppliers([]);
+    setNoteCounter(getNextNoteCounter([]));
+    statusDbIdRef.current = new Map();
+    bumpDataVersion();
+  }, [bumpDataVersion]);
+
   const refreshEmailSuggestions = useCallback(async () => {
     if (!IS_REAL_AUTH) return;
     const dados = await getSugestoesEmail();
@@ -298,10 +325,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // Em modo real, carrega dados do Supabase na montagem.
   useEffect(() => {
     if (!IS_REAL_AUTH) return;
+    let cancelled = false;
+
+    resetRealData();
+
+    if (isAuthLoading || !activeUserId) {
+      return () => {
+        cancelled = true;
+      };
+    }
 
     const loadCoreDashboardData = async () => {
       try {
         const resumo = await getDashboardResumo({ p_limite: 500 });
+        if (cancelled) return;
         const loaded = dashboardResumoToDomainData(resumo);
         setCustomers(loaded.clients);
         setNotes(loaded.notes);
@@ -315,34 +352,42 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
 
       getClientes({ p_limite: 500 }).then(({ dados }) => {
-        setCustomers(dados.map(supabaseToClient));
+        if (!cancelled) setCustomers(dados.map(supabaseToClient));
       }).catch(() => {});
       getNotasServico({ p_limite: 500 }).then(({ dados }) => {
+        if (cancelled) return;
         const loaded = dados.map(supabaseToIntakeNote);
         setNotes(loaded);
         setNoteCounter(getNextNoteCounter(loaded.map((n) => n.number)));
       }).catch(() => {});
       getContasPagar({ p_limite: 500 }).then(({ dados }) => {
-        setPayables(dados.map(supabaseToAccountPayable));
+        if (!cancelled) setPayables(dados.map(supabaseToAccountPayable));
       }).catch(() => {});
       getCategorias(true).then((cats) => {
-        if (cats.length > 0) setPayableCategories(cats.map(supabaseToPayableCategory));
+        if (!cancelled && cats.length > 0) setPayableCategories(cats.map(supabaseToPayableCategory));
       }).catch(() => {});
     };
 
     void loadCoreDashboardData();
 
     getStatusNotas({ p_tipo_nota: 'Serviço' }).then((statuses) => {
-      statusDbIdRef.current = buildStatusIdMap(statuses);
+      if (!cancelled) statusDbIdRef.current = buildStatusIdMap(statuses);
     }).catch(() => {});
     getFornecedores({ p_ativo: true, p_limite: 200 }).then(({ dados }) => {
-      if (dados.length > 0) setPayableSuppliers(dados.map(supabaseToPayableSupplier));
+      if (!cancelled && dados.length > 0) setPayableSuppliers(dados.map(supabaseToPayableSupplier));
     }).catch(() => {});
     getLogs({ p_limite: 50 }).then(({ dados }) => {
-      setActivities(dados.map(supabaseToActivityLog));
+      if (!cancelled) setActivities(dados.map(supabaseToActivityLog));
     }).catch(() => {});
-    refreshEmailSuggestions().catch(() => {});
-  }, [refreshEmailSuggestions]);
+    getSugestoesEmail()
+      .then((dados) => {
+        if (!cancelled) setEmailSuggestions(dados.map(supabaseToEmailSuggestion));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [activeUserId, isAuthLoading, resetRealData]);
 
   // Grava estado relevante no localStorage após 400ms de inatividade.
   // payableCategories/payableSuppliers são catálogos estáticos do seed — não precisam persistir.
@@ -362,10 +407,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       emailSuggestions: IS_REAL_AUTH ? [] : emailSuggestions,
     });
   }, [customers, notes, services, products, attachments, invoices, activities, payables, payableAttachments, payableHistory, emailSuggestions]);
-
-  const bumpDataVersion = useCallback(() => {
-    setDataVersion((value) => value + 1);
-  }, []);
 
   const addActivity = useCallback((message: string, noteId?: string) => {
     setActivities((previous) => [

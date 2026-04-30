@@ -318,6 +318,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
     }
 
+    setSupportSession(null);
+    writeStoredSupportSession(null);
     commitSession(response.session);
     return {
       success: true,
