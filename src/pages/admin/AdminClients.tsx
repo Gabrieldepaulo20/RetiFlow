@@ -15,6 +15,7 @@ import {
   Power,
   Search,
   Shield,
+  Trash2,
   UserPlus,
   Users,
 } from 'lucide-react';
@@ -24,6 +25,7 @@ import { useRoleModuleConfig, useUserModuleOverrides } from '@/hooks/useRoleModu
 import { saveSystemUsers } from '@/services/auth/systemUsers';
 import { saveUserModuleOverrides } from '@/services/auth/moduleAccess';
 import { callAdminUsersFunction } from '@/api/supabase/admin-users';
+import type { AdminUserDeletionReport } from '@/api/supabase/admin-users';
 import { useAuth } from '@/contexts/AuthContext';
 import { isConfiguredSuperAdminEmail, isSuperAdmin as checkIsSuperAdmin } from '@/services/auth/superAdmin';
 import { normalizeEmail, onlyDigits, toTitleCasePtBr } from '@/services/domain/textNormalization';
@@ -99,6 +101,10 @@ export default function AdminClients() {
   const [showModulesDialog, setShowModulesDialog] = useState<string | null>(null);
   const [showResetDialog, setShowResetDialog] = useState<string | null>(null);
   const [showSupportAccessDialog, setShowSupportAccessDialog] = useState<string | null>(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState<string | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [deleteReport, setDeleteReport] = useState<AdminUserDeletionReport | null>(null);
+  const [deleteStepIndex, setDeleteStepIndex] = useState(0);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [invitedUserIds, setInvitedUserIds] = useState<Set<string>>(() => new Set());
   const [supportReason, setSupportReason] = useState('');
@@ -161,6 +167,18 @@ export default function AdminClients() {
     && targetUser.isActive
     && !isMegaMasterUser(targetUser)
     && (invitedUserIds.has(targetUser.id) || !targetUser.lastLogin);
+
+  const deletingUser = showDeleteDialog ? systemUsers.find((user) => user.id === showDeleteDialog) : null;
+  const isDeletingUser = !!showDeleteDialog && pendingAction === `delete-${showDeleteDialog}`;
+
+  useEffect(() => {
+    if (!isDeletingUser || !deleteReport?.steps.length) return undefined;
+    setDeleteStepIndex(0);
+    const interval = window.setInterval(() => {
+      setDeleteStepIndex((current) => Math.min(current + 1, deleteReport.steps.length - 1));
+    }, 550);
+    return () => window.clearInterval(interval);
+  }, [deleteReport?.steps.length, isDeletingUser]);
 
   const getEffectiveModules = (user: SystemUser) => {
     return ALL_MODULES.reduce<Record<AppModuleKey, boolean>>((accumulator, module) => {
@@ -443,6 +461,118 @@ export default function AdminClients() {
     } catch (error) {
       toast({
         title: 'Não foi possível iniciar modo suporte',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const openDeleteDialog = async (userId: string) => {
+    const targetUser = systemUsers.find((candidate) => candidate.id === userId);
+    if (!targetUser) return;
+
+    if (!isCurrentUserMegaMaster) {
+      toast({
+        title: 'Ação restrita ao Mega Master',
+        description: 'A exclusão definitiva de usuários só pode ser feita pelo Mega Master.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (isMegaMasterUser(targetUser) || targetUser.id === currentUser?.id) {
+      toast({
+        title: 'Mega Master protegido',
+        description: 'Esse usuário não pode ser excluído pelo sistema.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setShowDeleteDialog(userId);
+    setDeleteConfirmation('');
+    setDeleteReport(null);
+    setDeleteStepIndex(0);
+    setPendingAction(`analyze-delete-${userId}`);
+    try {
+      const result = IS_REAL_AUTH
+        ? await callAdminUsersFunction({
+            action: 'analyze_delete_user',
+            userId,
+            confirmEmail: targetUser.email,
+          })
+        : {
+            deletionReport: {
+              targetUserId: targetUser.id,
+              targetEmail: targetUser.email,
+              targetName: targetUser.name,
+              totalRecords: 1,
+              warnings: ['Modo desenvolvimento: apenas o usuário local será removido.'],
+              steps: [
+                { key: 'local-user', label: 'Remover usuário local de desenvolvimento', count: 1, status: 'pending' as const },
+              ],
+            },
+          };
+
+      if (!result.deletionReport) {
+        throw new Error('Resposta inesperada ao calcular impacto da exclusão.');
+      }
+      setDeleteReport(result.deletionReport);
+    } catch (error) {
+      toast({
+        title: 'Não foi possível calcular a exclusão',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+      setShowDeleteDialog(null);
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    const targetUser = deletingUser;
+    if (!targetUser) return;
+
+    if (normalizeEmail(deleteConfirmation) !== normalizeEmail(targetUser.email)) {
+      toast({
+        title: 'Confirmação inválida',
+        description: 'Digite exatamente o e-mail do usuário para confirmar a exclusão.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setPendingAction(`delete-${targetUser.id}`);
+    setDeleteStepIndex(0);
+    try {
+      if (IS_REAL_AUTH) {
+        const result = await callAdminUsersFunction({
+          action: 'delete_user',
+          userId: targetUser.id,
+          confirmEmail: targetUser.email,
+        });
+        if (result.deletionReport) {
+          setDeleteReport(result.deletionReport);
+          setDeleteStepIndex(Math.max(0, result.deletionReport.steps.length - 1));
+        }
+      }
+
+      const nextUsers = systemUsers.filter((user) => user.id !== targetUser.id);
+      persistSystemUsers(nextUsers);
+      queryClient.invalidateQueries({ queryKey: ['auth', 'system-users'] });
+      toast({
+        title: 'Usuário excluído',
+        description: `${targetUser.name} foi removido junto com os vínculos seguros encontrados.`,
+      });
+      setShowDeleteDialog(null);
+      setDeleteConfirmation('');
+      setDeleteReport(null);
+    } catch (error) {
+      toast({
+        title: 'Não foi possível excluir o usuário',
         description: error instanceof Error ? error.message : 'Tente novamente.',
         variant: 'destructive',
       });
@@ -769,6 +899,24 @@ export default function AdminClients() {
                             </TooltipTrigger>
                             <TooltipContent>{user.isActive ? 'Desativar' : 'Ativar'}</TooltipContent>
                           </Tooltip>
+
+                          {isCurrentUserMegaMaster && !isMegaMasterUser(user) ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-destructive hover:text-destructive"
+                                  disabled={isMutatingUser}
+                                  onClick={() => void openDeleteDialog(user.id)}
+                                  aria-label={`Excluir definitivamente ${user.name}`}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Excluir usuário e vínculos</TooltipContent>
+                            </Tooltip>
+                          ) : null}
                         </>
                       ) : null}
 
@@ -1015,6 +1163,144 @@ export default function AdminClients() {
               onClick={() => showResetDialog && void handleResetPassword(showResetDialog)}
             >
               Resetar Senha
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!showDeleteDialog}
+        onOpenChange={(open) => {
+          if (isDeletingUser || pendingAction?.startsWith('analyze-delete-')) return;
+          if (!open) {
+            setShowDeleteDialog(null);
+            setDeleteConfirmation('');
+            setDeleteReport(null);
+            setDeleteStepIndex(0);
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="w-5 h-5" /> Excluir usuário definitivamente
+            </DialogTitle>
+          </DialogHeader>
+
+          {deletingUser ? (
+            <div className="space-y-4 py-2">
+              <Alert className="border-destructive/30 bg-destructive/5 text-destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Ação irreversível e restrita ao Mega Master</AlertTitle>
+                <AlertDescription>
+                  Esta ação remove o usuário do Supabase Auth e apaga apenas vínculos comprovados pelo banco.
+                  Dados operacionais sem FK de usuário não serão apagados para evitar perda indevida.
+                </AlertDescription>
+              </Alert>
+
+              <div className="rounded-xl border border-border/70 bg-muted/30 p-3 text-sm">
+                <p className="font-semibold">{deletingUser.name}</p>
+                <p className="text-muted-foreground">{deletingUser.email}</p>
+              </div>
+
+              {pendingAction === `analyze-delete-${deletingUser.id}` ? (
+                <div className="flex items-center gap-3 rounded-xl border border-border/70 p-4 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                  Validando permissões e calculando vínculos antes da exclusão...
+                </div>
+              ) : null}
+
+              {deleteReport ? (
+                <div className="space-y-3">
+                  <div className="rounded-xl border border-border/70 p-3">
+                    <p className="text-sm font-semibold">Impacto calculado</p>
+                    <p className="text-xs text-muted-foreground">
+                      {deleteReport.totalRecords} registro(s)/vínculo(s) encontrados para validação e remoção.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 rounded-xl border border-border/70 p-3">
+                    <p className="text-xs font-semibold text-muted-foreground">PROGRESSO DA EXCLUSÃO</p>
+                    {deleteReport.steps.map((step, index) => {
+                      const status = isDeletingUser
+                        ? index < deleteStepIndex
+                          ? 'done'
+                          : index === deleteStepIndex
+                            ? 'running'
+                            : step.status
+                        : step.status;
+
+                      return (
+                        <div key={step.key} className="flex items-center justify-between gap-3 text-sm">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {status === 'running' ? (
+                              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+                            ) : status === 'done' || status === 'skipped' ? (
+                              <span className="h-3.5 w-3.5 shrink-0 rounded-full bg-success/20" />
+                            ) : (
+                              <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-border" />
+                            )}
+                            <span className="truncate">{step.label}</span>
+                          </div>
+                          <Badge variant={status === 'running' ? 'default' : 'outline'} className="shrink-0 text-[10px]">
+                            {step.count ?? 0}
+                          </Badge>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {deleteReport.warnings.length > 0 ? (
+                    <div className="space-y-1 rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900">
+                      {deleteReport.warnings.map((warning) => (
+                        <p key={warning}>{warning}</p>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div className="space-y-2">
+                    <Label>Digite o e-mail para confirmar</Label>
+                    <Input
+                      value={deleteConfirmation}
+                      onChange={(event) => setDeleteConfirmation(event.target.value)}
+                      onBlur={() => setDeleteConfirmation(normalizeEmail(deleteConfirmation))}
+                      placeholder={deletingUser.email}
+                      disabled={isDeletingUser}
+                      className="h-11 rounded-xl"
+                    />
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowDeleteDialog(null);
+                setDeleteConfirmation('');
+                setDeleteReport(null);
+                setDeleteStepIndex(0);
+              }}
+              disabled={isDeletingUser || pendingAction?.startsWith('analyze-delete-')}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              className="gap-2"
+              disabled={
+                !deletingUser
+                || !deleteReport
+                || normalizeEmail(deleteConfirmation) !== normalizeEmail(deletingUser.email)
+                || isDeletingUser
+                || pendingAction?.startsWith('analyze-delete-')
+              }
+              onClick={() => void handleDeleteUser()}
+            >
+              {isDeletingUser ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              {isDeletingUser ? 'Excluindo...' : 'Excluir definitivamente'}
             </Button>
           </DialogFooter>
         </DialogContent>

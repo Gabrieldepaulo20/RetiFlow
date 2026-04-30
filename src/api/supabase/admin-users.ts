@@ -3,6 +3,22 @@ import { supabase } from '@/lib/supabase';
 
 type ModuleAccess = Partial<Record<AppModuleKey, boolean>>;
 
+export type AdminUserDeletionStep = {
+  key: string;
+  label: string;
+  count?: number;
+  status: 'pending' | 'running' | 'done' | 'skipped';
+};
+
+export type AdminUserDeletionReport = {
+  targetUserId: string;
+  targetEmail: string;
+  targetName: string;
+  steps: AdminUserDeletionStep[];
+  totalRecords: number;
+  warnings: string[];
+};
+
 export type AdminUserActionResult = {
   id_usuarios?: string;
   auth_user_id?: string;
@@ -13,6 +29,7 @@ export type AdminUserActionResult = {
   confirmationSent?: boolean;
   confirmationWarning?: string | null;
   supportSession?: SupportImpersonationSession;
+  deletionReport?: AdminUserDeletionReport;
 };
 
 type AdminUserAction =
@@ -29,6 +46,11 @@ type AdminUserAction =
       userId: string;
       email?: string;
       confirmationEmail?: string;
+    }
+  | {
+      action: 'analyze_delete_user' | 'delete_user';
+      userId: string;
+      confirmEmail: string;
     }
   | {
       action: 'set_modules';

@@ -15,6 +15,22 @@ type UserRole = 'ADMIN' | 'FINANCEIRO' | 'PRODUCAO' | 'RECEPCAO';
 
 type ModuleAccess = Partial<Record<AppModuleKey, boolean>>;
 
+type DeletionStep = {
+  key: string;
+  label: string;
+  count?: number;
+  status: 'pending' | 'running' | 'done' | 'skipped';
+};
+
+type DeletionReport = {
+  targetUserId: string;
+  targetEmail: string;
+  targetName: string;
+  steps: DeletionStep[];
+  totalRecords: number;
+  warnings: string[];
+};
+
 const MASTER_MODULE_ACCESS: Required<ModuleAccess> = {
   dashboard: true,
   clients: true,
@@ -41,6 +57,11 @@ type ActionPayload =
       userId: string;
       email?: string;
       confirmationEmail?: string;
+    }
+  | {
+      action: 'analyze_delete_user' | 'delete_user';
+      userId: string;
+      confirmEmail: string;
     }
   | {
       action: 'set_modules';
@@ -704,6 +725,266 @@ async function getInternalResetUser(serviceClient: ReturnType<typeof createClien
   };
 }
 
+async function getInternalDeleteUser(serviceClient: ReturnType<typeof createClient>, userId: string) {
+  const { data, error } = await serviceClient
+    .schema('RetificaPremium')
+    .from('Usuarios')
+    .select('id_usuarios, nome, email, auth_id, status, acesso')
+    .eq('id_usuarios', userId)
+    .maybeSingle();
+
+  if (error) throw new Error(`Falha ao carregar usuário: ${error.message}`);
+  if (!data?.email) throw new Error('Usuário não encontrado.');
+  return data as {
+    id_usuarios: string;
+    nome: string | null;
+    email: string;
+    auth_id: string | null;
+    status: boolean;
+    acesso: string;
+  };
+}
+
+async function countByColumn(
+  serviceClient: ReturnType<typeof createClient>,
+  table: string,
+  column: string,
+  value: string,
+) {
+  const { count, error } = await serviceClient
+    .schema('RetificaPremium')
+    .from(table)
+    .select('*', { count: 'exact', head: true })
+    .eq(column, value);
+
+  if (error) throw new Error(`Falha ao contar ${table}: ${error.message}`);
+  return count ?? 0;
+}
+
+async function countSupportSessions(serviceClient: ReturnType<typeof createClient>, userId: string) {
+  const { count, error } = await serviceClient
+    .schema('RetificaPremium')
+    .from('Sessoes_Suporte')
+    .select('*', { count: 'exact', head: true })
+    .or(`fk_actor_usuarios.eq.${userId},fk_target_usuarios.eq.${userId}`);
+
+  if (error) throw new Error(`Falha ao contar sessões de suporte: ${error.message}`);
+  return count ?? 0;
+}
+
+async function listPayablesOwnedByUser(serviceClient: ReturnType<typeof createClient>, userId: string) {
+  const { data, error } = await serviceClient
+    .schema('RetificaPremium')
+    .from('Contas_Pagar')
+    .select('id_contas_pagar')
+    .eq('fk_criado_por', userId);
+
+  if (error) throw new Error(`Falha ao listar contas do usuário: ${error.message}`);
+  return (data ?? []).map((row) => row.id_contas_pagar as string);
+}
+
+async function countPayableAttachments(
+  serviceClient: ReturnType<typeof createClient>,
+  userId: string,
+  payableIds: string[],
+) {
+  const directCount = await countByColumn(serviceClient, 'Contas_Pagar_Anexos', 'fk_criado_por', userId);
+  if (payableIds.length === 0) return directCount;
+
+  const { count, error } = await serviceClient
+    .schema('RetificaPremium')
+    .from('Contas_Pagar_Anexos')
+    .select('*', { count: 'exact', head: true })
+    .in('fk_contas_pagar', payableIds);
+
+  if (error) throw new Error(`Falha ao contar anexos de contas: ${error.message}`);
+  return Math.max(directCount, count ?? 0);
+}
+
+async function countPayableHistory(
+  serviceClient: ReturnType<typeof createClient>,
+  userId: string,
+  payableIds: string[],
+) {
+  const directCount = await countByColumn(serviceClient, 'Contas_Pagar_Historico', 'fk_usuarios', userId);
+  if (payableIds.length === 0) return directCount;
+
+  const { count, error } = await serviceClient
+    .schema('RetificaPremium')
+    .from('Contas_Pagar_Historico')
+    .select('*', { count: 'exact', head: true })
+    .in('fk_contas_pagar', payableIds);
+
+  if (error) throw new Error(`Falha ao contar histórico de contas: ${error.message}`);
+  return Math.max(directCount, count ?? 0);
+}
+
+async function listPayableAttachmentPaths(
+  serviceClient: ReturnType<typeof createClient>,
+  userId: string,
+  payableIds: string[],
+) {
+  const paths = new Set<string>();
+  const addRows = (rows: Array<{ url?: string | null }> | null) => {
+    for (const row of rows ?? []) {
+      const value = row.url?.trim();
+      if (value && !/^https?:\/\//i.test(value) && !value.startsWith('blob:') && !value.startsWith('local-upload://')) {
+        paths.add(value);
+      }
+    }
+  };
+
+  const direct = await serviceClient
+    .schema('RetificaPremium')
+    .from('Contas_Pagar_Anexos')
+    .select('url')
+    .eq('fk_criado_por', userId);
+  if (direct.error) throw new Error(`Falha ao listar anexos do usuário: ${direct.error.message}`);
+  addRows(direct.data as Array<{ url?: string | null }> | null);
+
+  if (payableIds.length > 0) {
+    const byPayable = await serviceClient
+      .schema('RetificaPremium')
+      .from('Contas_Pagar_Anexos')
+      .select('url')
+      .in('fk_contas_pagar', payableIds);
+    if (byPayable.error) throw new Error(`Falha ao listar anexos das contas: ${byPayable.error.message}`);
+    addRows(byPayable.data as Array<{ url?: string | null }> | null);
+  }
+
+  return Array.from(paths);
+}
+
+async function buildDeletionReport(
+  serviceClient: ReturnType<typeof createClient>,
+  targetUser: {
+    id_usuarios: string;
+    nome: string | null;
+    email: string;
+    auth_id?: string | null;
+  },
+): Promise<DeletionReport> {
+  const payableIds = await listPayablesOwnedByUser(serviceClient, targetUser.id_usuarios);
+  const payableAttachmentPaths = await listPayableAttachmentPaths(serviceClient, targetUser.id_usuarios, payableIds);
+
+  const stepInputs: Array<Omit<DeletionStep, 'status'>> = [
+    { key: 'validate', label: 'Validar Mega Master e proteção do usuário', count: 1 },
+    { key: 'support-sessions', label: 'Remover sessões de suporte vinculadas', count: await countSupportSessions(serviceClient, targetUser.id_usuarios) },
+    { key: 'gmail', label: 'Remover conexões, estados e mensagens do Gmail', count:
+      (targetUser.auth_id ? await countByColumn(serviceClient, 'Gmail_Scanned_Messages', 'fk_auth_user', targetUser.auth_id) : 0)
+      + (targetUser.auth_id ? await countByColumn(serviceClient, 'Gmail_OAuth_States', 'fk_auth_user', targetUser.auth_id) : 0)
+      + (targetUser.auth_id ? await countByColumn(serviceClient, 'Gmail_Connections', 'fk_auth_user', targetUser.auth_id) : 0) },
+    { key: 'support-tickets', label: 'Remover chamados de suporte do usuário', count: targetUser.auth_id ? await countByColumn(serviceClient, 'Chamados_Suporte', 'fk_auth_user', targetUser.auth_id) : 0 },
+    { key: 'settings', label: 'Remover configurações de empresa e modelos', count:
+      await countByColumn(serviceClient, 'Configuracoes_Empresa_Usuario', 'fk_usuarios', targetUser.id_usuarios)
+      + await countByColumn(serviceClient, 'Configuracoes_Modelos_Usuario', 'fk_usuarios', targetUser.id_usuarios) },
+    { key: 'payables', label: 'Remover contas a pagar e histórico vinculados', count:
+      payableIds.length
+      + await countPayableHistory(serviceClient, targetUser.id_usuarios, payableIds)
+      + await countPayableAttachments(serviceClient, targetUser.id_usuarios, payableIds) },
+    { key: 'logs', label: 'Remover logs vinculados ao usuário', count: await countByColumn(serviceClient, 'Logs', 'fk_usuarios', targetUser.id_usuarios) },
+    { key: 'modules', label: 'Remover permissões de módulos', count: await countByColumn(serviceClient, 'Modulos', 'fk_usuarios', targetUser.id_usuarios) },
+    { key: 'storage', label: 'Remover anexos privados do Storage', count: payableAttachmentPaths.length },
+    { key: 'internal-user', label: 'Remover perfil interno', count: 1 },
+    { key: 'auth-user', label: 'Remover usuário do Supabase Auth', count: targetUser.auth_id ? 1 : 0 },
+  ];
+
+  const totalRecords = stepInputs.reduce((sum, step) => sum + (step.count ?? 0), 0);
+  return {
+    targetUserId: targetUser.id_usuarios,
+    targetEmail: targetUser.email,
+    targetName: targetUser.nome ?? targetUser.email,
+    steps: stepInputs.map((step) => ({ ...step, status: step.count === 0 ? 'skipped' : 'pending' })),
+    totalRecords,
+    warnings: [
+      'Clientes, O.S. e fechamentos sem vínculo direto de usuário não são removidos para evitar apagar dados compartilhados por engano.',
+      'A ação remove o usuário do Supabase Auth e não pode ser desfeita pelo sistema.',
+    ],
+  };
+}
+
+async function deleteWhere(
+  serviceClient: ReturnType<typeof createClient>,
+  table: string,
+  column: string,
+  value: string,
+) {
+  const { error } = await serviceClient
+    .schema('RetificaPremium')
+    .from(table)
+    .delete()
+    .eq(column, value);
+  if (error) throw new Error(`Falha ao apagar ${table}: ${error.message}`);
+}
+
+async function deleteUserCascade(
+  serviceClient: ReturnType<typeof createClient>,
+  targetUser: {
+    id_usuarios: string;
+    nome: string | null;
+    email: string;
+    auth_id?: string | null;
+  },
+) {
+  const payableIds = await listPayablesOwnedByUser(serviceClient, targetUser.id_usuarios);
+  const attachmentPaths = await listPayableAttachmentPaths(serviceClient, targetUser.id_usuarios, payableIds);
+
+  if (attachmentPaths.length > 0) {
+    const { error } = await serviceClient.storage.from('contas-pagar').remove(attachmentPaths);
+    if (error) throw new Error(`Falha ao remover anexos do Storage: ${error.message}`);
+  }
+
+  const supportSessionsDelete = await serviceClient
+    .schema('RetificaPremium')
+    .from('Sessoes_Suporte')
+    .delete()
+    .or(`fk_actor_usuarios.eq.${targetUser.id_usuarios},fk_target_usuarios.eq.${targetUser.id_usuarios}`);
+  if (supportSessionsDelete.error) {
+    throw new Error(`Falha ao apagar sessões de suporte: ${supportSessionsDelete.error.message}`);
+  }
+
+  if (targetUser.auth_id) {
+    await deleteWhere(serviceClient, 'Gmail_Scanned_Messages', 'fk_auth_user', targetUser.auth_id);
+    await deleteWhere(serviceClient, 'Gmail_OAuth_States', 'fk_auth_user', targetUser.auth_id);
+    await deleteWhere(serviceClient, 'Gmail_Connections', 'fk_auth_user', targetUser.auth_id);
+    await deleteWhere(serviceClient, 'Chamados_Suporte', 'fk_auth_user', targetUser.auth_id);
+  }
+
+  await deleteWhere(serviceClient, 'Configuracoes_Empresa_Usuario', 'fk_usuarios', targetUser.id_usuarios);
+  await deleteWhere(serviceClient, 'Configuracoes_Modelos_Usuario', 'fk_usuarios', targetUser.id_usuarios);
+
+  if (payableIds.length > 0) {
+    const attachmentsDelete = await serviceClient
+      .schema('RetificaPremium')
+      .from('Contas_Pagar_Anexos')
+      .delete()
+      .in('fk_contas_pagar', payableIds);
+    if (attachmentsDelete.error) {
+      throw new Error(`Falha ao apagar anexos das contas: ${attachmentsDelete.error.message}`);
+    }
+
+    const historyDelete = await serviceClient
+      .schema('RetificaPremium')
+      .from('Contas_Pagar_Historico')
+      .delete()
+      .in('fk_contas_pagar', payableIds);
+    if (historyDelete.error) {
+      throw new Error(`Falha ao apagar histórico das contas: ${historyDelete.error.message}`);
+    }
+  }
+  await deleteWhere(serviceClient, 'Contas_Pagar_Anexos', 'fk_criado_por', targetUser.id_usuarios);
+  await deleteWhere(serviceClient, 'Contas_Pagar_Historico', 'fk_usuarios', targetUser.id_usuarios);
+  await deleteWhere(serviceClient, 'Contas_Pagar', 'fk_criado_por', targetUser.id_usuarios);
+  await deleteWhere(serviceClient, 'Logs', 'fk_usuarios', targetUser.id_usuarios);
+  await deleteWhere(serviceClient, 'Modulos', 'fk_usuarios', targetUser.id_usuarios);
+  await deleteWhere(serviceClient, 'Usuarios', 'id_usuarios', targetUser.id_usuarios);
+
+  if (targetUser.auth_id) {
+    const { error } = await serviceClient.auth.admin.deleteUser(targetUser.auth_id);
+    if (error) throw new Error(`Falha ao apagar usuário Auth: ${error.message}`);
+  }
+}
+
 async function getInternalModuleUser(serviceClient: ReturnType<typeof createClient>, userId: string) {
   const { data, error } = await serviceClient
     .schema('RetificaPremium')
@@ -1046,6 +1327,53 @@ Deno.serve(async (request) => {
       const sessionId = assertSessionId(payload.sessionId);
       await endSupportImpersonation(requester, sessionId);
       return jsonResponse({ mensagem: 'Modo suporte encerrado.' }, 200, request);
+    }
+
+    if (payload.action === 'analyze_delete_user' || payload.action === 'delete_user') {
+      const userId = assertUserId(payload.userId);
+      const confirmEmail = assertEmail(payload.confirmEmail);
+
+      if (!requester.requesterIsMegaMaster) {
+        return jsonResponse({ error: 'Somente o Mega Master autorizado pode excluir usuários em cascata.' }, 403, request);
+      }
+
+      const targetUser = await getInternalDeleteUser(requester.serviceClient, userId);
+      const targetEmail = assertEmail(targetUser.email);
+
+      if (isMegaMasterEmail(targetEmail, requester.superAdminEmails)) {
+        return jsonResponse({ error: 'O usuário Mega Master não pode ser excluído.' }, 403, request);
+      }
+
+      if (targetEmail === requester.requesterEmail) {
+        return jsonResponse({ error: 'Você não pode excluir o próprio usuário autenticado.' }, 400, request);
+      }
+
+      if (confirmEmail !== targetEmail) {
+        return jsonResponse({ error: 'Confirmação inválida. Digite exatamente o e-mail do usuário a excluir.' }, 400, request);
+      }
+
+      const report = await buildDeletionReport(requester.serviceClient, targetUser);
+      if (payload.action === 'analyze_delete_user') {
+        return jsonResponse({
+          mensagem: 'Impacto da exclusão calculado.',
+          deletionReport: report,
+        }, 200, request);
+      }
+
+      await deleteUserCascade(requester.serviceClient, targetUser);
+      const finalReport = await buildDeletionReport(requester.serviceClient, targetUser).catch(() => ({
+        ...report,
+        totalRecords: 0,
+        steps: report.steps.map((step) => ({ ...step, status: 'done' as const })),
+      }));
+
+      return jsonResponse({
+        mensagem: 'Usuário e vínculos comprovados excluídos com segurança.',
+        deletionReport: {
+          ...finalReport,
+          steps: finalReport.steps.map((step) => ({ ...step, status: 'done' as const })),
+        },
+      }, 200, request);
     }
 
     if (payload.action === 'deactivate_user' || payload.action === 'reactivate_user') {

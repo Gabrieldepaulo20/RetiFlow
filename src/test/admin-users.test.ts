@@ -121,6 +121,71 @@ describe('callAdminUsersFunction', () => {
     }));
   });
 
+  it('supports analyzing and deleting a user through the admin function', async () => {
+    mocks.invoke.mockResolvedValueOnce({
+      data: {
+        mensagem: 'Impacto da exclusão calculado.',
+        deletionReport: {
+          targetUserId: VALID_UUID,
+          targetEmail: 'cliente@example.com',
+          targetName: 'Cliente Teste',
+          totalRecords: 3,
+          warnings: ['Ação irreversível.'],
+          steps: [
+            { key: 'validate', label: 'Validar Mega Master', count: 1, status: 'pending' },
+          ],
+        },
+      },
+      error: null,
+    });
+
+    await expect(callAdminUsersFunction({
+      action: 'analyze_delete_user',
+      userId: VALID_UUID,
+      confirmEmail: 'cliente@example.com',
+    })).resolves.toMatchObject({
+      deletionReport: {
+        targetEmail: 'cliente@example.com',
+        totalRecords: 3,
+      },
+    });
+
+    expect(mocks.invoke).toHaveBeenLastCalledWith('admin-users', expect.objectContaining({
+      body: {
+        action: 'analyze_delete_user',
+        userId: VALID_UUID,
+        confirmEmail: 'cliente@example.com',
+      },
+    }));
+
+    mocks.invoke.mockResolvedValueOnce({
+      data: {
+        mensagem: 'Usuário e vínculos comprovados excluídos com segurança.',
+        deletionReport: {
+          targetUserId: VALID_UUID,
+          targetEmail: 'cliente@example.com',
+          targetName: 'Cliente Teste',
+          totalRecords: 0,
+          warnings: [],
+          steps: [
+            { key: 'validate', label: 'Validar Mega Master', count: 1, status: 'done' },
+          ],
+        },
+      },
+      error: null,
+    });
+
+    await expect(callAdminUsersFunction({
+      action: 'delete_user',
+      userId: VALID_UUID,
+      confirmEmail: 'cliente@example.com',
+    })).resolves.toMatchObject({
+      deletionReport: {
+        targetEmail: 'cliente@example.com',
+      },
+    });
+  });
+
   it('supports starting an audited support impersonation session', async () => {
     mocks.invoke.mockResolvedValue({
       data: {
