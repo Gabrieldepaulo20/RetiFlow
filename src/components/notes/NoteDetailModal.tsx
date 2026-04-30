@@ -33,6 +33,8 @@ import {
   FINAL_STATUSES,
   ALLOWED_TRANSITIONS,
   NoteStatus,
+  IntakeNote,
+  Client,
 } from '@/types';
 import {
   User,
@@ -143,11 +145,13 @@ const STATUS_TEXT: Record<string, string> = {
 interface NoteDetailModalProps {
   noteId: string | null;
   onClose: () => void;
+  noteOverride?: IntakeNote | null;
+  clientOverride?: Client | null;
 }
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
-export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProps) {
+export default function NoteDetailModal({ noteId, onClose, noteOverride, clientOverride }: NoteDetailModalProps) {
   const {
     notes,
     getNote,
@@ -169,8 +173,8 @@ export default function NoteDetailModal({ noteId, onClose }: NoteDetailModalProp
   const [realDetalhesLoading, setRealDetalhesLoading] = useState(false);
   const [showPDF, setShowPDF] = useState(false);
 
-  const note = noteId ? getNote(noteId) : undefined;
-  const client = note ? getClient(note.clientId) : undefined;
+  const note = noteOverride ?? (noteId ? getNote(noteId) : undefined);
+  const client = clientOverride ?? (note ? getClient(note.clientId) : undefined);
 
   useEffect(() => {
     if (!noteId) { setRealItens([]); setRealDetalhes(null); return; }

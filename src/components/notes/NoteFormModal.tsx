@@ -16,6 +16,7 @@ interface NoteFormModalProps {
   preClientId?: string;
   preParentId?: string;
   editingNote?: IntakeNote;
+  onSuccess?: (note: IntakeNote) => void;
 }
 
 export default function NoteFormModal({
@@ -24,8 +25,10 @@ export default function NoteFormModal({
   preClientId,
   preParentId,
   editingNote,
+  onSuccess,
 }: NoteFormModalProps) {
-  const handleSuccess = (_note: IntakeNote) => {
+  const handleSuccess = (note: IntakeNote) => {
+    onSuccess?.(note);
     onClose();
   };
 

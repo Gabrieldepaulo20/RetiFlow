@@ -1,5 +1,6 @@
-import { lazy, Suspense, useState, useMemo } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useData } from '@/contexts/DataContext';
 import { Card, CardContent } from '@/components/ui/card';
@@ -22,7 +23,11 @@ import { buildWhatsAppUrl, openExternalUrl } from '@/lib/browserShare';
 import { format } from 'date-fns';
 import {
   getNotaPDFSignedUrl,
+  getNotasServico,
+  getStatusNotas,
   getNotaServicoDetalhes,
+  buildStatusIdMap,
+  supabaseToIntakeNote,
   updateNotaPdfUrl,
   uploadNotaPDF,
   type NotaServicoDetalhes,
@@ -32,6 +37,7 @@ import { useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
+const NOTES_PAGE_SIZE = 50;
 
 function initStatusFilters(searchParams: URLSearchParams): Set<string> {
   const raw = searchParams.get('status');
@@ -41,6 +47,7 @@ function initStatusFilters(searchParams: URLSearchParams): Set<string> {
 
 export default function IntakeNotes() {
   const { notes, clients, getServicesForNote, getProductsForNote } = useData();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
   const { data: templateSettings } = useDocumentTemplateSettings();
   const [urlParams] = useSearchParams();
@@ -57,9 +64,21 @@ export default function IntakeNotes() {
   const [resolvingPdfNoteId, setResolvingPdfNoteId] = useState<string | null>(null);
   const [previewDetalhes, setPreviewDetalhes] = useState<NotaServicoDetalhes | null>(null);
   const [previewDetalhesLoading, setPreviewDetalhesLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const statusMapQuery = useQuery({
+    queryKey: ['notas-servico', 'status-id-map'],
+    queryFn: async () => buildStatusIdMap(await getStatusNotas({ p_tipo_nota: 'Serviço' })),
+    enabled: IS_REAL_AUTH,
+    staleTime: 10 * 60_000,
+    gcTime: 30 * 60_000,
+  });
 
   const toggleStatusFilter = (key: string) => {
     setStatusFilters(prev => {
+      if (IS_REAL_AUTH) {
+        return prev.has(key) ? new Set() : new Set([key]);
+      }
       const next = new Set(prev);
       if (next.has(key)) {
         next.delete(key);
@@ -69,6 +88,10 @@ export default function IntakeNotes() {
       return next;
     });
   };
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch, statusFilters, clientFilter, monthFilter, yearFilter]);
 
   const allStatuses: Array<{ key: NoteStatus; label: string }> = NOTE_STATUS_ORDER.map(s => ({
     key: s,
@@ -106,10 +129,58 @@ export default function IntakeNotes() {
     ).sort((a, b) => Number(b) - Number(a));
   }, [notes]);
 
+  const selectedStatus = statusFilters.size === 1
+    ? ([...statusFilters][0] as NoteStatus)
+    : null;
+  const selectedStatusId = selectedStatus ? statusMapQuery.data?.get(selectedStatus) : undefined;
+  const statusFiltersAppliedLocally = !IS_REAL_AUTH || statusFilters.size <= 1;
+  const effectiveStatusFilters = useMemo(
+    () => statusFiltersAppliedLocally ? statusFilters : new Set<string>(),
+    [statusFilters, statusFiltersAppliedLocally],
+  );
+
+  const serverNotesQuery = useQuery({
+    queryKey: [
+      'notas-servico',
+      'page',
+      currentPage,
+      debouncedSearch,
+      clientFilter,
+      selectedStatus,
+      selectedStatusId,
+    ],
+    queryFn: async () => {
+      const { dados, total } = await getNotasServico({
+        p_limite: NOTES_PAGE_SIZE,
+        p_offset: (currentPage - 1) * NOTES_PAGE_SIZE,
+        p_busca: debouncedSearch || undefined,
+        p_fk_clientes: clientFilter !== 'all' ? clientFilter : undefined,
+        p_fk_status: selectedStatusId,
+      });
+
+      return {
+        notes: dados.map(supabaseToIntakeNote),
+        total,
+      };
+    },
+    enabled: IS_REAL_AUTH && (!selectedStatus || selectedStatusId !== undefined),
+    staleTime: 20_000,
+    gcTime: 5 * 60_000,
+    placeholderData: (previous) => previous,
+  });
+
+  const sourceNotes = useMemo(
+    () => IS_REAL_AUTH ? (serverNotesQuery.data?.notes ?? []) : notes,
+    [notes, serverNotesQuery.data?.notes],
+  );
+  const serverTotal = IS_REAL_AUTH
+    ? (serverNotesQuery.data?.total ?? 0)
+    : notes.length;
+
   const filtered = useMemo(() => {
-    return notes.filter(n => {
-      if (statusFilters.size > 0 && !statusFilters.has(n.status)) return false;
-      if (clientFilter !== 'all' && n.clientId !== clientFilter) return false;
+    return sourceNotes.filter(n => {
+      if (effectiveStatusFilters.size > 0 && !effectiveStatusFilters.has(n.status)) return false;
+      if (!IS_REAL_AUTH && clientFilter !== 'all' && n.clientId !== clientFilter) return false;
 
       const noteDate = new Date(n.createdAt);
       const noteMonth = `${noteDate.getMonth() + 1}`.padStart(2, '0');
@@ -125,7 +196,30 @@ export default function IntakeNotes() {
       }
       return true;
     }).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [notes, debouncedSearch, statusFilters, clientFilter, monthFilter, yearFilter, clients]);
+  }, [sourceNotes, debouncedSearch, effectiveStatusFilters, clientFilter, monthFilter, yearFilter, clients]);
+
+  const paginatedNotes = useMemo(() => {
+    if (IS_REAL_AUTH) return filtered;
+    const start = (currentPage - 1) * NOTES_PAGE_SIZE;
+    return filtered.slice(start, start + NOTES_PAGE_SIZE);
+  }, [currentPage, filtered]);
+
+  const totalForPagination = IS_REAL_AUTH
+    ? serverTotal
+    : filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalForPagination / NOTES_PAGE_SIZE));
+  const isLoadingNotesPage = IS_REAL_AUTH && serverNotesQuery.isFetching;
+  const hasLocalDateFilter = IS_REAL_AUTH && (monthFilter !== 'all' || yearFilter !== 'all');
+  const hasUnsupportedMultiStatusFilter = IS_REAL_AUTH && statusFilters.size > 1;
+
+  const refreshNotesPage = () => {
+    queryClient.invalidateQueries({ queryKey: ['notas-servico', 'page'] });
+    queryClient.invalidateQueries({ queryKey: ['operational', 'notes'] });
+  };
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const handleDownloadNotePDF = async (note: IntakeNote) => {
     setResolvingPdfNoteId(note.id);
@@ -256,10 +350,16 @@ export default function IntakeNotes() {
     }
   };
 
-  const previewNote = previewNoteId ? notes.find(n => n.id === previewNoteId) : null;
+  const previewNote = previewNoteId
+    ? sourceNotes.find(n => n.id === previewNoteId) ?? notes.find(n => n.id === previewNoteId) ?? null
+    : null;
   const previewClient = previewNote ? clients.find(c => c.id === previewNote.clientId) : undefined;
   const previewServices = previewNote ? getServicesForNote(previewNote.id) : [];
   const previewProducts = previewNote ? getProductsForNote(previewNote.id) : [];
+  const detailNote = detailNoteId
+    ? sourceNotes.find(n => n.id === detailNoteId) ?? notes.find(n => n.id === detailNoteId) ?? null
+    : null;
+  const detailClient = detailNote ? clients.find(c => c.id === detailNote.clientId) ?? null : null;
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -272,7 +372,11 @@ export default function IntakeNotes() {
             </div>
             <div>
               <h1 className="text-2xl font-display font-bold tracking-tight">Notas de Entrada</h1>
-              <p className="text-muted-foreground text-sm">{filtered.length} de {notes.length} ordens de serviço</p>
+              <p className="text-muted-foreground text-sm">
+                {IS_REAL_AUTH
+                  ? `${filtered.length} nesta página · ${totalForPagination} no banco`
+                  : `${paginatedNotes.length} de ${filtered.length} ordens de serviço`}
+              </p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -385,7 +489,9 @@ export default function IntakeNotes() {
                       <div className="flex items-center justify-between px-2 py-1.5 mb-1">
                         <div>
                           <p className="text-xs font-semibold text-foreground">Status</p>
-                          <p className="text-[11px] text-muted-foreground">Selecione um ou mais</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            {IS_REAL_AUTH ? 'Selecione um status' : 'Selecione um ou mais'}
+                          </p>
                         </div>
                         {statusFilters.size > 0 && (
                           <button
@@ -429,6 +535,24 @@ export default function IntakeNotes() {
 
             {/* Active filter badges */}
             <div className="flex items-center gap-2 flex-wrap min-h-5">
+              {IS_REAL_AUTH && (
+                <Badge variant="outline" className="rounded-full text-[11px]">
+                  Página {currentPage} de {totalPages} · {NOTES_PAGE_SIZE} por página
+                </Badge>
+              )}
+              {IS_REAL_AUTH && isLoadingNotesPage && (
+                <span className="text-xs text-muted-foreground">Atualizando lista...</span>
+              )}
+              {hasLocalDateFilter && (
+                <span className="text-xs text-amber-700">
+                  Mês/ano ainda filtram a página carregada; filtro completo no banco entra na próxima fase.
+                </span>
+              )}
+              {hasUnsupportedMultiStatusFilter && (
+                <span className="text-xs text-amber-700">
+                  Múltiplos status vindos da URL serão aplicados corretamente na RPC v2; selecione um status para filtrar agora.
+                </span>
+              )}
               {statusFilters.size === 0 && clientFilter === 'all' && monthFilter === 'all' && yearFilter === 'all' ? (
                 <span className="text-xs text-muted-foreground">Sem filtros ativos</span>
               ) : (
@@ -495,7 +619,7 @@ export default function IntakeNotes() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map(n => {
+                {paginatedNotes.map(n => {
                   const client = clients.find(c => c.id === n.clientId);
                   return (
                     <TableRow
@@ -610,7 +734,7 @@ export default function IntakeNotes() {
                     </TableRow>
                   );
                 })}
-                {filtered.length === 0 && (
+                {paginatedNotes.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-16">
                       <div className="flex flex-col items-center gap-3">
@@ -636,16 +760,48 @@ export default function IntakeNotes() {
           </div>
         </Card>
 
+        <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card/70 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-muted-foreground">
+            {IS_REAL_AUTH
+              ? `Busca e paginação consultam o banco. Exibindo até ${NOTES_PAGE_SIZE} O.S. por página.`
+              : `Exibindo página ${currentPage} de ${totalPages} no ambiente local.`}
+          </p>
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={currentPage <= 1 || isLoadingNotesPage}
+              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+            >
+              Anterior
+            </Button>
+            <span className="min-w-20 text-center text-xs font-semibold tabular-nums text-muted-foreground">
+              {currentPage} / {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={currentPage >= totalPages || isLoadingNotesPage}
+              onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+            >
+              Próxima
+            </Button>
+          </div>
+        </div>
+
         {/* Note detail modal (opens on row click) */}
         <NoteDetailModal
           noteId={detailNoteId}
           onClose={() => setDetailNoteId(null)}
+          noteOverride={detailNote}
+          clientOverride={detailClient}
         />
 
         {/* New note form modal */}
         <NoteFormModal
           open={newNoteOpen}
           onClose={() => setNewNoteOpen(false)}
+          onSuccess={refreshNotesPage}
         />
 
         {/* Edit note form modal */}
@@ -653,6 +809,7 @@ export default function IntakeNotes() {
           open={!!editingNote}
           onClose={() => setEditingNote(null)}
           editingNote={editingNote ?? undefined}
+          onSuccess={refreshNotesPage}
         />
 
         {/* Document preview modal (opens on Eye button) */}
