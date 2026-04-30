@@ -56,7 +56,7 @@ describe('App routes', () => {
   });
 
   it.each([
-    ['/', async () => screen.findByText('Escolha o portal de acesso adequado para continuar.')],
+    ['/', async () => screen.findByText('Entrar na área do cliente')],
     ['/login', async () => screen.findByText('Entrar na área do cliente')],
     ['/admin/login', async () => screen.findByText('Entrar como administrador')],
     ['/acesso-negado', async () => screen.findByRole('heading', { name: 'Acesso negado' })],
@@ -66,10 +66,11 @@ describe('App routes', () => {
     expect(await findElement()).toBeInTheDocument();
   });
 
-  it('renders the portal chooser at / for unauthenticated users', async () => {
+  it('redirects the root route to the operational login for unauthenticated users', async () => {
     renderAt('/');
-    expect(await screen.findByText('Entrar no portal do cliente')).toBeInTheDocument();
-    expect(screen.getByText('Entrar na área administrativa')).toBeInTheDocument();
+    expect(await screen.findByText('Entrar na área do cliente')).toBeInTheDocument();
+    await waitFor(() => expect(window.location.pathname).toBe('/login'));
+    expect(screen.queryByText('Escolha o portal de acesso adequado para continuar.')).not.toBeInTheDocument();
   });
 
   it.each([

@@ -31,12 +31,10 @@ import {
   loadLoginPage,
   loadMonthlyClosingPage,
   loadNotFoundPage,
-  loadPortalEntryPage,
   loadResetPasswordPage,
   loadSettingsPage,
 } from '@/routes/routeModules';
 
-const PortalEntry = lazy(loadPortalEntryPage);
 const Login = lazy(loadLoginPage);
 const AdminLogin = lazy(loadAdminLoginPage);
 const ResetPassword = lazy(loadResetPasswordPage);
@@ -155,7 +153,7 @@ const App = () => (
                   </Route>
                 </Route>
 
-                <Route path="/" element={<SuspendedPage><PortalEntry /></SuspendedPage>} />
+                <Route path="/" element={<Navigate to="/login" replace />} />
                 <Route path="*" element={<SuspendedPage><NotFound /></SuspendedPage>} />
               </Routes>
             </ErrorBoundary>

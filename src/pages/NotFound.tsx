@@ -25,7 +25,7 @@ const NotFound = () => {
         </p>
         <div className="mt-6 flex flex-col gap-2">
           <Button asChild>
-            <Link to="/">Voltar para a entrada</Link>
+            <Link to="/login">Ir para o login</Link>
           </Button>
           <Button asChild variant="outline">
             <Link to="/dashboard">

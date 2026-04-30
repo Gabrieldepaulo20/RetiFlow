@@ -6,12 +6,11 @@ test.describe('Auth — login and access control', () => {
     await clearSession(page);
   });
 
-  test('shows portal chooser at / when unauthenticated', async ({ page }) => {
+  test('redirects root route to operational login when unauthenticated', async ({ page }) => {
     await page.goto('/');
-    await expect(page).toHaveURL('/');
-    await expect(page.getByText('Escolha o portal de acesso adequado para continuar.')).toBeVisible();
-    await expect(page.getByText('Entrar no portal do cliente')).toBeVisible();
-    await expect(page.getByText('Entrar na área administrativa')).toBeVisible();
+    await expect(page).toHaveURL('/login');
+    await expect(page.getByText('Entrar na área do cliente')).toBeVisible();
+    await expect(page.getByText('Escolha o portal de acesso adequado para continuar.')).not.toBeVisible();
   });
 
   test('redirects protected route to /login when unauthenticated', async ({ page }) => {
