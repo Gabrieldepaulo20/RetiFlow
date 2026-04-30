@@ -1,10 +1,10 @@
 # Contexto Técnico Completo — Retiflow / Retífica Premium
 
-> Atualizado em: 2026-04-29
+> Atualizado em: 2026-04-30
 > Repositório local: `/Users/gabrielwilliamdepaulo/Documents/RetificaPremium/retiflow`
 > GitHub: `Gabrieldepaulo20/RetiFlow`
 > Branch principal: `main`
-> Último commit validado neste contexto: `a81ea76 feat: allow master admins to use operational login`
+> Último commit validado neste contexto: `a5edf6e feat: add mega master user presence tracking`
 > Escopo desta documentação: sistema Retiflow exceto Nota Fiscal, que ainda deve ser tratada como fora da v1/piloto.
 
 Este arquivo foi escrito para ser entregue a outro modelo de IA ou revisor técnico. A intenção é dar contexto suficiente para análise de arquitetura, segurança, banco, frontend, integração Supabase, riscos restantes e oportunidades de melhoria.
@@ -31,6 +31,8 @@ Estado atual honesto:
 | Nota Fiscal | Fora da v1; rota mantém aviso de indisponibilidade e ações fake foram removidas |
 | Configurações | Empresa, módulos e modelos persistem no Supabase; aparência/logo/senha seguem marcadas como prévias/indisponíveis |
 | Admin/Master | Hierarquia Mega Master/Master implementada via Edge Function `admin-users`; Mega Master é protegido |
+| Exclusão de usuários | Mega Master possui exclusão em cascata auditada para dados tecnicamente vinculados ao usuário |
+| Presença online | Mega Master consegue ver usuários online, última atividade e rota atual via RPC/Edge Function |
 | Testes | Unit tests e integration tests reais passando; auth provider tem teste contra mock em produção |
 
 Validações executadas recentemente:
@@ -40,8 +42,9 @@ Validações executadas recentemente:
 | `npx tsc --noEmit` | Passou |
 | `npm run build` | Passou |
 | `npm run lint` | Passou com warnings, sem erros |
-| `npm test -- --run` | 246 testes passaram |
-| `npm run test:integration` | 9 arquivos, 30 testes passaram contra Supabase real |
+| `npm test -- --run` | 262 testes passaram |
+| `npm run test:integration` | 32 testes passaram contra Supabase real |
+| `npm run test:e2e -- --project=chromium` | 38 testes passaram |
 
 Avisos ainda existentes:
 
@@ -112,6 +115,8 @@ src/
         Usuários internos e módulos/permissões.
       admin-users.ts
         Chamada segura da Edge Function `admin-users` para convite/reset/módulos/status.
+      presence.ts
+        Heartbeat e leitura indireta de presença online/último acesso.
       empresa.ts
         Configurações persistidas de empresa por usuário.
       modelos.ts
@@ -173,6 +178,12 @@ supabase/
   functions/
     analisar-conta-pagar/
       Edge Function que autentica usuário, valida arquivo e chama OpenAI.
+    admin-users/
+      Edge Function sensível para convite/reset/módulos/suporte/exclusão/presença, sempre com service role apenas no backend.
+    dashboard-resumo/
+      Edge Function que consolida dados do Dashboard em uma chamada autenticada.
+    support-ticket/
+      Edge Function de chamados de suporte com envio por SES.
   migrations/
     20260426153000_create_contas_pagar_storage.sql
       Bucket privado `contas-pagar` e policies de storage.
@@ -1449,12 +1460,13 @@ Pendência operacional:
 
 Estado atual:
 
-- O Dashboard deixou de buscar detalhes de cada O.S. no navegador para montar o ranking de serviços.
+- O Dashboard deixou de buscar detalhes de cada O.S. diretamente no navegador para montar o ranking de serviços.
 - Foi criada a Edge Function `dashboard-resumo`, que valida `Authorization: Bearer <access_token>` e consolida dados server-side usando os RPCs reais existentes.
 - O `DataContext` chama `dashboard-resumo` uma única vez em modo real e usa esse payload para hidratar notas, clientes, contas, categorias e serviços.
 - Se a Function falhar, o `DataContext` cai para os RPCs legados individuais, sem quebrar a tela inteira.
 - A Function não usa service role; ela chama os RPCs com o token do próprio usuário autenticado.
-- Próxima melhoria possível: criar uma RPC/view nativa no Postgres para mover também o N+1 interno da Function para uma agregação SQL única.
+- Ponto técnico importante: a chamada principal do frontend é única, mas a Edge Function ainda faz múltiplos RPCs internamente e chama detalhes por nota para compor itens/serviços.
+- Próxima melhoria recomendada: criar uma RPC/view nativa no Postgres, por exemplo `get_dashboard_resumo`, retornando JSON agregado em uma única transação/consulta server-side. Isso reduz N+1 interno, melhora performance e diminui superfície de erro.
 
 Arquivos principais:
 
@@ -1463,7 +1475,146 @@ Arquivos principais:
 - `supabase/functions/dashboard-resumo/index.ts`
 - `src/test/integration/dashboard.test.ts`
 
-### 19.8 Validações mais recentes
+### 19.8 Exclusão segura de usuários pelo Mega Master
+
+Estado atual:
+
+- Apenas o Mega Master consegue visualizar e executar a ação de exclusão definitiva de usuário.
+- A Edge Function `admin-users` valida novamente no backend:
+  - token Bearer;
+  - perfil interno ativo;
+  - allowlist de Super Admin/Mega Master;
+  - bloqueio de autoexclusão;
+  - bloqueio de exclusão do próprio Mega Master.
+- A UI exige confirmação digitando o e-mail do usuário alvo.
+- Durante a exclusão, a UI mostra progresso por etapas para não parecer travada.
+- A exclusão remove dados tecnicamente vinculados ao usuário:
+  - sessões de suporte;
+  - conexões Gmail/sugestões vinculadas;
+  - chamados de suporte;
+  - configurações de empresa/modelos;
+  - contas a pagar, históricos e anexos com FK de usuário;
+  - logs vinculados;
+  - módulos/permissões;
+  - registro em `Usuarios`;
+  - conta no Supabase Auth.
+- Também tenta remover arquivos privados de anexos de contas a pagar no Storage.
+
+Limite intencional:
+
+- A exclusão não remove clientes, O.S. e fechamentos por ainda não existir FK confiável de ownership/tenant nesses domínios. Apagar esses dados em cascata hoje poderia remover dados compartilhados por engano.
+- Antes de produção SaaS ampla, é obrigatório fechar o modelo de tenancy/ownership desses domínios.
+
+Arquivos principais:
+
+- `src/pages/admin/AdminClients.tsx`
+- `src/api/supabase/admin-users.ts`
+- `supabase/functions/admin-users/index.ts`
+- `src/test/admin-users.test.ts`
+
+### 19.9 Criação simplificada de usuário operacional
+
+Estado atual:
+
+- Ao criar um usuário operacional pelo admin, a UI não pede mais “perfil de acesso” como `produção`, `financeiro` etc.
+- Operacional novo nasce com perfil interno `RECEPCAO`, mas com todos os módulos operacionais principais liberados por padrão.
+- Módulos padrão para operacional:
+  - `dashboard`: true
+  - `clients`: true
+  - `notes`: true
+  - `kanban`: true
+  - `closing`: true
+  - `payables`: true
+  - `settings`: true
+  - `invoices`: false
+  - `admin`: false
+- O Mega Master pode retirar módulos depois pelo controle real de módulos.
+- Master/Admin continua sendo criação sensível e apenas Mega Master pode criar.
+
+Arquivo principal:
+
+- `src/pages/admin/AdminClients.tsx`
+
+### 19.10 Presença online e último acesso
+
+Estado atual:
+
+- Foi criada a tabela `RetificaPremium.Usuarios_Presenca`.
+- Foi criada a RPC `touch_usuario_presenca(p_current_route text)`.
+- Usuários autenticados atualizam sua própria presença em modo real.
+- O heartbeat:
+  - roda apenas em `VITE_AUTH_MODE=real`;
+  - envia ping imediato e depois a cada 60s;
+  - só roda com a aba visível;
+  - respeita intervalo mínimo de 45s entre pings;
+  - envia rota atual;
+  - falhas são ignoradas para não quebrar login/sessão.
+- Apenas Mega Master consegue consultar a visão administrativa de presença pela Edge Function `admin-users`, ação `get_user_presence`.
+- A tela admin mostra:
+  - usuários online agora;
+  - badge `Online`/`Offline`;
+  - último acesso;
+  - rota atual.
+
+Segurança:
+
+- A tabela tem RLS habilitado.
+- Acesso direto anon/auth às tabelas foi revogado.
+- A leitura administrativa passa pela Edge Function e exige Mega Master no backend.
+- O frontend não recebe service role.
+
+Arquivos principais:
+
+- `supabase/migrations/20260430091500_user_presence.sql`
+- `src/api/supabase/presence.ts`
+- `src/contexts/AuthContext.tsx`
+- `src/pages/admin/AdminClients.tsx`
+- `src/api/supabase/admin-users.ts`
+- `supabase/functions/admin-users/index.ts`
+- `src/test/supabase-presence.test.ts`
+- `src/test/integration/presence.test.ts`
+
+Observação sobre migration:
+
+- Por divergência no histórico remoto de migrations, esta migration foi aplicada no Supabase remoto via:
+  - `supabase db query --linked --file supabase/migrations/20260430091500_user_presence.sql`
+  - `supabase migration repair --status applied 20260430091500`
+- A SQL segue versionada no repositório.
+
+### 19.11 Auditoria transacional dos fluxos críticos
+
+Conclusão atual:
+
+- O.S./nota de serviço:
+  - Criação usa RPC `nova_nota(p_payload jsonb)`.
+  - Atualização usa RPC `update_nota_servico(p_payload jsonb)`.
+  - Essas funções PL/pgSQL fazem inserts/updates principais dentro da mesma chamada ao banco. Em erro com `RAISE EXCEPTION`, o bloco é revertido.
+  - Logs internos são best-effort em blocos separados para não derrubar a operação principal.
+- Clientes:
+  - Criação usa `novo_cliente(p_payload)`.
+  - Upsert completo usa `salvar_cliente_completo(p_payload)`.
+  - Cliente/endereço/contatos/log ficam concentrados em RPC.
+- Contas a pagar:
+  - Criação usa `insert_conta_pagar`.
+  - Pagamento/cancelamento/exclusão usam RPCs próprias.
+
+Gaps ainda importantes:
+
+- Convite/criação de usuário não é totalmente transacional porque cruza Supabase Auth + banco interno. Se Auth cria o usuário e a etapa de perfil/módulos falha, pode sobrar usuário Auth órfão. Recomendação: adicionar compensação na Edge Function `admin-users`, apagando o Auth user recém-criado quando as etapas internas falharem.
+- PDF de O.S. não é SQL-transacional porque envolve Storage + banco. Se a nota salva mas upload/update do PDF falha, a O.S. pode existir sem PDF. Recomendação: criar status de PDF (`pdf_status`, `pdf_error`, `pdf_generated_at`) ou fila/retry para geração.
+- Anexo de conta a pagar também cruza Storage + banco. Recomendação: se o insert do anexo falhar, limpar o objeto recém-enviado no Storage.
+- `DataContext.updateClient` ainda pode executar status + save completo em duas chamadas quando há mudança de status. Ideal futuro: consolidar status no payload da RPC principal.
+- Criação de nota de compra vinculada ainda tem parte orquestrada no frontend: pausar nota pai + criar nota de compra. Ideal futuro: RPC única para “criar compra vinculada e pausar pai”.
+
+Prioridade recomendada:
+
+- P0: compensação em `admin-users` para convite/criação de usuário.
+- P1: status/retry de PDF de O.S.
+- P1: cleanup compensatório de anexos de contas a pagar.
+- P1: RPC única para nota de compra vinculada.
+- P1: RPC/view única para Dashboard.
+
+### 19.12 Validações mais recentes
 
 Últimas validações executadas após essas mudanças:
 
@@ -1471,14 +1622,18 @@ Arquivos principais:
 |---|---|
 | `npx tsc --noEmit` | Passou |
 | `npm run lint` | Passou com 8 warnings antigos de Fast Refresh |
-| `npm test -- --run` | 28 arquivos, 256 testes passaram |
+| `npm test -- --run` | 262 testes passaram |
 | `npm run build` | Passou com warnings conhecidos de chunks grandes |
-| `npm run test:integration` | 10 arquivos, 31 testes reais passaram contra Supabase |
+| `npm run test:integration` | 32 testes reais passaram contra Supabase |
+| `npm run test:e2e -- --project=chromium` | 38 testes passaram |
 
 Últimos commits relevantes:
 
 | Commit | Resumo |
 |---|---|
+| `a5edf6e` | Presença online e último acesso para Mega Master |
+| `f0fe9ba` | Criação operacional simplificada com módulos padrão |
+| `0f0c79d` | Exclusão segura de usuários pelo Mega Master |
 | `a81ea76` | Master/Admin pode usar login operacional para testes |
 | `d844a29` | Dados da empresa persistem no Supabase |
 | `7219e11` | Hierarquia Mega Master/Master/Admin |
