@@ -16,6 +16,7 @@ import { dbUserToSystemUser } from '@/services/auth/supabaseUserMapping';
 import { canUserAccessModule, getDefaultRedirect } from '@/services/auth/defaultRedirect';
 import { isSuperAdmin } from '@/services/auth/superAdmin';
 import { callAdminUsersFunction } from '@/api/supabase/admin-users';
+import { touchUserPresence } from '@/api/supabase/presence';
 
 const AUTH_SESSION_STORAGE_KEY = 'auth.session';
 const SUPPORT_SESSION_STORAGE_KEY = 'support.impersonation';
@@ -272,6 +273,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const realUser = session?.user ?? null;
   const user = realUser && supportSession ? supportSession.targetUser : realUser;
+
+  useEffect(() => {
+    if (!IS_REAL_AUTH || !realUser?.id) return undefined;
+    if (typeof window === 'undefined' || typeof document === 'undefined') return undefined;
+
+    let stopped = false;
+    let lastSentAt = 0;
+
+    const sendHeartbeat = () => {
+      if (stopped || document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      if (now - lastSentAt < 45_000) return;
+      lastSentAt = now;
+
+      void touchUserPresence(window.location.pathname).catch(() => {
+        // Presença online é recurso auxiliar; falha transitória não deve derrubar a sessão.
+      });
+    };
+
+    sendHeartbeat();
+    const interval = window.setInterval(sendHeartbeat, 60_000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        lastSentAt = 0;
+        sendHeartbeat();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [realUser?.id]);
 
   const commitSession = useCallback((nextSession: AuthSession | null) => {
     setSession(nextSession);

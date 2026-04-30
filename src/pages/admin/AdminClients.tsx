@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
+  Activity,
   ChevronDown,
   AlertTriangle,
+  Clock,
   KeyRound,
   LayoutGrid,
   Loader2,
@@ -25,7 +27,7 @@ import { useRoleModuleConfig, useUserModuleOverrides } from '@/hooks/useRoleModu
 import { saveSystemUsers } from '@/services/auth/systemUsers';
 import { saveUserModuleOverrides } from '@/services/auth/moduleAccess';
 import { callAdminUsersFunction } from '@/api/supabase/admin-users';
-import type { AdminUserDeletionReport } from '@/api/supabase/admin-users';
+import type { AdminUserDeletionReport, AdminUserPresence } from '@/api/supabase/admin-users';
 import { useAuth } from '@/contexts/AuthContext';
 import { isConfiguredSuperAdminEmail, isSuperAdmin as checkIsSuperAdmin } from '@/services/auth/superAdmin';
 import { normalizeEmail, onlyDigits, toTitleCasePtBr } from '@/services/domain/textNormalization';
@@ -93,6 +95,19 @@ type NewAccountKind = 'client' | 'master';
 
 function buildUserId() {
   return `user-local-${Date.now()}`;
+}
+
+function formatPresenceDate(value?: string | null) {
+  if (!value) return 'Sem registro recente';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Sem registro recente';
+  return date.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 export default function AdminClients() {
@@ -167,6 +182,25 @@ export default function AdminClients() {
   const canUseSensitiveAdminActions = !IS_REAL_AUTH || (currentUser?.role === 'ADMIN' && currentUser.isActive);
   const isCurrentUserMegaMaster = isSuperAdmin;
   const isMegaMasterUser = (targetUser: SystemUser) => isConfiguredSuperAdminEmail(targetUser.email);
+  const { data: userPresence = [] } = useQuery({
+    queryKey: ['admin', 'user-presence'],
+    queryFn: async () => {
+      const result = await callAdminUsersFunction({ action: 'get_user_presence' });
+      return result.userPresence ?? [];
+    },
+    enabled: IS_REAL_AUTH && isCurrentUserMegaMaster,
+    refetchInterval: 30_000,
+    staleTime: 20_000,
+  });
+  const presenceByUserId = useMemo(() => {
+    return userPresence.reduce<Record<string, AdminUserPresence>>((accumulator, presence) => {
+      accumulator[presence.userId] = presence;
+      return accumulator;
+    }, {});
+  }, [userPresence]);
+  const onlineCount = isCurrentUserMegaMaster
+    ? systemUsers.filter((user) => presenceByUserId[user.id]?.isOnline).length
+    : 0;
   const isInvitePendingUser = (targetUser: SystemUser) =>
     IS_REAL_AUTH
     && targetUser.isActive
@@ -715,11 +749,12 @@ export default function AdminClients() {
         </Alert>
       ) : null}
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className={cn('grid gap-4', isCurrentUserMegaMaster ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-3')}>
         {[
           { label: 'Total', value: systemUsers.length, color: 'text-foreground' },
           { label: 'Ativos', value: activeCount, color: 'text-success' },
           { label: 'Inativos', value: inactiveCount, color: 'text-destructive' },
+          ...(isCurrentUserMegaMaster ? [{ label: 'Online agora', value: onlineCount, color: 'text-emerald-600' }] : []),
         ].map((stat) => (
           <Card key={stat.label}>
             <CardContent className="p-4 text-center">
@@ -764,6 +799,7 @@ export default function AdminClients() {
           const isProtectedMegaMaster = IS_REAL_AUTH && !isCurrentUserMegaMaster && isMegaMasterUser(user);
           const isInvitePending = isInvitePendingUser(user);
           const canResendInvite = canResendInviteUser(user);
+          const presence = isCurrentUserMegaMaster ? presenceByUserId[user.id] : undefined;
 
           return (
             <motion.div
@@ -799,6 +835,20 @@ export default function AdminClients() {
                         <Badge variant="outline" className="text-[10px]">
                           {isMegaMasterUser(user) ? 'Mega Master' : user.role === 'ADMIN' ? 'Master' : ROLE_LABELS[user.role]}
                         </Badge>
+                        {isCurrentUserMegaMaster ? (
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              'text-[10px] gap-1',
+                              presence?.isOnline
+                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                : 'border-muted bg-muted/40 text-muted-foreground',
+                            )}
+                          >
+                            <span className={cn('h-1.5 w-1.5 rounded-full', presence?.isOnline ? 'bg-emerald-500' : 'bg-muted-foreground/40')} />
+                            {presence?.isOnline ? 'Online' : 'Offline'}
+                          </Badge>
+                        ) : null}
                       </div>
                       <p className="text-xs text-muted-foreground truncate">{user.email}</p>
                     </div>
@@ -965,6 +1015,16 @@ export default function AdminClients() {
                             <div className="flex items-center gap-2 text-muted-foreground">
                               <Shield className="w-4 h-4" /> Criado em: {new Date(user.createdAt).toLocaleDateString('pt-BR')}
                             </div>
+                            {isCurrentUserMegaMaster ? (
+                              <>
+                                <div className="flex items-center gap-2 text-muted-foreground">
+                                  <Clock className="w-4 h-4" /> Último acesso: {formatPresenceDate(presence?.lastSeenAt ?? user.lastLogin)}
+                                </div>
+                                <div className="flex items-center gap-2 text-muted-foreground">
+                                  <Activity className="w-4 h-4" /> Rota atual: {presence?.isOnline && presence.currentRoute ? presence.currentRoute : 'Não disponível'}
+                                </div>
+                              </>
+                            ) : null}
                           </div>
                           <Separator className="my-3" />
                           <div>

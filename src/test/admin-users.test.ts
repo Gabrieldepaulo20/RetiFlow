@@ -121,6 +121,38 @@ describe('callAdminUsersFunction', () => {
     }));
   });
 
+  it('loads user presence through the admin function', async () => {
+    mocks.invoke.mockResolvedValue({
+      data: {
+        mensagem: 'Presença dos usuários carregada.',
+        userPresence: [
+          {
+            userId: VALID_UUID,
+            email: 'cliente@example.com',
+            lastSeenAt: '2026-04-30T12:00:00.000Z',
+            currentRoute: '/dashboard',
+            isOnline: true,
+          },
+        ],
+      },
+      error: null,
+    });
+
+    await expect(callAdminUsersFunction({ action: 'get_user_presence' })).resolves.toMatchObject({
+      userPresence: [
+        {
+          userId: VALID_UUID,
+          isOnline: true,
+          currentRoute: '/dashboard',
+        },
+      ],
+    });
+
+    expect(mocks.invoke).toHaveBeenCalledWith('admin-users', expect.objectContaining({
+      body: { action: 'get_user_presence' },
+    }));
+  });
+
   it('supports analyzing and deleting a user through the admin function', async () => {
     mocks.invoke.mockResolvedValueOnce({
       data: {

@@ -31,6 +31,14 @@ type DeletionReport = {
   warnings: string[];
 };
 
+type UserPresence = {
+  userId: string;
+  email: string;
+  lastSeenAt: string;
+  currentRoute?: string | null;
+  isOnline: boolean;
+};
+
 const MASTER_MODULE_ACCESS: Required<ModuleAccess> = {
   dashboard: true,
   clients: true,
@@ -76,6 +84,9 @@ type ActionPayload =
   | {
       action: 'end_support_impersonation';
       sessionId: string;
+    }
+  | {
+      action: 'get_user_presence';
     };
 
 const localDevOrigins = new Set([
@@ -1136,6 +1147,28 @@ async function endSupportImpersonation(
   if (error) throw new Error(`Falha ao encerrar sessão de suporte: ${error.message}`);
 }
 
+async function getUserPresence(serviceClient: ReturnType<typeof createClient>): Promise<UserPresence[]> {
+  const { data, error } = await serviceClient
+    .schema('RetificaPremium')
+    .from('Usuarios_Presenca')
+    .select('fk_usuarios, email, last_seen_at, current_route')
+    .order('last_seen_at', { ascending: false });
+
+  if (error) throw new Error(`Falha ao carregar presença dos usuários: ${error.message}`);
+
+  const onlineCutoff = Date.now() - 90_000;
+  return (data ?? []).map((row) => {
+    const lastSeenAt = String(row.last_seen_at);
+    return {
+      userId: String(row.fk_usuarios),
+      email: String(row.email ?? ''),
+      lastSeenAt,
+      currentRoute: typeof row.current_route === 'string' ? row.current_route : null,
+      isOnline: new Date(lastSeenAt).getTime() >= onlineCutoff,
+    };
+  });
+}
+
 function isProtectedMegaMasterTarget(
   requester: { requesterIsMegaMaster: boolean; superAdminEmails: Set<string> },
   targetEmail: string,
@@ -1327,6 +1360,18 @@ Deno.serve(async (request) => {
       const sessionId = assertSessionId(payload.sessionId);
       await endSupportImpersonation(requester, sessionId);
       return jsonResponse({ mensagem: 'Modo suporte encerrado.' }, 200, request);
+    }
+
+    if (payload.action === 'get_user_presence') {
+      if (!requester.requesterIsMegaMaster) {
+        return jsonResponse({ error: 'Somente o Mega Master autorizado pode ver presença em tempo real.' }, 403, request);
+      }
+
+      const userPresence = await getUserPresence(requester.serviceClient);
+      return jsonResponse({
+        mensagem: 'Presença dos usuários carregada.',
+        userPresence,
+      }, 200, request);
     }
 
     if (payload.action === 'analyze_delete_user' || payload.action === 'delete_user') {

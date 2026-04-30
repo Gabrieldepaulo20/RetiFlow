@@ -19,6 +19,14 @@ export type AdminUserDeletionReport = {
   warnings: string[];
 };
 
+export type AdminUserPresence = {
+  userId: string;
+  email: string;
+  lastSeenAt: string;
+  currentRoute?: string | null;
+  isOnline: boolean;
+};
+
 export type AdminUserActionResult = {
   id_usuarios?: string;
   auth_user_id?: string;
@@ -30,6 +38,7 @@ export type AdminUserActionResult = {
   confirmationWarning?: string | null;
   supportSession?: SupportImpersonationSession;
   deletionReport?: AdminUserDeletionReport;
+  userPresence?: AdminUserPresence[];
 };
 
 type AdminUserAction =
@@ -65,6 +74,9 @@ type AdminUserAction =
   | {
       action: 'end_support_impersonation';
       sessionId: string;
+    }
+  | {
+      action: 'get_user_presence';
     };
 
 async function getAccessToken() {
