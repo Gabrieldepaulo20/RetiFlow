@@ -22,9 +22,16 @@ describe('auth default redirect', () => {
     window.localStorage.clear();
   });
 
-  it('uses explicit DB module access for admin routes', () => {
-    expect(getDefaultRedirect(makeUser('ADMIN', { admin: false, dashboard: true }))).toBe('/dashboard');
-    expect(canUserAccessModule(makeUser('ADMIN', { admin: false, dashboard: true }), 'admin')).toBe(false);
+  it('keeps ADMIN users on the stable master module matrix even when DB flags are incomplete', () => {
+    const admin = makeUser('ADMIN', { admin: false, dashboard: false, notes: false });
+
+    expect(getDefaultRedirect(admin)).toBe('/admin');
+    expect(getDefaultRedirect(admin, { operationalOnly: true })).toBe('/dashboard');
+    expect(canUserAccessModule(admin, 'admin')).toBe(true);
+    expect(canUserAccessModule(admin, 'dashboard')).toBe(true);
+    expect(canUserAccessModule(admin, 'notes')).toBe(true);
+    expect(canUserAccessModule(admin, 'settings')).toBe(true);
+    expect(canUserAccessModule(admin, 'invoices')).toBe(false);
   });
 
   it('can redirect a master/admin to the operational portal without choosing /admin', () => {
@@ -35,13 +42,13 @@ describe('auth default redirect', () => {
     }), { operationalOnly: true })).toBe('/dashboard');
   });
 
-  it('uses the next operational module for master/admin test login when dashboard is disabled', () => {
+  it('uses dashboard for master/admin operational login even when DB flags are sparse', () => {
     expect(getDefaultRedirect(makeUser('ADMIN', {
       admin: true,
       dashboard: false,
       clients: true,
       notes: true,
-    }), { operationalOnly: true })).toBe('/clientes');
+    }), { operationalOnly: true })).toBe('/dashboard');
   });
 
   it('redirects operational users to the first enabled module when dashboard is disabled', () => {

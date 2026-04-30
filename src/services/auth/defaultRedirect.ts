@@ -36,8 +36,11 @@ interface DefaultRedirectOptions {
 
 export function canUserAccessModule(user: SystemUser | null, moduleKey: AppModuleKey) {
   if (!user) return false;
-  if (user.role === 'ADMIN' && moduleKey === 'admin') {
-    return user.moduleAccess ? user.moduleAccess.admin !== false : true;
+
+  if (user.role === 'ADMIN') {
+    // Master/Mega Master não deve perder acesso operacional por flags incompletas
+    // de módulo vindas do banco. Nota Fiscal segue fora da v1 por padrão.
+    return DEFAULT_ROLE_MODULE_CONFIG.ADMIN[moduleKey] === true;
   }
 
   if (user.moduleAccess) {
