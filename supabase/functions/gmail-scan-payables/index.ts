@@ -61,6 +61,7 @@ async function decryptToken(cipher: string) {
 async function refreshAccessToken(refreshToken: string) {
   const clientId = Deno.env.get('GOOGLE_CLIENT_ID') ?? '';
   const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET') ?? '';
+  if (!clientId || !clientSecret) throw new Error('Credenciais Google OAuth não configuradas no servidor.');
   const response = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -213,6 +214,7 @@ Deno.serve(async (request) => {
         .schema('RetificaPremium')
         .from('Sugestoes_Email')
         .insert({
+          fk_auth_user: userData.user.id,
           assunto: subject || buildTitle(subject, from.name),
           nome_remetente: from.name,
           email_remetente: from.email,

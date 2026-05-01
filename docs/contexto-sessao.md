@@ -1,6 +1,6 @@
 # Contexto Técnico Completo — Retiflow / Retífica Premium
 
-> Atualizado em: 2026-04-30
+> Atualizado em: 2026-05-01
 > Repositório local: `/Users/gabrielwilliamdepaulo/Documents/RetificaPremium/retiflow`
 > GitHub: `Gabrieldepaulo20/RetiFlow`
 > Branch principal: `main`
@@ -26,7 +26,7 @@ Estado atual honesto:
 | Preview/PDF de O.S. | Funcional e otimizado visualmente, mas deve ser validado manualmente em vários tamanhos de tela/impressão |
 | Fechamento mensal | Integrado ao Supabase para geração/salvamento/PDF; rascunhos ainda usam `localStorage` de forma intencional |
 | Contas a pagar | Integrado ao Supabase via RPCs, storage privado, IA via Edge Function |
-| Sugestões de e-mail | Agora conectadas a RPC real, não mais local-only |
+| Sugestões de e-mail/Gmail | RPC real + OAuth Gmail implantado; sugestões isoladas por usuário/tenant |
 | Logs/histórico | Agora lê e insere no Supabase via `get_logs`/`insert_log` |
 | Nota Fiscal | Fora da v1; rota mantém aviso de indisponibilidade e ações fake foram removidas |
 | Configurações | Empresa, módulos e modelos persistem no Supabase; aparência/logo/senha seguem marcadas como prévias/indisponíveis |
@@ -1266,6 +1266,7 @@ Novas estruturas planejadas/versionadas:
 - `RetificaPremium.Gmail_Connections`: conexão Gmail/Workspace por usuário, com refresh token criptografado server-side.
 - `RetificaPremium.Gmail_OAuth_States`: estados temporários do OAuth.
 - `RetificaPremium.Gmail_Scanned_Messages`: deduplicação de mensagens analisadas.
+- `RetificaPremium.Sugestoes_Email.fk_auth_user`: sugestões agora pertencem ao usuário autenticado; listagem/aceite/ignore filtram por `auth.uid()`.
 - RPC `get_chamados_suporte()`: lista chamados do usuário autenticado.
 - RPC `get_gmail_connection_status()`: retorna status da conexão Gmail do usuário.
 
@@ -1277,6 +1278,13 @@ Edge Functions criadas:
 | `gmail-oauth-start` | Gerar URL OAuth Google com `gmail.readonly` | Auth obrigatória, state salvo server-side |
 | `gmail-oauth-callback` | Trocar `code` por refresh token e salvar conexão | Token criptografado com `GOOGLE_TOKEN_ENCRYPTION_KEY` |
 | `gmail-scan-payables` | Ler Gmail conectado e criar sugestões revisáveis | Auth obrigatória, deduplicação por `gmail_message_id` |
+
+Status operacional da integração Gmail:
+
+- `gmail-oauth-start`, `gmail-oauth-callback` e `gmail-scan-payables` estão implantadas no Supabase.
+- `GOOGLE_TOKEN_ENCRYPTION_KEY` foi configurada como secret server-side.
+- `GOOGLE_REDIRECT_URI` pode ser configurado explicitamente; se ausente, as Functions derivam o callback por `SUPABASE_URL/functions/v1/gmail-oauth-callback`.
+- Ainda é obrigatório configurar `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` no Supabase e autorizar o redirect URI correspondente no Google Cloud antes de conectar uma conta real.
 
 Frontend afetado:
 
@@ -1296,7 +1304,7 @@ Secrets necessários no Supabase:
 - Google:
   - `GOOGLE_CLIENT_ID`
   - `GOOGLE_CLIENT_SECRET`
-  - `GOOGLE_REDIRECT_URI`
+  - `GOOGLE_REDIRECT_URI` opcional, recomendado para deixar explícito
   - `GOOGLE_TOKEN_ENCRYPTION_KEY`
   - `APP_ORIGIN`
 - CORS:

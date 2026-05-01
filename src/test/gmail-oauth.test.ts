@@ -16,6 +16,16 @@ describe('gmail oauth feedback', () => {
       description: 'A integração Gmail ainda precisa de configuração no servidor.',
       variant: 'destructive',
     });
+
+    expect(getGmailOAuthFeedback('error', 'configuracao_google')).toMatchObject({
+      description: 'As credenciais Google OAuth ainda não estão configuradas no servidor.',
+      variant: 'destructive',
+    });
+
+    expect(getGmailOAuthFeedback('error', 'criptografia_token')).toMatchObject({
+      description: 'A chave segura para guardar o token do Gmail ainda não está configurada.',
+      variant: 'destructive',
+    });
   });
 
   it('keeps unknown callback errors honest without leaking internals', () => {

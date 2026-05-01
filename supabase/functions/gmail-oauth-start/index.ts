@@ -35,6 +35,15 @@ function jsonResponse(body: unknown, status: number, request: Request) {
   });
 }
 
+function resolveRedirectUri() {
+  const configured = Deno.env.get('GOOGLE_REDIRECT_URI')?.trim();
+  if (configured) return configured;
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')?.trim().replace(/\/$/, '');
+  if (!supabaseUrl) return '';
+  return `${supabaseUrl}/functions/v1/gmail-oauth-callback`;
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: getCorsHeaders(request) });
   if (request.method !== 'POST') return jsonResponse({ error: 'Método não permitido.' }, 405, request);
@@ -43,9 +52,9 @@ Deno.serve(async (request) => {
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const clientId = Deno.env.get('GOOGLE_CLIENT_ID') ?? '';
-  const redirectUri = Deno.env.get('GOOGLE_REDIRECT_URI') ?? '';
-  if (!supabaseUrl || !anonKey || !serviceKey || !clientId || !redirectUri) {
-    return jsonResponse({ error: 'Configuração Google/Supabase ausente.' }, 500, request);
+  const redirectUri = resolveRedirectUri();
+  if (!supabaseUrl || !anonKey || !serviceKey) {
+    return jsonResponse({ error: 'Configuração Supabase ausente.' }, 500, request);
   }
 
   const token = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
@@ -54,6 +63,9 @@ Deno.serve(async (request) => {
   const authClient = createClient(supabaseUrl, anonKey, { auth: { persistSession: false } });
   const { data, error } = await authClient.auth.getUser(token);
   if (error || !data.user) return jsonResponse({ error: 'Usuário autenticado obrigatório.' }, 401, request);
+  if (!clientId || !redirectUri) {
+    return jsonResponse({ error: 'Credenciais Google OAuth não configuradas no servidor.' }, 500, request);
+  }
 
   const state = crypto.randomUUID();
   const service = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });

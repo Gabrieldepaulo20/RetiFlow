@@ -1,12 +1,29 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 function redirectWithStatus(status: 'connected' | 'error', message?: string) {
-  const appOrigin = Deno.env.get('APP_ORIGIN') ?? 'http://localhost:5173';
+  const configuredOrigin = Deno.env.get('APP_ORIGIN') ?? Deno.env.get('APP_BASE_URL') ?? Deno.env.get('AUTH_REDIRECT_TO');
+  let appOrigin = 'http://localhost:5173';
+  if (configuredOrigin) {
+    try {
+      appOrigin = new URL(configuredOrigin).origin;
+    } catch {
+      appOrigin = 'http://localhost:5173';
+    }
+  }
   const url = new URL('/contas-a-pagar', appOrigin);
   url.searchParams.set('view', 'sugestoes');
   url.searchParams.set('gmail', status);
   if (message) url.searchParams.set('message', message.slice(0, 120));
   return Response.redirect(url.toString(), 302);
+}
+
+function resolveRedirectUri() {
+  const configured = Deno.env.get('GOOGLE_REDIRECT_URI')?.trim();
+  if (configured) return configured;
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')?.trim().replace(/\/$/, '');
+  if (!supabaseUrl) return '';
+  return `${supabaseUrl}/functions/v1/gmail-oauth-callback`;
 }
 
 function toBase64(bytes: Uint8Array) {
@@ -39,9 +56,12 @@ Deno.serve(async (request) => {
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const clientId = Deno.env.get('GOOGLE_CLIENT_ID') ?? '';
   const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET') ?? '';
-  const redirectUri = Deno.env.get('GOOGLE_REDIRECT_URI') ?? '';
-  if (!supabaseUrl || !serviceKey || !clientId || !clientSecret || !redirectUri) {
-    return redirectWithStatus('error', 'configuracao_ausente');
+  const redirectUri = resolveRedirectUri();
+  if (!supabaseUrl || !serviceKey) {
+    return redirectWithStatus('error', 'configuracao_supabase');
+  }
+  if (!clientId || !clientSecret || !redirectUri) {
+    return redirectWithStatus('error', 'configuracao_google');
   }
 
   const service = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
@@ -80,7 +100,12 @@ Deno.serve(async (request) => {
   const email = (profile.emailAddress ?? '').trim().toLowerCase();
   if (!email) return redirectWithStatus('error', 'email_gmail');
 
-  const encrypted = await encryptToken(tokenData.refresh_token);
+  let encrypted: string;
+  try {
+    encrypted = await encryptToken(tokenData.refresh_token);
+  } catch {
+    return redirectWithStatus('error', 'criptografia_token');
+  }
   const { error: upsertError } = await service
     .schema('RetificaPremium')
     .from('Gmail_Connections')

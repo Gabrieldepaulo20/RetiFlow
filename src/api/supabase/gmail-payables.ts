@@ -20,13 +20,31 @@ async function getAccessToken() {
 
 async function invokeAuthed<T>(name: string, body?: Record<string, unknown>) {
   const accessToken = await getAccessToken();
-  const { data, error } = await supabase.functions.invoke<T>(name, {
-    body: body ?? {},
-    headers: { Authorization: `Bearer ${accessToken}` },
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+  if (!supabaseUrl || !anonKey) {
+    throw new Error('Configuração Supabase ausente no frontend.');
+  }
+
+  const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/${name}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      apikey: anonKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body ?? {}),
   });
 
-  if (error) throw new Error(error.message || `Falha ao chamar ${name}.`);
-  return data as T;
+  const payload = await response.json().catch(() => null) as T | { error?: string } | null;
+  if (!response.ok) {
+    const message = payload && typeof payload === 'object' && 'error' in payload && payload.error
+      ? payload.error
+      : `Falha ao chamar ${name}.`;
+    throw new Error(message);
+  }
+
+  return payload as T;
 }
 
 export async function getGmailConnectionStatus() {
