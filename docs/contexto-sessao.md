@@ -4,7 +4,7 @@
 > Repositório local: `/Users/gabrielwilliamdepaulo/Documents/RetificaPremium/retiflow`
 > GitHub: `Gabrieldepaulo20/RetiFlow`
 > Branch principal: `main`
-> Último commit validado neste contexto: `a5edf6e feat: add mega master user presence tracking`
+> Último commit validado neste contexto: pendente do commit desta rodada de tenant isolation
 > Escopo desta documentação: sistema Retiflow exceto Nota Fiscal, que ainda deve ser tratada como fora da v1/piloto.
 
 Este arquivo foi escrito para ser entregue a outro modelo de IA ou revisor técnico. A intenção é dar contexto suficiente para análise de arquitetura, segurança, banco, frontend, integração Supabase, riscos restantes e oportunidades de melhoria.
@@ -33,6 +33,7 @@ Estado atual honesto:
 | Admin/Master | Hierarquia Mega Master/Master implementada via Edge Function `admin-users`; Mega Master é protegido |
 | Exclusão de usuários | Mega Master possui exclusão em cascata auditada para dados tecnicamente vinculados ao usuário |
 | Presença online | Mega Master consegue ver usuários online, última atividade e rota atual via RPC/Edge Function |
+| Tenant isolation operacional | Clientes, O.S., contas a pagar e fechamentos agora são filtrados server-side por usuário autenticado |
 | Testes | Unit tests e integration tests reais passando; auth provider tem teste contra mock em produção |
 
 Validações executadas recentemente:
@@ -43,7 +44,7 @@ Validações executadas recentemente:
 | `npm run build` | Passou |
 | `npm run lint` | Passou com warnings, sem erros |
 | `npm test -- --run` | 262 testes passaram |
-| `npm run test:integration` | 32 testes passaram contra Supabase real |
+| `npm run test:integration` | 33 testes passaram contra Supabase real |
 | `npm run test:e2e -- --project=chromium` | 38 testes passaram |
 
 Avisos ainda existentes:
@@ -52,6 +53,7 @@ Avisos ainda existentes:
 - Build alerta chunks grandes, especialmente `react-pdf.browser`, `xlsx`, charts e bundle principal.
 - Fase 9B prepara `notas` como bucket privado: novos PDFs de O.S. salvam path em `pdf_url` e a leitura usa signed URL sob demanda.
 - Tokens Supabase ficam no navegador, como em qualquer SPA com Supabase Auth. Isso exige CSP forte, ausência de XSS e RPC/RLS bem feitos no banco.
+- Modo suporte/impersonação ainda troca o usuário efetivo no frontend. Como as RPCs operacionais agora usam `auth.uid()` real para isolamento, o modo suporte não deve ser usado como prova de acesso aos dados do cliente até existir um fluxo server-side explícito de suporte.
 
 ---
 
@@ -1502,8 +1504,9 @@ Estado atual:
 
 Limite intencional:
 
-- A exclusão não remove clientes, O.S. e fechamentos por ainda não existir FK confiável de ownership/tenant nesses domínios. Apagar esses dados em cascata hoje poderia remover dados compartilhados por engano.
-- Antes de produção SaaS ampla, é obrigatório fechar o modelo de tenancy/ownership desses domínios.
+- Clientes agora possuem `fk_criado_por`, e O.S./contas usam as FKs de usuário já existentes.
+- A exclusão ainda não remove clientes, O.S. e fechamentos por escolha conservadora desta rodada: apesar de já existir ownership, apagar esses domínios em cascata exige uma fase própria para revisar vínculos de veículo, fechamento, storage/PDF e histórico.
+- Antes de produção SaaS ampla, revisar se a exclusão de usuário deve realmente apagar dados operacionais ou apenas inativar/arquivar por retenção fiscal/operacional.
 
 Arquivos principais:
 
@@ -1603,6 +1606,56 @@ Gaps ainda importantes:
 - Convite/criação de usuário não é totalmente transacional porque cruza Supabase Auth + banco interno. Se Auth cria o usuário e a etapa de perfil/módulos falha, pode sobrar usuário Auth órfão. Recomendação: adicionar compensação na Edge Function `admin-users`, apagando o Auth user recém-criado quando as etapas internas falharem.
 - PDF de O.S. não é SQL-transacional porque envolve Storage + banco. Se a nota salva mas upload/update do PDF falha, a O.S. pode existir sem PDF. Recomendação: criar status de PDF (`pdf_status`, `pdf_error`, `pdf_generated_at`) ou fila/retry para geração.
 - Anexo de conta a pagar também cruza Storage + banco. Recomendação: se o insert do anexo falhar, limpar o objeto recém-enviado no Storage.
+
+### 19.12 Tenant isolation operacional
+
+Problema identificado:
+
+- Usuários operacionais conseguiam enxergar dados globais porque RPCs como `get_clientes`, `get_notas_servico`, `get_contas_pagar`, `get_fechamentos` e detalhes relacionados não filtravam por dono real.
+- `Clientes` não tinha FK de ownership; `Notas_de_Servico` tinha `criado_por_usuario`, mas registros antigos estavam sem dono; `Contas_Pagar` tinha `fk_criado_por`, mas registros antigos também estavam sem dono.
+- Como as RPCs são `SECURITY DEFINER`, `ProtectedRoute`/menu não eram suficientes para segurança real.
+
+Correção aplicada:
+
+- Nova migration versionada: `supabase/migrations/20260430114500_enforce_operational_tenant_isolation.sql`.
+- Criadas helpers SQL:
+  - `current_usuario_id()`
+  - `require_current_usuario_id()`
+- `Clientes` ganhou coluna `fk_criado_por` com FK para `Usuarios`.
+- Registros órfãos existentes de `Clientes`, `Notas_de_Servico` e `Contas_Pagar` foram vinculados ao Mega Master `gabrielwilliam208@gmail.com` para não ficarem públicos nem sumirem sem dono.
+- Constraint global `Clientes_documento_key` foi substituída por índice único parcial por usuário:
+  - `idx_clientes_owner_documento_unique (fk_criado_por, documento)`
+- Adicionados índices de performance:
+  - `idx_clientes_fk_criado_por`
+  - `idx_notas_servico_criado_por`
+  - `idx_contas_pagar_criado_por`
+- Adicionados triggers server-side:
+  - `trg_enforce_client_owner`
+  - `trg_enforce_note_owner`
+  - `trg_enforce_payable_owner`
+  - `trg_enforce_closing_owner`
+- Reescritas/ajustadas RPCs de leitura para filtrar pelo usuário autenticado:
+  - `get_clientes`
+  - `get_cliente_detalhes`
+  - `get_notas_servico`
+  - `get_nota_servico_detalhes`
+  - `get_contas_pagar`
+  - `get_conta_pagar_detalhes`
+  - `get_fechamentos`
+  - `update_nota_pdf_url`
+
+Validação real:
+
+- Usuário de integração autenticado viu `0` clientes, `0` O.S. e `0` contas quando os registros existentes pertenciam ao Mega Master.
+- Tentativas de abrir detalhes de cliente/O.S./conta de outro dono retornaram `404`.
+- Novo teste de integração criado: `src/test/integration/tenant-isolation.test.ts`.
+- `npm run test:integration` passou com 12 arquivos e 33 testes.
+
+Limitações/decisões:
+
+- O isolamento operacional agora usa o `auth.uid()` real do token Supabase.
+- O modo suporte/impersonação atual troca o usuário efetivo no frontend, mas não troca `auth.uid()` no banco. Portanto, para suporte visualizar dados de outro cliente de forma segura, será necessário implementar um fluxo server-side explícito, auditado, com `Sessoes_Suporte` validada dentro da RPC/Edge Function ou uma API dedicada.
+- Storage `notas` ainda tem limitação de path sem tenant fino documentada na seção de Storage; leitura usa signed URL, mas policies ainda devem ser revisadas se houver exigência de isolamento por path.
 - `DataContext.updateClient` ainda pode executar status + save completo em duas chamadas quando há mudança de status. Ideal futuro: consolidar status no payload da RPC principal.
 - Criação de nota de compra vinculada ainda tem parte orquestrada no frontend: pausar nota pai + criar nota de compra. Ideal futuro: RPC única para “criar compra vinculada e pausar pai”.
 
