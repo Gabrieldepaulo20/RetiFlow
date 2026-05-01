@@ -634,7 +634,7 @@ export default function MonthlyClosing() {
     if (fechamento.pdf_url) {
       try {
         const url = await getFechamentoPDFSignedUrl(fechamento.pdf_url);
-        window.open(url, '_blank');
+        window.open(url, '_blank', 'noopener,noreferrer');
         await registrarAcaoFechamento({ p_id_fechamentos: fechamento.id_fechamentos, p_tipo: 'baixado' }).catch(() => {});
       } catch {
         toast({ title: 'Erro ao abrir PDF', description: 'Não foi possível gerar link seguro.', variant: 'destructive' });
