@@ -28,10 +28,8 @@ describe.skipIf(skipIntegration)('Chamados de suporte — integração real com 
     await deleteTestUser(testUserEmail);
   });
 
-  it('get_chamados_suporte sem autenticação retorna 401', async () => {
-    const result = await callRpc(createAnonClient(), 'get_chamados_suporte');
-
-    expect(result.status).toBe(401);
+  it('get_chamados_suporte sem autenticação não executa a RPC', async () => {
+    await expect(callRpc(createAnonClient(), 'get_chamados_suporte')).rejects.toThrow(/permission denied|not allowed/i);
   });
 
   it('get_chamados_suporte lista apenas chamados do usuário autenticado', async () => {

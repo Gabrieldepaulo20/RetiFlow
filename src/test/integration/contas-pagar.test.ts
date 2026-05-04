@@ -8,7 +8,7 @@ import { getIntegrationEnvStatus, warnIntegrationSkipped } from './helpers/env';
  * Testes de integração — RPCs de Contas a Pagar com Supabase real.
  *
  * O que está sendo validado ponta a ponta:
- * - P0-5: auth guard P0401 (chamada sem sessão → 401)
+ * - P0-5: auth guard hardening (chamada sem sessão não executa RPC)
  * - Insert real via RPC com usuário autenticado
  * - Listagem retorna o registro criado
  * - Update preserva campos não alterados
@@ -40,44 +40,38 @@ describe.skipIf(skipIntegration)('Contas a Pagar — integração real com Supab
 
   // ── P0-5: Auth guard ──────────────────────────────────────────────────────
 
-  it('insert_conta_pagar sem autenticação retorna status 401 (auth guard P0-5)', async () => {
+  it('insert_conta_pagar sem autenticação não executa a RPC (auth guard P0-5)', async () => {
     const anonClient = createAnonClient();
 
-    const result = await callRpc(anonClient, 'insert_conta_pagar', {
+    await expect(callRpc(anonClient, 'insert_conta_pagar', {
       p_titulo: `${TEST_PREFIX} NÃO DEVE SER CRIADO`,
       p_fk_categorias: TEST_CATEGORY_ID,
       p_data_vencimento: '2026-12-31',
       p_valor_original: 100,
-    });
-
-    expect(result.status).toBe(401);
-    expect(result.code).toBe('unauthorized');
+    })).rejects.toThrow(/permission denied|not allowed/i);
   });
 
-  it('update_conta_pagar sem autenticação retorna status 401', async () => {
+  it('update_conta_pagar sem autenticação não executa a RPC', async () => {
     const anonClient = createAnonClient();
-    const result = await callRpc(anonClient, 'update_conta_pagar', {
+    await expect(callRpc(anonClient, 'update_conta_pagar', {
       p_id_contas_pagar: '00000000-0000-0000-0000-000000000000',
       p_titulo: 'tentativa indevida',
-    });
-    expect(result.status).toBe(401);
+    })).rejects.toThrow(/permission denied|not allowed/i);
   });
 
-  it('registrar_pagamento sem autenticação retorna status 401', async () => {
+  it('registrar_pagamento sem autenticação não executa a RPC', async () => {
     const anonClient = createAnonClient();
-    const result = await callRpc(anonClient, 'registrar_pagamento', {
+    await expect(callRpc(anonClient, 'registrar_pagamento', {
       p_id_contas_pagar: '00000000-0000-0000-0000-000000000000',
       p_valor_pago: 100,
-    });
-    expect(result.status).toBe(401);
+    })).rejects.toThrow(/permission denied|not allowed/i);
   });
 
-  it('cancelar_conta_pagar sem autenticação retorna status 401', async () => {
+  it('cancelar_conta_pagar sem autenticação não executa a RPC', async () => {
     const anonClient = createAnonClient();
-    const result = await callRpc(anonClient, 'cancelar_conta_pagar', {
+    await expect(callRpc(anonClient, 'cancelar_conta_pagar', {
       p_id_contas_pagar: '00000000-0000-0000-0000-000000000000',
-    });
-    expect(result.status).toBe(401);
+    })).rejects.toThrow(/permission denied|not allowed/i);
   });
 
   // ── Insert autenticado ────────────────────────────────────────────────────

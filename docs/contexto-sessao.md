@@ -35,6 +35,7 @@ Estado atual honesto:
 | Presença online | Mega Master consegue ver usuários online, última atividade e rota atual via RPC/Edge Function |
 | Tenant isolation operacional | Clientes, O.S., contas a pagar e fechamentos agora são filtrados server-side por usuário autenticado |
 | Signup público/Auth hardening | Signup direto com anon key bloqueado no Supabase Auth; RPCs administrativas sensíveis restritas |
+| RPC/API hardening | `PUBLIC`/`anon` sem execução em RPCs `RetificaPremium`; `anon/authenticated` sem grants diretos de tabela |
 | Testes | Unit tests e integration tests reais passando; auth provider tem teste contra mock em produção |
 
 Validações executadas recentemente:
@@ -55,6 +56,8 @@ Avisos ainda existentes:
 - Fase 9B prepara `notas` como bucket privado: novos PDFs de O.S. salvam path em `pdf_url` e a leitura usa signed URL sob demanda.
 - Tokens Supabase ficam no navegador, como em qualquer SPA com Supabase Auth. Isso exige CSP forte, ausência de XSS e RPC/RLS bem feitos no banco.
 - A `anon key` é pública por design, mas não pode conceder cadastro ou escrita sensível. Em 2026-05-04 o Auth foi endurecido: `disable_signup=true`, `mailer_autoconfirm=false`, senha mínima 10 e reautenticação para troca de senha.
+- Em 2026-05-04 também foi removido `EXECUTE` de `PUBLIC/anon` nas RPCs de negócio. Chamadas anônimas passam a falhar por permissão antes de entrar na função. Usuários autenticados continuam usando RPCs; operações administrativas sensíveis ficam restritas a `service_role` via Edge Function.
+- O Supabase Auth está com rotação de refresh token ativa, MFA TOTP habilitado, manual linking desabilitado e notificações de segurança de alteração de senha/e-mail/identidade/MFA habilitadas. Proteção HIBP/leaked password foi tentada, mas o Supabase informou que exige plano Pro ou superior.
 - Modo suporte/impersonação ainda troca o usuário efetivo no frontend. Como as RPCs operacionais agora usam `auth.uid()` real para isolamento, o modo suporte não deve ser usado como prova de acesso aos dados do cliente até existir um fluxo server-side explícito de suporte.
 
 ---
