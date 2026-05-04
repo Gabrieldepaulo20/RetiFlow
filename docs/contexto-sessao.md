@@ -34,6 +34,7 @@ Estado atual honesto:
 | Exclusão de usuários | Mega Master possui exclusão em cascata auditada para dados tecnicamente vinculados ao usuário |
 | Presença online | Mega Master consegue ver usuários online, última atividade e rota atual via RPC/Edge Function |
 | Tenant isolation operacional | Clientes, O.S., contas a pagar e fechamentos agora são filtrados server-side por usuário autenticado |
+| Signup público/Auth hardening | Signup direto com anon key bloqueado no Supabase Auth; RPCs administrativas sensíveis restritas |
 | Testes | Unit tests e integration tests reais passando; auth provider tem teste contra mock em produção |
 
 Validações executadas recentemente:
@@ -53,6 +54,7 @@ Avisos ainda existentes:
 - Build alerta chunks grandes, especialmente `react-pdf.browser`, `xlsx`, charts e bundle principal.
 - Fase 9B prepara `notas` como bucket privado: novos PDFs de O.S. salvam path em `pdf_url` e a leitura usa signed URL sob demanda.
 - Tokens Supabase ficam no navegador, como em qualquer SPA com Supabase Auth. Isso exige CSP forte, ausência de XSS e RPC/RLS bem feitos no banco.
+- A `anon key` é pública por design, mas não pode conceder cadastro ou escrita sensível. Em 2026-05-04 o Auth foi endurecido: `disable_signup=true`, `mailer_autoconfirm=false`, senha mínima 10 e reautenticação para troca de senha.
 - Modo suporte/impersonação ainda troca o usuário efetivo no frontend. Como as RPCs operacionais agora usam `auth.uid()` real para isolamento, o modo suporte não deve ser usado como prova de acesso aos dados do cliente até existir um fluxo server-side explícito de suporte.
 
 ---

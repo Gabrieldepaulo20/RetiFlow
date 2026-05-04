@@ -43,10 +43,18 @@ describe.skipIf(!envStatus.configured)('Usuários e módulos — integração re
         nota_fiscal: false,
         configuracoes: false,
         contas_a_pagar: true,
-        admin: false,
+        admin: true,
       }, { onConflict: 'fk_usuarios' });
 
     expect(moduleError).toBeNull();
+
+    const { error: profileError } = await service
+      .schema('RetificaPremium')
+      .from('Usuarios')
+      .update({ acesso: 'administrador' })
+      .eq('id_usuarios', internalUser!.id_usuarios);
+
+    expect(profileError).toBeNull();
 
     const { client } = await signInAsTestUser();
     const envelope = await callRpc(client, 'get_usuarios', {
@@ -61,7 +69,7 @@ describe.skipIf(!envStatus.configured)('Usuários e módulos — integração re
       clientes: false,
       notas_de_entrada: true,
       contas_a_pagar: true,
-      admin: false,
+      admin: true,
     });
   });
 });
