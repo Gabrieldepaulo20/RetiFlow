@@ -10,6 +10,8 @@ import { getDefaultRedirect } from '@/services/auth/defaultRedirect';
 import { useToast } from '@/hooks/use-toast';
 import { getDevelopmentCredentialHint } from '@/services/auth/developmentAuthService';
 import { LoadingScreen } from '@/components/ui/loading-screen';
+import { verifyFirstAvailableTotpFactor } from '@/services/auth/mfa';
+import { supabase } from '@/lib/supabase';
 
 interface AuthLoginScreenProps {
   portal: LoginPortal;
@@ -20,7 +22,10 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const { authMode, isAuthenticated, isAuthLoading, login, user } = useAuth();
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaLoading, setMfaLoading] = useState(false);
+  const { authMode, isAuthenticated, isAuthLoading, login, completeMfaLogin, user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const credentials = getDevelopmentCredentialHint();
@@ -46,6 +51,16 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
     const result = await login({ email, password }, portal);
     setLoading(false);
 
+    if (result.mfaRequired) {
+      setMfaRequired(true);
+      setMfaCode('');
+      toast({
+        title: 'Confirme seu segundo fator',
+        description: 'Digite o código do aplicativo autenticador para concluir o acesso.',
+      });
+      return;
+    }
+
     if (result.success) {
       navigate(result.redirect);
       return;
@@ -56,6 +71,35 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
       description: result.error || 'Verifique seu e-mail e senha.',
       variant: 'destructive',
     });
+  };
+
+  const handleMfaSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+
+    setMfaLoading(true);
+    try {
+      await verifyFirstAvailableTotpFactor(mfaCode);
+      const result = await completeMfaLogin();
+
+      if (result.success) {
+        navigate(result.redirect);
+        return;
+      }
+
+      toast({
+        title: 'MFA não confirmado',
+        description: result.error || 'Verifique o código informado e tente novamente.',
+        variant: 'destructive',
+      });
+    } catch (error) {
+      toast({
+        title: 'Código MFA inválido',
+        description: error instanceof Error ? error.message : 'Não foi possível validar o segundo fator.',
+        variant: 'destructive',
+      });
+    } finally {
+      setMfaLoading(false);
+    }
   };
 
   if (isAuthLoading) {
@@ -164,57 +208,112 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
             </p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-5">
-            <div className="space-y-2">
-              <Label htmlFor="login-email" className="text-sm font-medium text-foreground">E-mail</Label>
-              <Input
-                id="login-email"
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="seu@email.com"
-                className="h-12 rounded-xl bg-muted/30 border-border/50 focus:bg-background focus:border-primary/50 transition-all duration-200 text-sm"
-                disabled={loading}
-              />
-            </div>
+          {mfaRequired ? (
+            <form onSubmit={handleMfaSubmit} className="space-y-5">
+              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground">
+                <p className="font-semibold text-foreground">Verificação em duas etapas</p>
+                <p className="mt-1">
+                  Esta conta tem MFA ativo. Informe o código de 6 dígitos do seu aplicativo autenticador.
+                </p>
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="login-password" className="text-sm font-medium text-foreground">Senha</Label>
-              <div className="relative">
+              <div className="space-y-2">
+                <Label htmlFor="login-mfa-code" className="text-sm font-medium text-foreground">Código MFA</Label>
                 <Input
-                  id="login-password"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder="••••••••"
-                  className="h-12 rounded-xl bg-muted/30 border-border/50 focus:bg-background focus:border-primary/50 transition-all duration-200 text-sm pr-12"
+                  id="login-mfa-code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={mfaCode}
+                  onChange={(event) => setMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="000000"
+                  className="h-12 rounded-xl bg-muted/30 border-border/50 text-center text-lg tracking-[0.35em] focus:bg-background focus:border-primary/50 transition-all duration-200"
+                  disabled={mfaLoading}
+                />
+              </div>
+
+              <Button
+                type="submit"
+                disabled={mfaLoading || mfaCode.length !== 6}
+                className="w-full h-12 rounded-xl gap-2.5 text-sm font-semibold shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-all duration-300"
+              >
+                {mfaLoading ? (
+                  <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <Shield className="w-4.5 h-4.5" />
+                    Confirmar MFA
+                  </>
+                )}
+              </Button>
+
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full"
+                disabled={mfaLoading}
+                onClick={() => {
+                  void supabase.auth.signOut();
+                  setMfaRequired(false);
+                  setMfaCode('');
+                }}
+              >
+                Voltar para e-mail e senha
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={handleLogin} className="space-y-5">
+              <div className="space-y-2">
+                <Label htmlFor="login-email" className="text-sm font-medium text-foreground">E-mail</Label>
+                <Input
+                  id="login-email"
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="seu@email.com"
+                  className="h-12 rounded-xl bg-muted/30 border-border/50 focus:bg-background focus:border-primary/50 transition-all duration-200 text-sm"
                   disabled={loading}
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((value) => !value)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
               </div>
-            </div>
 
-            <Button
-              type="submit"
-              disabled={loading}
-              className="w-full h-12 rounded-xl gap-2.5 text-sm font-semibold shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-all duration-300"
-            >
-              {loading ? (
-                <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-              ) : (
-                <>
-                  <LogIn className="w-4.5 h-4.5" />
-                  Entrar
-                </>
-              )}
-            </Button>
-          </form>
+              <div className="space-y-2">
+                <Label htmlFor="login-password" className="text-sm font-medium text-foreground">Senha</Label>
+                <div className="relative">
+                  <Input
+                    id="login-password"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder="••••••••"
+                    className="h-12 rounded-xl bg-muted/30 border-border/50 focus:bg-background focus:border-primary/50 transition-all duration-200 text-sm pr-12"
+                    disabled={loading}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((value) => !value)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <Button
+                type="submit"
+                disabled={loading}
+                className="w-full h-12 rounded-xl gap-2.5 text-sm font-semibold shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-all duration-300"
+              >
+                {loading ? (
+                  <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <LogIn className="w-4.5 h-4.5" />
+                    Entrar
+                  </>
+                )}
+              </Button>
+            </form>
+          )}
 
           <div className="mt-5 flex items-center justify-between text-xs text-muted-foreground">
             <span>{isAdminPortal ? 'Área administrativa protegida' : 'Área operacional liberada por conta'}</span>

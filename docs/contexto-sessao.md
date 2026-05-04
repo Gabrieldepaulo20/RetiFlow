@@ -58,6 +58,7 @@ Avisos ainda existentes:
 - A `anon key` é pública por design, mas não pode conceder cadastro ou escrita sensível. Em 2026-05-04 o Auth foi endurecido: `disable_signup=true`, `mailer_autoconfirm=false`, senha mínima 10 e reautenticação para troca de senha.
 - Em 2026-05-04 também foi removido `EXECUTE` de `PUBLIC/anon` nas RPCs de negócio. Chamadas anônimas passam a falhar por permissão antes de entrar na função. Usuários autenticados continuam usando RPCs; operações administrativas sensíveis ficam restritas a `service_role` via Edge Function.
 - O Supabase Auth está com rotação de refresh token ativa, MFA TOTP habilitado, manual linking desabilitado e notificações de segurança de alteração de senha/e-mail/identidade/MFA habilitadas. Proteção HIBP/leaked password foi tentada, mas o Supabase informou que exige plano Pro ou superior.
+- Em 2026-05-04 foi adicionada camada frontend de MFA TOTP: login detecta `aal1 -> aal2` e exige código do aplicativo autenticador antes de liberar a sessão no app; Configurações > Segurança permite cadastrar/remover autenticador TOTP usando APIs oficiais do Supabase. Controles avançados de sessão por tempo máximo/inatividade existem no Supabase, mas a documentação informa que são recurso de plano Pro ou superior.
 - Modo suporte/impersonação ainda troca o usuário efetivo no frontend. Como as RPCs operacionais agora usam `auth.uid()` real para isolamento, o modo suporte não deve ser usado como prova de acesso aos dados do cliente até existir um fluxo server-side explícito de suporte.
 
 ---

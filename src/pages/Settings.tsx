@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
+import MfaSettingsCard from '@/components/auth/MfaSettingsCard';
 import { DEFAULT_ROLE_MODULE_CONFIG } from '@/services/auth/moduleAccess';
 import { Wrench, Building2, Users, Palette, Lock, Upload, Check, FileText, Eye, LayoutGrid, LayoutDashboard, KanbanSquare, Calendar, Receipt, Settings as SettingsIcon, Info, Loader2, Search, Wallet, Shield, KeyRound } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -1171,6 +1172,8 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
           )}
+
+          <MfaSettingsCard />
 
           <Card>
             <CardHeader>

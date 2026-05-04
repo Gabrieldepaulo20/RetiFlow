@@ -17,6 +17,7 @@ import { canUserAccessModule, getDefaultRedirect } from '@/services/auth/default
 import { isSuperAdmin } from '@/services/auth/superAdmin';
 import { callAdminUsersFunction } from '@/api/supabase/admin-users';
 import { touchUserPresence } from '@/api/supabase/presence';
+import { isMfaChallengeRequired, getMfaAssuranceLevel } from '@/services/auth/mfa';
 
 const AUTH_SESSION_STORAGE_KEY = 'auth.session';
 const SUPPORT_SESSION_STORAGE_KEY = 'support.impersonation';
@@ -26,6 +27,7 @@ interface LoginResult {
   success: boolean;
   redirect: string;
   error?: string;
+  mfaRequired?: boolean;
 }
 
 export type LoginPortal = 'client' | 'admin';
@@ -46,6 +48,7 @@ interface AuthContextType {
   endSupportImpersonation: () => Promise<void>;
   retryAuth: () => void;
   refreshProfile: (options?: { keepCurrentSessionOnTransientError?: boolean }) => Promise<boolean>;
+  completeMfaLogin: () => Promise<LoginResult>;
   can: (permission: Permission) => boolean;
   canAccessModule: (moduleKey: Parameters<typeof getModulePermission>[0]) => boolean;
   isAdmin: boolean;
@@ -133,6 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profileError, setProfileError] = useState<string | null>(null);
   const [moduleAccessVersion, setModuleAccessVersion] = useState(0);
   const sessionRef = useRef<AuthSession | null>(session);
+  const pendingMfaSessionRef = useRef<{ session: AuthSession; portal: LoginPortal } | null>(null);
 
   const authMode: AuthMode = IS_REAL_AUTH ? 'real' : 'development';
 
@@ -354,6 +358,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
     }
 
+    if (IS_REAL_AUTH && await isMfaChallengeRequired()) {
+      pendingMfaSessionRef.current = { session: response.session, portal };
+      return {
+        success: false,
+        redirect: portal === 'admin' ? '/admin/login' : '/login',
+        mfaRequired: true,
+      };
+    }
+
     setSupportSession(null);
     writeStoredSupportSession(null);
     commitSession(response.session);
@@ -361,6 +374,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       success: true,
       redirect: getDefaultRedirect(response.session.user, {
         operationalOnly: portal === 'client' && isAdminUser,
+      }),
+    };
+  }, [commitSession]);
+
+  const completeMfaLogin = useCallback(async (): Promise<LoginResult> => {
+    const pending = pendingMfaSessionRef.current;
+    if (!pending) {
+      return {
+        success: false,
+        redirect: '/login',
+        error: 'Não existe um login aguardando MFA. Entre novamente.',
+      };
+    }
+
+    const { currentLevel } = await getMfaAssuranceLevel();
+    if (currentLevel !== 'aal2') {
+      return {
+        success: false,
+        redirect: pending.portal === 'admin' ? '/admin/login' : '/login',
+        error: 'O segundo fator ainda não foi confirmado.',
+        mfaRequired: true,
+      };
+    }
+
+    pendingMfaSessionRef.current = null;
+    setSupportSession(null);
+    writeStoredSupportSession(null);
+    commitSession(pending.session);
+
+    return {
+      success: true,
+      redirect: getDefaultRedirect(pending.session.user, {
+        operationalOnly: pending.portal === 'client' && pending.session.user.role === 'ADMIN',
       }),
     };
   }, [commitSession]);
@@ -431,12 +477,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       endSupportImpersonation,
       retryAuth,
       refreshProfile,
+      completeMfaLogin,
       can,
       canAccessModule,
       isAdmin: user?.role === 'ADMIN',
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [authMode, realUser, user, session, supportSession, isAuthLoading, profileError, login, logout, startSupportImpersonation, endSupportImpersonation, retryAuth, refreshProfile, can, canAccessModule, moduleAccessVersion],
+    [authMode, realUser, user, session, supportSession, isAuthLoading, profileError, login, logout, startSupportImpersonation, endSupportImpersonation, retryAuth, refreshProfile, completeMfaLogin, can, canAccessModule, moduleAccessVersion],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
