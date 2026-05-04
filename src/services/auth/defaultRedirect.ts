@@ -1,6 +1,7 @@
 import type { AppModuleKey, SystemUser } from '@/types';
 import { getModulePermission, hasPermission } from '@/services/auth/permissions';
 import { DEFAULT_ROLE_MODULE_CONFIG, isRoleModuleEnabled, isUserModuleEnabled } from '@/services/auth/moduleAccess';
+import { isSuperAdmin } from '@/services/auth/superAdmin';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
@@ -38,8 +39,20 @@ export function canUserAccessModule(user: SystemUser | null, moduleKey: AppModul
   if (!user) return false;
 
   if (user.role === 'ADMIN') {
-    // Master/Mega Master não deve perder acesso operacional por flags incompletas
-    // de módulo vindas do banco. Nota Fiscal segue fora da v1 por padrão.
+    if (IS_REAL_AUTH && isSuperAdmin(user)) {
+      // Mega Master autorizado mantém acesso amplo para suporte/administração.
+      return DEFAULT_ROLE_MODULE_CONFIG.ADMIN[moduleKey] === true;
+    }
+
+    if (IS_REAL_AUTH && user.moduleAccess) {
+      return user.moduleAccess[moduleKey] === true;
+    }
+
+    if (IS_REAL_AUTH) {
+      return false;
+    }
+
+    // Em mock/dev mantemos a matriz estável para testes locais.
     return DEFAULT_ROLE_MODULE_CONFIG.ADMIN[moduleKey] === true;
   }
 

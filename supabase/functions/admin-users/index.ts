@@ -476,6 +476,17 @@ function modulesToRpcPayload(modules: ModuleAccess) {
   }, {});
 }
 
+function normalizeInitialUserModules(role: UserRole, modules: ModuleAccess): ModuleAccess {
+  const normalized = normalizeModules(modules);
+  normalized.invoices = false;
+
+  if (role !== 'ADMIN') {
+    normalized.admin = false;
+  }
+
+  return normalized;
+}
+
 async function getRequester(request: Request) {
   const authHeader = request.headers.get('Authorization') ?? '';
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
@@ -541,8 +552,8 @@ async function getRequester(request: Request) {
       return { ok: false as const, response: jsonResponse({ error: 'Não foi possível validar o módulo Admin do solicitante.' }, 500, request) };
     }
 
-    if (moduleRow && moduleRow.admin === false) {
-      return { ok: false as const, response: jsonResponse({ error: 'Módulo Admin desativado para este usuário.' }, 403, request) };
+    if (!moduleRow || moduleRow.admin !== true) {
+      return { ok: false as const, response: jsonResponse({ error: 'Módulo Admin não está explicitamente habilitado para este usuário.' }, 403, request) };
     }
   }
 
@@ -1209,7 +1220,7 @@ Deno.serve(async (request) => {
       const role = payload.action === 'create_admin' ? 'ADMIN' : assertRole(payload.role);
       const modules = payload.action === 'create_admin'
         ? MASTER_MODULE_ACCESS
-        : normalizeModules(payload.modules);
+        : normalizeInitialUserModules(role, payload.modules ?? {});
 
       if (payload.action === 'create_admin' && !requester.requesterIsMegaMaster) {
         return jsonResponse({ error: 'Somente o Mega Master pode criar outro usuário Master.' }, 403, request);

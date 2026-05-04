@@ -84,7 +84,6 @@ describe('App routes', () => {
     ['/notas-entrada/n1', async () => screen.findByRole('heading', { name: 'OS-1' })],
     ['/kanban', async () => screen.findByRole('heading', { name: 'Produção' })],
     ['/fechamento', async () => screen.findByRole('heading', { name: 'Fechamento Mensal' })],
-    ['/nota-fiscal', async () => screen.findByRole('heading', { name: 'Nota Fiscal indisponível' })],
     ['/contas-a-pagar', async () => screen.findByRole('heading', { name: 'Contas a Pagar' })],
   ])('renders operational route %s', async (path, findElement) => {
     authenticateAs('FINANCEIRO');
@@ -92,12 +91,12 @@ describe('App routes', () => {
     expect(await findElement()).toBeInTheDocument();
   });
 
-  it('renders Nota Fiscal as unavailable instead of exposing mock actions', async () => {
+  it('blocks Nota Fiscal by default because it is outside the v1 least-privilege matrix', async () => {
     authenticateAs('FINANCEIRO');
     renderAt('/nota-fiscal');
 
-    expect(await screen.findByRole('heading', { name: 'Nota Fiscal indisponível' })).toBeInTheDocument();
-    expect(screen.getByText(/fora da v1\/piloto/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Acesso negado' })).toBeInTheDocument();
+    expect(screen.getByText('/nota-fiscal')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /registrar|emitir|baixar|imprimir|enviar|cancelar/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/registrada com sucesso/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/pdf baixado/i)).not.toBeInTheDocument();

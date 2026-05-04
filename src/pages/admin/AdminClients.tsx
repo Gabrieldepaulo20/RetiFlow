@@ -87,7 +87,7 @@ const OPERATIONAL_DEFAULT_MODULE_ACCESS: Record<AppModuleKey, boolean> = {
   closing: true,
   payables: true,
   invoices: false,
-  settings: true,
+  settings: false,
   admin: false,
 };
 
@@ -1102,7 +1102,7 @@ export default function AdminClients() {
                 </SelectContent>
               </Select>
               <p className="text-[11px] leading-relaxed text-muted-foreground">
-                Usuário operacional nasce com os módulos reais ligados; depois você pode desligar o que não quiser.
+                Usuário operacional nasce apenas com os módulos de operação da v1. Configurações, Admin e Nota Fiscal começam desligados por segurança.
                 Master tem acesso administrativo amplo e só pode ser criado pelo Mega Master.
               </p>
             </div>
