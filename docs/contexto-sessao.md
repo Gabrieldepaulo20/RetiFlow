@@ -1758,3 +1758,48 @@ Decisão técnica:
 - O access token de um usuário autenticado continua permitindo chamadas em nome daquele usuário enquanto a sessão estiver válida; isso é esperado.
 - O controle contra alteração indevida de payload precisa continuar nas RPCs/Edge Functions usando `auth.uid()`, ownership por usuário/tenant, grants mínimos e policies de Storage.
 - Risco residual principal: roubo de sessão por XSS/dispositivo comprometido. Mitigações existentes/recomendadas: CSP forte, MFA, sessão por inatividade, evitar scripts de terceiros desnecessários e nunca colocar service role no frontend.
+
+### 19.14 Hardening contra escalada de privilégios via payload interceptado
+
+Motivação:
+
+- Um usuário autenticado pode abrir DevTools, copiar o access token da própria sessão e tentar alterar payloads manualmente.
+- O risco principal não é esconder o token do próprio usuário, e sim impedir que um token de cliente/operação consiga virar Admin, Mega Master, alterar módulos, excluir usuários ou chamar RPC administrativa direta.
+
+Falha encontrada durante teste:
+
+- O teste novo mostrou que `upsert_modulo` ainda podia ser chamado diretamente por um usuário autenticado comum.
+- Isso acontecia porque uma migration posterior havia reaberto `EXECUTE` geral para `authenticated`, anulando parte do hardening anterior para RPCs administrativas.
+
+Correção aplicada:
+
+- Nova migration versionada: `supabase/migrations/20260505203000_restrict_admin_rpcs_to_service_role.sql`.
+- RPCs administrativas sensíveis voltaram a ficar restritas a `service_role`:
+  - `insert_usuario`
+  - `update_usuario`
+  - `inativar_usuario`
+  - `reativar_usuario`
+  - `insert_modulo`
+  - `upsert_modulo`
+- `authenticated`, `anon` e `public` não executam essas RPCs diretamente.
+- `supabase_auth_admin` mantém permissão apenas onde necessário para o trigger/fluxo seguro de criação de usuário Auth.
+- A migration foi aplicada no Supabase real via Management API, novamente porque `supabase db push/query --linked` ficou preso neste ambiente.
+
+Teste sentinela criado:
+
+- Novo arquivo: `src/test/integration/admin-escalation-hardening.test.ts`.
+- Cobre:
+  - usuário operacional autenticado não consegue usar a Edge Function `admin-users`;
+  - Admin comum não consegue criar outro Admin/Master;
+  - Admin comum não consegue promover usuário para Admin/Master;
+  - Admin comum não consegue excluir usuário em cascata;
+  - Admin comum não consegue iniciar modo suporte nem ver presença online global;
+  - Admin comum não consegue forçar módulo Admin em usuário operacional;
+  - usuário comum não consegue executar RPCs sensíveis diretamente;
+  - `get_usuarios` exige perfil administrador e módulo Admin no servidor.
+
+Validação real:
+
+- Antes da correção, `upsert_modulo` com token comum retornou `status: 200`.
+- Depois da correção, a mesma tentativa passou a falhar por permissão.
+- `npm run test:integration` passou com 14 arquivos e 43 testes reais contra Supabase.
