@@ -582,19 +582,38 @@ async function findAuthUserByEmail(serviceClient: ReturnType<typeof createClient
   return data.users.find((user) => user.email?.trim().toLowerCase() === email) ?? null;
 }
 
-async function ensureAuthInvite(serviceClient: ReturnType<typeof createClient>, email: string, name: string) {
+async function ensureAuthInvite(
+  serviceClient: ReturnType<typeof createClient>,
+  params: {
+    email: string;
+    name: string;
+    requesterEmail: string;
+  },
+) {
+  const { email, name, requesterEmail } = params;
   const existing = await findAuthUserByEmail(serviceClient, email);
   if (existing) return { userId: existing.id, emailSent: false };
 
   const redirectTo = Deno.env.get('AUTH_REDIRECT_TO') || Deno.env.get('APP_BASE_URL') || undefined;
-  const { data, error } = await serviceClient.auth.admin.inviteUserByEmail(email, {
-    data: { name },
-    redirectTo,
+  const { data, error } = await serviceClient.auth.admin.generateLink({
+    type: 'invite',
+    email,
+    options: {
+      data: { name },
+      redirectTo,
+    },
   });
 
-  if (error || !data.user) {
-    throw new Error(`Falha ao enviar convite seguro: ${error?.message ?? 'sem usuário retornado'}`);
+  if (error || !data.user?.id || !data.properties?.action_link) {
+    throw new Error(`Falha ao gerar convite seguro: ${error?.message ?? 'link ausente'}`);
   }
+
+  await sendInviteEmail({
+    to: email,
+    targetName: name,
+    actionLink: data.properties.action_link,
+    requesterEmail,
+  });
 
   return {
     userId: data.user.id,
@@ -1262,7 +1281,11 @@ Deno.serve(async (request) => {
         return jsonResponse({ error: 'Usuário cliente/operacional não pode receber módulo Admin.' }, 400, request);
       }
 
-      const auth = await ensureAuthInvite(requester.serviceClient, email, name);
+      const auth = await ensureAuthInvite(requester.serviceClient, {
+        email,
+        name,
+        requesterEmail: requester.requesterEmail,
+      });
       const internalUserId = await upsertInternalUser(requester.serviceClient, {
         authUserId: auth.userId,
         email,
