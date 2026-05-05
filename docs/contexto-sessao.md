@@ -1803,3 +1803,44 @@ Validação real:
 - Antes da correção, `upsert_modulo` com token comum retornou `status: 200`.
 - Depois da correção, a mesma tentativa passou a falhar por permissão.
 - `npm run test:integration` passou com 14 arquivos e 43 testes reais contra Supabase.
+
+### 19.15 Revisão de vetores comuns Supabase/SPA e CORS fail-closed
+
+Referências revisadas:
+
+- Documentação oficial Supabase sobre segurança de dados, API keys, MFA e sessões.
+- OWASP API Security Top 10 2023, especialmente BOLA, autenticação quebrada, autorização por propriedade e autorização por função.
+
+Pontos confirmados:
+
+- `anon`/publishable key no frontend é esperado em SPA Supabase; ela não deve ser tratada como segredo.
+- `service_role`/secret key nunca pode ir para navegador, bundle, log ou URL.
+- O controle real precisa estar no servidor: grants mínimos, RPCs com `auth.uid()`, RLS/policies, Storage privado e Edge Functions com `Authorization: Bearer`.
+- Frontend/ProtectedRoute melhora UX, mas não é barreira contra atacante com DevTools.
+
+Hardening aplicado nesta rodada:
+
+- Edge Functions sensíveis que ainda faziam fallback para `Access-Control-Allow-Origin: *` quando `CORS_ALLOWED_ORIGINS` estava ausente passaram a falhar fechado para origens externas.
+- Funções ajustadas:
+  - `admin-users`
+  - `dashboard-resumo`
+  - `gmail-oauth-start`
+  - `gmail-scan-payables`
+  - `support-ticket`
+- Sem env configurada, elas continuam aceitando chamadas server-to-server sem `Origin` e dev local (`localhost`/`127.0.0.1`), mas não liberam CORS amplo para qualquer site.
+- Se `CORS_ALLOWED_ORIGINS=*` for configurado por engano, o código também não libera wildcard em produção; só dev local é aceito.
+
+Risco residual P0 identificado:
+
+- Buckets `notas`, `fechamentos` e `contas-pagar` estão privados contra anônimo, mas as policies atuais ainda autorizam qualquer usuário `authenticated` no bucket.
+- Isso impede exposição pública, porém ainda é frágil em cenário SaaS se um usuário autenticado descobrir ou adivinhar path de arquivo de outro usuário.
+- Correção definitiva exige uma próxima fase com paths tenant-aware/dono do arquivo e policies que comparem `storage.foldername(name)` ou uma tabela de vínculo ao `auth.uid()`.
+- Não foi alterado nesta rodada para evitar quebrar PDFs/anexos existentes sem migração compatível.
+
+Próxima ação recomendada:
+
+- Criar Fase P0 específica para Storage tenant-aware:
+  1. novos uploads salvarem path com `auth.uid()`/tenant no prefixo;
+  2. policies de Storage validarem dono;
+  3. compatibilidade para arquivos legados via migração ou Edge Function de signed URL;
+  4. teste de integração provando que usuário A não consegue assinar/baixar arquivo do usuário B.

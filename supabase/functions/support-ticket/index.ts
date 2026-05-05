@@ -20,8 +20,14 @@ function getCorsHeaders(request: Request) {
     .map((item) => item.trim())
     .filter(Boolean);
 
-  if (configured.length === 0 || configured.includes('*')) {
-    return { ...baseCorsHeaders, 'Access-Control-Allow-Origin': '*' };
+  if (configured.length === 0) {
+    const allowed = !origin || localDevOrigins.has(origin);
+    return { ...baseCorsHeaders, 'Access-Control-Allow-Origin': allowed ? (origin || 'null') : 'null' };
+  }
+
+  if (configured.includes('*')) {
+    const allowed = localDevOrigins.has(origin);
+    return { ...baseCorsHeaders, 'Access-Control-Allow-Origin': allowed ? origin : 'null' };
   }
 
   const allowed = configured.includes(origin) || localDevOrigins.has(origin);

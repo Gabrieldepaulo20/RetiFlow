@@ -151,8 +151,26 @@ function getCorsHeaders(request: Request) {
   const origin = request.headers.get('Origin') ?? '';
   const configuredOrigins = getConfiguredOrigins();
 
-  if (configuredOrigins.length === 0 || configuredOrigins.includes('*')) {
-    return { allowed: true, headers: { ...baseCorsHeaders, 'Access-Control-Allow-Origin': '*' } };
+  if (configuredOrigins.length === 0) {
+    const allowed = !origin || localDevOrigins.has(origin);
+    return {
+      allowed,
+      headers: {
+        ...baseCorsHeaders,
+        'Access-Control-Allow-Origin': allowed ? (origin || 'null') : 'null',
+      },
+    };
+  }
+
+  if (configuredOrigins.includes('*')) {
+    const allowed = localDevOrigins.has(origin);
+    return {
+      allowed,
+      headers: {
+        ...baseCorsHeaders,
+        'Access-Control-Allow-Origin': allowed ? origin : 'null',
+      },
+    };
   }
 
   if (!origin) {
