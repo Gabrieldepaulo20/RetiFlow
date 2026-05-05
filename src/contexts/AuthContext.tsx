@@ -18,6 +18,7 @@ import { isSuperAdmin } from '@/services/auth/superAdmin';
 import { callAdminUsersFunction } from '@/api/supabase/admin-users';
 import { touchUserPresence } from '@/api/supabase/presence';
 import { isMfaChallengeRequired, getMfaAssuranceLevel } from '@/services/auth/mfa';
+import { markSessionExpiredByInactivity, SESSION_INACTIVITY_TIMEOUT_MS } from '@/services/auth/inactivitySession';
 
 const AUTH_SESSION_STORAGE_KEY = 'auth.session';
 const SUPPORT_SESSION_STORAGE_KEY = 'support.impersonation';
@@ -417,6 +418,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     writeStoredSupportSession(null);
     commitSession(null);
   }, [commitSession]);
+
+  useEffect(() => {
+    if (!IS_REAL_AUTH || !realUser?.id) return undefined;
+    if (typeof window === 'undefined' || typeof document === 'undefined') return undefined;
+
+    let timeoutId: number | undefined;
+    const resetTimer = () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      timeoutId = window.setTimeout(() => {
+        markSessionExpiredByInactivity();
+        void logout();
+      }, SESSION_INACTIVITY_TIMEOUT_MS);
+    };
+
+    const events: Array<keyof WindowEventMap> = ['pointerdown', 'keydown', 'scroll', 'focus'];
+    resetTimer();
+    events.forEach((eventName) => window.addEventListener(eventName, resetTimer, { passive: true }));
+    document.addEventListener('visibilitychange', resetTimer);
+
+    return () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      events.forEach((eventName) => window.removeEventListener(eventName, resetTimer));
+      document.removeEventListener('visibilitychange', resetTimer);
+    };
+  }, [logout, realUser?.id]);
 
   const startSupportImpersonation = useCallback(async (targetUserId: string, reason: string) => {
     if (!isSuperAdmin(sessionRef.current?.user)) {

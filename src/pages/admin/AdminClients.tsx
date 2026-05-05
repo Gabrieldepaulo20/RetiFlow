@@ -7,6 +7,7 @@ import {
   ChevronDown,
   AlertTriangle,
   Clock,
+  Crown,
   KeyRound,
   LayoutGrid,
   Loader2,
@@ -126,6 +127,7 @@ export default function AdminClients() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showModulesDialog, setShowModulesDialog] = useState<string | null>(null);
+  const [showPromoteDialog, setShowPromoteDialog] = useState<string | null>(null);
   const [showResetDialog, setShowResetDialog] = useState<string | null>(null);
   const [showSupportAccessDialog, setShowSupportAccessDialog] = useState<string | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState<string | null>(null);
@@ -382,6 +384,56 @@ export default function AdminClients() {
     } catch (error) {
       toast({
         title: 'Não foi possível reenviar o convite',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const handlePromoteToAdmin = async (userId: string) => {
+    const user = systemUsers.find((candidate) => candidate.id === userId);
+    if (!user) return;
+
+    if (!isCurrentUserMegaMaster) {
+      toast({
+        title: 'Ação restrita ao Mega Master',
+        description: 'Somente o Mega Master pode transformar um usuário em Master/Admin.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (isMegaMasterUser(user) || user.role === 'ADMIN') {
+      toast({
+        title: 'Promoção não necessária',
+        description: 'Este usuário já possui perfil administrativo.',
+      });
+      return;
+    }
+
+    setPendingAction(`promote-${userId}`);
+    try {
+      if (IS_REAL_AUTH) {
+        await callAdminUsersFunction({
+          action: 'promote_to_admin',
+          userId,
+        });
+      }
+
+      const nextUsers = systemUsers.map((candidate) =>
+        candidate.id === userId ? { ...candidate, role: 'ADMIN' as const, moduleAccess: MASTER_MODULE_ACCESS } : candidate,
+      );
+      persistSystemUsers(nextUsers);
+      setShowPromoteDialog(null);
+      toast({
+        title: 'Usuário promovido para Master',
+        description: `${user.name} agora tem perfil administrativo. O Mega Master continua protegido.`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Não foi possível promover o usuário',
         description: error instanceof Error ? error.message : 'Tente novamente.',
         variant: 'destructive',
       });
@@ -892,6 +944,28 @@ export default function AdminClients() {
                             <TooltipContent>Modelos e cores</TooltipContent>
                           </Tooltip>
 
+                          {isCurrentUserMegaMaster && user.role !== 'ADMIN' && !isMegaMasterUser(user) ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-amber-700 hover:text-amber-800"
+                                  disabled={isMutatingUser || !user.isActive}
+                                  onClick={() => setShowPromoteDialog(user.id)}
+                                  aria-label={`Promover ${user.name} para Master`}
+                                >
+                                  {pendingAction === `promote-${user.id}` ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    <Crown className="w-4 h-4" />
+                                  )}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Promover para Master</TooltipContent>
+                            </Tooltip>
+                          ) : null}
+
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
@@ -1191,6 +1265,48 @@ export default function AdminClients() {
               Fechar
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!showPromoteDialog} onOpenChange={() => setShowPromoteDialog(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Crown className="w-5 h-5 text-amber-700" /> Promover para Master/Admin
+            </DialogTitle>
+          </DialogHeader>
+          {showPromoteDialog && (() => {
+            const user = systemUsers.find((candidate) => candidate.id === showPromoteDialog);
+            if (!user) return null;
+            const isPromoting = pendingAction === `promote-${user.id}`;
+
+            return (
+              <div className="space-y-4 py-2">
+                <Alert className="border-amber-200 bg-amber-50/80 text-amber-950">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Ação restrita ao Mega Master</AlertTitle>
+                  <AlertDescription>
+                    Esta ação transforma o usuário em Master/Admin e libera módulos administrativos. Ele continua sem permissão para alterar ou excluir o Mega Master.
+                  </AlertDescription>
+                </Alert>
+
+                <div className="rounded-xl border border-border/70 bg-muted/30 p-3 text-sm">
+                  <p className="font-semibold">{user.name}</p>
+                  <p className="text-muted-foreground">{user.email}</p>
+                </div>
+
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowPromoteDialog(null)} disabled={isPromoting}>
+                    Cancelar
+                  </Button>
+                  <Button onClick={() => void handlePromoteToAdmin(user.id)} disabled={isPromoting} className="gap-2">
+                    {isPromoting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Crown className="w-4 h-4" />}
+                    {isPromoting ? 'Promovendo...' : 'Promover para Master'}
+                  </Button>
+                </DialogFooter>
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 

@@ -121,6 +121,29 @@ describe('callAdminUsersFunction', () => {
     }));
   });
 
+  it('supports promoting a client user to Master/Admin through the admin function', async () => {
+    mocks.invoke.mockResolvedValue({
+      data: {
+        mensagem: 'Usuário promovido para Master/Admin com módulos administrativos seguros.',
+      },
+      error: null,
+    });
+
+    await expect(callAdminUsersFunction({
+      action: 'promote_to_admin',
+      userId: VALID_UUID,
+    })).resolves.toMatchObject({
+      mensagem: 'Usuário promovido para Master/Admin com módulos administrativos seguros.',
+    });
+
+    expect(mocks.invoke).toHaveBeenCalledWith('admin-users', expect.objectContaining({
+      body: {
+        action: 'promote_to_admin',
+        userId: VALID_UUID,
+      },
+    }));
+  });
+
   it('loads user presence through the admin function', async () => {
     mocks.invoke.mockResolvedValue({
       data: {

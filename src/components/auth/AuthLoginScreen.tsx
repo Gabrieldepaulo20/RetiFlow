@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Eye, EyeOff, LogIn, Shield, Wrench } from 'lucide-react';
@@ -12,6 +12,7 @@ import { getDevelopmentCredentialHint } from '@/services/auth/developmentAuthSer
 import { LoadingScreen } from '@/components/ui/loading-screen';
 import { verifyFirstAvailableTotpFactor } from '@/services/auth/mfa';
 import { supabase } from '@/lib/supabase';
+import { consumeSessionExpiredReason } from '@/services/auth/inactivitySession';
 
 interface AuthLoginScreenProps {
   portal: LoginPortal;
@@ -31,6 +32,16 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
   const credentials = getDevelopmentCredentialHint();
 
   const isAdminPortal = portal === 'admin';
+  useEffect(() => {
+    const reason = consumeSessionExpiredReason();
+    if (reason === 'inactivity') {
+      toast({
+        title: 'Sessão encerrada por segurança',
+        description: 'Após 8 horas sem atividade, entre novamente para continuar.',
+      });
+    }
+  }, [toast]);
+
   const accounts = useMemo(
     () =>
       credentials.accounts.filter((account) =>

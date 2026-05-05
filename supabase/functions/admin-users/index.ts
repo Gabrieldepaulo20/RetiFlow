@@ -77,6 +77,10 @@ type ActionPayload =
       modules: ModuleAccess;
     }
   | {
+      action: 'promote_to_admin';
+      userId: string;
+    }
+  | {
       action: 'start_support_impersonation';
       targetUserId: string;
       reason: string;
@@ -418,41 +422,47 @@ async function sendInviteEmail(params: {
   const safeTargetName = escapeHtml(params.targetName);
   const safeActionLink = escapeHtml(params.actionLink);
   const safeRequesterEmail = escapeHtml(params.requesterEmail);
-  const subject = 'Seu convite de acesso ao Retiflow';
+  const subject = 'Seu acesso seguro ao Retiflow';
   const text = [
     `Olá, ${params.targetName}.`,
     '',
-    'Você recebeu um novo convite para acessar o Retiflow e criar sua senha com segurança.',
+    'Você recebeu um convite para acessar o Retiflow.',
+    'Crie uma senha forte e, depois do primeiro acesso, ative MFA em Configurações > Segurança.',
     `Link do convite: ${params.actionLink}`,
     '',
-    `Convite reenviado por: ${params.requesterEmail}`,
+    `Convite enviado por: ${params.requesterEmail}`,
     '',
-    'Se você não esperava este convite, ignore esta mensagem.',
+    'Se você não esperava este convite, ignore esta mensagem e avise o responsável pelo sistema.',
   ].join('\n');
   const html = `
     <!doctype html>
     <html lang="pt-BR">
-      <body style="margin:0;background:#f4f7f8;font-family:Arial,Helvetica,sans-serif;color:#17202a;">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f7f8;padding:28px 12px;">
+      <body style="margin:0;background:#eef5f6;font-family:Arial,Helvetica,sans-serif;color:#17202a;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef5f6;padding:30px 12px;">
           <tr>
             <td align="center">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border-radius:20px;overflow:hidden;border:1px solid #dfe7ec;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:24px;overflow:hidden;border:1px solid #d6e5ea;box-shadow:0 18px 50px rgba(15,111,126,.16);">
                 <tr>
-                  <td style="background:#0f6f7e;padding:26px 28px;color:#ffffff;">
-                    <div style="font-size:22px;font-weight:800;">Convite de acesso Retiflow</div>
-                    <div style="font-size:13px;opacity:.9;margin-top:6px;">Crie sua senha para entrar no sistema</div>
+                  <td style="background:linear-gradient(135deg,#0b5966,#1594a8);padding:30px 32px;color:#ffffff;">
+                    <div style="font-size:12px;letter-spacing:.16em;text-transform:uppercase;opacity:.82;">Retiflow</div>
+                    <div style="font-size:25px;font-weight:800;margin-top:8px;">Seu acesso seguro chegou</div>
+                    <div style="font-size:14px;opacity:.92;margin-top:7px;">Crie sua senha e entre no sistema com proteção reforçada.</div>
                   </td>
                 </tr>
                 <tr>
-                  <td style="padding:28px;">
+                  <td style="padding:30px 32px;">
                     <p style="margin:0 0 16px;font-size:15px;line-height:1.6;">Olá, <strong>${safeTargetName}</strong>.</p>
-                    <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#334155;">Você recebeu um novo convite para acessar o Retiflow. Clique no botão abaixo para criar sua senha com segurança.</p>
-                    <p style="margin:0 0 22px;">
-                      <a href="${safeActionLink}" style="display:inline-block;background:#0f6f7e;color:#ffffff;text-decoration:none;font-weight:700;border-radius:14px;padding:13px 20px;">Aceitar convite</a>
+                    <p style="margin:0 0 22px;font-size:15px;line-height:1.65;color:#334155;">Você recebeu um convite para acessar o Retiflow. Clique no botão abaixo para criar sua senha. O link é temporário e deve ser usado apenas por você.</p>
+                    <p style="margin:0 0 24px;">
+                      <a href="${safeActionLink}" style="display:inline-block;background:#0f6f7e;color:#ffffff;text-decoration:none;font-weight:800;border-radius:16px;padding:15px 24px;">Criar minha senha</a>
                     </p>
+                    <div style="background:#f4fafb;border:1px solid #d8edf1;border-radius:16px;padding:16px 18px;margin-bottom:18px;">
+                      <div style="font-size:13px;font-weight:800;color:#0f6f7e;margin-bottom:8px;">Requisitos recomendados</div>
+                      <div style="font-size:13px;line-height:1.7;color:#475569;">Use pelo menos 10 caracteres, com letras maiúsculas e minúsculas, número e símbolo. Depois do primeiro acesso, ative MFA em Configurações &gt; Segurança.</div>
+                    </div>
                     <p style="margin:0 0 10px;font-size:13px;line-height:1.6;color:#64748b;">Se o botão não funcionar, copie e cole este link no navegador:</p>
                     <p style="word-break:break-all;margin:0 0 18px;font-size:12px;line-height:1.6;color:#475569;">${safeActionLink}</p>
-                    <p style="margin:0;font-size:12px;line-height:1.6;color:#64748b;">Convite reenviado por ${safeRequesterEmail}. Se você não esperava este convite, ignore esta mensagem.</p>
+                    <p style="margin:0;font-size:12px;line-height:1.6;color:#64748b;">Convite enviado por ${safeRequesterEmail}. Se você não esperava este convite, ignore esta mensagem e avise o responsável pelo sistema.</p>
                   </td>
                 </tr>
               </table>
@@ -713,6 +723,24 @@ async function setModules(serviceClient: ReturnType<typeof createClient>, userId
   if (data && typeof data === 'object' && 'status' in data && data.status !== 200) {
     throw new Error(data.mensagem ?? 'Falha ao salvar módulos.');
   }
+}
+
+async function promoteUserToAdmin(serviceClient: ReturnType<typeof createClient>, userId: string) {
+  const targetUser = await getInternalModuleUser(serviceClient, userId);
+
+  if (targetUser.status === false) {
+    throw new Error('Reative o usuário antes de promovê-lo para Master.');
+  }
+
+  const { error } = await serviceClient
+    .schema('RetificaPremium')
+    .from('Usuarios')
+    .update({ acesso: roleToAccess.ADMIN })
+    .eq('id_usuarios', userId);
+
+  if (error) throw new Error(`Falha ao promover usuário para Master: ${error.message}`);
+  await setModules(serviceClient, userId, MASTER_MODULE_ACCESS);
+  return targetUser;
 }
 
 async function callStatusRpc(serviceClient: ReturnType<typeof createClient>, rpcName: string, userId: string) {
@@ -1355,6 +1383,27 @@ Deno.serve(async (request) => {
 
       await setModules(requester.serviceClient, userId, modules);
       return jsonResponse({ mensagem: 'Módulos atualizados.' }, 200, request);
+    }
+
+    if (payload.action === 'promote_to_admin') {
+      const userId = assertUserId(payload.userId);
+
+      if (!requester.requesterIsMegaMaster) {
+        return jsonResponse({ error: 'Somente o Mega Master pode transformar um usuário em Master/Admin.' }, 403, request);
+      }
+
+      const targetUser = await getInternalModuleUser(requester.serviceClient, userId);
+      if (isMegaMasterEmail(targetUser.email, requester.superAdminEmails)) {
+        return jsonResponse({ error: 'O Mega Master já é protegido e não precisa ser promovido.' }, 400, request);
+      }
+      if (targetUser.email.trim().toLowerCase() === requester.requesterEmail) {
+        return jsonResponse({ error: 'Você não precisa promover o próprio usuário.' }, 400, request);
+      }
+
+      await promoteUserToAdmin(requester.serviceClient, userId);
+      return jsonResponse({
+        mensagem: 'Usuário promovido para Master/Admin com módulos administrativos seguros.',
+      }, 200, request);
     }
 
     if (payload.action === 'start_support_impersonation') {

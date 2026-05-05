@@ -1,11 +1,13 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { KeyRound, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, Circle, KeyRound, Loader2, ShieldCheck } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { validatePasswordPolicy } from '@/services/auth/passwordPolicy';
+import { cn } from '@/lib/utils';
 
 export default function ResetPassword() {
   const [password, setPassword] = useState('');
@@ -13,8 +15,12 @@ export default function ResetPassword() {
   const [loadingSession, setLoadingSession] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [hasRecoverySession, setHasRecoverySession] = useState(false);
+  const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const passwordValidation = useMemo(() => validatePasswordPolicy(password), [password]);
+  const passwordsMatch = Boolean(confirmPassword) && password === confirmPassword;
+  const canSubmit = passwordValidation.valid && passwordsMatch && !submitting;
 
   useEffect(() => {
     let active = true;
@@ -34,10 +40,10 @@ export default function ResetPassword() {
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
 
-    if (password.length < 8) {
+    if (!passwordValidation.valid) {
       toast({
-        title: 'Senha muito curta',
-        description: 'Use pelo menos 8 caracteres para proteger o acesso.',
+        title: 'Senha ainda não atende ao padrão',
+        description: 'Confira todos os requisitos de segurança antes de continuar.',
         variant: 'destructive',
       });
       return;
@@ -66,11 +72,11 @@ export default function ResetPassword() {
     }
 
     await supabase.auth.signOut();
+    setSuccess(true);
     toast({
       title: 'Senha definida com sucesso',
-      description: 'Entre novamente usando seu e-mail e a nova senha.',
+      description: 'Entre novamente e ative o MFA em Configurações > Segurança.',
     });
-    navigate('/admin/login', { replace: true });
   };
 
   return (
@@ -101,6 +107,21 @@ export default function ResetPassword() {
               <Link to="/admin/login">Voltar para o login</Link>
             </Button>
           </div>
+        ) : success ? (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+              <div className="flex items-center gap-2 font-semibold">
+                <CheckCircle2 className="h-4 w-4" />
+                Senha criada com sucesso
+              </div>
+              <p className="mt-2 leading-relaxed">
+                Sua conta já pode entrar no Retiflow. No primeiro acesso, recomendamos ativar MFA em Configurações &gt; Segurança.
+              </p>
+            </div>
+            <Button className="w-full" onClick={() => navigate('/login', { replace: true })}>
+              Ir para o login
+            </Button>
+          </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-2">
@@ -111,9 +132,24 @@ export default function ResetPassword() {
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 autoComplete="new-password"
-                placeholder="Mínimo 8 caracteres"
+                placeholder="Mínimo 10 caracteres, número e símbolo"
                 disabled={submitting}
               />
+            </div>
+
+            <div className="rounded-2xl border bg-muted/30 p-3">
+              <p className="mb-2 text-xs font-semibold text-muted-foreground">PADRÃO DE SEGURANÇA</p>
+              <div className="space-y-1.5">
+                {passwordValidation.checks.map((check) => (
+                  <div
+                    key={check.key}
+                    className={cn('flex items-center gap-2 text-xs', check.valid ? 'text-emerald-700' : 'text-muted-foreground')}
+                  >
+                    {check.valid ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Circle className="h-3.5 w-3.5" />}
+                    <span>{check.label}</span>
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -127,10 +163,15 @@ export default function ResetPassword() {
                 placeholder="Repita a nova senha"
                 disabled={submitting}
               />
+              {confirmPassword ? (
+                <p className={cn('text-xs', passwordsMatch ? 'text-emerald-700' : 'text-destructive')}>
+                  {passwordsMatch ? 'As senhas conferem.' : 'As senhas ainda estão diferentes.'}
+                </p>
+              ) : null}
             </div>
 
-            <Button type="submit" className="w-full gap-2" disabled={submitting}>
-              <ShieldCheck className="h-4 w-4" />
+            <Button type="submit" className="w-full gap-2" disabled={!canSubmit}>
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
               {submitting ? 'Salvando...' : 'Salvar nova senha'}
             </Button>
           </form>

@@ -67,6 +67,10 @@ type AdminUserAction =
       modules: ModuleAccess;
     }
   | {
+      action: 'promote_to_admin';
+      userId: string;
+    }
+  | {
       action: 'start_support_impersonation';
       targetUserId: string;
       reason: string;
