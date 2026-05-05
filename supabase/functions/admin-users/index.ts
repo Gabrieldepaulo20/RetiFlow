@@ -476,6 +476,69 @@ async function sendInviteEmail(params: {
   await sendSesEmail({ to: params.to, subject, text, html });
 }
 
+async function sendPasswordRecoveryEmail(params: {
+  to: string;
+  targetName: string;
+  actionLink: string;
+  requesterEmail: string;
+}) {
+  const safeTargetName = escapeHtml(params.targetName);
+  const safeActionLink = escapeHtml(params.actionLink);
+  const safeRequesterEmail = escapeHtml(params.requesterEmail);
+  const subject = 'Redefina sua senha do Retiflow';
+  const text = [
+    `Olá, ${params.targetName}.`,
+    '',
+    'Foi solicitado um reset de senha para sua conta Retiflow.',
+    'Use o link abaixo para criar uma nova senha forte.',
+    `Link de recuperação: ${params.actionLink}`,
+    '',
+    `Solicitado por: ${params.requesterEmail}`,
+    '',
+    'Se você não solicitou essa recuperação, ignore esta mensagem e avise o responsável pelo sistema.',
+  ].join('\n');
+  const html = `
+    <!doctype html>
+    <html lang="pt-BR">
+      <body style="margin:0;background:#eef5f6;font-family:Arial,Helvetica,sans-serif;color:#17202a;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef5f6;padding:30px 12px;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:24px;overflow:hidden;border:1px solid #d6e5ea;box-shadow:0 18px 50px rgba(15,111,126,.16);">
+                <tr>
+                  <td style="background:linear-gradient(135deg,#233142,#0f6f7e);padding:30px 32px;color:#ffffff;">
+                    <div style="font-size:12px;letter-spacing:.16em;text-transform:uppercase;opacity:.82;">Segurança Retiflow</div>
+                    <div style="font-size:25px;font-weight:800;margin-top:8px;">Redefinição de senha</div>
+                    <div style="font-size:14px;opacity:.92;margin-top:7px;">Crie uma nova senha para recuperar seu acesso.</div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:30px 32px;">
+                    <p style="margin:0 0 16px;font-size:15px;line-height:1.6;">Olá, <strong>${safeTargetName}</strong>.</p>
+                    <p style="margin:0 0 22px;font-size:15px;line-height:1.65;color:#334155;">Recebemos uma solicitação administrativa para redefinir sua senha. Clique no botão abaixo para criar uma nova senha forte.</p>
+                    <p style="margin:0 0 24px;">
+                      <a href="${safeActionLink}" style="display:inline-block;background:#0f6f7e;color:#ffffff;text-decoration:none;font-weight:800;border-radius:16px;padding:15px 24px;">Redefinir senha</a>
+                    </p>
+                    <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:16px;padding:16px 18px;margin-bottom:18px;">
+                      <div style="font-size:13px;font-weight:800;color:#9a3412;margin-bottom:8px;">Atenção de segurança</div>
+                      <div style="font-size:13px;line-height:1.7;color:#7c2d12;">O link é temporário. Use pelo menos 10 caracteres com letras maiúsculas e minúsculas, número e símbolo. Nunca compartilhe este link.</div>
+                    </div>
+                    <p style="margin:0 0 10px;font-size:13px;line-height:1.6;color:#64748b;">Se o botão não funcionar, copie e cole este link no navegador:</p>
+                    <p style="word-break:break-all;margin:0 0 18px;font-size:12px;line-height:1.6;color:#475569;">${safeActionLink}</p>
+                    <p style="margin:0;font-size:12px;line-height:1.6;color:#64748b;">Solicitado por ${safeRequesterEmail}. Se você não esperava esta recuperação, ignore esta mensagem e avise o responsável pelo sistema.</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
+  `;
+
+  await sendSesEmail({ to: params.to, subject, text, html });
+}
+
 function modulesToRpcPayload(modules: ModuleAccess) {
   return Object.entries(modules).reduce<Record<string, boolean>>((accumulator, [key, enabled]) => {
     const rpcParam = moduleToRpcParam[key as AppModuleKey];
@@ -1352,11 +1415,22 @@ Deno.serve(async (request) => {
       const confirmationEmail = optionalEmail(payload.confirmationEmail);
       const redirectTo = Deno.env.get('AUTH_REDIRECT_TO') || Deno.env.get('APP_BASE_URL') || undefined;
 
-      const { error } = await requester.serviceClient.auth.resetPasswordForEmail(email, {
-        redirectTo,
+      const { data, error } = await requester.serviceClient.auth.admin.generateLink({
+        type: 'recovery',
+        email,
+        options: { redirectTo },
       });
 
-      if (error) throw new Error(`Falha ao enviar recuperação de senha: ${error.message}`);
+      if (error || !data.properties?.action_link) {
+        throw new Error(`Falha ao gerar recuperação de senha: ${error?.message ?? 'link ausente'}`);
+      }
+
+      await sendPasswordRecoveryEmail({
+        to: email,
+        targetName: targetUser.nome ?? email,
+        actionLink: data.properties.action_link,
+        requesterEmail: requester.requesterEmail,
+      });
 
       let confirmationSent = false;
       let confirmationWarning: string | null = null;
