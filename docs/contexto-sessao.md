@@ -1711,3 +1711,50 @@ Prioridade recomendada:
 | `7219e11` | Hierarquia Mega Master/Master/Admin |
 | `ea2c2e5` | Revalidação de módulos em rotas protegidas |
 | `d73ed5e` | Controle real de módulos por usuário |
+
+### 19.13 Hardening de anon key, Storage e payload adulterado
+
+Motivação:
+
+- A anon key do Supabase é pública por design e sempre aparecerá no frontend/devtools.
+- Segurança real não pode depender de esconder `VITE_SUPABASE_ANON_KEY`; precisa estar em grants, RLS/policies, RPCs, Storage e Edge Functions.
+- Foi validado explicitamente o cenário de alguém copiar a anon key do navegador e tentar chamar tabelas, RPCs, Storage e Edge Functions manualmente.
+
+Correções aplicadas:
+
+- Nova migration versionada: `supabase/migrations/20260505201000_harden_anon_surface.sql`.
+- `anon` perdeu acesso direto ao schema operacional:
+  - `revoke usage on schema "RetificaPremium" from anon`
+  - `revoke all privileges on all tables/sequences in schema "RetificaPremium" from anon`
+  - `revoke execute on all functions in schema "RetificaPremium" from anon/public`
+- Buckets `notas`, `fechamentos` e `contas-pagar` foram reafirmados como privados (`public = false`).
+- Policies de `storage.objects` para `public`/`anon` foram removidas.
+- Policies dos buckets privados foram recriadas somente para `authenticated` com `auth.uid() is not null`.
+- A migration foi aplicada no Supabase real via Management API, porque o `supabase db push/query --linked` ficou preso em `Initialising login role...` neste ambiente.
+
+Teste sentinela criado:
+
+- Novo arquivo: `src/test/integration/anon-hardening.test.ts`.
+- Cobre:
+  - anon key não lê nem grava tabelas operacionais diretamente;
+  - anon key não executa RPCs de leitura/mutação;
+  - anon key não lista Storage privado, não abre URL pública, não gera signed URL e não baixa objeto privado;
+  - Edge Functions sensíveis recusam chamada sem sessão de usuário;
+  - usuário autenticado com payload adulterado não altera cliente pertencente a outro `auth.uid()`.
+
+Validação real:
+
+- Antes do hardening, a anon key não via dados de tabela, mas conseguia listar/assinar/baixar objeto de Storage privado por policy permissiva. Isso foi corrigido.
+- Depois do hardening, chamada manual com anon key retornou:
+  - listagem privada: `0` objetos;
+  - signed URL: negada;
+  - download direto: negado;
+  - URL pública de bucket privado: negada.
+- `npm run test:integration` passou com 13 arquivos e 38 testes reais contra Supabase.
+
+Decisão técnica:
+
+- A anon key continua pública e normal no frontend.
+- O access token de um usuário autenticado continua permitindo chamadas em nome daquele usuário enquanto a sessão estiver válida; isso é esperado.
+- O controle contra alteração indevida de payload precisa continuar nas RPCs/Edge Functions usando `auth.uid()`, ownership por usuário/tenant, grants mínimos e policies de Storage.
+- Risco residual principal: roubo de sessão por XSS/dispositivo comprometido. Mitigações existentes/recomendadas: CSP forte, MFA, sessão por inatividade, evitar scripts de terceiros desnecessários e nunca colocar service role no frontend.
