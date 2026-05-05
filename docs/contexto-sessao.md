@@ -1844,3 +1844,37 @@ Próxima ação recomendada:
   2. policies de Storage validarem dono;
   3. compatibilidade para arquivos legados via migração ou Edge Function de signed URL;
   4. teste de integração provando que usuário A não consegue assinar/baixar arquivo do usuário B.
+
+### 19.16 Gitleaks e varredura de secrets
+
+Ferramenta instalada localmente:
+
+- `gitleaks 8.30.1`, instalada via Homebrew.
+
+Configuração versionada:
+
+- Novo arquivo `.gitleaks.toml`.
+- Estende a configuração padrão do Gitleaks.
+- Ignora apenas arquivos locais/gerados que já são ignorados pelo Git:
+  - `.env*`
+  - `dist/`
+  - `node_modules/`
+- Allowlist adicional limitada a falsos positivos conhecidos:
+  - strings de teste sem segredo real;
+  - chaves de `localStorage`;
+  - texto documental sobre `anon key` e `disable_signup=true`.
+
+Resultados:
+
+- Scan do histórico Git:
+  - comando: `gitleaks detect --source . --redact=100`
+  - resultado final: `no leaks found`
+- Scan do estado atual sem Git:
+  - comando: `gitleaks detect --source . --no-git --redact=100`
+  - resultado final: `no leaks found`
+
+Observação:
+
+- O primeiro scan apontou `.env.local`, `.env.integration` e `dist/` no modo `--no-git`; esses arquivos estão corretamente ignorados e não devem ser versionados.
+- O scan também apontou falsos positivos em senha fake de teste e chaves locais como `kanban.visibleColumns.v1`.
+- Nenhum segredo real versionado foi confirmado após a configuração.

@@ -21,6 +21,8 @@ Este arquivo orienta agentes que forem trabalhar no Retiflow. Ele deve ser lido 
 - Testes de integração: `npm run test:integration`
 - Todos os testes configurados: `npm run test:all`
 - Preview local do build: `npm run preview`
+- Varredura de secrets no histórico: `gitleaks detect --source . --redact=100`
+- Varredura de secrets no estado atual: `gitleaks detect --source . --no-git --redact=100`
 
 ## Testes De Integração
 
@@ -65,6 +67,7 @@ Quando a mudança tocar integração real:
 - A anon key do Supabase pode existir no frontend, mas ela não é autorização real. Segurança precisa estar em RLS, RPCs, policies, Storage e Edge Functions.
 - `ProtectedRoute` protege UX/navegação, mas não é barreira de segurança contra atacante.
 - Não expor access token, refresh token, secret key, OpenAI key, AWS key ou qualquer credencial em commit, log ou chat.
+- Antes de releases ou mudanças de segurança, rodar Gitleaks com redaction e nunca colar achados contendo segredo real no chat.
 - Edge Functions sensíveis devem exigir `Authorization: Bearer <token>`.
 - Edge Functions administrativas devem validar novamente o usuário autenticado no backend; esconder botão no frontend é apenas UX.
 - CORS deve ser configurável por ambiente e não deve ser afrouxado sem justificativa.

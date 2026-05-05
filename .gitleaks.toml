@@ -1,0 +1,23 @@
+title = "Retiflow Gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Local-only environment files and generated build artifacts are ignored by git."
+paths = [
+  '''(^|/)\.env(\..*)?$''',
+  '''(^|/)dist/''',
+  '''(^|/)node_modules/''',
+]
+
+[[allowlists]]
+description = "Known non-secret literals that match the generic-api-key heuristic."
+regexTarget = "match"
+regexes = [
+  '''senha-completamente-errada-123''',
+  '''kanban\.visibleColumns\.v1''',
+  '''monthly-closing\.records\.v1''',
+  '''anon key''',
+  '''disable_signup=true''',
+]
