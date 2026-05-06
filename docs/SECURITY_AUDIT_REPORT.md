@@ -35,7 +35,7 @@ Referencias usadas para criterio:
 | `git log -1 --oneline` | `0dc2893 chore: add gitleaks secret scanning` |
 | `gitleaks detect --source . --redact=100 --exit-code 2` | Passou, sem leaks no historico local. |
 | `gitleaks detect --source . --no-git --redact=100 --exit-code 2` | Passou, sem leaks no working tree. |
-| `npm audit --audit-level=low --json` | 7 vulnerabilidades: 1 high (`xlsx`), 3 moderate, 3 low. |
+| `npm audit --audit-level=low --json` | Inicialmente: 7 vulnerabilidades, incluindo 1 high (`xlsx`). Apos remocao do `xlsx`: 6 vulnerabilidades, 0 high, 0 critical. |
 | Buscas `rg` por secrets, direct table access, `dangerouslySetInnerHTML`, `getPublicUrl`, `service_role`, `localStorage`, RPCs e policies | Achados detalhados abaixo. |
 
 ## [HIGH] Storage privado sem isolamento por usuario/tenant
@@ -78,11 +78,13 @@ Aberto. P0 antes de producao ampla.
 ## [HIGH] Dependencia `xlsx` com vulnerabilidade sem fix oficial no audit
 
 Categoria: Vulnerable Dependencies and Supply Chain  
-Status: CONFIRMED  
+Status: CONFIRMED MITIGATED  
 Arquivos envolvidos:
 - `package.json`
 - `package-lock.json`
 - `src/pages/IntakeNotes.tsx`
+- `src/lib/csv.ts`
+- `src/test/csv.test.ts`
 
 Evidencia:
 - `npm audit` reportou `xlsx` como high, range `*`, `fixAvailable: false`.
@@ -100,13 +102,17 @@ Correcao recomendada:
 - Se manter temporariamente, nao aceitar `.xlsx` de usuario com essa lib e documentar excecao com prazo.
 
 Correcao aplicada:
-Nao aplicada nesta fase para nao alterar funcionalidade de exportacao sem teste visual/manual.
+- Exportacao de notas trocada de XLSX para CSV.
+- Dependencia `xlsx` removida de `package.json` e `package-lock.json`.
+- Helper `src/lib/csv.ts` criado com escape correto de campos CSV.
+- O helper neutraliza spreadsheet formula injection em valores iniciando com `=`, `+`, `-`, `@`, tab ou carriage return.
+- Teste unitario `src/test/csv.test.ts` cobre aspas, virgulas, quebras de linha e formula injection.
 
 Teste/validacao:
-`npm audit --audit-level=low --json`.
+`npm audit --audit-level=low --json` agora retorna 0 high/critical. Tambem foram rodados `npm test -- --run`, `npx tsc --noEmit`, `npm run lint` e `npm run build`.
 
 Status final:
-Aberto. P1 alto.
+Mitigado. O risco high de `xlsx` foi removido do bundle e da arvore de dependencias.
 
 ## [MEDIUM] CSP permitia fontes amplas para script/style/object/frame
 
@@ -569,7 +575,7 @@ Bom, pendente monitoramento.
 | 4. Injection | Sem SQL string concat/shell/eval relevante encontrado. `dangerouslySetInnerHTML` em chart e `document.write` mitigado merecem cuidado. |
 | 5. Security Misconfiguration | CORS fail-closed no codigo; CSP endurecida no `customHttp.yml`; env/runtime ainda precisam verificacao. |
 | 6. Secrets/Keys Leakage | Gitleaks limpo; service role nao no frontend. Exemplos usam placeholders. |
-| 7. Vulnerable Dependencies | `xlsx` high sem fix; Vite/esbuild/PostCSS/jsdom advisories. |
+| 7. Vulnerable Dependencies | `xlsx` high removido; permanecem advisories de Vite/esbuild/PostCSS/jsdom para tratar separadamente. |
 | 8. Upload/Storage/SSRF/Path Traversal | MIME/tamanho na IA; storage owner isolation insuficiente; filename sanitizado em anexos. |
 | 9. Rate Limit/Abuse | Chamados tem rate limit; IA/Gmail precisam cota/limite server-side. |
 | 10. AI/LLM-specific | Prompt/output estruturados e arquivo OpenAI deletado; falta rate limit/custo e politica de privacidade/retencao clara. |
@@ -587,7 +593,7 @@ Bom, pendente monitoramento.
 ## 5. Riscos residuais principais
 
 1. Storage multi-tenant e o risco mais importante encontrado nesta rodada.
-2. Dependencia `xlsx` high deve ser removida/substituida ou formalmente aceita com restricao de uso.
+2. Dependencia `xlsx` high foi removida; ainda restam advisories moderados/baixos em ferramentas/libs de build/teste.
 3. CSP foi endurecida, mas ainda precisa validacao no Amplify publicado e revisao futura para remover `style-src 'unsafe-inline'`.
 4. IA/Gmail precisam rate limit server-side para evitar abuso/custo.
 

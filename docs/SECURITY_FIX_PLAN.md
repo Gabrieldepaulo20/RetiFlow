@@ -64,16 +64,16 @@ Problema:
 - `npm audit` reporta vulnerabilidade high sem fix disponivel.
 
 Plano seguro:
-1. Confirmar uso atual: exportacao em `src/pages/IntakeNotes.tsx`.
-2. Se for apenas exportacao:
-   - substituir por CSV simples com escape correto;
-   - remover `xlsx` do `package.json`;
-   - testar download/exportacao manual.
-3. Se XLSX for requisito:
-   - trocar por biblioteca mantida e auditar licenca/supply chain.
+1. Concluido: uso atual era exportacao em `src/pages/IntakeNotes.tsx`.
+2. Concluido: XLSX foi substituido por CSV com escape correto.
+3. Concluido: helper protege contra CSV/spreadsheet formula injection.
+4. Concluido: `xlsx` foi removido de `package.json` e `package-lock.json`.
 
 Risco:
 - Baixo/medio, concentrado em exportacao.
+
+Status:
+- Mitigado. Validar manualmente download CSV no navegador apos deploy.
 
 ### 4. Security headers/CSP no Amplify
 
@@ -167,7 +167,7 @@ Plano:
 
 1. P0 Storage owner isolation.
 2. P0 Confirmar grants/policies no Supabase remoto.
-3. P1 `xlsx` remover/substituir.
+3. P1 `xlsx` removido; validar exportacao CSV em staging.
 4. P1 validar CSP/security headers no Amplify publicado.
 5. P1 Rate limits IA/Gmail.
 6. P1 `verify_jwt=true` em `analisar-conta-pagar`, se staging confirmar.

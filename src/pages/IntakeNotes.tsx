@@ -21,6 +21,7 @@ import { noteMatchesNumericQuery } from '@/lib/noteNumbers';
 import { cn } from '@/lib/utils';
 import { buildWhatsAppUrl, openExternalUrl } from '@/lib/browserShare';
 import { format } from 'date-fns';
+import { downloadCsv, toCsv, type CsvRow } from '@/lib/csv';
 import {
   getNotaPDFSignedUrl,
   getNotasServico,
@@ -312,8 +313,21 @@ export default function IntakeNotes() {
     }
 
     try {
-      const XLSX = await import('xlsx');
-      const rows = filtered.map((note) => {
+      const columns = [
+        'O.S.',
+        'Cliente',
+        'Documento',
+        'Tipo',
+        'Status',
+        'Data',
+        'Veículo',
+        'Motor',
+        'Placa',
+        'KM',
+        'Observação interna',
+        'Valor Total',
+      ];
+      const rows: CsvRow[] = filtered.map((note) => {
         const client = clients.find((item) => item.id === note.clientId);
 
         return {
@@ -323,7 +337,7 @@ export default function IntakeNotes() {
           Tipo: note.type,
           Status: STATUS_LABELS[note.status as NoteStatus],
           Data: format(new Date(note.createdAt), 'dd/MM/yyyy'),
-          Veiculo: note.vehicleModel,
+          Veículo: note.vehicleModel,
           Motor: note.engineType ?? '',
           Placa: note.plate ?? '',
           KM: note.km ?? '',
@@ -332,19 +346,19 @@ export default function IntakeNotes() {
         };
       });
 
-      const workbook = XLSX.utils.book_new();
-      const worksheet = XLSX.utils.json_to_sheet(rows);
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Notas');
-      XLSX.writeFile(workbook, `notas-entrada-${format(new Date(), 'yyyy-MM-dd-HH-mm')}.xlsx`);
+      downloadCsv(
+        `notas-entrada-${format(new Date(), 'yyyy-MM-dd-HH-mm')}.csv`,
+        toCsv(rows, columns),
+      );
 
       toast({
         title: 'Exportação concluída',
-        description: `${filtered.length} nota(s) exportada(s) em XLSX.`,
+        description: `${filtered.length} nota(s) exportada(s) em CSV.`,
       });
     } catch (error) {
       toast({
-        title: 'Exportação XLSX indisponível',
-        description: 'Ainda falta habilitar a biblioteca de Excel neste ambiente.',
+        title: 'Exportação CSV indisponível',
+        description: 'Não foi possível gerar o arquivo de exportação agora.',
         variant: 'destructive',
       });
     }
@@ -388,7 +402,7 @@ export default function IntakeNotes() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={() => void exportFilteredNotes()}>
-                  <FileSpreadsheet className="w-4 h-4 mr-2 text-emerald-600" /> Excel (.xlsx)
+                  <FileSpreadsheet className="w-4 h-4 mr-2 text-emerald-600" /> CSV (.csv)
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
