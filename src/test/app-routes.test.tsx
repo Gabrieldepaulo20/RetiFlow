@@ -91,12 +91,12 @@ describe('App routes', () => {
     expect(await findElement()).toBeInTheDocument();
   });
 
-  it('blocks Nota Fiscal by default because it is outside the v1 least-privilege matrix', async () => {
+  it('renders Nota Fiscal informational page because it is enabled but marked as unavailable', async () => {
     authenticateAs('FINANCEIRO');
     renderAt('/nota-fiscal');
 
-    expect(await screen.findByRole('heading', { name: 'Acesso negado' })).toBeInTheDocument();
-    expect(screen.getByText('/nota-fiscal')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Nota Fiscal indisponível' })).toBeInTheDocument();
+    expect(screen.getByText(/fora da v1\/piloto/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /registrar|emitir|baixar|imprimir|enviar|cancelar/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/registrada com sucesso/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/pdf baixado/i)).not.toBeInTheDocument();

@@ -45,12 +45,12 @@ test.describe('Kanban (Produção)', () => {
   });
 
   test('filtra Kanban por texto', async ({ page }) => {
-    // Na semente, OS-1 é do Cliente Teste e OS-2 é de Ana Paula Ferreira
+    // Na semente (seed.ts), OS-1 é de Auto Peças Silva e OS-10 é de Ana Paula Ferreira
     // Vamos filtrar por "Ana Paula"
     const searchInput = page.getByPlaceholder(/buscar no kanban por o\.s\./i);
     await searchInput.fill('Ana Paula');
     
-    await expect(page.getByText('OS-2', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('OS-10', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('OS-1', { exact: true }).first()).not.toBeVisible();
     
     // Limpa filtro
