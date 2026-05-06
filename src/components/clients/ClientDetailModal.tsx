@@ -85,21 +85,20 @@ export default function ClientDetailModal({ clientId, onClose, onEdit }: ClientD
     <>
       <DialogPrimitive.Root open={!!clientId} onOpenChange={(v) => !v && onClose()}>
         <DialogPrimitive.Portal>
-          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/45 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-slate-950/55 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
           <DialogPrimitive.Content
             className={cn(
               'fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2',
-              'w-[calc(100vw-1rem)] h-[100dvh]',
-              'sm:w-[660px] sm:h-[600px] sm:rounded-2xl',
-              'lg:w-[740px]',
+              'h-[100dvh] w-[calc(100vw-1rem)]',
+              'sm:h-[min(720px,calc(100vh-3rem))] sm:w-[min(760px,calc(100vw-2rem))] sm:rounded-[28px]',
               'flex flex-col overflow-hidden',
-              'bg-background border border-border/50 shadow-2xl',
+              'bg-card border border-white/10 shadow-2xl shadow-slate-950/30',
               'data-[state=open]:animate-in data-[state=closed]:animate-out',
               'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
               'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
             )}
           >
-            <DialogPrimitive.Close className="absolute right-4 top-4 z-10 w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground/60 hover:text-foreground hover:bg-muted/60 transition-colors focus:outline-none">
+            <DialogPrimitive.Close className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-border/60 bg-background/95 text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
               <X className="h-4 w-4" />
             </DialogPrimitive.Close>
 
@@ -107,21 +106,21 @@ export default function ClientDetailModal({ clientId, onClose, onEdit }: ClientD
               <>
                 {/* ── Colored top strip ── */}
                 <div className={cn(
-                  'h-1.5 shrink-0',
+                  'h-1 shrink-0',
                   client.isActive
-                    ? 'bg-gradient-to-r from-primary/70 via-primary to-primary/70'
+                    ? 'bg-gradient-to-r from-primary/50 via-primary to-accent/70'
                     : 'bg-gradient-to-r from-zinc-300 via-zinc-400 to-zinc-300',
                 )} />
 
                 {/* ── Header ── */}
                 <div className={cn(
-                  'shrink-0 border-b px-5 py-4 pr-14 sm:px-6',
-                  'bg-gradient-to-b from-primary/[0.04] to-transparent',
+                  'shrink-0 border-b px-5 py-5 pr-16 sm:px-6',
+                  'bg-gradient-to-br from-primary/[0.09] via-background to-background',
                 )}>
                   <div className="flex items-start gap-4">
                     {/* Avatar */}
                     <div className={cn(
-                      'w-13 h-13 min-w-[52px] min-h-[52px] rounded-2xl flex items-center justify-center shrink-0 select-none shadow-sm ring-1',
+                      'flex h-14 w-14 shrink-0 select-none items-center justify-center rounded-3xl shadow-sm ring-1',
                       client.isActive
                         ? 'bg-primary/10 text-primary ring-primary/20'
                         : 'bg-zinc-100 text-zinc-400 ring-zinc-200',
@@ -136,9 +135,9 @@ export default function ClientDetailModal({ clientId, onClose, onEdit }: ClientD
                     <div className="min-w-0 flex-1">
                       {/* Name + status */}
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h2 className="text-base font-bold font-display leading-tight truncate">
+                        <DialogPrimitive.Title className="min-w-0 truncate font-display text-lg font-bold leading-tight text-foreground sm:text-xl">
                           {client.name}
-                        </h2>
+                        </DialogPrimitive.Title>
                         <Badge
                           variant={client.isActive ? 'default' : 'secondary'}
                           className="text-[10px] h-5 px-1.5 shrink-0"
@@ -148,12 +147,12 @@ export default function ClientDetailModal({ clientId, onClose, onEdit }: ClientD
                       </div>
 
                       {/* Doc */}
-                      <p className="text-xs font-mono text-muted-foreground/60 mt-0.5">
+                      <DialogPrimitive.Description className="mt-1 text-xs font-mono text-muted-foreground/70">
                         {client.docType}: {client.docNumber}
-                      </p>
+                      </DialogPrimitive.Description>
 
                       {/* Stats chips */}
-                      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                      <div className="flex items-center gap-1.5 mt-3 flex-wrap">
                         {clientNotes.length > 0 && (
                           <span className="inline-flex items-center gap-1 text-[11px] bg-blue-50 text-blue-600 border border-blue-200/70 rounded-full px-2 py-0.5 font-medium">
                             <FileText className="w-3 h-3" /> {clientNotes.length} O.S.
@@ -177,17 +176,25 @@ export default function ClientDetailModal({ clientId, onClose, onEdit }: ClientD
                       type="button"
                       onClick={() => client && onEdit?.(client.id)}
                       title="Editar cadastro"
-                      className="shrink-0 flex items-center gap-1.5 h-8 px-3 rounded-lg border border-border/60 bg-background text-muted-foreground hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors text-xs font-medium mr-8"
+                      className="mr-9 hidden h-10 shrink-0 items-center gap-2 rounded-xl bg-primary px-3.5 text-xs font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 sm:flex"
                     >
                       <Pencil className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Editar</span>
+                      Editar
                     </button>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => onEdit?.(client.id)}
+                    className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 sm:hidden"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Editar cadastro
+                  </button>
                 </div>
 
                 {/* ── Tabs ── */}
                 <Tabs defaultValue="cadastro" className="flex flex-col flex-1 min-h-0">
-                  <TabsList className="shrink-0 h-auto rounded-none border-b bg-transparent px-5 sm:px-6 pt-0 pb-0 justify-start gap-0">
+                  <TabsList className="h-auto shrink-0 justify-start gap-1 overflow-x-auto rounded-none border-b bg-muted/35 px-4 py-2 sm:px-6">
                     {[
                       { value: 'cadastro', label: 'Cadastro' },
                       { value: 'historico', label: `Histórico (${clientNotes.length})` },
@@ -197,11 +204,11 @@ export default function ClientDetailModal({ clientId, onClose, onEdit }: ClientD
                         key={value}
                         value={value}
                         className={cn(
-                          'relative h-10 rounded-none border-b-2 border-transparent px-4',
+                          'relative h-9 rounded-xl border border-transparent px-4',
                           'text-sm font-medium text-muted-foreground',
-                          'transition-none data-[state=active]:border-primary',
-                          'data-[state=active]:text-foreground data-[state=active]:bg-transparent',
-                          'data-[state=active]:shadow-none',
+                          'transition-colors data-[state=active]:border-border/60',
+                          'data-[state=active]:text-foreground data-[state=active]:bg-background',
+                          'data-[state=active]:shadow-sm',
                         )}
                       >
                         {label}
@@ -211,7 +218,7 @@ export default function ClientDetailModal({ clientId, onClose, onEdit }: ClientD
 
                   {/* ── Cadastro ── */}
                   <TabsContent value="cadastro" className="flex-1 overflow-y-auto m-0 min-h-0">
-                    <div className="p-5 sm:p-6 space-y-4">
+                    <div className="p-4 sm:p-6 space-y-4">
                       {/* Contact + address grid */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <InfoRow
@@ -284,7 +291,7 @@ export default function ClientDetailModal({ clientId, onClose, onEdit }: ClientD
                               onChange={(e) => setObsValue(e.target.value)}
                               placeholder="Adicione observações sobre este cliente..."
                               rows={3}
-                              className="resize-none text-sm"
+                              className="resize-none rounded-2xl text-sm"
                               autoFocus
                             />
                             <div className="flex gap-2">
@@ -298,10 +305,10 @@ export default function ClientDetailModal({ clientId, onClose, onEdit }: ClientD
                           </div>
                         ) : (
                           <p className={cn(
-                            'text-sm leading-relaxed rounded-xl px-3 py-2.5',
+                            'text-sm leading-relaxed rounded-2xl border px-3 py-3',
                             client.notes
-                              ? 'bg-muted/30 text-foreground/80'
-                              : 'text-muted-foreground/40 italic',
+                              ? 'border-border/50 bg-background text-foreground/80'
+                              : 'border-dashed border-border/60 bg-muted/20 text-muted-foreground/50 italic',
                           )}>
                             {client.notes || 'Nenhuma observação cadastrada.'}
                           </p>
@@ -312,7 +319,7 @@ export default function ClientDetailModal({ clientId, onClose, onEdit }: ClientD
 
                   {/* ── Histórico ── */}
                   <TabsContent value="historico" className="flex-1 overflow-y-auto m-0 min-h-0">
-                    <div className="p-5 sm:p-6">
+                    <div className="p-4 sm:p-6">
                       {clientNotes.length === 0 ? (
                         <div className="py-14 text-center">
                           <FileText className="w-8 h-8 text-muted-foreground/20 mx-auto mb-2.5" />
@@ -338,7 +345,7 @@ export default function ClientDetailModal({ clientId, onClose, onEdit }: ClientD
                               <button
                                 key={note.id}
                                 type="button"
-                                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-muted/40 transition-colors text-left group"
+                                className="group flex w-full items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-left transition-colors hover:border-border/60 hover:bg-background hover:shadow-sm"
                                 onClick={() => { onClose(); navigate(`/notas-entrada/${note.id}`); }}
                               >
                                 <div className="min-w-0 flex-1">
@@ -371,7 +378,7 @@ export default function ClientDetailModal({ clientId, onClose, onEdit }: ClientD
 
                   {/* ── Anexos ── */}
                   <TabsContent value="anexos" className="flex-1 overflow-y-auto m-0 min-h-0">
-                    <div className="p-5 sm:p-6">
+                    <div className="p-4 sm:p-6">
                       {clientAttachments.length === 0 ? (
                         <div className="py-14 text-center">
                           <Paperclip className="w-8 h-8 text-muted-foreground/20 mx-auto mb-2.5" />
@@ -382,7 +389,7 @@ export default function ClientDetailModal({ clientId, onClose, onEdit }: ClientD
                           {clientAttachments.map((att) => (
                             <div
                               key={att.id}
-                              className="flex flex-col items-center gap-2 p-3 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
+                              className="flex cursor-pointer flex-col items-center gap-2 rounded-2xl border border-border/50 bg-background p-3 shadow-sm transition-colors hover:bg-muted/40"
                             >
                               <div className="w-10 h-10 rounded-lg bg-foreground/[0.06] flex items-center justify-center">
                                 <span className="text-[10px] font-bold text-foreground/40 uppercase">{att.type}</span>
