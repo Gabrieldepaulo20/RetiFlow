@@ -58,7 +58,6 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
     }
 
     setLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 500));
     const result = await login({ email, password }, portal);
     setLoading(false);
 

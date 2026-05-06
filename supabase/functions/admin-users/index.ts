@@ -106,6 +106,8 @@ const baseCorsHeaders = {
   'Vary': 'Origin',
 };
 
+const PASSWORD_SETUP_PATH = '/definir-senha';
+
 const roleToAccess: Record<UserRole, string> = {
   ADMIN: 'administrador',
   FINANCEIRO: 'financeiro',
@@ -279,6 +281,27 @@ function escapeHtml(value: string) {
 function formatEmailAddress(email: string, displayName?: string) {
   const safeName = (displayName ?? '').replace(/["\r\n]/g, '').trim();
   return safeName ? `"${safeName}" <${email}>` : email;
+}
+
+function getPasswordSetupRedirectTo() {
+  const candidate = Deno.env.get('AUTH_REDIRECT_TO')?.trim()
+    || Deno.env.get('APP_BASE_URL')?.trim()
+    || Deno.env.get('APP_ORIGIN')?.trim()
+    || '';
+
+  if (!candidate) return undefined;
+
+  try {
+    const url = new URL(candidate);
+    if (url.pathname === '/' || url.pathname === '' || !url.pathname.includes('definir-senha')) {
+      url.pathname = PASSWORD_SETUP_PATH;
+      url.search = '';
+      url.hash = '';
+    }
+    return url.toString();
+  } catch {
+    return candidate;
+  }
 }
 
 async function sha256Hex(value: string) {
@@ -675,7 +698,7 @@ async function ensureAuthInvite(
   const existing = await findAuthUserByEmail(serviceClient, email);
   if (existing) return { userId: existing.id, emailSent: false };
 
-  const redirectTo = Deno.env.get('AUTH_REDIRECT_TO') || Deno.env.get('APP_BASE_URL') || undefined;
+  const redirectTo = getPasswordSetupRedirectTo();
   const { data, error } = await serviceClient.auth.admin.generateLink({
     type: 'invite',
     email,
@@ -715,7 +738,7 @@ async function resendAuthInvite(
     throw new Error('Este usuário já aceitou o convite. Use reset de senha caso ele tenha perdido o acesso.');
   }
 
-  const redirectTo = Deno.env.get('AUTH_REDIRECT_TO') || Deno.env.get('APP_BASE_URL') || undefined;
+  const redirectTo = getPasswordSetupRedirectTo();
   const { data, error } = await serviceClient.auth.admin.generateLink({
     type: 'invite',
     email: params.email,
@@ -1431,7 +1454,7 @@ Deno.serve(async (request) => {
       }
 
       const confirmationEmail = optionalEmail(payload.confirmationEmail);
-      const redirectTo = Deno.env.get('AUTH_REDIRECT_TO') || Deno.env.get('APP_BASE_URL') || undefined;
+      const redirectTo = getPasswordSetupRedirectTo();
 
       const { data, error } = await requester.serviceClient.auth.admin.generateLink({
         type: 'recovery',

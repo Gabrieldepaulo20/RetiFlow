@@ -9,6 +9,15 @@ import { useToast } from '@/hooks/use-toast';
 import { validatePasswordPolicy } from '@/services/auth/passwordPolicy';
 import { cn } from '@/lib/utils';
 
+async function waitForPasswordSetupSession() {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const { data } = await supabase.auth.getSession();
+    if (data.session?.access_token) return true;
+    await new Promise((resolve) => window.setTimeout(resolve, 250));
+  }
+  return false;
+}
+
 export default function ResetPassword() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -24,16 +33,20 @@ export default function ResetPassword() {
 
   useEffect(() => {
     let active = true;
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (active && session?.access_token) setHasRecoverySession(true);
+    });
 
-    void supabase.auth.getSession().then(({ data }) => {
+    void waitForPasswordSetupSession().then((hasSession) => {
       if (!active) return;
-      setHasRecoverySession(Boolean(data.session?.access_token));
+      setHasRecoverySession(hasSession);
     }).finally(() => {
       if (active) setLoadingSession(false);
     });
 
     return () => {
       active = false;
+      authListener.subscription.unsubscribe();
     };
   }, []);
 
@@ -104,7 +117,7 @@ export default function ResetPassword() {
               Este link expirou ou já foi usado. Solicite um novo convite ou recuperação de senha.
             </div>
             <Button asChild variant="outline" className="w-full">
-              <Link to="/admin/login">Voltar para o login</Link>
+              <Link to="/login">Voltar para o login</Link>
             </Button>
           </div>
         ) : success ? (
