@@ -5,9 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
-  AlertTriangle, CalendarDays, Download, Building2,
+  AlertTriangle, Download, Building2,
   PlusCircle, RefreshCcw, Share2, ChevronLeft, Eye, EyeOff, Sparkles, PencilLine, Printer,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -710,11 +709,6 @@ export default function MonthlyClosing() {
           </Button>
         </div>
       </div>
-
-      <Alert>
-        <CalendarDays className="h-4 w-4" />
-        <AlertDescription>Fluxo sugerido: gerar rascunho, revisar em popup, visualizar o template final e só então gerar o fechamento definitivo.</AlertDescription>
-      </Alert>
 
       <Card>
         <CardContent className="p-4">
