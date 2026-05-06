@@ -78,13 +78,14 @@ Risco:
 ### 4. Security headers/CSP no Amplify
 
 Problema:
-- Repo nao mostra CSP/security headers.
+- Burp Suite apontou CSP com permissoes amplas para script/style/object/frame.
 
 Plano seguro:
-1. Criar configuracao de headers compativel com Vite/Amplify.
-2. Comecar com CSP report-only em staging.
-3. Ajustar para PDF/blob/iframe usado por preview.
-4. Mudar para enforce quando nao houver violacoes criticas.
+1. Aplicado hardening minimo em `customHttp.yml`.
+2. Manter `frame-src blob:` por uso real de PDF/print.
+3. Manter `style-src 'unsafe-inline'` temporariamente para nao quebrar componentes/inline styles.
+4. Validar no Amplify publicado que o header novo esta ativo.
+5. Em uma fase posterior, avaliar remover `style-src 'unsafe-inline'` com nonces/hashes ou refactor de estilos.
 
 Headers sugeridos:
 - `Content-Security-Policy`
@@ -95,6 +96,9 @@ Headers sugeridos:
 
 Risco:
 - Medio, porque CSP pode quebrar PDF, Supabase, Google OAuth ou AWS RUM se restritiva demais.
+
+Status:
+- Parcialmente mitigado. Falta teste manual no dominio publicado apos deploy.
 
 ### 5. Rate limit server-side para IA e Gmail
 
@@ -164,7 +168,7 @@ Plano:
 1. P0 Storage owner isolation.
 2. P0 Confirmar grants/policies no Supabase remoto.
 3. P1 `xlsx` remover/substituir.
-4. P1 CSP/security headers em report-only.
+4. P1 validar CSP/security headers no Amplify publicado.
 5. P1 Rate limits IA/Gmail.
 6. P1 `verify_jwt=true` em `analisar-conta-pagar`, se staging confirmar.
 7. P2 Mass assignment tests.

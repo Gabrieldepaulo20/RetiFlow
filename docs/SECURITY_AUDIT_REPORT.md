@@ -17,7 +17,7 @@ Fora de escopo nesta rodada: ataque a producao, brute force, DoS, exploracao des
 | IA/LLM | `supabase/functions/analisar-conta-pagar/index.ts` | Upload de documentos para OpenAI Files, resposta JSON validada/sanitizada e arquivo removido em `finally`. Falta rate limit por usuario/cota. |
 | Email/AWS SES | `support-ticket`, `admin-users` | Segredos ficam server-side em Supabase Function env. Chamado tem rollback se email falha. |
 | Gmail OAuth | `gmail-oauth-start`, `gmail-oauth-callback`, `gmail-scan-payables` | Refresh token criptografado com `GOOGLE_TOKEN_ENCRYPTION_KEY`; falta rate limit de scan por usuario. |
-| Deploy | `amplify.yml` | Build no Amplify; headers CSP/security headers nao aparecem versionados neste repo. |
+| Deploy | `amplify.yml`, `customHttp.yml` | Build no Amplify e headers versionados em `customHttp.yml`. CSP foi endurecida nesta rodada apos achado do Burp. |
 | Observabilidade | `src/lib/monitoring.ts` | AWS RUM opcional, com envs publicas de monitor/identity pool; cuidado com PII em telemetria HTTP. |
 
 Referencias usadas para criterio:
@@ -108,39 +108,48 @@ Teste/validacao:
 Status final:
 Aberto. P1 alto.
 
-## [MEDIUM] Security headers/CSP nao estao versionados no deploy
+## [MEDIUM] CSP permitia fontes amplas para script/style/object/frame
 
 Categoria: Security Misconfiguration; Injection/XSS defense-in-depth  
-Status: LIKELY  
+Status: CONFIRMED MITIGATED  
 Arquivos envolvidos:
-- `amplify.yml`
-- `index.html`
-- `src/lib/supabase.ts`
+- `customHttp.yml`
+- `src/lib/printPdf.ts`
+- `src/components/notes/LazyNotaPDFViewer.tsx`
 
 Evidencia:
-- `amplify.yml` contem apenas comandos de build.
-- `index.html` nao define CSP.
-- Nao foi encontrado arquivo de headers versionado no repo.
+- Burp Suite apontou a CSP anterior como permitindo fontes nao confiaveis para script/style/object/frame.
+- Header anterior tinha `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'`, `connect-src ... data: blob:`, `frame-src 'self' blob: data:` e `object-src 'self' blob: data:`.
+- O app usa PDF/print com blob em iframe (`openPdfPrintDialog` e `PDFViewer`), portanto `blob:` em `frame-src` tem uso real.
 
 Risco:
-Sem CSP/headers, um XSS pequeno pode virar roubo de sessao Supabase persistida no browser. Headers tambem reduzem clickjacking, MIME sniffing e vazamento de referrer.
+CSP permissiva aumenta impacto de XSS e permite superficies desnecessarias como `object-src` e `data:`/`blob:` em `connect-src`.
 
 Como poderia impactar o SaaS:
-Se algum componente futuramente introduzir XSS, o atacante pode operar com o JWT do usuario autenticado dentro da janela da sessao.
+Se algum componente futuramente introduzir XSS, o atacante pode operar com o JWT do usuario autenticado dentro da janela da sessao. `object-src` aberto tambem aumenta risco com plugins/embeds legados.
 
 Correcao recomendada:
-- Configurar headers no Amplify ou arquivo versionado equivalente.
-- Minimo sugerido: `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, `frame-ancestors 'none'`.
-- Testar cuidadosamente `blob:`/PDF/iframe para nao quebrar preview/print.
+- Remover `unsafe-inline` de `script-src`.
+- Manter `unsafe-inline` em `style-src` temporariamente por uso de estilos inline/componentes.
+- Remover `data:` e `blob:` de `connect-src`.
+- Trocar `object-src` para `'none'`.
+- Remover `data:` de `frame-src`, mantendo `blob:` por uso real em PDF/print.
+- Adicionar `upgrade-insecure-requests`.
 
 Correcao aplicada:
-Nao aplicada nesta fase por depender do comportamento de PDF/preview e configuracao Amplify.
+Aplicada em `customHttp.yml`:
+- Antes: `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'`; depois: `script-src 'self' 'wasm-unsafe-eval'`.
+- Antes: `connect-src ... data: blob:`; depois: somente app, Supabase, ViaCEP e BrasilAPI.
+- Antes: `frame-src 'self' blob: data:`; depois: `frame-src 'self' blob:`.
+- Antes: `object-src 'self' blob: data:`; depois: `object-src 'none'`.
+- Adicionado `upgrade-insecure-requests`.
 
 Teste/validacao:
-Confirmado estaticamente no repo; precisa validar headers reais no dominio publicado.
+- `npm run build`, `npx tsc --noEmit`, `npm run lint` e `npm test -- --run` passaram apos a mudanca.
+- Validacao manual recomendada no Amplify: login, dashboard, preview de O.S., abrir para imprimir, baixar PDF, fechamento e importacao IA.
 
 Status final:
-Aberto. P1.
+Mitigado no repo; pendente confirmar que o Amplify esta servindo `customHttp.yml` atualizado apos deploy.
 
 ## [MEDIUM] `analisar-conta-pagar` usa `verify_jwt=false`
 
@@ -558,7 +567,7 @@ Bom, pendente monitoramento.
 | 2. Auth, Session, JWT, Cookies | Supabase Auth real, MFA/timeout; risco residual SPA/localStorage e `verify_jwt=false` em uma function. |
 | 3. API Authorization / Mass Assignment | RPCs/Edge Functions melhoraram; admin sensivel server-side. Precisa continuar testando payloads sensiveis. |
 | 4. Injection | Sem SQL string concat/shell/eval relevante encontrado. `dangerouslySetInnerHTML` em chart e `document.write` mitigado merecem cuidado. |
-| 5. Security Misconfiguration | CORS fail-closed no codigo; headers/CSP nao versionados; env runtime precisa verificacao. |
+| 5. Security Misconfiguration | CORS fail-closed no codigo; CSP endurecida no `customHttp.yml`; env/runtime ainda precisam verificacao. |
 | 6. Secrets/Keys Leakage | Gitleaks limpo; service role nao no frontend. Exemplos usam placeholders. |
 | 7. Vulnerable Dependencies | `xlsx` high sem fix; Vite/esbuild/PostCSS/jsdom advisories. |
 | 8. Upload/Storage/SSRF/Path Traversal | MIME/tamanho na IA; storage owner isolation insuficiente; filename sanitizado em anexos. |
@@ -579,7 +588,7 @@ Bom, pendente monitoramento.
 
 1. Storage multi-tenant e o risco mais importante encontrado nesta rodada.
 2. Dependencia `xlsx` high deve ser removida/substituida ou formalmente aceita com restricao de uso.
-3. Falta CSP/security headers versionados aumenta impacto de qualquer XSS futuro.
+3. CSP foi endurecida, mas ainda precisa validacao no Amplify publicado e revisao futura para remover `style-src 'unsafe-inline'`.
 4. IA/Gmail precisam rate limit server-side para evitar abuso/custo.
 
 ## 6. Proximos passos com Burp Suite Professional/OWASP ZAP em staging
