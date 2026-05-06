@@ -17,20 +17,19 @@ import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { ClientFormModal } from './ClientFormModal';
 
 interface ClientDetailModalProps {
   clientId: string | null;
   onClose: () => void;
+  onEdit?: (clientId: string) => void;
 }
 
-export default function ClientDetailModal({ clientId, onClose }: ClientDetailModalProps) {
+export default function ClientDetailModal({ clientId, onClose, onEdit }: ClientDetailModalProps) {
   const { getClient, notes, attachments, updateClient } = useData();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [editingObs, setEditingObs] = useState(false);
   const [obsValue, setObsValue] = useState('');
-  const [showEdit, setShowEdit] = useState(false);
 
   const client = clientId ? getClient(clientId) : undefined;
 
@@ -176,7 +175,7 @@ export default function ClientDetailModal({ clientId, onClose }: ClientDetailMod
                     {/* Edit button */}
                     <button
                       type="button"
-                      onClick={() => setShowEdit(true)}
+                      onClick={() => client && onEdit?.(client.id)}
                       title="Editar cadastro"
                       className="shrink-0 flex items-center gap-1.5 h-8 px-3 rounded-lg border border-border/60 bg-background text-muted-foreground hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors text-xs font-medium mr-8"
                     >
@@ -408,16 +407,6 @@ export default function ClientDetailModal({ clientId, onClose }: ClientDetailMod
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
-
-      {/* ── Edit modal (opens on top) ── */}
-      {client && (
-        <ClientFormModal
-          open={showEdit}
-          editingClient={client}
-          onClose={() => setShowEdit(false)}
-          onSuccess={() => setShowEdit(false)}
-        />
-      )}
     </>
   );
 }

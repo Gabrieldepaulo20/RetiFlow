@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Download, MapPin, Phone, PlusCircle, Search } from 'lucide-react';
+import { Download, MapPin, Pencil, Phone, PlusCircle, Search } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { buildCustomerAddressLabel } from '@/services/domain/customers';
 import ClientDetailModal from '@/components/clients/ClientDetailModal';
@@ -47,6 +47,7 @@ export default function Clients() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [editingClientId, setEditingClientId] = useState<string | null>(null);
   const [newClientOpen, setNewClientOpen] = useState(false);
 
   const filtered = useMemo(() => {
@@ -64,6 +65,13 @@ export default function Clients() {
   const lastNote = (clientId: string) => {
     const cn = notes.filter(n => n.clientId === clientId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     return cn[0]?.number;
+  };
+
+  const editingClient = editingClientId ? clients.find((client) => client.id === editingClientId) : undefined;
+
+  const openEdit = (clientId: string) => {
+    setSelectedClientId(null);
+    setEditingClientId(clientId);
   };
 
   return (
@@ -143,6 +151,10 @@ export default function Clients() {
                     <Button size="sm" variant="outline" onClick={() => setSelectedClientId(client.id)}>
                       Ver cliente
                     </Button>
+                    <Button size="sm" onClick={() => openEdit(client.id)}>
+                      <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                      Editar
+                    </Button>
                     <Button
                       size="sm"
                       variant="ghost"
@@ -191,6 +203,7 @@ export default function Clients() {
                     <TableCell className="text-right">
                       <div className="flex gap-1 justify-end">
                         <Button size="sm" variant="ghost" onClick={() => setSelectedClientId(c.id)}>Ver</Button>
+                        <Button size="sm" variant="ghost" onClick={() => openEdit(c.id)}>Editar</Button>
                         <Button size="sm" variant="ghost" onClick={() => { void updateClient(c.id, { isActive: !c.isActive }); }}>
                           {c.isActive ? 'Desativar' : 'Ativar'}
                         </Button>
@@ -210,12 +223,20 @@ export default function Clients() {
       <ClientDetailModal
         clientId={selectedClientId}
         onClose={() => setSelectedClientId(null)}
+        onEdit={openEdit}
       />
 
       <ClientFormModal
         open={newClientOpen}
         onClose={() => setNewClientOpen(false)}
         onSuccess={() => setNewClientOpen(false)}
+      />
+
+      <ClientFormModal
+        open={Boolean(editingClient)}
+        editingClient={editingClient}
+        onClose={() => setEditingClientId(null)}
+        onSuccess={() => setEditingClientId(null)}
       />
     </div>
   );
