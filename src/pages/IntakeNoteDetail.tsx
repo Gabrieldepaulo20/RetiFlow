@@ -169,7 +169,11 @@ export default function IntakeNoteDetail() {
                   a.click();
                   URL.revokeObjectURL(url);
                 } else {
-                  toast({ title: 'Imprimir indisponível em modo demo' });
+                  toast({
+                    title: 'PDF ainda não disponível',
+                    description: 'Atualize ou gere novamente a O.S. para preparar o documento de impressão.',
+                    variant: 'destructive',
+                  });
                 }
               } catch (error) {
                 toast({

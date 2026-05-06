@@ -13,7 +13,7 @@ export default function Invoices() {
         </Badge>
         <h1 className="text-2xl font-display font-bold">Nota Fiscal indisponível</h1>
         <p className="text-sm text-muted-foreground">
-          Este módulo ainda não possui integração fiscal real e não deve ser usado na primeira versão.
+          Este módulo fiscal ainda não está liberado para uso nesta versão.
         </p>
       </div>
 
@@ -21,8 +21,8 @@ export default function Invoices() {
         <AlertCircle className="h-4 w-4" />
         <AlertTitle>Módulo desativado intencionalmente</AlertTitle>
         <AlertDescription>
-          As ações antigas de registrar, baixar PDF, imprimir, enviar ou cancelar nota fiscal eram apenas visuais.
-          Para evitar falso positivo em produção, elas foram removidas até existir backend fiscal homologado.
+          A emissão fiscal exige homologação, certificado e integração específica. Por segurança,
+          a tela fica bloqueada até essa etapa ser concluída.
         </AlertDescription>
       </Alert>
 
@@ -35,8 +35,8 @@ export default function Invoices() {
             <p className="font-semibold">O que continua válido na v1</p>
             <p className="text-sm leading-relaxed text-muted-foreground">
               Clientes, O.S., Kanban, fechamento mensal e contas a pagar seguem como fluxos reais.
-              Nota Fiscal fica bloqueada até ser tratada em uma fase própria, com API fiscal, regras tributárias
-              e testes de emissão/cancelamento.
+              Nota Fiscal será liberada em uma fase própria, com API fiscal, regras tributárias e testes
+              de emissão/cancelamento.
             </p>
           </div>
         </CardContent>

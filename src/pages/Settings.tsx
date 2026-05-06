@@ -92,7 +92,16 @@ const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 const COMPANY_SETTINGS_CONNECTED = IS_REAL_AUTH;
 const APPEARANCE_SETTINGS_CONNECTED = false;
 const SECURITY_SETTINGS_CONNECTED = false;
-const SETTINGS_TABS = new Set(['empresa', 'modulos', 'aparencia', 'modelos', 'seguranca', 'usuarios']);
+const SHOW_APPEARANCE_SETTINGS = !IS_REAL_AUTH || APPEARANCE_SETTINGS_CONNECTED;
+const SHOW_PASSWORD_SETTINGS = !IS_REAL_AUTH || SECURITY_SETTINGS_CONNECTED;
+const SETTINGS_TABS = new Set([
+  'empresa',
+  'modulos',
+  ...(SHOW_APPEARANCE_SETTINGS ? ['aparencia'] : []),
+  'modelos',
+  'seguranca',
+  'usuarios',
+]);
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 
 export default function SettingsPage() {
@@ -564,6 +573,7 @@ export default function SettingsPage() {
     <div className="max-w-4xl mx-auto space-y-6">
       <h1 className="text-2xl font-display font-bold">Configurações</h1>
 
+      {!IS_REAL_AUTH && (
       <Alert>
         <Info className="h-4 w-4" />
         <AlertTitle>Configurações reais e prévias locais</AlertTitle>
@@ -572,12 +582,15 @@ export default function SettingsPage() {
           empresa, módulos e modelos já salvam no Supabase quando o sistema está em modo real.
         </AlertDescription>
       </Alert>
+      )}
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
         <TabsList className="flex w-full flex-nowrap justify-start gap-1 overflow-x-auto">
           <TabsTrigger value="empresa" className="shrink-0 text-xs sm:text-sm"><Building2 className="w-4 h-4 mr-1.5 hidden sm:inline" /> Empresa</TabsTrigger>
           <TabsTrigger value="modulos" className="shrink-0 text-xs sm:text-sm"><LayoutGrid className="w-4 h-4 mr-1.5 hidden sm:inline" /> Módulos</TabsTrigger>
-          <TabsTrigger value="aparencia" className="shrink-0 text-xs sm:text-sm"><Palette className="w-4 h-4 mr-1.5 hidden sm:inline" /> Aparência</TabsTrigger>
+          {SHOW_APPEARANCE_SETTINGS && (
+            <TabsTrigger value="aparencia" className="shrink-0 text-xs sm:text-sm"><Palette className="w-4 h-4 mr-1.5 hidden sm:inline" /> Aparência</TabsTrigger>
+          )}
           <TabsTrigger value="modelos" className="shrink-0 text-xs sm:text-sm"><FileText className="w-4 h-4 mr-1.5 hidden sm:inline" /> Modelos</TabsTrigger>
           <TabsTrigger value="seguranca" className="shrink-0 text-xs sm:text-sm"><Lock className="w-4 h-4 mr-1.5 hidden sm:inline" /> Segurança</TabsTrigger>
           <TabsTrigger value="usuarios" className="shrink-0 text-xs sm:text-sm"><Users className="w-4 h-4 mr-1.5 hidden sm:inline" /> Usuários</TabsTrigger>
@@ -802,6 +815,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         {/* APARÊNCIA */}
+        {SHOW_APPEARANCE_SETTINGS && (
         <TabsContent value="aparencia">
           <Card>
             <CardHeader>
@@ -837,6 +851,7 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </TabsContent>
+        )}
 
         {/* MODELOS */}
         <TabsContent value="modelos">
@@ -1175,6 +1190,7 @@ export default function SettingsPage() {
 
           <MfaSettingsCard />
 
+          {SHOW_PASSWORD_SETTINGS && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -1200,6 +1216,7 @@ export default function SettingsPage() {
               </Button>
             </CardContent>
           </Card>
+          )}
           </div>
         </TabsContent>
 
@@ -1225,8 +1242,8 @@ export default function SettingsPage() {
               <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
                 <p className="text-sm font-semibold">O que fazer aqui?</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Use esta aba apenas como ponte para a gestão real. Nenhum usuário é listado por seed,
-                  localStorage ou mock dentro de Configurações.
+                  Use esta aba como atalho seguro para o painel administrativo. Convites, resets,
+                  ativação e módulos são controlados pelo fluxo real de usuários.
                 </p>
               </div>
               {user?.role === 'ADMIN' ? (
