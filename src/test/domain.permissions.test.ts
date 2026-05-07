@@ -65,7 +65,6 @@ describe('expandPermissions', () => {
       'kanban.manage',
       'closing.view',
       'settings.view',
-      'invoices.view',
     ];
     for (const perm of expected) {
       expect(result).toContain(perm);
@@ -79,7 +78,7 @@ describe('getUserBasePermissions', () => {
   it('returns base permissions for FINANCEIRO', () => {
     const perms = getUserBasePermissions(makeUser('FINANCEIRO'));
     expect(perms).toContain('closing.view');
-    expect(perms).toContain('invoices.view');
+    expect(perms).not.toContain('invoices.view');
     expect(perms).not.toContain('admin.access');
   });
 
@@ -124,7 +123,6 @@ describe('hasPermission', () => {
       'kanban.manage',
       'closing.view',
       'settings.view',
-      'invoices.view',
       'admin.access',
     ];
     for (const perm of allPermissions) {
@@ -139,7 +137,7 @@ describe('hasPermission', () => {
     expect(hasPermission(user, 'notes.view')).toBe(true);
     expect(hasPermission(user, 'kanban.view')).toBe(true);
     expect(hasPermission(user, 'closing.view')).toBe(true);
-    expect(hasPermission(user, 'invoices.view')).toBe(true);
+    expect(hasPermission(user, 'invoices.view')).toBe(false);
   });
 
   it('FINANCEIRO cannot manage clients, notes, or access admin/settings', () => {
@@ -150,9 +148,8 @@ describe('hasPermission', () => {
     expect(hasPermission(user, 'admin.access')).toBe(false);
   });
 
-  it('PRODUCAO cannot view closing but can view invoices', () => {
+  it('PRODUCAO cannot view closing', () => {
     expect(hasPermission(makeUser('PRODUCAO'), 'closing.view')).toBe(false);
-    expect(hasPermission(makeUser('PRODUCAO'), 'invoices.view')).toBe(true);
   });
 
   it('PRODUCAO can manage kanban and note statuses', () => {
@@ -169,10 +166,10 @@ describe('hasPermission', () => {
     expect(hasPermission(makeUser('RECEPCAO'), 'notes.view')).toBe(true);
   });
 
-  it('RECEPCAO cannot view closing but can view invoices', () => {
+  it('RECEPCAO cannot view closing or invoices', () => {
     const user = makeUser('RECEPCAO');
     expect(hasPermission(user, 'closing.view')).toBe(false);
-    expect(hasPermission(user, 'invoices.view')).toBe(true);
+    expect(hasPermission(user, 'invoices.view')).toBe(false);
   });
 });
 
