@@ -31,7 +31,6 @@ describe('auth default redirect', () => {
     expect(canUserAccessModule(admin, 'dashboard')).toBe(true);
     expect(canUserAccessModule(admin, 'notes')).toBe(true);
     expect(canUserAccessModule(admin, 'settings')).toBe(true);
-    expect(canUserAccessModule(admin, 'invoices')).toBe(false);
   });
 
   it('can redirect a master/admin to the operational portal without choosing /admin', () => {

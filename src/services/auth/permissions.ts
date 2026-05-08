@@ -18,7 +18,6 @@ const IMPLIED_PERMISSIONS: Record<Permission, Permission[]> = {
   'kanban.view': [],
   'kanban.manage': ['kanban.view', 'notes.view'],
   'closing.view': [],
-  'invoices.view': [],
   'payables.view': [],
   'payables.manage': ['payables.view'],
   'settings.view': [],
@@ -46,7 +45,6 @@ export const MODULE_PERMISSIONS: Record<AppModuleKey, Permission> = {
   notes: 'notes.view',
   kanban: 'kanban.view',
   closing: 'closing.view',
-  invoices: 'invoices.view',
   payables: 'payables.view',
   settings: 'settings.view',
 };

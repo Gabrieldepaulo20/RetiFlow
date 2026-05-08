@@ -157,7 +157,6 @@ describe('Kanban', () => {
       services: [],
       products: [],
       attachments: [],
-      invoices: [],
       activities: [],
       noteCounter: 1,
       dataVersion: 1,
@@ -178,8 +177,6 @@ describe('Kanban', () => {
       removeProduct: vi.fn(),
       getAttachmentsForNote: vi.fn(() => []),
       addAttachment: vi.fn(),
-      addInvoice: vi.fn(),
-      updateInvoice: vi.fn(),
       addActivity: vi.fn(),
     });
   });

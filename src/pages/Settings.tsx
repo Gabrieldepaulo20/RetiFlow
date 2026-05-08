@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAuth } from '@/contexts/AuthContext';
 import MfaSettingsCard from '@/components/auth/MfaSettingsCard';
 import { DEFAULT_ROLE_MODULE_CONFIG } from '@/services/auth/moduleAccess';
-import { Wrench, Building2, Users, Palette, Lock, Upload, Check, FileText, Eye, LayoutGrid, LayoutDashboard, KanbanSquare, Calendar, Receipt, Settings as SettingsIcon, Info, Loader2, Search, Wallet, Shield, KeyRound } from 'lucide-react';
+import { Wrench, Building2, Users, Palette, Lock, Upload, Check, FileText, Eye, LayoutGrid, LayoutDashboard, KanbanSquare, Calendar, Settings as SettingsIcon, Info, Loader2, Search, Wallet, Shield, KeyRound } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { lookupCnpj, stripDigits } from '@/services/domain/customers';
 import { normalizeEmail, normalizeWhitespace, onlyDigits, toTitleCasePtBr } from '@/services/domain/textNormalization';
@@ -83,7 +83,6 @@ const MODULE_DEFS: { key: AppModuleKey; label: string; description: string; icon
   { key: 'kanban', label: 'Kanban', description: 'Acompanhamento da produção por status.', icon: KanbanSquare },
   { key: 'closing', label: 'Fechamento', description: 'Geração de fechamento mensal.', icon: Calendar },
   { key: 'payables', label: 'Contas a Pagar', description: 'Financeiro, anexos e importação com IA.', icon: Wallet },
-  { key: 'invoices', label: 'Nota Fiscal', description: 'Fora da v1; manter desligado até liberação.', icon: Receipt },
   { key: 'settings', label: 'Configurações', description: 'Ajustes e prévias do sistema.', icon: SettingsIcon },
   { key: 'admin', label: 'Admin', description: 'Usuários e permissões administrativas.', icon: Shield },
 ];

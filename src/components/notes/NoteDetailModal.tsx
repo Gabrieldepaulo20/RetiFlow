@@ -160,7 +160,6 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
     getProductsForNote,
     getAttachmentsForNote,
     updateNoteStatus,
-    invoices,
     getChildNotes,
   } = useData();
   const { user } = useAuth();
@@ -234,9 +233,6 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
     : localSvcs;
   const prds = note ? getProductsForNote(note.id) : [];
   const atts = note ? getAttachmentsForNote(note.id) : [];
-  const noteInvoices = note
-    ? invoices.filter((inv) => inv.noteId === note.id)
-    : [];
   const childNotes = note ? getChildNotes(note.id) : [];
   const parentNote = note?.parentNoteId
     ? notes.find((n) => n.id === note.parentNoteId)

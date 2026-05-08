@@ -5,7 +5,7 @@
 > GitHub: `Gabrieldepaulo20/RetiFlow`
 > Branch principal: `main`
 > Último commit validado neste contexto: pendente do commit desta rodada de tenant isolation
-> Escopo desta documentação: sistema Retiflow exceto Nota Fiscal, que ainda deve ser tratada como fora da v1/piloto.
+> Escopo desta documentação: sistema Retiflow sem o módulo de Nota Fiscal, que foi removido da superfície da v1/piloto.
 
 Este arquivo foi escrito para ser entregue a outro modelo de IA ou revisor técnico. A intenção é dar contexto suficiente para análise de arquitetura, segurança, banco, frontend, integração Supabase, riscos restantes e oportunidades de melhoria.
 
@@ -28,7 +28,7 @@ Estado atual honesto:
 | Contas a pagar | Integrado ao Supabase via RPCs, storage privado, IA via Edge Function |
 | Sugestões de e-mail/Gmail | RPC real + OAuth Gmail implantado; sugestões isoladas por usuário/tenant |
 | Logs/histórico | Agora lê e insere no Supabase via `get_logs`/`insert_log` |
-| Nota Fiscal | Fora da v1; rota mantém aviso de indisponibilidade e ações fake foram removidas |
+| Nota Fiscal | Removida da superfície da v1/piloto: sem rota, menu, página ou permissão no frontend |
 | Configurações | Empresa, módulos e modelos persistem no Supabase; aparência/logo/senha seguem marcadas como prévias/indisponíveis |
 | Admin/Master | Hierarquia Mega Master/Master implementada via Edge Function `admin-users`; Mega Master é protegido |
 | Exclusão de usuários | Mega Master possui exclusão em cascata auditada para dados tecnicamente vinculados ao usuário |
@@ -59,7 +59,7 @@ Avisos ainda existentes:
 - Em 2026-05-04 também foi removido `EXECUTE` de `PUBLIC/anon` nas RPCs de negócio. Chamadas anônimas passam a falhar por permissão antes de entrar na função. Usuários autenticados continuam usando RPCs; operações administrativas sensíveis ficam restritas a `service_role` via Edge Function.
 - O Supabase Auth está com rotação de refresh token ativa, MFA TOTP habilitado, manual linking desabilitado e notificações de segurança de alteração de senha/e-mail/identidade/MFA habilitadas. Proteção HIBP/leaked password foi tentada, mas o Supabase informou que exige plano Pro ou superior.
 - Em 2026-05-04 foi adicionada camada frontend de MFA TOTP: login detecta `aal1 -> aal2` e exige código do aplicativo autenticador antes de liberar a sessão no app; Configurações > Segurança permite cadastrar/remover autenticador TOTP usando APIs oficiais do Supabase. Controles avançados de sessão por tempo máximo/inatividade existem no Supabase, mas a documentação informa que são recurso de plano Pro ou superior.
-- Em 2026-05-04 foi aplicado endurecimento de least privilege: Nota Fiscal saiu das permissões padrão da v1, novos usuários operacionais não nascem com Configurações/Admin/Nota Fiscal, e Admin/Master em modo real só usa módulos explicitamente habilitados no Supabase, exceto o Mega Master configurado. A Edge Function `admin-users` passou a exigir módulo Admin explicitamente `true` para administradores que não são Mega Master.
+- Em 2026-05-04 foi aplicado endurecimento de least privilege: novos usuários operacionais não nascem com Configurações/Admin, e Admin/Master em modo real só usa módulos explicitamente habilitados no Supabase, exceto o Mega Master configurado. A Edge Function `admin-users` passou a exigir módulo Admin explicitamente `true` para administradores que não são Mega Master. Em 2026-05-07, o módulo de Nota Fiscal foi removido da superfície do frontend.
 - Em 2026-05-04 foram revisadas duas auditorias externas de segurança. Pontos já cobertos: anon key tratada como pública por design, grants diretos/RPCs anônimas endurecidos, buckets sensíveis privados, `get_usuarios` validado por integração, MFA TOTP no login e módulos mínimos por padrão. Pontos ainda válidos para fases futuras: CSP mais rígida no Amplify, separação definitiva de Supabase staging, limpeza de dados de teste, `security.txt`, revisão de PII em localStorage legado e Security Advisor/RLS/policies no dashboard.
 - Em 2026-05-04 o fluxo de convite/reset foi reforçado: tela de definição de senha exige checklist claro de senha forte (mínimo 10 caracteres, maiúscula, minúscula, número e símbolo), mostra confirmação explícita após sucesso e orienta ativar MFA. Convite e recuperação de senha gerados pela Edge Function `admin-users` usam links seguros do Supabase Admin no backend e e-mails personalizados via SES, instruindo senha forte + MFA. Em 2026-05-06, a Edge Function passou a resolver o redirect para `/definir-senha` mesmo quando o ambiente tem apenas `APP_BASE_URL`/`APP_ORIGIN`, e a tela de definição de senha passou a aguardar a sessão do link com retry curto para evitar falso “link expirado” por corrida de carregamento.
 - Em 2026-05-04 foi adicionada sessão por inatividade no frontend: em auth real, 8 horas sem interação encerram a sessão e o login explica o motivo. Interação na tela reinicia o temporizador. Esta é uma camada de UX/hardening; enforcement server-side avançado de sessão/inatividade depende de recursos/configurações do Supabase Auth.
@@ -179,7 +179,6 @@ src/
     MonthlyClosing.tsx
     ContasAPagar.tsx / ContaPagarForm.tsx / ImportarContaPagar.tsx
     Settings.tsx
-    Invoices.tsx
     admin/AdminDashboard.tsx / admin/AdminClients.tsx
 
   test/
@@ -395,7 +394,6 @@ Exceções conhecidas:
 | `modelos.ts` | `getConfiguracaoModeloUsuario`, `upsertConfiguracaoModeloUsuario` | `get_configuracao_modelo_usuario`, `upsert_configuracao_modelo_usuario` |
 | `support.ts` | `getChamadosSuporte`, `enviarChamadoSuporte` | `get_chamados_suporte`, Edge Function `support-ticket` |
 | `catalogo.ts` | `getTiposDeMotor`, `getServicosItens`, `getPecasProdutos` | `get_tipos_de_motor`, `get_servicos_itens`, `get_pecas_produtos` |
-| `faturas.ts` | `getFaturas`, `getFaturaDetalhes`, `insertFatura`, `updateFatura`, `cancelarFatura` | RPCs de faturas, porém Nota Fiscal está fora da v1 |
 
 ### 6.4 Tabelas/entidades inferidas do banco
 
@@ -431,7 +429,7 @@ Entidades centrais identificadas:
 | `Configuracoes_Modelos_Usuario` | Modelos e cores de O.S./fechamento por usuário/cliente | Persistida por RPC; usada nos templates de PDF |
 | `Chamados_Suporte` | Chamados/sugestões enviados pelo usuário | Persistida por RPC/Edge Function; envio via SES |
 | `Gmail_Connections` / `Gmail_OAuth_States` / `Gmail_Scanned_Messages` | Base planejada para Gmail/Workspace | Estrutura preparada; ingestão automática ainda depende de configuração OAuth/Cron |
-| `Faturas` | Nota Fiscal/faturas | Fora da v1 |
+| `Faturas` | Fiscal/faturas | Não exposto na superfície da v1 |
 
 Sobre formas normais:
 
@@ -507,7 +505,6 @@ Em modo real (`VITE_AUTH_MODE=real`), o contexto limpa do estado inicial local:
 - notas
 - serviços/produtos
 - anexos
-- invoices
 - atividades/logs
 - contas a pagar
 - anexos/histórico de contas
@@ -810,22 +807,13 @@ Estado honesto:
 
 Não considerar 100% pronto para produção ampla enquanto tema/logo/troca de senha própria não tiverem persistência real ou forem removidos/claramente marcados.
 
-### 8.11 Nota Fiscal
-
-Arquivo:
-
-- `src/pages/Invoices.tsx`
+### 8.11 Módulo fiscal
 
 Estado:
 
-- Fora do escopo da v1/piloto.
-- A rota `/nota-fiscal` foi mantida apenas como página de aviso de indisponibilidade.
-- Ações fake de baixar, imprimir, enviar, emitir ou simular fluxo fiscal foram removidas/desabilitadas.
-- O item operacional de Nota Fiscal foi removido do menu para reduzir risco de uso acidental.
-
-Recomendação:
-
-- Manter fora da v1 até existir backend fiscal real, validações fiscais, storage/assinatura adequados e testes próprios.
+- Removido da superfície da v1/piloto.
+- Não há rota `/nota-fiscal`, menu operacional, aba de O.S., página `Invoices.tsx` ou permissão frontend `invoices`.
+- Qualquer implementação fiscal futura deve ser tratada como projeto separado, com backend homologado, validações fiscais, storage/assinatura adequados e testes próprios.
 
 ---
 
@@ -853,7 +841,7 @@ Recomendação:
 | Bucket `notas` sem migration aplicada | PDFs de O.S. podem ficar públicos se o bucket ainda estiver público no projeto real | Aplicar migration `20260428110000_private_notas_storage.sql` e validar signed URL |
 | CORS sem allowlist configurada na Edge Function | Mantém compatibilidade com `*`; com env configurada restringe origem | Definir `CORS_ALLOWED_ORIGINS`/`ALLOWED_ORIGINS` no projeto Supabase de produção |
 | Aparência/logo/senha própria ainda locais/parciais | Usuário pode achar que salvou configuração real | Manter avisos/desabilitar salvar até persistir de verdade |
-| Nota Fiscal fora da v1 | Usuário pode pedir/esperar uso fiscal | Manter bloqueada/indisponível até existir implementação real |
+| Módulo fiscal fora da v1 | Usuário pode pedir/esperar uso fiscal | Manter removido da superfície até existir implementação real |
 | Projeto Supabase real usado em integration tests | Risco de sujeira/dados teste em ambiente principal | Criar Supabase Branch/projeto separado para testes |
 
 ### 9.3 Perguntas de segurança para próximo revisor/modelo
@@ -981,8 +969,7 @@ O que foi feito recentemente:
 - Logs passaram a persistir no banco.
 - Storage `contas-pagar` privado criado por migration.
 - Grants do schema customizado para service_role/supabase_auth_admin adicionados.
-- Nota Fiscal deixou de expor formulário/listas/ações visuais sem backend. A rota `/nota-fiscal` agora mostra aviso estático de módulo fora da v1/piloto.
-- Nota Fiscal foi removida do menu operacional para reduzir descoberta acidental por usuário final.
+- O módulo fiscal foi removido da superfície da v1/piloto para reduzir descoberta acidental por usuário final e eliminar tela sem backend real.
 - Settings foi ajustada para separar o que é real do que ainda é prévia: empresa, módulos e modelos persistem; aparência, logo e troca de senha própria seguem marcadas como parciais.
 - Controle de módulos por usuário foi conectado em modo real, com persistência no Supabase e proteção por Edge Function.
 - Hierarquia Mega Master/Master foi adicionada: apenas `gabrielwilliam208@gmail.com` pode criar outro Master/Admin, e nenhum Master pode alterar/desativar/resetar o Mega Master.
@@ -993,7 +980,7 @@ O que foi feito recentemente:
 - Edge Function `analisar-conta-pagar` passou a aceitar allowlist por `CORS_ALLOWED_ORIGINS` ou `ALLOWED_ORIGINS`, preservando localhost para dev e `*` como fallback de compatibilidade quando a env não está definida.
 - Teste `auth-provider.test.ts` foi criado para garantir que mock auth funciona fora de produção, é bloqueado em produção e `real` é aceito em produção.
 - Testes `supabase-base.test.ts` e `supabase-fechamentos.test.ts` foram criados para proteger contrato de envelope RPC, erro de transporte, erro de negócio, `dados` ausente e RPCs de mutation sem retorno.
-- Testes de rota foram reforçados para garantir que Nota Fiscal não expõe botões ou mensagens de sucesso fake.
+- Testes de rota foram ajustados para manter apenas rotas reais da v1 e 404 para superfícies inexistentes.
 - Teste de `ProtectedRoute` foi reforçado para bloquear usuário autenticado com role não permitida.
 - Documento antigo `docs/modulo-contas-a-pagar.md` foi removido; `docs/contexto-sessao.md` é a fonte única de contexto.
 
@@ -1020,7 +1007,7 @@ Esta lista resume as principais frentes solicitadas pelo usuário ao longo da se
 | Login operacional para Master | Feito | Master pode usar `/login` com o mesmo e-mail/senha para testar módulos operacionais |
 | Agrupamento inteligente de parceladas/recorrentes | Parcial | Dados existem/foram previstos, mas UX avançada de agrupamento ainda é melhoria P2/P1 |
 | Logs/histórico reais | Feito | `insert_log` e `get_logs` validados em integration tests |
-| Nota Fiscal fora da v1 | Feito | Menu operacional ocultado e tela transformada em aviso de indisponibilidade sem ações fake |
+| Módulo fiscal fora da v1 | Feito | Rota, página, menu, aba de O.S. e permissão frontend removidos |
 | Settings sem falsa persistência | Feito como mitigação | O que é real está marcado como Supabase; o que ainda é local/parcial está marcado como prévia/indisponível |
 | Segurança de auth/token | Melhorada | App não espelha mais access/refresh token em `auth.session` no modo real; Supabase SDK gerencia sessão |
 | CORS da Edge Function | Melhorado | Allowlist por env foi adicionada; produção precisa configurar `CORS_ALLOWED_ORIGINS`/`ALLOWED_ORIGINS` |
@@ -1037,7 +1024,6 @@ Esta seção é intencionalmente transparente.
 
 | Local | Tipo | Observação |
 |---|---|---|
-| `src/pages/Invoices.tsx` | Nota Fiscal fora da v1 | Ações fake foram removidas; a tela agora mostra aviso de indisponibilidade |
 | `src/pages/Settings.tsx` | Preview de modelo com dados mock | Usado apenas para prévia visual de template; configurações reais de modelos são persistidas |
 | `src/data/seed.ts` | Dados demo | Usado em `VITE_AUTH_MODE=mock` |
 | `src/services/auth/mockAuthProvider.ts` | Auth dev | Bloqueado em produção por `getAuthProvider()` |
@@ -1066,7 +1052,7 @@ Esta seção é intencionalmente transparente.
 
 Veredito:
 
-- Pode publicar para piloto controlado, excluindo Nota Fiscal.
+- Pode publicar para piloto controlado com a superfície fiscal removida da v1.
 - Não declarar 100% produção ampla sem:
   - aplicar e validar a migration do bucket `notas`;
   - validar manualmente impressão/PDF;
@@ -1092,7 +1078,7 @@ Pronto para piloto:
 
 Fora da v1:
 
-- Nota Fiscal.
+- Módulo fiscal completo.
 - Ingestão Gmail automática completa em produção sem configuração OAuth/Cron.
 - Tema/logo persistidos e troca de senha própria dentro de Settings.
 
@@ -1112,7 +1098,7 @@ Fora da v1:
   - `npm run lint`
   - `npm test -- --run`
   - `npm run test:integration` com ambiente configurado
-- Confirmar que Nota Fiscal segue claramente fora da v1 e sem ações fake.
+- Confirmar que a rota fiscal removida retorna 404 e que não há menu/aba fiscal na UI.
 - Testar manualmente:
   - login/logout;
   - criar/editar cliente;
@@ -1548,7 +1534,6 @@ Estado atual:
   - `closing`: true
   - `payables`: true
   - `settings`: true
-  - `invoices`: false
   - `admin`: false
 - O Mega Master pode retirar módulos depois pelo controle real de módulos.
 - Master/Admin continua sendo criação sensível e apenas Mega Master pode criar.

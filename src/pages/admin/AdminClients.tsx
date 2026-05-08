@@ -55,7 +55,6 @@ const ALL_MODULES: { key: AppModuleKey; label: string }[] = [
   { key: 'kanban', label: 'Kanban' },
   { key: 'closing', label: 'Fechamento' },
   { key: 'payables', label: 'Contas a Pagar' },
-  { key: 'invoices', label: 'Nota Fiscal' },
   { key: 'settings', label: 'Configurações' },
   { key: 'admin', label: 'Admin' },
 ];
@@ -75,7 +74,6 @@ const MASTER_MODULE_ACCESS: Record<AppModuleKey, boolean> = {
   kanban: true,
   closing: true,
   payables: true,
-  invoices: false,
   settings: true,
   admin: true,
 };
@@ -87,7 +85,6 @@ const OPERATIONAL_DEFAULT_MODULE_ACCESS: Record<AppModuleKey, boolean> = {
   kanban: true,
   closing: true,
   payables: true,
-  invoices: false,
   settings: false,
   admin: false,
 };
@@ -1176,7 +1173,7 @@ export default function AdminClients() {
                 </SelectContent>
               </Select>
               <p className="text-[11px] leading-relaxed text-muted-foreground">
-                Usuário operacional nasce apenas com os módulos de operação da v1. Configurações, Admin e Nota Fiscal começam desligados por segurança.
+                Usuário operacional nasce apenas com os módulos de operação da v1. Configurações e Admin começam desligados por segurança.
                 Master tem acesso administrativo amplo e só pode ser criado pelo Mega Master.
               </p>
             </div>

@@ -78,7 +78,6 @@ describe('getUserBasePermissions', () => {
   it('returns base permissions for FINANCEIRO', () => {
     const perms = getUserBasePermissions(makeUser('FINANCEIRO'));
     expect(perms).toContain('closing.view');
-    expect(perms).not.toContain('invoices.view');
     expect(perms).not.toContain('admin.access');
   });
 
@@ -130,14 +129,13 @@ describe('hasPermission', () => {
     }
   });
 
-  it('FINANCEIRO can view dashboard, clients, notes, kanban and closing, but not Nota Fiscal', () => {
+  it('FINANCEIRO can view dashboard, clients, notes, kanban and closing', () => {
     const user = makeUser('FINANCEIRO');
     expect(hasPermission(user, 'dashboard.view')).toBe(true);
     expect(hasPermission(user, 'clients.view')).toBe(true);
     expect(hasPermission(user, 'notes.view')).toBe(true);
     expect(hasPermission(user, 'kanban.view')).toBe(true);
     expect(hasPermission(user, 'closing.view')).toBe(true);
-    expect(hasPermission(user, 'invoices.view')).toBe(false);
   });
 
   it('FINANCEIRO cannot manage clients, notes, or access admin/settings', () => {
@@ -166,10 +164,9 @@ describe('hasPermission', () => {
     expect(hasPermission(makeUser('RECEPCAO'), 'notes.view')).toBe(true);
   });
 
-  it('RECEPCAO cannot view closing or invoices', () => {
+  it('RECEPCAO cannot view closing', () => {
     const user = makeUser('RECEPCAO');
     expect(hasPermission(user, 'closing.view')).toBe(false);
-    expect(hasPermission(user, 'invoices.view')).toBe(false);
   });
 });
 

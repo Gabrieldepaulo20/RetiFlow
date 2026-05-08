@@ -1174,7 +1174,7 @@ export default function Dashboard() {
                 <span className="text-[12px] font-bold tabular-nums">Real</span>
               </div>
               <p className="text-[12px] text-muted-foreground">
-                O.S., clientes, financeiro e logs vêm dos wrappers Supabase. Nota Fiscal não entra nos indicadores da v1.
+                O.S., clientes, financeiro e logs vêm dos wrappers Supabase usados na operação.
               </p>
             </div>
           </CardContent>

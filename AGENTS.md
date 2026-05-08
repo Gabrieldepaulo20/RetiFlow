@@ -6,7 +6,7 @@ Este arquivo orienta agentes que forem trabalhar no Retiflow. Ele deve ser lido 
 
 - Stack principal: React, Vite, TypeScript, Tailwind, Supabase Auth, Supabase RPCs, Supabase Storage e Edge Functions.
 - Primeira versão/piloto: clientes, notas de serviço/O.S., fechamento mensal, contas a pagar, anexos, dashboard, kanban, usuários/admin e configurações parciais.
-- Fora da v1: Nota Fiscal. Não implementar, simular ou religar fluxos fiscais sem autorização explícita.
+- Removido da v1: Nota Fiscal. Não recriar rota, menu, permissões, mocks ou fluxo fiscal sem autorização explícita.
 
 ## Comandos Confirmados
 
@@ -104,7 +104,7 @@ Quando a mudança tocar integração real:
 - Permitir que admin comum crie admin, crie usuário, resete senha ou altere módulos sem validação server-side.
 - Colocar senha temporária em README, migration, teste, fixture ou código.
 - Reativar mocks em produção.
-- Implementar Nota Fiscal fora do escopo aprovado.
+- Recriar Nota Fiscal fora do escopo aprovado.
 - Trocar stack, roteador, provider de auth ou arquitetura de dados em refactor amplo.
 - Adicionar dependências grandes sem medir impacto.
 

@@ -31,13 +31,12 @@ export const ROLE_PARA_ACESSO: Record<UserRole, string> = {
   RECEPCAO: 'recepção',
 };
 
-const DB_TO_APP_MODULE: Record<keyof DbModules, AppModuleKey> = {
+const DB_TO_APP_MODULE: Partial<Record<keyof DbModules, AppModuleKey>> = {
   dashboard: 'dashboard',
   clientes: 'clients',
   notas_de_entrada: 'notes',
   kanban: 'kanban',
   fechamento: 'closing',
-  nota_fiscal: 'invoices',
   configuracoes: 'settings',
   contas_a_pagar: 'payables',
   admin: 'admin',
@@ -49,7 +48,6 @@ const APP_TO_RPC_MODULE: Partial<Record<AppModuleKey, string>> = {
   notes: 'p_notas_de_entrada',
   kanban: 'p_kanban',
   closing: 'p_fechamento',
-  invoices: 'p_nota_fiscal',
   settings: 'p_configuracoes',
   payables: 'p_contas_a_pagar',
   admin: 'p_admin',

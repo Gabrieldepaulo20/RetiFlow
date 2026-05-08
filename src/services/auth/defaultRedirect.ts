@@ -12,7 +12,6 @@ const MODULE_PATHS: Record<AppModuleKey, string> = {
   notes: '/notas-entrada',
   kanban: '/kanban',
   closing: '/fechamento',
-  invoices: '/nota-fiscal',
   payables: '/contas-a-pagar',
   settings: '/configuracoes',
 };
@@ -24,7 +23,7 @@ const DEFAULT_MODULE_ORDER: Record<SystemUser['role'], AppModuleKey[]> = {
   RECEPCAO: ['dashboard', 'clients', 'notes', 'kanban'],
 };
 
-const ALL_MODULES: AppModuleKey[] = ['dashboard', 'clients', 'notes', 'kanban', 'closing', 'payables', 'invoices', 'settings', 'admin'];
+const ALL_MODULES: AppModuleKey[] = ['dashboard', 'clients', 'notes', 'kanban', 'closing', 'payables', 'settings', 'admin'];
 const OPERATIONAL_MODULES: AppModuleKey[] = ALL_MODULES.filter((moduleKey) => moduleKey !== 'admin');
 
 interface DefaultRedirectOptions {

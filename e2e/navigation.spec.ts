@@ -32,13 +32,6 @@ test.describe('Navigation — authenticated routes', () => {
     await expect(page.getByRole('heading', { name: 'Contas a Pagar' })).toBeVisible();
   });
 
-  test('Nota Fiscal shows unavailable screen (not mock actions)', async ({ page }) => {
-    await page.goto('/nota-fiscal');
-    await expect(page.getByRole('heading', { name: 'Nota Fiscal indisponível' })).toBeVisible();
-    await expect(page.getByText(/fora da v1\/piloto/i)).toBeVisible();
-    await expect(page.getByRole('button', { name: /registrar|emitir|baixar/i })).not.toBeVisible();
-  });
-
   test('unknown route shows 404 page', async ({ page }) => {
     await page.goto('/pagina-que-nao-existe');
     await expect(page.getByRole('heading', { name: 'Página não encontrada' })).toBeVisible();

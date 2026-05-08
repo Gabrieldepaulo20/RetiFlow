@@ -33,7 +33,6 @@ describe('supabase user mapping', () => {
       notes: true,
       kanban: false,
       closing: true,
-      invoices: false,
       settings: true,
       payables: true,
       admin: false,

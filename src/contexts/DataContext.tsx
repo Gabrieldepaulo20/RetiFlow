@@ -10,7 +10,6 @@ import {
   IntakeNote,
   IntakeProduct,
   IntakeService,
-  Invoice,
   NoteStatus,
   PayableAttachment,
   PayableCategory,
@@ -197,10 +196,6 @@ interface DataCtx {
   getAttachmentsForNote: (noteId: string) => Attachment[];
   addAttachment: (a: Omit<Attachment, 'id' | 'createdAt'>) => void;
 
-  invoices: Invoice[];
-  addInvoice: (inv: Omit<Invoice, 'id'>) => Invoice;
-  updateInvoice: (id: string, d: Partial<Invoice>) => void;
-
   activities: ActivityLog[];
   addActivity: (message: string, noteId?: string) => void;
 
@@ -247,7 +242,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       services: seed.services,
       products: seed.products,
       attachments: seed.attachments,
-      invoices: seed.invoices,
       activities: seed.activities,
       payables: seed.payables,
       payableAttachments: seed.payableAttachments,
@@ -262,7 +256,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
           services: [],
           products: [],
           attachments: [],
-          invoices: [],
           activities: [],
           payables: [],
           payableAttachments: [],
@@ -278,7 +271,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [services, setServices] = useState<IntakeService[]>(init.services);
   const [products, setProducts] = useState<IntakeProduct[]>(init.products);
   const [attachments, setAttachments] = useState<Attachment[]>(init.attachments);
-  const [invoices, setInvoices] = useState<Invoice[]>(init.invoices);
   const [activities, setActivities] = useState<ActivityLog[]>(init.activities);
   const [noteCounter, setNoteCounter] = useState(() => getNextNoteCounter(init.notes.map((note) => note.number)));
   const [dataVersion, setDataVersion] = useState(0);
@@ -303,7 +295,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setServices([]);
     setProducts([]);
     setAttachments([]);
-    setInvoices([]);
     setActivities([]);
     setPayables([]);
     setPayableAttachments([]);
@@ -399,14 +390,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       services: IS_REAL_AUTH ? [] : services,
       products: IS_REAL_AUTH ? [] : products,
       attachments: IS_REAL_AUTH ? [] : attachments,
-      invoices: IS_REAL_AUTH ? [] : invoices,
       activities: IS_REAL_AUTH ? [] : activities,
       payables: IS_REAL_AUTH ? [] : payables,
       payableAttachments: IS_REAL_AUTH ? [] : payableAttachments,
       payableHistory: IS_REAL_AUTH ? [] : payableHistory,
       emailSuggestions: IS_REAL_AUTH ? [] : emailSuggestions,
     });
-  }, [customers, notes, services, products, attachments, invoices, activities, payables, payableAttachments, payableHistory, emailSuggestions]);
+  }, [customers, notes, services, products, attachments, activities, payables, payableAttachments, payableHistory, emailSuggestions]);
 
   const addActivity = useCallback((message: string, noteId?: string) => {
     setActivities((previous) => [
@@ -803,19 +793,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     bumpDataVersion();
   }, [bumpDataVersion]);
 
-  const addInvoice = useCallback((invoice: Omit<Invoice, 'id'>) => {
-    const newInvoice: Invoice = { ...invoice, id: uid() };
-    setInvoices((previous) => [newInvoice, ...previous]);
-    bumpDataVersion();
-    addActivity(`Nota fiscal ${invoice.number || ''} registrada`, invoice.noteId);
-    return newInvoice;
-  }, [addActivity, bumpDataVersion]);
-
-  const updateInvoice = useCallback((id: string, data: Partial<Invoice>) => {
-    setInvoices((previous) => previous.map((invoice) => (invoice.id === id ? { ...invoice, ...data } : invoice)));
-    bumpDataVersion();
-  }, [bumpDataVersion]);
-
   // ── Contas a Pagar callbacks ──────────────────────────────────────────────
 
   const addPayable = useCallback(async (data: Omit<AccountPayable, 'id' | 'createdAt' | 'updatedAt'>): Promise<AccountPayable> => {
@@ -1035,9 +1012,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     attachments,
     getAttachmentsForNote,
     addAttachment,
-    invoices,
-    addInvoice,
-    updateInvoice,
     activities,
     addActivity,
     noteCounter,
@@ -1084,9 +1058,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     attachments,
     getAttachmentsForNote,
     addAttachment,
-    invoices,
-    addInvoice,
-    updateInvoice,
     activities,
     addActivity,
     noteCounter,

@@ -7,7 +7,6 @@ type AppModuleKey =
   | 'kanban'
   | 'closing'
   | 'payables'
-  | 'invoices'
   | 'settings'
   | 'admin';
 
@@ -46,7 +45,6 @@ const MASTER_MODULE_ACCESS: Required<ModuleAccess> = {
   kanban: true,
   closing: true,
   payables: true,
-  invoices: false,
   settings: true,
   admin: true,
 };
@@ -130,7 +128,6 @@ const moduleToRpcParam: Record<AppModuleKey, string> = {
   kanban: 'p_kanban',
   closing: 'p_fechamento',
   payables: 'p_contas_a_pagar',
-  invoices: 'p_nota_fiscal',
   settings: 'p_configuracoes',
   admin: 'p_admin',
 };
@@ -592,7 +589,6 @@ function modulesToRpcPayload(modules: ModuleAccess) {
 
 function normalizeInitialUserModules(role: UserRole, modules: ModuleAccess): ModuleAccess {
   const normalized = normalizeModules(modules);
-  normalized.invoices = false;
 
   if (role !== 'ADMIN') {
     normalized.admin = false;
@@ -1207,7 +1203,6 @@ async function getSupportTargetUser(serviceClient: ReturnType<typeof createClien
         kanban: moduleRow.kanban === true,
         closing: moduleRow.fechamento === true,
         payables: moduleRow.contas_a_pagar === true,
-        invoices: moduleRow.nota_fiscal === true,
         settings: moduleRow.configuracoes === true,
         admin: false,
       }

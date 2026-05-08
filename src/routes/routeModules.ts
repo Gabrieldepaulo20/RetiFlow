@@ -10,7 +10,6 @@ export const loadIntakeNoteFormPage = () => import('@/pages/IntakeNoteForm');
 export const loadIntakeNoteDetailPage = () => import('@/pages/IntakeNoteDetail');
 export const loadKanbanPage = () => import('@/pages/Kanban');
 export const loadMonthlyClosingPage = () => import('@/pages/MonthlyClosing');
-export const loadInvoicesPage = () => import('@/pages/Invoices');
 export const loadSettingsPage = () => import('@/pages/Settings');
 export const loadContasAPagarPage = () => import('@/pages/ContasAPagar');
 export const loadContaPagarFormPage = () => import('@/pages/ContaPagarForm');
@@ -54,7 +53,6 @@ const routeLoaderEntries: RouteLoaderEntry[] = [
   },
   { matches: (pathname) => pathname === '/kanban', load: loadKanbanPage },
   { matches: (pathname) => pathname === '/fechamento', load: loadMonthlyClosingPage },
-  { matches: (pathname) => pathname === '/nota-fiscal', load: loadInvoicesPage },
   { matches: (pathname) => pathname === '/contas-a-pagar', load: loadContasAPagarPage },
   { matches: (pathname) => pathname === '/contas-a-pagar/nova', load: loadContaPagarFormPage },
   { matches: (pathname) => pathname === '/contas-a-pagar/importar', load: loadImportarContaPagarPage },

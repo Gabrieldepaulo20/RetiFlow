@@ -7,7 +7,6 @@ import type {
   IntakeNote,
   IntakeProduct,
   IntakeService,
-  Invoice,
   PayableAttachment,
   PayableHistory,
 } from '@/types';
@@ -20,7 +19,6 @@ export interface PersistedData {
   services: IntakeService[];
   products: IntakeProduct[];
   attachments: Attachment[];
-  invoices: Invoice[];
   activities: ActivityLog[];
   payables: AccountPayable[];
   payableAttachments: PayableAttachment[];

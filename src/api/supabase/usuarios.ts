@@ -63,7 +63,7 @@ export async function upsertModulo(
   idUsuarios: string,
   modulos: Partial<{
     p_dashboard: boolean; p_clientes: boolean; p_notas_de_entrada: boolean;
-    p_kanban: boolean; p_fechamento: boolean; p_nota_fiscal: boolean;
+    p_kanban: boolean; p_fechamento: boolean;
     p_configuracoes: boolean; p_contas_a_pagar: boolean; p_admin: boolean;
   }>,
 ) {

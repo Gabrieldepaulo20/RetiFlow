@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { getNotaPDFSignedUrl, getNotaServicoDetalhes, type NotaServicoDetalhes } from '@/api/supabase/notas';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { STATUS_LABELS, STATUS_COLORS, NOTE_STATUS_ORDER, FINAL_STATUSES, ALLOWED_TRANSITIONS, NoteStatus } from '@/types';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { ArrowLeft, Eye, Printer, Share2, ChevronRight, ChevronLeft, Paperclip, Receipt, Ban, Trash2, XCircle, Link2 } from 'lucide-react';
+import { ArrowLeft, Eye, Printer, Share2, ChevronRight, ChevronLeft, Paperclip, Ban, Trash2, XCircle, Link2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { buildWhatsAppUrl, openExternalUrl } from '@/lib/browserShare';
@@ -26,7 +26,7 @@ const MAIN_FLOW: NoteStatus[] = ['ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO'
 
 export default function IntakeNoteDetail() {
   const { id } = useParams();
-  const { getNote, getClient, getServicesForNote, getProductsForNote, getAttachmentsForNote, updateNoteStatus, updateNote, invoices, getChildNotes, notes } = useData();
+  const { getNote, getClient, getServicesForNote, getProductsForNote, getAttachmentsForNote, updateNoteStatus, updateNote, getChildNotes, notes } = useData();
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -58,7 +58,6 @@ export default function IntakeNoteDetail() {
       }))
     : localSvcs;
   const atts = getAttachmentsForNote(note.id);
-  const noteInvoices = invoices.filter(inv => inv.noteId === note.id);
   const childNotes = getChildNotes(note.id);
   const parentNote = note.parentNoteId ? notes.find(n => n.id === note.parentNoteId) : null;
 
@@ -353,7 +352,6 @@ export default function IntakeNoteDetail() {
         <TabsList>
           <TabsTrigger value="itens">Itens</TabsTrigger>
           <TabsTrigger value="anexos">Anexos ({atts.length})</TabsTrigger>
-          <TabsTrigger value="nf" className="text-muted-foreground">NF ({noteInvoices.length})</TabsTrigger>
         </TabsList>
         <TabsContent value="itens">
           <div className="space-y-4">
@@ -407,23 +405,6 @@ export default function IntakeNoteDetail() {
                   </div>
                 ))}
               </div>
-            )}
-          </CardContent></Card>
-        </TabsContent>
-        <TabsContent value="nf">
-          <Card className="border-0 shadow-sm"><CardContent className="p-6">
-            {noteInvoices.length === 0 ? (
-              <div className="text-center py-8">
-                <p className="text-muted-foreground mb-3">Nenhuma nota fiscal vinculada.</p>
-                <Button variant="outline" asChild><Link to="/nota-fiscal"><Receipt className="w-4 h-4 mr-2" /> Registrar NF</Link></Button>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader><TableRow><TableHead>Tipo</TableHead><TableHead>Número</TableHead><TableHead>Data</TableHead><TableHead className="text-right">Valor</TableHead></TableRow></TableHeader>
-                <TableBody>{noteInvoices.map(inv => (
-                  <TableRow key={inv.id}><TableCell>{inv.type}</TableCell><TableCell>{inv.number}</TableCell><TableCell>{new Date(inv.issueDate).toLocaleDateString('pt-BR')}</TableCell><TableCell className="text-right font-medium">R$ {inv.amount.toLocaleString('pt-BR')}</TableCell></TableRow>
-                ))}</TableBody>
-              </Table>
             )}
           </CardContent></Card>
         </TabsContent>

@@ -1,6 +1,6 @@
 export type UserRole = 'ADMIN' | 'FINANCEIRO' | 'PRODUCAO' | 'RECEPCAO';
 export type AuthMode = 'development' | 'real';
-export type AppModuleKey = 'dashboard' | 'clients' | 'notes' | 'kanban' | 'closing' | 'invoices' | 'payables' | 'settings' | 'admin';
+export type AppModuleKey = 'dashboard' | 'clients' | 'notes' | 'kanban' | 'closing' | 'payables' | 'settings' | 'admin';
 export type Permission =
   | 'dashboard.view'
   | 'clients.view'
@@ -12,7 +12,6 @@ export type Permission =
   | 'kanban.view'
   | 'kanban.manage'
   | 'closing.view'
-  | 'invoices.view'
   | 'payables.view'
   | 'payables.manage'
   | 'settings.view'
@@ -24,8 +23,6 @@ export type NoteStatus = 'ABERTO' | 'EM_ANALISE' | 'ORCAMENTO' | 'APROVADO' | 'E
 
 export type DocType = 'CPF' | 'CNPJ';
 export type AttachmentType = 'PHOTO' | 'PDF' | 'XML' | 'OTHER';
-export type InvoiceType = 'NFE' | 'NFSE' | 'RECIBO';
-export type InvoiceStatus = 'REGISTRADA' | 'ENVIADA' | 'CANCELADA';
 export type PdfFormat = 'A4' | 'A5';
 
 export interface SystemUser {
@@ -145,40 +142,6 @@ export interface Attachment {
   filename: string;
   url: string;
   createdAt: string;
-}
-
-export interface Invoice {
-  id: string;
-  noteId?: string;
-  clientId: string;
-  type: InvoiceType;
-  /** Número da NF (ex: "000001234") */
-  number?: string;
-  /** Série da NF (ex: "001") */
-  series?: string;
-  /** Chave de acesso de 44 dígitos (NF-e) */
-  accessKey?: string;
-  /** Competência no formato YYYY-MM (para NFS-e) */
-  competencia?: string;
-  issueDate: string;
-  amount: number;
-  /** Descrição resumida dos serviços/produtos */
-  description?: string;
-  /** CNPJ do emitente */
-  cnpjEmitter?: string;
-  /** Inscrição municipal do emitente */
-  municipalReg?: string;
-  /** Inscrição estadual do emitente */
-  stateReg?: string;
-  pdfUrl?: string;
-  xmlUrl?: string;
-  status: InvoiceStatus;
-  /** ID no NFE.io após emissão via API */
-  nfeIoId?: string;
-  /** Status retornado pelo NFE.io */
-  nfeIoStatus?: string;
-  /** Timestamp de emissão confirmado pelo NFE.io */
-  nfeIoEmittedAt?: string;
 }
 
 export interface ActivityLog {

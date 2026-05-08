@@ -1,4 +1,4 @@
-import { SystemUser, Customer, IntakeNote, IntakeService, IntakeProduct, Attachment, Invoice, ActivityLog, NoteStatus, PayableCategory, PayableSupplier, AccountPayable, PayableAttachment, PayableHistory, EmailSuggestion } from '@/types';
+import { SystemUser, Customer, IntakeNote, IntakeService, IntakeProduct, Attachment, ActivityLog, NoteStatus, PayableCategory, PayableSupplier, AccountPayable, PayableAttachment, PayableHistory, EmailSuggestion } from '@/types';
 import { formatNoteNumber } from '@/lib/noteNumbers';
 import { DEFAULT_PAYABLE_CATEGORIES } from '@/services/domain/payables';
 
@@ -132,17 +132,6 @@ export const attachments: Attachment[] = Array.from({ length: 10 }, (_, i): Atta
   url: `/mock/attachments/${i + 1}`, createdAt: cd(15 + (i % 10), 1),
 }));
 
-export const invoices: Invoice[] = Array.from({ length: 5 }, (_, i) => {
-  const note = notes[28 + i];
-  return {
-    id: `inv-${i + 1}`, noteId: note.id, clientId: note.clientId,
-    type: (['NFE','NFSE','RECIBO'] as const)[i % 3], number: `${2001 + i}`,
-    accessKey: i % 3 === 0 ? `35260112345678900001550010000${i}0000000001` : undefined,
-    issueDate: cd(5 + i, 2), amount: note.totalAmount,
-    pdfUrl: `/mock/invoices/nf_${2001 + i}.pdf`, status: 'REGISTRADA' as const,
-  };
-});
-
 export const activities: ActivityLog[] = [
   { id: 'a1', noteId: 'n15', message: `${formatNoteNumber(15)} movida para EM_EXECUCAO por João (Produção)`, userId: 'user-3', createdAt: cd(18,2) },
   { id: 'a2', noteId: 'n29', message: `${formatNoteNumber(29)} finalizada por Admin Master`, userId: 'user-1', createdAt: cd(17,2) },
@@ -150,7 +139,7 @@ export const activities: ActivityLog[] = [
   { id: 'a4', noteId: 'n8', message: `${formatNoteNumber(8)} movida para EM_ANALISE por Maria (Recepção)`, userId: 'user-4', createdAt: cd(16,2) },
   { id: 'a5', noteId: 'n22', message: `${formatNoteNumber(22)} - Anexo adicionado: foto_cabecote.jpg`, userId: 'user-3', createdAt: cd(16,2) },
   { id: 'a6', message: 'Novo cliente cadastrado: Auto Center Progresso', userId: 'user-4', createdAt: cd(15,2) },
-  { id: 'a7', noteId: 'n30', message: `${formatNoteNumber(30)} - Nota fiscal NFE registrada`, userId: 'user-2', createdAt: cd(15,2) },
+  { id: 'a7', noteId: 'n30', message: `${formatNoteNumber(30)} - PDF gerado com sucesso`, userId: 'user-2', createdAt: cd(15,2) },
   { id: 'a8', noteId: 'n1', message: `${formatNoteNumber(1)} criada por Maria (Recepção)`, userId: 'user-4', createdAt: cd(14,2) },
   { id: 'a9', noteId: 'n10', message: `${formatNoteNumber(10)} aprovada por Admin Master`, userId: 'user-1', createdAt: cd(14,2) },
   { id: 'a10', noteId: 'n35', message: 'Fechamento mensal Jan/2026 gerado por Paula (Financeiro)', userId: 'user-2', createdAt: cd(10,2) },
@@ -526,7 +515,7 @@ export const emailSuggestions: EmailSuggestion[] = [
   },
   {
     id: 'esugg-3',
-    subject: 'Nota Fiscal — Fornecimento de Peças — Comercial Norte',
+    subject: 'Fatura — Fornecimento de Peças — Comercial Norte',
     senderName: 'Comercial Norte Motores',
     senderEmail: 'nfe@comercialnorte.com.br',
     receivedAt: cd(15, 4),

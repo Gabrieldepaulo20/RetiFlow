@@ -91,26 +91,12 @@ describe('App routes', () => {
     expect(await findElement()).toBeInTheDocument();
   });
 
-  it('blocks Nota Fiscal by default because it is outside the v1 least-privilege matrix', async () => {
-    authenticateAs('FINANCEIRO');
-    renderAt('/nota-fiscal');
-
-    expect(await screen.findByRole('heading', { name: 'Acesso negado' })).toBeInTheDocument();
-    expect(screen.getByText('/nota-fiscal')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /registrar|emitir|baixar|imprimir|enviar|cancelar/i })).not.toBeInTheDocument();
-    expect(screen.queryByText(/registrada com sucesso/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/pdf baixado/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/imprimindo/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/enviado/i)).not.toBeInTheDocument();
-  });
-
   it('keeps Dashboard indicators limited to real v1 modules', async () => {
     authenticateAs('FINANCEIRO');
     renderAt('/dashboard');
 
     expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
     expect(screen.getByText(/fonte dos indicadores/i)).toBeInTheDocument();
-    expect(screen.getByText(/Nota Fiscal não entra nos indicadores da v1/i)).toBeInTheDocument();
     expect(screen.queryByText(/NFs este mês/i)).not.toBeInTheDocument();
   });
 
