@@ -14,7 +14,6 @@ import {
   formatCep,
   formatCpfCnpj,
   formatPhone,
-  lookupCep,
   lookupCnpj,
   sanitizeClientInput,
   stripDigits,
@@ -207,10 +206,14 @@ export default function ClientForm() {
         state: company.state || previous.state,
       }));
 
-      if (!company.addressNumber) {
+      if (!company.name || !company.addressNumber) {
+        const missing = [
+          !company.name ? 'nome fantasia' : null,
+          !company.addressNumber ? 'número do endereço' : null,
+        ].filter(Boolean).join(' e ');
         toast({
           title: 'CNPJ encontrado',
-          description: 'Preenchi os dados disponíveis. Complete o número do endereço manualmente.',
+          description: `Preenchi os dados disponíveis. Complete ${missing} manualmente.`,
         });
       } else {
         toast({ title: 'Dados da empresa preenchidos pelo CNPJ.' });

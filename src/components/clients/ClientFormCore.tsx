@@ -280,10 +280,14 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
           }));
         } catch { /* dados do CNPJ são suficientes */ }
       }
-      if (!co.addressNumber) {
+      if (!co.name || !co.addressNumber) {
+        const missing = [
+          !co.name ? 'nome fantasia' : null,
+          !co.addressNumber ? 'número do endereço' : null,
+        ].filter(Boolean).join(' e ');
         toast({
           title: 'CNPJ encontrado',
-          description: 'Preenchi os dados disponíveis. Complete o número do endereço manualmente.',
+          description: `Preenchi os dados disponíveis. Complete ${missing} manualmente.`,
         });
       } else {
         toast({ title: 'Dados preenchidos pelo CNPJ.' });

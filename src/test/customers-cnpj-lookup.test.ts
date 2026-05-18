@@ -48,7 +48,8 @@ describe('lookupCnpj', () => {
 
     const result = await lookupCnpj('59.540.218/0001-81');
 
-    expect(result.name).toBe('59.540.218 Gabriel William de Paulo');
+    expect(result.name).toBe('');
+    expect(result.tradeName).toBe('');
     expect(result.email).toBe('');
     expect(result.cep).toBe('14177-612');
     expect(result.address).toBe('Rua Antônio Dias');
@@ -56,5 +57,36 @@ describe('lookupCnpj', () => {
     expect(result.city).toBe('Sertãozinho');
     expect(result.state).toBe('SP');
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('usa nome fantasia como nome principal quando a BrasilAPI informa', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+
+      if (url.includes('brasilapi.com.br/api/cnpj/v1/12345678000195')) {
+        return jsonResponse({
+          razao_social: 'EMPRESA EXEMPLO SERVICOS LTDA',
+          nome_fantasia: 'OFICINA PREMIUM',
+          cep: '14177612',
+          logradouro: 'Rua Teste',
+          numero: '100',
+          bairro: 'Centro',
+          municipio: 'SERTAOZINHO',
+          uf: 'SP',
+          email: 'CONTATO@EXEMPLO.COM',
+          ddd_telefone_1: '1635244661',
+          ddd_telefone_2: null,
+        });
+      }
+
+      throw new Error(`URL inesperada: ${url}`);
+    });
+
+    const result = await lookupCnpj('12.345.678/0001-95');
+
+    expect(result.name).toBe('Oficina Premium');
+    expect(result.tradeName).toBe('Oficina Premium');
+    expect(result.email).toBe('contato@exemplo.com');
+    expect(result.addressNumber).toBe('100');
   });
 });

@@ -175,7 +175,7 @@ export async function lookupCnpj(cnpj: string, signal?: AbortSignal): Promise<Cn
 
     const phone = formatPhone(data.ddd_telefone_1 || data.ddd_telefone_2 || '');
     return {
-      name: clamp(toTitleCasePtBr(data.nome_fantasia || data.razao_social || ''), CUSTOMER_FIELD_LIMITS.name),
+      name: clamp(toTitleCasePtBr(data.nome_fantasia || ''), CUSTOMER_FIELD_LIMITS.name),
       tradeName: clamp(toTitleCasePtBr(data.nome_fantasia || ''), CUSTOMER_FIELD_LIMITS.tradeName),
       email: clamp(normalizeEmail(data.email || ''), CUSTOMER_FIELD_LIMITS.email),
       phone,
