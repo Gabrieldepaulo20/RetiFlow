@@ -329,7 +329,7 @@ export default function AppLayout() {
             <DropdownMenuItem onClick={() => setSupportOpen(true)}>
               <MessageSquarePlus className="w-4 h-4 mr-2" /> Sugestões / Chamado
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => { logout(); navigate('/login'); }}>
+            <DropdownMenuItem onClick={async () => { await logout(); navigate('/login', { replace: true }); }}>
               <LogOut className="w-4 h-4 mr-2" /> Sair
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -559,7 +559,7 @@ export default function AppLayout() {
                 <DropdownMenuItem onClick={() => setSupportOpen(true)}>
                   <MessageSquarePlus className="w-4 h-4 mr-2" /> Sugestões / Chamado
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => { logout(); navigate('/login'); }}>
+                <DropdownMenuItem onClick={async () => { await logout(); navigate('/login', { replace: true }); }}>
                   <LogOut className="w-4 h-4 mr-2" /> Sair
                 </DropdownMenuItem>
               </DropdownMenuContent>
