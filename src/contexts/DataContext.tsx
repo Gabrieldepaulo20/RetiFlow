@@ -642,7 +642,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         };
       }
       if (itens !== undefined) payload.itens = itens;
-      await updateNotaServicoDB(payload as { id_notas_servico: string } & Record<string, unknown>);
+      if (Object.keys(payload).length > 1) {
+        await updateNotaServicoDB(payload as { id_notas_servico: string } & Record<string, unknown>);
+      }
     }
     setNotes((previous) =>
       previous.map((note) => (note.id === id ? { ...note, ...data, updatedAt: new Date().toISOString() } : note)),

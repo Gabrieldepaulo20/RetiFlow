@@ -595,6 +595,7 @@ export default function NoteFormCore({
             } : undefined);
             const url = await uploadNotaPDF(blob, editingNote.number);
             await updateNotaPdfUrl(editingNote.id, url);
+            await updateNote(editingNote.id, { pdfUrl: url });
           } else {
             console.error('[PDF] getNotaServicoDetalhes retornou null para', editingNote.id);
             toast({ title: 'Aviso: PDF não gerado', description: 'Detalhes da OS não encontrados.', variant: 'destructive' });
@@ -673,6 +674,7 @@ export default function NoteFormCore({
             } : undefined);
             const url = await uploadNotaPDF(blob, note.number);
             await updateNotaPdfUrl(note.id, url);
+            await updateNote(note.id, { pdfUrl: url });
           } else {
             console.error('[PDF] getNotaServicoDetalhes retornou null para', note.id);
             toast({ title: 'Aviso: PDF não gerado', description: 'Detalhes da OS não encontrados.', variant: 'destructive' });
