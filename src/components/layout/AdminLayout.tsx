@@ -157,7 +157,7 @@ export default function AdminLayout() {
               <DropdownMenuItem onClick={() => navigate('/dashboard')}>
                 <Wrench className="w-4 h-4 mr-2" /> Área Operacional
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => { logout(); navigate('/login'); }}>
+              <DropdownMenuItem onClick={async () => { await logout(); navigate('/login', { replace: true }); }}>
                 <LogOut className="w-4 h-4 mr-2" /> Sair
               </DropdownMenuItem>
             </DropdownMenuContent>

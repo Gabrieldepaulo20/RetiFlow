@@ -349,7 +349,7 @@ export default function AppLayout() {
                 </span>
               ) : null}
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => { logout(); navigate('/login'); }}>
+            <DropdownMenuItem onClick={async () => { await logout(); navigate('/login', { replace: true }); }}>
               <LogOut className="w-4 h-4 mr-2" /> Sair
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -532,7 +532,7 @@ export default function AppLayout() {
                     </span>
                   ) : null}
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => { logout(); navigate('/login'); }}>
+                <DropdownMenuItem onClick={async () => { await logout(); navigate('/login', { replace: true }); }}>
                   <LogOut className="w-4 h-4 mr-2" /> Sair
                 </DropdownMenuItem>
               </DropdownMenuContent>
