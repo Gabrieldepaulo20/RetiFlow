@@ -160,18 +160,31 @@ export async function lookupCnpj(cnpj: string, signal?: AbortSignal): Promise<Cn
 
   try {
     const data = await fetchCnpj(digits, signal);
+    let cepAddress: CepLookupResult | null = null;
+
+    if (
+      data.cep &&
+      (!data.logradouro || !data.bairro || !data.municipio || !data.uf)
+    ) {
+      try {
+        cepAddress = await lookupCep(data.cep, signal);
+      } catch {
+        // Alguns CNPJs trazem apenas dados cadastrais; a tela permite completar manualmente.
+      }
+    }
+
     const phone = formatPhone(data.ddd_telefone_1 || data.ddd_telefone_2 || '');
     return {
       name: clamp(toTitleCasePtBr(data.nome_fantasia || data.razao_social || ''), CUSTOMER_FIELD_LIMITS.name),
       tradeName: clamp(toTitleCasePtBr(data.nome_fantasia || ''), CUSTOMER_FIELD_LIMITS.tradeName),
       email: clamp(normalizeEmail(data.email || ''), CUSTOMER_FIELD_LIMITS.email),
       phone,
-      cep: formatCep(data.cep || ''),
-      address: clamp(toTitleCasePtBr(data.logradouro || ''), CUSTOMER_FIELD_LIMITS.address),
+      cep: cepAddress?.cep || formatCep(data.cep || ''),
+      address: clamp(toTitleCasePtBr(data.logradouro || cepAddress?.address || ''), CUSTOMER_FIELD_LIMITS.address),
       addressNumber: clamp(normalizeWhitespace(data.numero || ''), CUSTOMER_FIELD_LIMITS.addressNumber),
-      district: clamp(toTitleCasePtBr(data.bairro || ''), CUSTOMER_FIELD_LIMITS.district),
-      city: clamp(toTitleCasePtBr(data.municipio || ''), CUSTOMER_FIELD_LIMITS.city),
-      state: clamp((data.uf || '').trim().toUpperCase(), CUSTOMER_FIELD_LIMITS.state),
+      district: clamp(toTitleCasePtBr(cepAddress?.district || data.bairro || ''), CUSTOMER_FIELD_LIMITS.district),
+      city: clamp(toTitleCasePtBr(cepAddress?.city || data.municipio || ''), CUSTOMER_FIELD_LIMITS.city),
+      state: clamp((data.uf || cepAddress?.state || '').trim().toUpperCase(), CUSTOMER_FIELD_LIMITS.state),
     };
   } catch (error) {
     if (error instanceof ApiError) {
