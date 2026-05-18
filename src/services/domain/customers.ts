@@ -48,6 +48,36 @@ export function clamp(value: string, limit: number) {
   return value.slice(0, limit);
 }
 
+export function validarCPF(cpf: string): boolean {
+  const d = cpf.replace(/\D/g, '');
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += parseInt(d[i]) * (10 - i);
+  let r = (sum * 10) % 11;
+  if (r >= 10) r = 0;
+  if (r !== parseInt(d[9])) return false;
+  sum = 0;
+  for (let i = 0; i < 10; i++) sum += parseInt(d[i]) * (11 - i);
+  r = (sum * 10) % 11;
+  if (r >= 10) r = 0;
+  return r === parseInt(d[10]);
+}
+
+export function validarCNPJ(cnpj: string): boolean {
+  const d = cnpj.replace(/\D/g, '');
+  if (d.length !== 14 || /^(\d)\1{13}$/.test(d)) return false;
+  const calc = (s: string, n: number) => {
+    let sum = 0, pos = n - 7;
+    for (let i = n; i >= 1; i--) {
+      sum += parseInt(s[n - i]) * pos--;
+      if (pos < 2) pos = 9;
+    }
+    const rem = sum % 11;
+    return rem < 2 ? 0 : 11 - rem;
+  };
+  return calc(d, 12) === parseInt(d[12]) && calc(d, 13) === parseInt(d[13]);
+}
+
 export function formatCep(value: string) {
   const digits = stripDigits(value).slice(0, 8);
   if (digits.length <= 5) {

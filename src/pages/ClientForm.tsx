@@ -18,6 +18,8 @@ import {
   lookupCnpj,
   sanitizeClientInput,
   stripDigits,
+  validarCPF,
+  validarCNPJ,
 } from '@/services/domain/customers';
 import {
   ArrowLeft,
@@ -240,6 +242,16 @@ export default function ClientForm() {
         description: 'Nome, documento, CEP, endereco, numero, cidade e estado sao obrigatorios.',
         variant: 'destructive',
       });
+      return;
+    }
+
+    const rawDoc = stripDigits(payload.docNumber);
+    if (payload.docType === 'CPF' && !validarCPF(rawDoc)) {
+      toast({ title: 'CPF inválido', description: 'Verifique os dígitos do CPF informado.', variant: 'destructive' });
+      return;
+    }
+    if (payload.docType === 'CNPJ' && !validarCNPJ(rawDoc)) {
+      toast({ title: 'CNPJ inválido', description: 'Verifique os dígitos do CNPJ informado.', variant: 'destructive' });
       return;
     }
 
