@@ -1,17 +1,21 @@
 import { z } from 'zod';
 
+const brasilApiStringField = z
+  .union([z.string(), z.number(), z.null(), z.undefined()])
+  .transform((value) => (value == null ? '' : String(value)));
+
 export const brasilApiCnpjResponseSchema = z.object({
-  razao_social: z.string().optional(),
-  nome_fantasia: z.string().optional(),
-  cep: z.string().optional(),
-  logradouro: z.string().optional(),
-  numero: z.string().optional(),
-  bairro: z.string().optional(),
-  municipio: z.string().optional(),
-  uf: z.string().optional(),
-  email: z.string().optional(),
-  ddd_telefone_1: z.string().optional(),
-  ddd_telefone_2: z.string().optional(),
+  razao_social: brasilApiStringField,
+  nome_fantasia: brasilApiStringField,
+  cep: brasilApiStringField,
+  logradouro: brasilApiStringField,
+  numero: brasilApiStringField,
+  bairro: brasilApiStringField,
+  municipio: brasilApiStringField,
+  uf: brasilApiStringField,
+  email: brasilApiStringField,
+  ddd_telefone_1: brasilApiStringField,
+  ddd_telefone_2: brasilApiStringField,
 });
 
 export type BrasilApiCnpjResponse = z.infer<typeof brasilApiCnpjResponseSchema>;
