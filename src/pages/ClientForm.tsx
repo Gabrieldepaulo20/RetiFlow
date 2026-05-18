@@ -207,26 +207,17 @@ export default function ClientForm() {
         state: company.state || previous.state,
       }));
 
-      if (company.cep && (!company.address || !company.district || !company.city || !company.state)) {
-        try {
-          const cepAddress = await lookupCep(company.cep);
-          setForm((previous) => ({
-            ...previous,
-            cep: cepAddress.cep,
-            address: previous.address || cepAddress.address,
-            district: previous.district || cepAddress.district,
-            city: previous.city || cepAddress.city,
-            state: previous.state || cepAddress.state,
-          }));
-        } catch {
-          // A consulta do CNPJ ja trouxe dados suficientes para seguir.
-        }
+      if (!company.addressNumber) {
+        toast({
+          title: 'CNPJ encontrado',
+          description: 'Preenchi os dados disponíveis. Complete o número do endereço manualmente.',
+        });
+      } else {
+        toast({ title: 'Dados da empresa preenchidos pelo CNPJ.' });
       }
-
-      toast({ title: 'Dados da empresa preenchidos pelo CNPJ.' });
     } catch (error) {
       toast({
-        title: 'Nao foi possivel consultar o CNPJ',
+        title: 'Nao foi possivel preencher pelo CNPJ',
         description: error instanceof Error ? error.message : 'Tente novamente em instantes.',
         variant: 'destructive',
       });

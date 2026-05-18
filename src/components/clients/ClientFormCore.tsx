@@ -280,10 +280,17 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
           }));
         } catch { /* dados do CNPJ são suficientes */ }
       }
-      toast({ title: 'Dados preenchidos pelo CNPJ.' });
+      if (!co.addressNumber) {
+        toast({
+          title: 'CNPJ encontrado',
+          description: 'Preenchi os dados disponíveis. Complete o número do endereço manualmente.',
+        });
+      } else {
+        toast({ title: 'Dados preenchidos pelo CNPJ.' });
+      }
     } catch (err) {
       toast({
-        title: 'CNPJ não encontrado',
+        title: 'Não foi possível preencher pelo CNPJ',
         description: err instanceof Error ? err.message : 'Verifique e tente novamente.',
         variant: 'destructive',
       });
