@@ -28,6 +28,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { preloadRouteModule, preloadRouteModules } from '@/routes/routeModules';
+import { getInitials } from '@/lib/avatarInitials';
 import {
   LayoutDashboard, Users, FileText, KanbanSquare, Calendar, Settings, Wallet,
   Menu, Search, Bell, LogOut, ChevronLeft, ChevronRight, MoreHorizontal, Wrench, ChevronDown, MessageSquarePlus,
@@ -106,7 +107,7 @@ export default function AppLayout() {
   }, [isKanbanRoute, location.search]);
 
   const isActive = (path: string) => location.pathname.startsWith(path);
-  const initials = user?.name.split(' ').map(w => w[0]).join('').slice(0, 2) ?? '';
+  const initials = getInitials(user?.name);
   const isAdminOperationalPortal = user?.role === 'ADMIN' && !isSupportImpersonating;
 
   const recentActivities = activities.slice(0, 20);
@@ -269,8 +270,8 @@ export default function AppLayout() {
               )}
               aria-label="Abrir menu da conta"
             >
-              <Avatar className="w-8 h-8">
-                <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs">{initials}</AvatarFallback>
+              <Avatar className="w-9 h-9">
+                <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-sm font-semibold tracking-wide">{initials}</AvatarFallback>
               </Avatar>
               {!collapsed && (
                 <>
@@ -525,8 +526,8 @@ export default function AppLayout() {
                   className="h-10 rounded-xl border border-border/60 bg-background px-2.5 text-foreground shadow-sm hover:bg-muted/70 hover:text-foreground focus-visible:text-foreground data-[state=open]:text-foreground"
                 >
                   <div className="flex items-center gap-2">
-                    <Avatar className="w-8 h-8">
-                      <AvatarFallback className="bg-primary text-primary-foreground text-xs">
+                    <Avatar className="w-9 h-9">
+                      <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold tracking-wide">
                         {initials}
                       </AvatarFallback>
                     </Avatar>

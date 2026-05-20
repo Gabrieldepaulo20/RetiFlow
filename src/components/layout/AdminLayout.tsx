@@ -5,6 +5,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { getInitials } from '@/lib/avatarInitials';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
@@ -32,7 +33,7 @@ export default function AdminLayout() {
     return location.pathname.startsWith(path);
   };
 
-  const initials = user.name.split(' ').map(w => w[0]).join('').slice(0, 2);
+  const initials = getInitials(user.name);
 
   const NavContent = ({ onNav }: { onNav?: () => void }) => (
     <div className="flex flex-col h-full">
@@ -86,8 +87,8 @@ export default function AdminLayout() {
 
       <div className="p-3 border-t border-sidebar-border">
         <div className={cn('flex items-center gap-3', collapsed && 'justify-center')}>
-          <Avatar className="w-8 h-8">
-            <AvatarFallback className="bg-primary text-primary-foreground text-xs">{initials}</AvatarFallback>
+          <Avatar className="w-9 h-9">
+            <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold tracking-wide">{initials}</AvatarFallback>
           </Avatar>
           {!collapsed && (
             <div className="flex-1 min-w-0">
@@ -143,8 +144,8 @@ export default function AdminLayout() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="gap-2 px-2">
-                <Avatar className="w-7 h-7">
-                  <AvatarFallback className="bg-primary text-primary-foreground text-xs">{initials}</AvatarFallback>
+                <Avatar className="w-9 h-9">
+                  <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold tracking-wide">{initials}</AvatarFallback>
                 </Avatar>
                 {!isMobile && <span className="text-sm">{user.name}</span>}
               </Button>

@@ -1,6 +1,6 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { Eye, EyeOff, LogIn, Shield, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,6 +32,30 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
   const credentials = getDevelopmentCredentialHint();
 
   const isAdminPortal = portal === 'admin';
+
+  const heroRef = useRef<HTMLDivElement>(null);
+  const pointerX = useMotionValue(0);
+  const pointerY = useMotionValue(0);
+  const smoothX = useSpring(pointerX, { stiffness: 60, damping: 20, mass: 0.6 });
+  const smoothY = useSpring(pointerY, { stiffness: 60, damping: 20, mass: 0.6 });
+  const orbAX = useTransform(smoothX, (v) => v * 30);
+  const orbAY = useTransform(smoothY, (v) => v * 30);
+  const orbBX = useTransform(smoothX, (v) => v * -22);
+  const orbBY = useTransform(smoothY, (v) => v * -22);
+
+  const handleHeroMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    const rect = heroRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const nx = (event.clientX - rect.left) / rect.width - 0.5;
+    const ny = (event.clientY - rect.top) / rect.height - 0.5;
+    pointerX.set(nx);
+    pointerY.set(ny);
+  };
+  const handleHeroMouseLeave = () => {
+    pointerX.set(0);
+    pointerY.set(0);
+  };
+
   useEffect(() => {
     const reason = consumeSessionExpiredReason();
     if (reason === 'inactivity') {
@@ -130,7 +154,12 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
 
   return (
     <div className="min-h-screen flex bg-background">
-      <div className="hidden lg:flex lg:w-[45%] relative overflow-hidden">
+      <div
+        ref={heroRef}
+        onMouseMove={handleHeroMouseMove}
+        onMouseLeave={handleHeroMouseLeave}
+        className="hidden lg:flex lg:w-[45%] relative overflow-hidden"
+      >
         <div className="absolute inset-0 bg-gradient-to-br from-sidebar via-sidebar/95 to-sidebar" />
         <div
           className="absolute inset-0 opacity-[0.03]"
@@ -139,8 +168,14 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
             backgroundSize: '32px 32px',
           }}
         />
-        <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full bg-primary/10 blur-3xl" />
-        <div className="absolute -bottom-48 -left-24 w-[500px] h-[500px] rounded-full bg-accent/8 blur-3xl" />
+        <motion.div
+          style={{ x: orbAX, y: orbAY }}
+          className="absolute -top-32 -right-32 w-96 h-96 rounded-full bg-primary/10 blur-3xl"
+        />
+        <motion.div
+          style={{ x: orbBX, y: orbBY }}
+          className="absolute -bottom-48 -left-24 w-[500px] h-[500px] rounded-full bg-accent/8 blur-3xl"
+        />
 
         <div className="relative z-10 flex flex-col justify-between p-12 w-full">
           <motion.div
@@ -149,9 +184,20 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
             transition={{ duration: 0.6 }}
             className="flex items-center gap-3"
           >
-            <div className="w-11 h-11 rounded-xl bg-primary/20 backdrop-blur-sm flex items-center justify-center">
+            <motion.div
+              animate={{
+                boxShadow: [
+                  '0 0 0 0 hsl(var(--primary) / 0.0)',
+                  '0 0 0 8px hsl(var(--primary) / 0.08)',
+                  '0 0 0 0 hsl(var(--primary) / 0.0)',
+                ],
+              }}
+              transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
+              whileHover={{ scale: 1.06, rotate: -3 }}
+              className="w-11 h-11 rounded-xl bg-primary/20 backdrop-blur-sm flex items-center justify-center"
+            >
               {isAdminPortal ? <Shield className="w-6 h-6 text-primary" /> : <Wrench className="w-6 h-6 text-primary" />}
-            </div>
+            </motion.div>
             <span className="font-display font-bold text-xl text-sidebar-primary-foreground">
               {isAdminPortal ? 'GAWI Admin' : 'Portal do Cliente'}
             </span>
@@ -198,9 +244,19 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
           className="relative z-10 w-full max-w-[420px]"
         >
           <div className="lg:hidden text-center mb-10">
-            <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+            <motion.div
+              animate={{
+                boxShadow: [
+                  '0 0 0 0 hsl(var(--primary) / 0.0)',
+                  '0 0 0 10px hsl(var(--primary) / 0.08)',
+                  '0 0 0 0 hsl(var(--primary) / 0.0)',
+                ],
+              }}
+              transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
+              className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4"
+            >
               {isAdminPortal ? <Shield className="w-7 h-7 text-primary" /> : <Wrench className="w-7 h-7 text-primary" />}
-            </div>
+            </motion.div>
             <h1 className="text-xl font-display font-bold text-foreground">
               {isAdminPortal ? 'GAWI Admin' : 'Portal do Cliente'}
             </h1>
@@ -218,112 +274,146 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
             </p>
           </div>
 
-          {mfaRequired ? (
-            <form onSubmit={handleMfaSubmit} className="space-y-5">
-              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground">
-                <p className="font-semibold text-foreground">Verificação em duas etapas</p>
-                <p className="mt-1">
-                  Esta conta tem MFA ativo. Informe o código de 6 dígitos do seu aplicativo autenticador.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="login-mfa-code" className="text-sm font-medium text-foreground">Código MFA</Label>
-                <Input
-                  id="login-mfa-code"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={6}
-                  value={mfaCode}
-                  onChange={(event) => setMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
-                  placeholder="000000"
-                  className="h-12 rounded-xl bg-muted/30 border-border/50 text-center text-lg tracking-[0.35em] focus:bg-background focus:border-primary/50 transition-all duration-200"
-                  disabled={mfaLoading}
-                />
-              </div>
-
-              <Button
-                type="submit"
-                disabled={mfaLoading || mfaCode.length !== 6}
-                className="w-full h-12 rounded-xl gap-2.5 text-sm font-semibold shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-all duration-300"
+          <AnimatePresence mode="wait" initial={false}>
+            {mfaRequired ? (
+              <motion.form
+                key="mfa-form"
+                onSubmit={handleMfaSubmit}
+                className="space-y-5"
+                initial={{ opacity: 0, x: 24 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -24 }}
+                transition={{ duration: 0.35, ease: 'easeOut' }}
               >
-                {mfaLoading ? (
-                  <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-                ) : (
-                  <>
-                    <Shield className="w-4.5 h-4.5" />
-                    Confirmar MFA
-                  </>
-                )}
-              </Button>
+                <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground">
+                  <p className="font-semibold text-foreground">Verificação em duas etapas</p>
+                  <p className="mt-1">
+                    Esta conta tem MFA ativo. Informe o código de 6 dígitos do seu aplicativo autenticador.
+                  </p>
+                </div>
 
-              <Button
-                type="button"
-                variant="ghost"
-                className="w-full"
-                disabled={mfaLoading}
-                onClick={() => {
-                  void supabase.auth.signOut();
-                  setMfaRequired(false);
-                  setMfaCode('');
-                }}
-              >
-                Voltar para e-mail e senha
-              </Button>
-            </form>
-          ) : (
-            <form onSubmit={handleLogin} className="space-y-5">
-              <div className="space-y-2">
-                <Label htmlFor="login-email" className="text-sm font-medium text-foreground">E-mail</Label>
-                <Input
-                  id="login-email"
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="seu@email.com"
-                  className="h-12 rounded-xl bg-muted/30 border-border/50 focus:bg-background focus:border-primary/50 transition-all duration-200 text-sm"
-                  disabled={loading}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="login-password" className="text-sm font-medium text-foreground">Senha</Label>
-                <div className="relative">
+                <div className="space-y-2">
+                  <Label htmlFor="login-mfa-code" className="text-sm font-medium text-foreground">Código MFA</Label>
                   <Input
-                    id="login-password"
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    placeholder="••••••••"
-                    className="h-12 rounded-xl bg-muted/30 border-border/50 focus:bg-background focus:border-primary/50 transition-all duration-200 text-sm pr-12"
+                    id="login-mfa-code"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={mfaCode}
+                    onChange={(event) => setMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="000000"
+                    className="h-12 rounded-xl bg-muted/30 border-border/50 text-center text-lg tracking-[0.35em] focus:bg-background focus:border-primary/60 focus:ring-2 focus:ring-primary/20 transition-all duration-200"
+                    disabled={mfaLoading}
+                  />
+                </div>
+
+                <Button
+                  type="submit"
+                  disabled={mfaLoading || mfaCode.length !== 6}
+                  className="w-full h-12 rounded-xl gap-2.5 text-sm font-semibold shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 hover:-translate-y-0.5 transition-all duration-300"
+                >
+                  {mfaLoading ? (
+                    <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <Shield className="w-4.5 h-4.5" />
+                      Confirmar MFA
+                    </>
+                  )}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full"
+                  disabled={mfaLoading}
+                  onClick={() => {
+                    void supabase.auth.signOut();
+                    setMfaRequired(false);
+                    setMfaCode('');
+                  }}
+                >
+                  Voltar para e-mail e senha
+                </Button>
+              </motion.form>
+            ) : (
+              <motion.form
+                key="login-form"
+                onSubmit={handleLogin}
+                className="space-y-5"
+                initial={{ opacity: 0, x: -24 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 24 }}
+                transition={{ duration: 0.35, ease: 'easeOut' }}
+              >
+                <motion.div
+                  className="space-y-2"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.05, duration: 0.4 }}
+                >
+                  <Label htmlFor="login-email" className="text-sm font-medium text-foreground">E-mail</Label>
+                  <Input
+                    id="login-email"
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="seu@email.com"
+                    className="h-12 rounded-xl bg-muted/30 border-border/50 focus:bg-background focus:border-primary/60 focus:ring-2 focus:ring-primary/20 transition-all duration-200 text-sm"
                     disabled={loading}
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((value) => !value)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
+                </motion.div>
 
-              <Button
-                type="submit"
-                disabled={loading}
-                className="w-full h-12 rounded-xl gap-2.5 text-sm font-semibold shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-all duration-300"
-              >
-                {loading ? (
-                  <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-                ) : (
-                  <>
-                    <LogIn className="w-4.5 h-4.5" />
-                    Entrar
-                  </>
-                )}
-              </Button>
-            </form>
-          )}
+                <motion.div
+                  className="space-y-2"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.15, duration: 0.4 }}
+                >
+                  <Label htmlFor="login-password" className="text-sm font-medium text-foreground">Senha</Label>
+                  <div className="relative">
+                    <Input
+                      id="login-password"
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      placeholder="••••••••"
+                      className="h-12 rounded-xl bg-muted/30 border-border/50 focus:bg-background focus:border-primary/60 focus:ring-2 focus:ring-primary/20 transition-all duration-200 text-sm pr-12"
+                      disabled={loading}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((value) => !value)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.25, duration: 0.4 }}
+                >
+                  <Button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full h-12 rounded-xl gap-2.5 text-sm font-semibold shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 hover:-translate-y-0.5 transition-all duration-300"
+                  >
+                    {loading ? (
+                      <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        <LogIn className="w-4.5 h-4.5" />
+                        Entrar
+                      </>
+                    )}
+                  </Button>
+                </motion.div>
+              </motion.form>
+            )}
+          </AnimatePresence>
 
           <div className="mt-5 flex items-center justify-between text-xs text-muted-foreground">
             <span>{isAdminPortal ? 'Área administrativa protegida' : 'Área operacional liberada por conta'}</span>
