@@ -5,12 +5,16 @@ const mocks = vi.hoisted(() => ({
   from: vi.fn(),
   createSignedUrl: vi.fn(),
   upload: vi.fn(),
+  getUser: vi.fn(),
 }));
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     storage: {
       from: mocks.from,
+    },
+    auth: {
+      getUser: mocks.getUser,
     },
   },
 }));
@@ -20,9 +24,14 @@ describe('Notas Supabase PDF storage helpers', () => {
     mocks.from.mockReset();
     mocks.createSignedUrl.mockReset();
     mocks.upload.mockReset();
+    mocks.getUser.mockReset();
     mocks.from.mockReturnValue({
       createSignedUrl: mocks.createSignedUrl,
       upload: mocks.upload,
+    });
+    mocks.getUser.mockResolvedValue({
+      data: { user: { id: '00000000-0000-0000-0000-000000000001' } },
+      error: null,
     });
   });
 
@@ -112,11 +121,11 @@ describe('Notas Supabase PDF storage helpers', () => {
 
     const path = await uploadNotaPDF(new Blob(['%PDF-1.4 test'], { type: 'application/pdf' }), 'OS-123');
 
-    expect(path).toMatch(/^notas\/\d{4}\/\d{2}\/OS-123\.pdf$/);
+    expect(path).toMatch(/^[0-9a-f-]{36}\/\d{4}\/\d{2}\/OS-123\.pdf$/);
     expect(path.startsWith('http')).toBe(false);
     expect(mocks.from).toHaveBeenCalledWith('notas');
     expect(mocks.upload).toHaveBeenCalledWith(
-      expect.stringMatching(/^notas\/\d{4}\/\d{2}\/OS-123\.pdf$/),
+      expect.stringMatching(/^[0-9a-f-]{36}\/\d{4}\/\d{2}\/OS-123\.pdf$/),
       expect.any(Blob),
       {
         contentType: 'application/pdf',

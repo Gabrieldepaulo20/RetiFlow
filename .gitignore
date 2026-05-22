@@ -63,3 +63,13 @@ playwright-report/
 
 # ── Scripts de bootstrap (operações privilegiadas, nunca versionar) ───────────
 scripts/
+
+# ── Supabase CLI estado local ─────────────────────────────────────────────────
+supabase/.temp/
+supabase/.branches/
+
+# ── Contexto/auditoria de IA — nunca versionar ────────────────────────────────
+.claude/
+.ai-audit/
+.claude-context/
+

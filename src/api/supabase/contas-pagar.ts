@@ -184,8 +184,10 @@ export async function uploadAnexoContaPagar(params: {
   contaPagarId: string;
   file: File;
 }) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id) throw new Error('[uploadAnexoContaPagar] Sessão sem usuário autenticado.');
   const safeName = sanitizeStorageName(params.file.name);
-  const path = `${params.contaPagarId}/${Date.now()}-${safeName}`;
+  const path = `${user.id}/${params.contaPagarId}/${Date.now()}-${safeName}`;
   const { error } = await supabase.storage.from(PAYABLE_ATTACHMENTS_BUCKET).upload(path, params.file, {
     contentType: params.file.type || 'application/octet-stream',
     upsert: false,

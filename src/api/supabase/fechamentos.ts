@@ -163,7 +163,9 @@ export async function uploadFechamentoPDF(
   idFechamento: string,
   pdfBlob: Blob,
 ): Promise<string> {
-  const path = `${idFechamento}.pdf`;
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id) throw new Error('[uploadFechamentoPDF] Sessão sem usuário autenticado.');
+  const path = `${user.id}/${idFechamento}.pdf`;
   const { error } = await supabase.storage
     .from('fechamentos')
     .upload(path, pdfBlob, { contentType: 'application/pdf', cacheControl: '3600', upsert: true });

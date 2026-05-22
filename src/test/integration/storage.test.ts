@@ -94,7 +94,7 @@ describe.skipIf(skipIntegration)('Storage — PDFs e anexos privados com signed 
 
     const path = await payablesApi.uploadAnexoContaPagar({ contaPagarId: contaId, file });
     payableAttachmentPaths.push(path);
-    expect(path.toLowerCase()).toMatch(new RegExp(`^${contaId}/.+comprovante-teste\\.pdf$`));
+    expect(path.toLowerCase()).toMatch(new RegExp(`^[0-9a-f-]{36}/${contaId}/.+comprovante-teste\\.pdf$`));
 
     const anexoId = await payablesApi.insertAnexoContaPagar({
       p_fk_contas_pagar: contaId,

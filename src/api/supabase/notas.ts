@@ -202,11 +202,13 @@ export async function getNotaPDFSignedUrl(
 
 export async function uploadNotaPDF(blob: Blob, osNumero: string): Promise<string> {
   const { supabase } = await import('@/lib/supabase');
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id) throw new Error('[uploadNotaPDF] Sessão sem usuário autenticado.');
   const now = new Date();
   const ano = now.getFullYear();
   const mes = String(now.getMonth() + 1).padStart(2, '0');
   const numeroNormalizado = osNumero.replace(/^OS-/i, '').replace(/[^\dA-Za-z-]/g, '') || osNumero;
-  const path = `notas/${ano}/${mes}/OS-${numeroNormalizado}.pdf`;
+  const path = `${user.id}/${ano}/${mes}/OS-${numeroNormalizado}.pdf`;
   const { error } = await supabase.storage.from(NOTAS_BUCKET).upload(path, blob, {
     contentType: 'application/pdf',
     cacheControl: '3600',
