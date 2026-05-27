@@ -220,25 +220,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     let active = true;
+    const pendingTimers = new Set<number>();
 
-    // Restaura sessão antes de qualquer rota protegida decidir redirecionar.
-    void supabase.auth.getSession().then(async ({ data: { session: sbSession } }) => {
-      if (!active) return;
+    const deferAuthWork = (work: () => Promise<void>) => {
+      const timer = window.setTimeout(() => {
+        pendingTimers.delete(timer);
+        void work();
+      }, 0);
+      pendingTimers.add(timer);
+    };
 
-      if (!sbSession) {
-        setSession(null);
-        setProfileError(null);
-        return;
-      }
+    const refreshProfileAfterAuthEvent = (
+      sbSession: unknown,
+      options?: { keepCurrentSessionOnTransientError?: boolean; initialEvent?: boolean },
+    ) => {
+      deferAuthWork(async () => {
+        if (!active) return;
 
-      const result = await fetchProfileFromSupabase();
-      if (!active) return;
-      applyProfileResult(result);
-    }).catch(() => {
-      if (active) setProfileError('Erro inesperado ao verificar sessão. Tente novamente.');
-    }).finally(() => {
-      if (active) setIsAuthLoading(false);
-    });
+        if (!sbSession) {
+          setSession(null);
+          setSupportSession(null);
+          writeStoredSupportSession(null);
+          setProfileError(null);
+          if (options?.initialEvent) setIsAuthLoading(false);
+          return;
+        }
+
+        if (!options?.initialEvent && !options?.keepCurrentSessionOnTransientError) {
+          setIsAuthLoading(true);
+        }
+
+        try {
+          const result = await fetchProfileFromSupabase();
+          if (!active) return;
+          applyProfileResult(result, {
+            keepCurrentSessionOnTransientError: options?.keepCurrentSessionOnTransientError,
+          });
+        } catch {
+          if (!active) return;
+          if (!options?.keepCurrentSessionOnTransientError) {
+            setProfileError('Erro inesperado ao carregar perfil. Tente novamente.');
+          }
+        } finally {
+          if (active && (options?.initialEvent || !options?.keepCurrentSessionOnTransientError)) {
+            setIsAuthLoading(false);
+          }
+        }
+      });
+    };
 
     // Escuta sign-out do Supabase. Tokens ficam somente na persistência do SDK.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, sbSession) => {
@@ -253,25 +282,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      if (event === 'INITIAL_SESSION') {
+        refreshProfileAfterAuthEvent(sbSession, { initialEvent: true });
+        return;
+      }
+
       if (event === 'SIGNED_IN' && sbSession) {
         const hasCurrentSession = Boolean(sessionRef.current?.user);
-        if (!hasCurrentSession) {
-          setIsAuthLoading(true);
-        }
         setProfileError(null);
-        void fetchProfileFromSupabase().then((result) => {
-          if (!active) return;
-          applyProfileResult(result, { keepCurrentSessionOnTransientError: hasCurrentSession });
-        }).catch(() => {
-          if (active && !hasCurrentSession) setProfileError('Erro inesperado ao carregar perfil. Tente novamente.');
-        }).finally(() => {
-          if (active && !hasCurrentSession) setIsAuthLoading(false);
+        refreshProfileAfterAuthEvent(sbSession, {
+          keepCurrentSessionOnTransientError: hasCurrentSession,
         });
       }
     });
 
     return () => {
       active = false;
+      pendingTimers.forEach((timer) => window.clearTimeout(timer));
+      pendingTimers.clear();
       subscription.unsubscribe();
     };
   }, [applyProfileResult]);

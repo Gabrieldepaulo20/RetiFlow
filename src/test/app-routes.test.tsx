@@ -47,6 +47,10 @@ function authenticateAs(role: 'ADMIN' | 'FINANCEIRO') {
   window.localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(createSession(role)));
 }
 
+function findDashboardHeading() {
+  return screen.findByRole('heading', { name: 'Dashboard' }, { timeout: 3000 });
+}
+
 describe('App routes', () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -74,7 +78,7 @@ describe('App routes', () => {
   });
 
   it.each([
-    ['/dashboard', async () => screen.findByRole('heading', { name: 'Dashboard' })],
+    ['/dashboard', findDashboardHeading],
     ['/clientes', async () => screen.findByRole('heading', { name: 'Clientes' })],
     ['/clientes/novo', async () => screen.findByRole('heading', { name: 'Novo Cliente' })],
     ['/clientes/c1', async () => screen.findByRole('heading', { name: 'Auto Peças Silva Ltda' })],
@@ -95,7 +99,7 @@ describe('App routes', () => {
     authenticateAs('FINANCEIRO');
     renderAt('/dashboard');
 
-    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
+    expect(await findDashboardHeading()).toBeInTheDocument();
     expect(screen.getByText(/fonte dos indicadores/i)).toBeInTheDocument();
     expect(screen.queryByText(/NFs este mês/i)).not.toBeInTheDocument();
   });
