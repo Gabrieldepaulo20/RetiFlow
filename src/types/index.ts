@@ -1,6 +1,6 @@
 export type UserRole = 'ADMIN' | 'FINANCEIRO' | 'PRODUCAO' | 'RECEPCAO';
 export type AuthMode = 'development' | 'real';
-export type AppModuleKey = 'dashboard' | 'clients' | 'notes' | 'kanban' | 'closing' | 'payables' | 'settings' | 'admin';
+export type AppModuleKey = 'dashboard' | 'clients' | 'notes' | 'kanban' | 'closing' | 'payables' | 'marketing' | 'settings' | 'admin';
 export type Permission =
   | 'dashboard.view'
   | 'clients.view'
@@ -14,6 +14,14 @@ export type Permission =
   | 'closing.view'
   | 'payables.view'
   | 'payables.manage'
+  | 'marketing.view'
+  | 'marketing.site.view'
+  | 'marketing.campaigns.view'
+  | 'marketing.campaigns.financial.view'
+  | 'marketing.leads.view'
+  | 'marketing.integrations.manage'
+  | 'marketing.settings.manage'
+  | 'marketing.reports.export'
   | 'settings.view'
   | 'admin.access';
 

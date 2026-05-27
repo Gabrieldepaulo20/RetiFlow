@@ -13,17 +13,18 @@ const MODULE_PATHS: Record<AppModuleKey, string> = {
   kanban: '/kanban',
   closing: '/fechamento',
   payables: '/contas-a-pagar',
+  marketing: '/crescimento',
   settings: '/configuracoes',
 };
 
 const DEFAULT_MODULE_ORDER: Record<SystemUser['role'], AppModuleKey[]> = {
-  ADMIN: ['admin', 'dashboard', 'clients', 'notes', 'kanban', 'closing', 'payables', 'settings'],
-  FINANCEIRO: ['dashboard', 'payables', 'closing', 'clients', 'notes', 'kanban'],
+  ADMIN: ['admin', 'dashboard', 'clients', 'notes', 'kanban', 'closing', 'payables', 'marketing', 'settings'],
+  FINANCEIRO: ['dashboard', 'payables', 'closing', 'clients', 'notes', 'kanban', 'marketing'],
   PRODUCAO: ['dashboard', 'kanban', 'notes'],
   RECEPCAO: ['dashboard', 'clients', 'notes', 'kanban'],
 };
 
-const ALL_MODULES: AppModuleKey[] = ['dashboard', 'clients', 'notes', 'kanban', 'closing', 'payables', 'settings', 'admin'];
+const ALL_MODULES: AppModuleKey[] = ['dashboard', 'clients', 'notes', 'kanban', 'closing', 'payables', 'marketing', 'settings', 'admin'];
 const OPERATIONAL_MODULES: AppModuleKey[] = ALL_MODULES.filter((moduleKey) => moduleKey !== 'admin');
 
 interface DefaultRedirectOptions {

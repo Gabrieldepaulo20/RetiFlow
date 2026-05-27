@@ -20,6 +20,7 @@ export interface PerfilUsuario {
     nota_fiscal: boolean;
     configuracoes: boolean;
     contas_a_pagar: boolean;
+    marketing: boolean;
     admin: boolean;
   };
 }

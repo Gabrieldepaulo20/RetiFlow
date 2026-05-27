@@ -55,6 +55,7 @@ const ALL_MODULES: { key: AppModuleKey; label: string }[] = [
   { key: 'kanban', label: 'Kanban' },
   { key: 'closing', label: 'Fechamento' },
   { key: 'payables', label: 'Contas a Pagar' },
+  { key: 'marketing', label: 'Crescimento' },
   { key: 'settings', label: 'Configurações' },
   { key: 'admin', label: 'Admin' },
 ];
@@ -74,6 +75,7 @@ const MASTER_MODULE_ACCESS: Record<AppModuleKey, boolean> = {
   kanban: true,
   closing: true,
   payables: true,
+  marketing: true,
   settings: true,
   admin: true,
 };
@@ -85,6 +87,7 @@ const OPERATIONAL_DEFAULT_MODULE_ACCESS: Record<AppModuleKey, boolean> = {
   kanban: true,
   closing: true,
   payables: true,
+  marketing: false,
   settings: false,
   admin: false,
 };

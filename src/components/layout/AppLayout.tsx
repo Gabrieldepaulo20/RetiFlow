@@ -32,7 +32,7 @@ import { getInitials } from '@/lib/avatarInitials';
 import {
   LayoutDashboard, Users, FileText, KanbanSquare, Calendar, Settings, Wallet,
   Menu, Search, Bell, LogOut, ChevronLeft, ChevronRight, MoreHorizontal, Wrench, ChevronDown, MessageSquarePlus,
-  CheckCircle2, AlertCircle, PlusCircle, ArrowRightLeft, Paperclip, BellOff, Palette, FileCog,
+  CheckCircle2, AlertCircle, PlusCircle, ArrowRightLeft, Paperclip, BellOff, Palette, FileCog, TrendingUp,
 } from 'lucide-react';
 
 // ─── Notification helpers ───────────────────────────────────────────────────
@@ -78,6 +78,7 @@ const navItems = [
   { label: 'Kanban', icon: KanbanSquare, path: '/kanban', moduleKey: 'kanban' },
   { label: 'Fechamento', icon: Calendar, path: '/fechamento', moduleKey: 'closing' },
   { label: 'Contas a Pagar', icon: Wallet, path: '/contas-a-pagar', moduleKey: 'payables' },
+  { label: 'Crescimento', icon: TrendingUp, path: '/crescimento', moduleKey: 'marketing' },
   { label: 'Configurações', icon: Settings, path: '/configuracoes', moduleKey: 'settings' },
 ] as const;
 

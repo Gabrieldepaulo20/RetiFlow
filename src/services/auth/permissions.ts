@@ -20,6 +20,14 @@ const IMPLIED_PERMISSIONS: Record<Permission, Permission[]> = {
   'closing.view': [],
   'payables.view': [],
   'payables.manage': ['payables.view'],
+  'marketing.view': [],
+  'marketing.site.view': ['marketing.view'],
+  'marketing.campaigns.view': ['marketing.view'],
+  'marketing.campaigns.financial.view': ['marketing.campaigns.view'],
+  'marketing.leads.view': ['marketing.view'],
+  'marketing.integrations.manage': ['marketing.view'],
+  'marketing.settings.manage': ['marketing.view'],
+  'marketing.reports.export': ['marketing.view'],
   'settings.view': [],
   'admin.access': [
     'dashboard.view',
@@ -34,6 +42,14 @@ const IMPLIED_PERMISSIONS: Record<Permission, Permission[]> = {
     'closing.view',
     'payables.view',
     'payables.manage',
+    'marketing.view',
+    'marketing.site.view',
+    'marketing.campaigns.view',
+    'marketing.campaigns.financial.view',
+    'marketing.leads.view',
+    'marketing.integrations.manage',
+    'marketing.settings.manage',
+    'marketing.reports.export',
     'settings.view',
   ],
 };
@@ -46,6 +62,7 @@ export const MODULE_PERMISSIONS: Record<AppModuleKey, Permission> = {
   kanban: 'kanban.view',
   closing: 'closing.view',
   payables: 'payables.view',
+  marketing: 'marketing.view',
   settings: 'settings.view',
 };
 

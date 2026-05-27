@@ -28,6 +28,7 @@ import {
   loadIntakeNotesPage,
   loadKanbanPage,
   loadLoginPage,
+  loadMarketingGrowthPage,
   loadMonthlyClosingPage,
   loadNotFoundPage,
   loadResetPasswordPage,
@@ -46,6 +47,7 @@ const IntakeNoteForm = lazy(loadIntakeNoteFormPage);
 const IntakeNoteDetail = lazy(loadIntakeNoteDetailPage);
 const Kanban = lazy(loadKanbanPage);
 const MonthlyClosing = lazy(loadMonthlyClosingPage);
+const MarketingGrowth = lazy(loadMarketingGrowthPage);
 const ContasAPagar = lazy(loadContasAPagarPage);
 const ContaPagarForm = lazy(loadContaPagarFormPage);
 const ImportarContaPagar = lazy(loadImportarContaPagarPage);
@@ -136,6 +138,9 @@ const App = () => (
                     </Route>
                     <Route element={<ProtectedRoute moduleKey="closing" />}>
                       <Route path="/fechamento" element={<SuspendedPage><MonthlyClosing /></SuspendedPage>} />
+                    </Route>
+                    <Route element={<ProtectedRoute moduleKey="marketing" />}>
+                      <Route path="/crescimento" element={<SuspendedPage><MarketingGrowth /></SuspendedPage>} />
                     </Route>
                     <Route element={<ProtectedRoute moduleKey="payables" />}>
                       <Route path="/contas-a-pagar" element={<SuspendedPage><ContasAPagar /></SuspendedPage>} />

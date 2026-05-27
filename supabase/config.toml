@@ -29,3 +29,6 @@ verify_enabled = true
 
 [functions.analisar-conta-pagar]
 verify_jwt = false
+
+[functions.marketing-events]
+verify_jwt = false

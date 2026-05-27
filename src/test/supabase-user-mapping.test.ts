@@ -12,6 +12,7 @@ describe('supabase user mapping', () => {
       nota_fiscal: null,
       configuracoes: null,
       contas_a_pagar: null,
+      marketing: null,
       admin: null,
     })).toBeUndefined();
   });
@@ -26,6 +27,7 @@ describe('supabase user mapping', () => {
       nota_fiscal: false,
       configuracoes: true,
       contas_a_pagar: true,
+      marketing: true,
       admin: false,
     })).toEqual({
       dashboard: true,
@@ -35,6 +37,7 @@ describe('supabase user mapping', () => {
       closing: true,
       settings: true,
       payables: true,
+      marketing: true,
       admin: false,
     });
   });

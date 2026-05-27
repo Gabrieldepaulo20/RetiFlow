@@ -7,6 +7,7 @@ type AppModuleKey =
   | 'kanban'
   | 'closing'
   | 'payables'
+  | 'marketing'
   | 'settings'
   | 'admin';
 
@@ -45,6 +46,7 @@ const MASTER_MODULE_ACCESS: Required<ModuleAccess> = {
   kanban: true,
   closing: true,
   payables: true,
+  marketing: true,
   settings: true,
   admin: true,
 };
@@ -128,6 +130,7 @@ const moduleToRpcParam: Record<AppModuleKey, string> = {
   kanban: 'p_kanban',
   closing: 'p_fechamento',
   payables: 'p_contas_a_pagar',
+  marketing: 'p_marketing',
   settings: 'p_configuracoes',
   admin: 'p_admin',
 };
@@ -1182,7 +1185,7 @@ async function getSupportTargetUser(serviceClient: ReturnType<typeof createClien
   const { data: moduleRow, error: moduleError } = await serviceClient
     .schema('RetificaPremium')
     .from('Modulos')
-    .select('dashboard, clientes, notas_de_entrada, kanban, fechamento, contas_a_pagar, nota_fiscal, configuracoes, admin')
+    .select('dashboard, clientes, notas_de_entrada, kanban, fechamento, contas_a_pagar, marketing, nota_fiscal, configuracoes, admin')
     .eq('fk_usuarios', userId)
     .maybeSingle();
 
@@ -1203,6 +1206,7 @@ async function getSupportTargetUser(serviceClient: ReturnType<typeof createClien
         kanban: moduleRow.kanban === true,
         closing: moduleRow.fechamento === true,
         payables: moduleRow.contas_a_pagar === true,
+        marketing: moduleRow.marketing === true,
         settings: moduleRow.configuracoes === true,
         admin: false,
       }

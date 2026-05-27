@@ -1,7 +1,7 @@
 import type { AppModuleKey, SystemUser, UserRole } from '@/types';
 
 type DbModules = Partial<Record<
-  'dashboard' | 'clientes' | 'notas_de_entrada' | 'kanban' | 'fechamento' | 'nota_fiscal' | 'configuracoes' | 'contas_a_pagar' | 'admin',
+  'dashboard' | 'clientes' | 'notas_de_entrada' | 'kanban' | 'fechamento' | 'nota_fiscal' | 'configuracoes' | 'contas_a_pagar' | 'marketing' | 'admin',
   boolean | null
 >>;
 
@@ -39,6 +39,7 @@ const DB_TO_APP_MODULE: Partial<Record<keyof DbModules, AppModuleKey>> = {
   fechamento: 'closing',
   configuracoes: 'settings',
   contas_a_pagar: 'payables',
+  marketing: 'marketing',
   admin: 'admin',
 };
 
@@ -50,6 +51,7 @@ const APP_TO_RPC_MODULE: Partial<Record<AppModuleKey, string>> = {
   closing: 'p_fechamento',
   settings: 'p_configuracoes',
   payables: 'p_contas_a_pagar',
+  marketing: 'p_marketing',
   admin: 'p_admin',
 };
 

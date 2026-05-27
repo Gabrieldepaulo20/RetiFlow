@@ -18,6 +18,7 @@ export interface Usuario {
     nota_fiscal: boolean;
     configuracoes: boolean;
     contas_a_pagar: boolean;
+    marketing: boolean;
     admin: boolean;
   }> | null;
 }
@@ -64,7 +65,7 @@ export async function upsertModulo(
   modulos: Partial<{
     p_dashboard: boolean; p_clientes: boolean; p_notas_de_entrada: boolean;
     p_kanban: boolean; p_fechamento: boolean;
-    p_configuracoes: boolean; p_contas_a_pagar: boolean; p_admin: boolean;
+    p_configuracoes: boolean; p_contas_a_pagar: boolean; p_marketing: boolean; p_admin: boolean;
   }>,
 ) {
   await callRPC('upsert_modulo', { p_fk_usuarios: idUsuarios, ...modulos });
