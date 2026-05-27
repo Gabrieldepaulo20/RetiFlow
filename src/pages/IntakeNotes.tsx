@@ -13,7 +13,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { STATUS_LABELS, STATUS_COLORS, NoteStatus, NOTE_STATUS_ORDER, IntakeNote } from '@/types';
-import { PlusCircle, Search, Share2, Download, Eye, FileText, ClipboardList, SlidersHorizontal, Check, MoreHorizontal, Pencil, FileSpreadsheet } from 'lucide-react';
+import {
+  PlusCircle, Search, Share2, Download, Eye, FileText, ClipboardList,
+  SlidersHorizontal, Check, MoreHorizontal, Pencil, FileSpreadsheet,
+  CalendarDays, CarFront, Gauge, Banknote, Clock3,
+} from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import NoteDetailModal from '@/components/notes/NoteDetailModal';
 import NoteFormModal from '@/components/notes/NoteFormModal';
@@ -39,6 +43,20 @@ import { useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
 const NOTES_PAGE_SIZE = 50;
+const ACTIVE_NOTE_STATUSES = new Set<NoteStatus>([
+  'ABERTO',
+  'EM_ANALISE',
+  'ORCAMENTO',
+  'APROVADO',
+  'EM_EXECUCAO',
+  'AGUARDANDO_COMPRA',
+  'PRONTO',
+  'ENTREGUE',
+]);
+
+function formatCurrency(value: number) {
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
 
 function initStatusFilters(searchParams: URLSearchParams): Set<string> {
   const raw = searchParams.get('status');
@@ -212,6 +230,52 @@ export default function IntakeNotes() {
   const isLoadingNotesPage = IS_REAL_AUTH && serverNotesQuery.isFetching;
   const hasLocalDateFilter = IS_REAL_AUTH && (monthFilter !== 'all' || yearFilter !== 'all');
   const hasUnsupportedMultiStatusFilter = IS_REAL_AUTH && statusFilters.size > 1;
+  const listedTotalAmount = useMemo(
+    () => filtered.reduce((sum, note) => sum + note.totalAmount, 0),
+    [filtered],
+  );
+  const pageOpenCount = useMemo(
+    () => filtered.filter((note) => ACTIVE_NOTE_STATUSES.has(note.status)).length,
+    [filtered],
+  );
+  const pageFinishedCount = useMemo(
+    () => filtered.filter((note) => note.status === 'FINALIZADO').length,
+    [filtered],
+  );
+  const latestNoteDate = useMemo(() => {
+    const latest = filtered[0]?.createdAt;
+    return latest ? format(new Date(latest), 'dd/MM/yyyy') : '—';
+  }, [filtered]);
+  const summaryCards = [
+    {
+      label: IS_REAL_AUTH ? 'No banco' : 'Listadas',
+      value: totalForPagination.toLocaleString('pt-BR'),
+      sub: `${filtered.length} nesta visualização`,
+      icon: ClipboardList,
+      tone: 'text-primary bg-primary/10',
+    },
+    {
+      label: 'Em andamento',
+      value: pageOpenCount.toLocaleString('pt-BR'),
+      sub: 'O.S. ainda acionáveis',
+      icon: Clock3,
+      tone: pageOpenCount > 0 ? 'text-amber-700 bg-amber-50' : 'text-emerald-700 bg-emerald-50',
+    },
+    {
+      label: 'Finalizadas',
+      value: pageFinishedCount.toLocaleString('pt-BR'),
+      sub: 'Serviços concluídos',
+      icon: Check,
+      tone: 'text-emerald-700 bg-emerald-50',
+    },
+    {
+      label: 'Valor listado',
+      value: formatCurrency(listedTotalAmount),
+      sub: `Mais recente: ${latestNoteDate}`,
+      icon: Banknote,
+      tone: 'text-sky-700 bg-sky-50',
+    },
+  ];
 
   const refreshNotesPage = () => {
     queryClient.invalidateQueries({ queryKey: ['notas-servico', 'page'] });
@@ -379,45 +443,75 @@ export default function IntakeNotes() {
     <TooltipProvider delayDuration={200}>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-start justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center">
-              <ClipboardList className="w-5 h-5 text-primary" />
+        <section className="rounded-[1.35rem] border border-border/70 bg-card p-4 shadow-sm sm:p-5">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10 text-primary shadow-sm">
+                <ClipboardList className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary/80">Controle de O.S.</p>
+                <h1 className="mt-1 text-2xl font-display font-bold tracking-tight text-foreground sm:text-3xl">
+                  Notas de Entrada
+                </h1>
+                <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                  Acompanhe entrada, status, veículo, valor e documentos de cada ordem de serviço.
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-2xl font-display font-bold tracking-tight">Notas de Entrada</h1>
-              <p className="text-muted-foreground text-sm">
-                {IS_REAL_AUTH
-                  ? `${filtered.length} nesta página · ${totalForPagination} no banco`
-                  : `${paginatedNotes.length} de ${filtered.length} ordens de serviço`}
-              </p>
+
+            <div className="flex flex-wrap gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="h-11 gap-2 rounded-xl border-border/70 bg-background px-4 font-semibold shadow-sm">
+                    <Download className="h-4 w-4" /> Exportar
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => void exportFilteredNotes()}>
+                    <FileSpreadsheet className="mr-2 h-4 w-4 text-emerald-600" /> CSV (.csv)
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
+                className="h-11 gap-2 rounded-xl px-4 font-semibold shadow-sm"
+                onClick={() => setNewNoteOpen(true)}
+              >
+                <PlusCircle className="h-4 w-4" /> Nova O.S.
+              </Button>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="shadow-sm font-semibold gap-2">
-                  <Download className="w-4 h-4" /> Exportar
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => void exportFilteredNotes()}>
-                  <FileSpreadsheet className="w-4 h-4 mr-2 text-emerald-600" /> CSV (.csv)
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button
-              className="shadow-sm font-semibold gap-2"
-              onClick={() => setNewNoteOpen(true)}
-            >
-              <PlusCircle className="w-4 h-4" /> Nova O.S.
-            </Button>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {summaryCards.map((item) => (
+              <div key={item.label} className="rounded-2xl border border-border/60 bg-muted/20 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-muted-foreground">{item.label}</p>
+                    <p className="mt-1 truncate text-xl font-bold tracking-tight text-foreground">{item.value}</p>
+                  </div>
+                  <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-xl', item.tone)}>
+                    <item.icon className="h-4 w-4" />
+                  </div>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">{item.sub}</p>
+              </div>
+            ))}
           </div>
-        </div>
+        </section>
 
         {/* Search + Filters */}
-        <Card className="border-0 shadow-sm">
-          <CardContent className="p-4 space-y-3">
+        <Card className="overflow-hidden border-border/70 shadow-sm">
+          <CardContent className="space-y-4 p-4 sm:p-5">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Filtros da lista</p>
+                <p className="text-xs text-muted-foreground">Refine por cliente, período ou status sem sair da página.</p>
+              </div>
+              <Badge variant="outline" className="w-fit rounded-full bg-background text-[11px]">
+                Página {currentPage} de {totalPages}
+              </Badge>
+            </div>
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(260px,0.9fr)_repeat(4,minmax(0,0.72fr))] xl:items-center">
               <div className="relative min-w-0">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -425,13 +519,13 @@ export default function IntakeNotes() {
                   placeholder="Buscar por O.S. ou cliente..."
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  className="pl-10 h-10 bg-muted/40 border-border/50 focus:bg-background transition-colors"
+                  className="h-11 rounded-xl border-border/70 bg-background pl-10 shadow-sm transition-colors focus:bg-background"
                 />
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2 xl:contents">
                 <Select value={clientFilter} onValueChange={setClientFilter}>
-                  <SelectTrigger className="h-10 bg-background">
+                  <SelectTrigger className="h-11 rounded-xl border-border/70 bg-background shadow-sm">
                     <SelectValue placeholder="Cliente" />
                   </SelectTrigger>
                   <SelectContent>
@@ -445,7 +539,7 @@ export default function IntakeNotes() {
                 </Select>
 
                 <Select value={monthFilter} onValueChange={setMonthFilter}>
-                  <SelectTrigger className="h-10 bg-background">
+                  <SelectTrigger className="h-11 rounded-xl border-border/70 bg-background shadow-sm">
                     <SelectValue placeholder="Mês" />
                   </SelectTrigger>
                   <SelectContent>
@@ -459,7 +553,7 @@ export default function IntakeNotes() {
                 </Select>
 
                 <Select value={yearFilter} onValueChange={setYearFilter}>
-                  <SelectTrigger className="h-10 bg-background">
+                  <SelectTrigger className="h-11 rounded-xl border-border/70 bg-background shadow-sm">
                     <SelectValue placeholder="Ano" />
                   </SelectTrigger>
                   <SelectContent>
@@ -477,7 +571,7 @@ export default function IntakeNotes() {
                     <Button
                       variant="outline"
                       className={cn(
-                        'h-10 w-full justify-between bg-background min-w-0',
+                        'h-11 w-full min-w-0 justify-between rounded-xl border-border/70 bg-background shadow-sm',
                         statusFilters.size > 0 && 'border-primary/40 text-primary',
                       )}
                     >
@@ -615,19 +709,32 @@ export default function IntakeNotes() {
         </Card>
 
         {/* Table */}
-        <Card className="border-0 shadow-sm overflow-hidden">
+        <Card className="overflow-hidden border-border/70 shadow-sm">
+          <div className="flex flex-col gap-2 border-b border-border/70 bg-muted/20 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Ordens de serviço</p>
+              <p className="text-xs text-muted-foreground">
+                Clique em uma linha para abrir os detalhes completos.
+              </p>
+            </div>
+            <Badge variant="secondary" className="w-fit rounded-full bg-background text-xs">
+              {IS_REAL_AUTH
+                ? `${filtered.length} nesta página · ${totalForPagination} no banco`
+                : `${paginatedNotes.length} de ${filtered.length} O.S.`}
+            </Badge>
+          </div>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow className="bg-muted/30 hover:bg-muted/30">
-                  <TableHead className="font-semibold text-[13px]">O.S.</TableHead>
-                  <TableHead className="font-semibold text-[13px]">Cliente</TableHead>
-                  <TableHead className="font-semibold text-[13px] hidden sm:table-cell">Data</TableHead>
-                  <TableHead className="font-semibold text-[13px]">Status</TableHead>
-                  <TableHead className="font-semibold text-[13px] text-right hidden md:table-cell">
+                <TableRow className="border-b border-border/70 bg-card hover:bg-card">
+                  <TableHead className="h-12 pl-5 text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">O.S.</TableHead>
+                  <TableHead className="h-12 text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Cliente e veículo</TableHead>
+                  <TableHead className="hidden h-12 text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground sm:table-cell">Entrada</TableHead>
+                  <TableHead className="h-12 text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Status</TableHead>
+                  <TableHead className="hidden h-12 text-right text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground md:table-cell">
                     Valor Total
                   </TableHead>
-                  <TableHead className="font-semibold text-[13px] text-right w-[76px]">
+                  <TableHead className="h-12 w-[76px] pr-5 text-right text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
                     Ações
                   </TableHead>
                 </TableRow>
@@ -638,18 +745,21 @@ export default function IntakeNotes() {
                   return (
                     <TableRow
                       key={n.id}
-                      className="group transition-colors duration-100 hover:bg-muted/20 cursor-pointer"
+                      className="group cursor-pointer border-b border-border/60 bg-card transition-colors duration-150 last:border-b-0 hover:bg-primary/[0.035]"
                       onClick={() => setDetailNoteId(n.id)}
                     >
-                      <TableCell>
-                        <div className="flex items-center gap-1.5">
-                          {/* Styled as link, but opens modal (row click handles it) */}
-                          <span className="font-bold text-primary text-[15px]">
-                            {n.number}
-                          </span>
+                      <TableCell className="py-4 pl-5 align-middle">
+                        <div className="flex min-w-[132px] items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-primary/15 bg-primary/10 text-primary">
+                            <FileText className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <span className="block text-base font-bold leading-none text-primary">
+                              {n.number}
+                            </span>
                           <span
                             className={cn(
-                              'text-[9px] font-semibold px-1.5 py-0.5 rounded border',
+                                'mt-2 inline-flex rounded-md border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide',
                               n.type === 'COMPRA'
                                 ? 'bg-amber-50 text-amber-600 border-amber-200/60'
                                 : 'bg-blue-50 text-blue-600 border-blue-200/60',
@@ -657,35 +767,57 @@ export default function IntakeNotes() {
                           >
                             {n.type === 'COMPRA' ? 'COMPRA' : 'SERVIÇO'}
                           </span>
+                          </div>
                         </div>
                       </TableCell>
-                      <TableCell className="max-w-[180px]">
-                        <p className="font-medium truncate">{client?.name}</p>
+                      <TableCell className="max-w-[360px] py-4 align-middle">
+                        <p className="truncate text-[15px] font-semibold text-foreground">{client?.name}</p>
                         {n.vehicleModel && (
-                          <p className="text-xs text-muted-foreground truncate">
-                            {n.vehicleModel}
-                            {n.plate ? ` · ${n.plate}` : ''}
-                          </p>
+                          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                            <span className="inline-flex min-w-0 items-center gap-1">
+                              <CarFront className="h-3.5 w-3.5 shrink-0" />
+                              <span className="truncate">{n.vehicleModel}</span>
+                            </span>
+                            {n.plate ? (
+                              <span className="inline-flex items-center gap-1 font-medium text-muted-foreground">
+                                {n.plate}
+                              </span>
+                            ) : null}
+                            {n.km ? (
+                              <span className="hidden items-center gap-1 lg:inline-flex">
+                                <Gauge className="h-3.5 w-3.5" />
+                                {n.km.toLocaleString('pt-BR')} km
+                              </span>
+                            ) : null}
+                          </div>
                         )}
                       </TableCell>
-                      <TableCell className="hidden sm:table-cell text-sm text-muted-foreground tabular-nums">
-                        {new Date(n.createdAt).toLocaleDateString('pt-BR')}
+                      <TableCell className="hidden py-4 align-middle text-sm text-muted-foreground sm:table-cell">
+                        <span className="inline-flex items-center gap-2 tabular-nums">
+                          <CalendarDays className="h-3.5 w-3.5" />
+                          {new Date(n.createdAt).toLocaleDateString('pt-BR')}
+                        </span>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="py-4 align-middle">
                         <Badge
                           className={cn(
                             STATUS_COLORS[n.status as NoteStatus],
-                            'text-[11px] font-medium shadow-none',
+                            'rounded-full px-3 py-1 text-[11px] font-semibold shadow-none',
                           )}
                         >
                           {STATUS_LABELS[n.status as NoteStatus]}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right font-semibold hidden md:table-cell tabular-nums">
-                        R$ {n.totalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      <TableCell className="hidden py-4 text-right align-middle md:table-cell">
+                        <div className="inline-flex items-center justify-end gap-2 rounded-xl bg-muted/35 px-3 py-2">
+                          <Banknote className="h-4 w-4 text-muted-foreground" />
+                          <span className="font-bold tabular-nums text-foreground">
+                            {formatCurrency(n.totalAmount)}
+                          </span>
+                        </div>
                       </TableCell>
                       <TableCell
-                        className="text-right"
+                        className="py-4 pr-5 text-right align-middle"
                         onClick={e => e.stopPropagation()}
                       >
                         <DropdownMenu>
@@ -693,7 +825,7 @@ export default function IntakeNotes() {
                             <Button
                               size="icon"
                               variant="ghost"
-                              className="w-8 h-8 rounded-lg hover:bg-muted"
+                              className="h-9 w-9 rounded-xl hover:bg-muted"
                               aria-label={`Mais ações para ${n.number}`}
                               title="Mais ações"
                             >
