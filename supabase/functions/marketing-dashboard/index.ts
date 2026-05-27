@@ -1,5 +1,81 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
+type JsonRecord = Record<string, unknown>;
+
+type MarketingProvider = 'ga4' | 'clarity' | 'meta_ads' | 'google_ads' | 'internal';
+type MarketingIntegrationStatus = 'not_connected' | 'connected' | 'needs_attention' | 'syncing' | 'disabled';
+
+interface MarketingIntegrationSummary {
+  provider: MarketingProvider;
+  status: MarketingIntegrationStatus;
+  accountName?: string | null;
+  lastSyncAt?: string | null;
+  lastError?: string | null;
+}
+
+interface MarketingSiteTotals {
+  visits: number;
+  whatsappClicks: number;
+  formSubmits: number;
+  leads: number;
+  conversionRate?: number;
+}
+
+interface MarketingPageMetric {
+  path: string;
+  title?: string | null;
+  views: number;
+  conversions: number;
+}
+
+interface MarketingSourceMetric {
+  source: string;
+  medium: string;
+  visits: number;
+  leads: number;
+}
+
+interface MarketingDailyMetric {
+  date: string;
+  visits: number;
+  actions: number;
+  leads: number;
+}
+
+interface MarketingResumo {
+  periodDays: number;
+  config: JsonRecord;
+  integrations: MarketingIntegrationSummary[];
+  site: {
+    current: MarketingSiteTotals;
+    previous: Omit<MarketingSiteTotals, 'conversionRate'>;
+    pages: MarketingPageMetric[];
+    sources: MarketingSourceMetric[];
+    daily: MarketingDailyMetric[];
+  };
+  campaigns: JsonRecord;
+}
+
+interface GoogleServiceAccount {
+  client_email: string;
+  private_key: string;
+}
+
+interface Ga4RunReportResponse {
+  rows?: Array<{
+    dimensionValues?: Array<{ value?: string }>;
+    metricValues?: Array<{ value?: string }>;
+  }>;
+}
+
+interface Ga4Summary {
+  currentVisits: number;
+  previousVisits: number;
+  daily: MarketingDailyMetric[];
+  pages: MarketingPageMetric[];
+  sources: MarketingSourceMetric[];
+}
+
 const localDevOrigins = new Set([
   'http://localhost:5173',
   'http://127.0.0.1:5173',
@@ -47,6 +123,314 @@ function parsePeriod(value: unknown) {
   return Math.max(7, Math.min(Math.trunc(parsed), 90));
 }
 
+function toNumber(value: unknown) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function roundRate(leads: number, visits: number) {
+  if (!visits) return 0;
+  return Math.round((leads / visits) * 10000) / 100;
+}
+
+function formatDate(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function getDateRange(periodDays: number) {
+  const today = new Date();
+  const end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  const start = addDays(end, -(periodDays - 1));
+  const previousEnd = addDays(start, -1);
+  const previousStart = addDays(previousEnd, -(periodDays - 1));
+
+  return {
+    startDate: formatDate(start),
+    endDate: formatDate(end),
+    previousStartDate: formatDate(previousStart),
+    previousEndDate: formatDate(previousEnd),
+  };
+}
+
+function fromGaDate(value: string) {
+  if (!/^\d{8}$/.test(value)) return value;
+  return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+}
+
+function encodeBase64Url(bytes: Uint8Array) {
+  let binary = '';
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+function encodeJson(value: unknown) {
+  return encodeBase64Url(new TextEncoder().encode(JSON.stringify(value)));
+}
+
+function pemToArrayBuffer(pem: string) {
+  const normalized = pem
+    .replace(/\\n/g, '\n')
+    .replace(/-----BEGIN PRIVATE KEY-----/g, '')
+    .replace(/-----END PRIVATE KEY-----/g, '')
+    .replace(/\s/g, '');
+  const binary = atob(normalized);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes.buffer;
+}
+
+function parseServiceAccount(raw: string): GoogleServiceAccount {
+  const trimmed = raw.trim();
+  const json = trimmed.startsWith('{') ? trimmed : atob(trimmed);
+  const parsed = JSON.parse(json) as Partial<GoogleServiceAccount>;
+  if (!parsed.client_email || !parsed.private_key) {
+    throw new Error('Credencial GA4 incompleta.');
+  }
+  return {
+    client_email: parsed.client_email,
+    private_key: parsed.private_key,
+  };
+}
+
+async function createServiceAccountJwt(serviceAccount: GoogleServiceAccount) {
+  const now = Math.floor(Date.now() / 1000);
+  const header = { alg: 'RS256', typ: 'JWT' };
+  const claim = {
+    iss: serviceAccount.client_email,
+    scope: 'https://www.googleapis.com/auth/analytics.readonly',
+    aud: 'https://oauth2.googleapis.com/token',
+    exp: now + 3600,
+    iat: now,
+  };
+  const signingInput = `${encodeJson(header)}.${encodeJson(claim)}`;
+  const privateKey = await crypto.subtle.importKey(
+    'pkcs8',
+    pemToArrayBuffer(serviceAccount.private_key),
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const signature = await crypto.subtle.sign(
+    'RSASSA-PKCS1-v1_5',
+    privateKey,
+    new TextEncoder().encode(signingInput),
+  );
+  return `${signingInput}.${encodeBase64Url(new Uint8Array(signature))}`;
+}
+
+async function getGa4AccessToken(serviceAccount: GoogleServiceAccount) {
+  const assertion = await createServiceAccountJwt(serviceAccount);
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion,
+    }),
+  });
+
+  const payload = await response.json().catch(() => ({})) as { access_token?: string; error_description?: string; error?: string };
+  if (!response.ok || !payload.access_token) {
+    throw new Error(payload.error_description ?? payload.error ?? 'Falha ao autenticar no GA4.');
+  }
+  return payload.access_token;
+}
+
+async function runGa4Report(accessToken: string, propertyId: string, body: JsonRecord) {
+  const response = await fetch(`https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  const payload = await response.json().catch(() => ({})) as Ga4RunReportResponse & { error?: { message?: string } };
+  if (!response.ok) {
+    throw new Error(payload.error?.message ?? 'Falha ao consultar relatório GA4.');
+  }
+  return payload;
+}
+
+function metricValue(report: Ga4RunReportResponse, rowIndex: number, metricIndex = 0) {
+  return toNumber(report.rows?.[rowIndex]?.metricValues?.[metricIndex]?.value);
+}
+
+function buildGa4Daily(report: Ga4RunReportResponse, existingDaily: MarketingDailyMetric[], periodDays: number) {
+  const { startDate } = getDateRange(periodDays);
+  const existingByDate = new Map(existingDaily.map((item) => [item.date, item]));
+  const visitsByDate = new Map<string, number>();
+
+  for (const row of report.rows ?? []) {
+    const date = fromGaDate(row.dimensionValues?.[0]?.value ?? '');
+    if (date) visitsByDate.set(date, toNumber(row.metricValues?.[0]?.value));
+  }
+
+  return Array.from({ length: periodDays }, (_, index) => {
+    const date = formatDate(addDays(new Date(`${startDate}T00:00:00.000Z`), index));
+    const existing = existingByDate.get(date);
+    return {
+      date,
+      visits: visitsByDate.get(date) ?? 0,
+      actions: existing?.actions ?? 0,
+      leads: existing?.leads ?? 0,
+    };
+  });
+}
+
+function buildGa4Pages(report: Ga4RunReportResponse, existingPages: MarketingPageMetric[]) {
+  const conversionsByPath = new Map(existingPages.map((page) => [page.path, page.conversions]));
+
+  return (report.rows ?? [])
+    .map((row) => {
+      const path = row.dimensionValues?.[0]?.value || '/';
+      return {
+        path,
+        title: row.dimensionValues?.[1]?.value || null,
+        views: toNumber(row.metricValues?.[0]?.value),
+        conversions: conversionsByPath.get(path) ?? 0,
+      };
+    })
+    .filter((page) => page.views > 0)
+    .slice(0, 8);
+}
+
+function buildGa4Sources(report: Ga4RunReportResponse, existingSources: MarketingSourceMetric[]) {
+  const leadsBySource = new Map(existingSources.map((source) => [source.source, source.leads]));
+
+  return (report.rows ?? [])
+    .map((row) => {
+      const source = row.dimensionValues?.[0]?.value || 'direto';
+      return {
+        source,
+        medium: row.dimensionValues?.[1]?.value || 'sem meio',
+        visits: toNumber(row.metricValues?.[0]?.value),
+        leads: leadsBySource.get(source) ?? 0,
+      };
+    })
+    .filter((source) => source.visits > 0 || source.leads > 0)
+    .slice(0, 8);
+}
+
+async function fetchGa4Summary(propertyId: string, serviceAccountJson: string, periodDays: number, currentData: MarketingResumo): Promise<Ga4Summary> {
+  const serviceAccount = parseServiceAccount(serviceAccountJson);
+  const accessToken = await getGa4AccessToken(serviceAccount);
+  const range = getDateRange(periodDays);
+
+  const commonLimit = { limit: '8' };
+  const [currentReport, previousReport, dailyReport, pagesReport, sourcesReport] = await Promise.all([
+    runGa4Report(accessToken, propertyId, {
+      dateRanges: [{ startDate: range.startDate, endDate: range.endDate }],
+      metrics: [{ name: 'activeUsers' }],
+    }),
+    runGa4Report(accessToken, propertyId, {
+      dateRanges: [{ startDate: range.previousStartDate, endDate: range.previousEndDate }],
+      metrics: [{ name: 'activeUsers' }],
+    }),
+    runGa4Report(accessToken, propertyId, {
+      dateRanges: [{ startDate: range.startDate, endDate: range.endDate }],
+      dimensions: [{ name: 'date' }],
+      metrics: [{ name: 'activeUsers' }],
+      orderBys: [{ dimension: { dimensionName: 'date' } }],
+    }),
+    runGa4Report(accessToken, propertyId, {
+      dateRanges: [{ startDate: range.startDate, endDate: range.endDate }],
+      dimensions: [{ name: 'pagePath' }, { name: 'pageTitle' }],
+      metrics: [{ name: 'screenPageViews' }],
+      orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
+      ...commonLimit,
+    }),
+    runGa4Report(accessToken, propertyId, {
+      dateRanges: [{ startDate: range.startDate, endDate: range.endDate }],
+      dimensions: [{ name: 'sessionSource' }, { name: 'sessionMedium' }],
+      metrics: [{ name: 'activeUsers' }],
+      orderBys: [{ metric: { metricName: 'activeUsers' }, desc: true }],
+      ...commonLimit,
+    }),
+  ]);
+
+  return {
+    currentVisits: metricValue(currentReport, 0),
+    previousVisits: metricValue(previousReport, 0),
+    daily: buildGa4Daily(dailyReport, currentData.site.daily, periodDays),
+    pages: buildGa4Pages(pagesReport, currentData.site.pages),
+    sources: buildGa4Sources(sourcesReport, currentData.site.sources),
+  };
+}
+
+function upsertGa4Integration(
+  integrations: MarketingIntegrationSummary[],
+  status: MarketingIntegrationStatus,
+  propertyId: string,
+  lastError: string | null,
+) {
+  const next = integrations.filter((integration) => integration.provider !== 'ga4');
+  next.unshift({
+    provider: 'ga4',
+    status,
+    accountName: `GA4 ${propertyId}`,
+    lastSyncAt: status === 'connected' ? new Date().toISOString() : null,
+    lastError,
+  });
+  return next;
+}
+
+function mergeGa4Summary(data: MarketingResumo, ga4: Ga4Summary, propertyId: string): MarketingResumo {
+  const current = {
+    ...data.site.current,
+    visits: ga4.currentVisits,
+    conversionRate: roundRate(data.site.current.leads, ga4.currentVisits),
+  };
+  const previous = {
+    ...data.site.previous,
+    visits: ga4.previousVisits,
+  };
+
+  return {
+    ...data,
+    config: {
+      ...data.config,
+      ga4Status: 'connected',
+    },
+    integrations: upsertGa4Integration(data.integrations ?? [], 'connected', propertyId, null),
+    site: {
+      ...data.site,
+      current,
+      previous,
+      daily: ga4.daily,
+      pages: ga4.pages,
+      sources: ga4.sources,
+    },
+  };
+}
+
+function markGa4Unavailable(data: MarketingResumo, propertyId: string, reason: string): MarketingResumo {
+  return {
+    ...data,
+    config: {
+      ...data.config,
+      ga4Status: propertyId ? 'needs_attention' : 'not_connected',
+    },
+    integrations: upsertGa4Integration(
+      data.integrations ?? [],
+      propertyId ? 'needs_attention' : 'not_connected',
+      propertyId || 'não configurado',
+      reason,
+    ),
+  };
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: getCorsHeaders(request) });
   if (request.method !== 'POST') return jsonResponse({ error: 'Método não permitido.' }, 405, request);
@@ -79,10 +463,35 @@ Deno.serve(async (request) => {
       return jsonResponse({ error: envelope?.mensagem ?? 'Não foi possível carregar o módulo Crescimento.' }, envelope?.status === 403 ? 403 : 500, request);
     }
 
+    const periodDays = parsePeriod(body.p_periodo_dias);
+    const ga4PropertyId = (Deno.env.get('GA4_PROPERTY_ID') ?? '').trim();
+    const ga4ServiceAccountJson = Deno.env.get('GA4_SERVICE_ACCOUNT_JSON') ?? '';
+    let responseData = envelope.dados as MarketingResumo;
+
+    if (ga4PropertyId && ga4ServiceAccountJson) {
+      try {
+        const ga4Summary = await fetchGa4Summary(ga4PropertyId, ga4ServiceAccountJson, periodDays, responseData);
+        responseData = mergeGa4Summary(responseData, ga4Summary, ga4PropertyId);
+      } catch (error) {
+        console.error('GA4 dashboard sync failed', error instanceof Error ? error.message : 'unknown');
+        responseData = markGa4Unavailable(
+          responseData,
+          ga4PropertyId,
+          'Não foi possível sincronizar o GA4 agora. Os dados internos continuam disponíveis.',
+        );
+      }
+    } else {
+      responseData = markGa4Unavailable(
+        responseData,
+        ga4PropertyId,
+        'Configure GA4_PROPERTY_ID e GA4_SERVICE_ACCOUNT_JSON nos secrets da Edge Function.',
+      );
+    }
+
     return jsonResponse({
       status: 200,
       mensagem: envelope.mensagem ?? 'Resumo do módulo Crescimento carregado.',
-      dados: envelope.dados,
+      dados: responseData,
     }, 200, request);
   } catch (error) {
     return jsonResponse({
