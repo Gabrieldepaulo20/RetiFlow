@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Area,
@@ -35,6 +35,8 @@ import {
   Users,
 } from 'lucide-react';
 import { getMarketingResumo, type MarketingResumo } from '@/api/supabase/marketing';
+import { useAuth } from '@/contexts/AuthContext';
+import { useSystemUsersQuery } from '@/hooks/useSystemUsersQuery';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -380,12 +382,34 @@ function CampaignsTab({ resumo }: { resumo: MarketingResumo }) {
 }
 
 export default function MarketingGrowth() {
+  const { isAdmin } = useAuth();
+  const { data: systemUsers = [], isLoading: isLoadingUsers } = useSystemUsersQuery({ enabled: isAdmin });
   const [periodDays, setPeriodDays] = useState('30');
+  const [selectedUserId, setSelectedUserId] = useState('');
   const selectedPeriod = Number(periodDays);
+  const selectableUsers = useMemo(() => {
+    const activeClientUsers = systemUsers.filter((user) => user.isActive && user.role !== 'ADMIN');
+    const withMarketing = activeClientUsers.filter((user) => user.moduleAccess?.marketing === true);
+    return withMarketing.length > 0 ? withMarketing : activeClientUsers;
+  }, [systemUsers]);
+  const selectedUser = useMemo(
+    () => selectableUsers.find((user) => user.id === selectedUserId) ?? null,
+    [selectableUsers, selectedUserId],
+  );
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setSelectedUserId('');
+      return;
+    }
+    if (selectedUserId && selectableUsers.some((user) => user.id === selectedUserId)) return;
+    setSelectedUserId(selectableUsers[0]?.id ?? '');
+  }, [isAdmin, selectableUsers, selectedUserId]);
 
   const { data, isLoading, isFetching, error } = useQuery({
-    queryKey: ['marketing-growth', selectedPeriod],
-    queryFn: () => getMarketingResumo(selectedPeriod),
+    queryKey: ['marketing-growth', selectedPeriod, isAdmin ? selectedUserId : 'self'],
+    queryFn: () => getMarketingResumo(selectedPeriod, isAdmin ? selectedUserId : null),
+    enabled: !isAdmin || Boolean(selectedUserId),
     staleTime: 1000 * 60 * 3,
     retry: false,
   });
@@ -423,6 +447,21 @@ export default function MarketingGrowth() {
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              {isAdmin ? (
+                <Select value={selectedUserId} onValueChange={setSelectedUserId} disabled={isLoadingUsers || selectableUsers.length === 0}>
+                  <SelectTrigger className="w-full sm:w-[260px]">
+                    <Users className="mr-2 h-4 w-4 text-muted-foreground" />
+                    <SelectValue placeholder="Selecionar cliente" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {selectableUsers.map((user) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : null}
               <Select value={periodDays} onValueChange={setPeriodDays}>
                 <SelectTrigger className="w-full sm:w-[150px]">
                   <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
@@ -450,10 +489,26 @@ export default function MarketingGrowth() {
           />
         ) : null}
 
+        {isAdmin && !isLoadingUsers && selectableUsers.length === 0 ? (
+          <SectionEmptyState
+            icon={Users}
+            title="Nenhum cliente ativo disponível"
+            description="Crie ou reative um cliente operacional e habilite o módulo Crescimento para acompanhar sites, campanhas e leads."
+            className="min-h-[260px]"
+          />
+        ) : null}
+
         {isLoading ? <LoadingGrid /> : null}
 
         {data && !error ? (
           <>
+            {isAdmin && selectedUser ? (
+              <div className="rounded-lg border bg-card px-4 py-3 text-sm text-muted-foreground shadow-sm">
+                Visualizando <span className="font-semibold text-foreground">{selectedUser.name}</span>
+                {selectedUser.email ? <span> · {selectedUser.email}</span> : null}
+              </div>
+            ) : null}
+
             <EmptyIntegrationRail resumo={data} />
 
             <Tabs defaultValue="site" className="space-y-5">

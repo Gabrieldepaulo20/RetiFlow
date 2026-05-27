@@ -9,6 +9,7 @@ export interface MarketingConfigSummary {
   hasSiteKey: boolean;
   allowedOrigins: string[];
   updatedAt: string | null;
+  ga4PropertyId?: string | null;
 }
 
 export interface MarketingIntegrationSummary {
@@ -50,6 +51,11 @@ export interface MarketingDailyMetric {
 
 export interface MarketingResumo {
   periodDays: number;
+  context?: {
+    targetUserId?: string;
+    targetName?: string;
+    targetEmail?: string;
+  };
   config: MarketingConfigSummary;
   integrations: MarketingIntegrationSummary[];
   site: {
@@ -85,15 +91,38 @@ function getFunctionErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
-export async function getMarketingResumo(periodDays = 30) {
+function getErrorResponse(error: unknown) {
+  return typeof error === 'object' && error !== null && 'context' in error
+    ? (error as { context?: unknown }).context
+    : null;
+}
+
+async function getMarketingFunctionErrorMessage(error: unknown, fallback: string) {
+  const context = getErrorResponse(error);
+  if (context instanceof Response) {
+    try {
+      const parsed = await context.clone().json() as { error?: string; mensagem?: string };
+      return parsed.error ?? parsed.mensagem ?? fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  return getFunctionErrorMessage(error, fallback);
+}
+
+export async function getMarketingResumo(periodDays = 30, targetUserId?: string | null) {
   const accessToken = await getAccessToken();
   const { data, error } = await supabase.functions.invoke<{ dados?: MarketingResumo; error?: string; mensagem?: string }>('marketing-dashboard', {
-    body: { p_periodo_dias: periodDays },
+    body: {
+      p_periodo_dias: periodDays,
+      ...(targetUserId ? { p_target_user_id: targetUserId } : {}),
+    },
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
   if (error || !data?.dados) {
-    throw new Error(data?.error ?? data?.mensagem ?? getFunctionErrorMessage(error, 'Não foi possível carregar o módulo Crescimento.'));
+    throw new Error(data?.error ?? data?.mensagem ?? await getMarketingFunctionErrorMessage(error, 'Não foi possível carregar o módulo Crescimento.'));
   }
 
   return data.dados;

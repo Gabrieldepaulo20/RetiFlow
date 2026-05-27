@@ -56,6 +56,22 @@ interface MarketingResumo {
   campaigns: JsonRecord;
 }
 
+interface InternalUserProfile {
+  id_usuarios: string;
+  nome: string;
+  email: string;
+  acesso: string;
+  status: boolean;
+  modulos?: {
+    admin?: boolean | null;
+    marketing?: boolean | null;
+  } | null;
+}
+
+type RawInternalUserProfile = Omit<InternalUserProfile, 'modulos'> & {
+  modulos?: InternalUserProfile['modulos'] | InternalUserProfile['modulos'][] | null;
+};
+
 interface GoogleServiceAccount {
   client_email: string;
   private_key: string;
@@ -123,6 +139,23 @@ function parsePeriod(value: unknown) {
   return Math.max(7, Math.min(Math.trunc(parsed), 90));
 }
 
+function isRecord(value: unknown): value is JsonRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizeEmail(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function getSuperAdminEmails() {
+  const raw = Deno.env.get('SUPER_ADMIN_EMAILS') ?? Deno.env.get('SUPER_ADMIN_EMAIL') ?? '';
+  return new Set(raw.split(',').map(normalizeEmail).filter(Boolean));
+}
+
+function isMegaMasterEmail(email: string, superAdminEmails: Set<string>) {
+  return superAdminEmails.has(normalizeEmail(email));
+}
+
 function toNumber(value: unknown) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -156,6 +189,14 @@ function getDateRange(periodDays: number) {
     previousStartDate: formatDate(previousStart),
     previousEndDate: formatDate(previousEnd),
   };
+}
+
+function toIsoStartOfDay(value: string) {
+  return `${value}T00:00:00.000Z`;
+}
+
+function toIsoEndOfDay(value: string) {
+  return `${value}T23:59:59.999Z`;
 }
 
 function fromGaDate(value: string) {
@@ -386,6 +427,266 @@ function upsertGa4Integration(
   return next;
 }
 
+async function getInternalUserByAuthEmail(serviceClient: ReturnType<typeof createClient>, email: string) {
+  const { data, error } = await serviceClient
+    .schema('RetificaPremium')
+    .from('Usuarios')
+    .select('id_usuarios, nome, email, acesso, status, modulos:Modulos(admin, marketing)')
+    .eq('email', email)
+    .maybeSingle();
+
+  if (error) throw new Error(`Não foi possível validar o perfil interno: ${error.message}`);
+  return normalizeInternalUser(data as RawInternalUserProfile | null);
+}
+
+async function getTargetUser(serviceClient: ReturnType<typeof createClient>, targetUserId: string) {
+  const { data, error } = await serviceClient
+    .schema('RetificaPremium')
+    .from('Usuarios')
+    .select('id_usuarios, nome, email, acesso, status, modulos:Modulos(admin, marketing)')
+    .eq('id_usuarios', targetUserId)
+    .maybeSingle();
+
+  if (error) throw new Error(`Não foi possível carregar o cliente selecionado: ${error.message}`);
+  return normalizeInternalUser(data as RawInternalUserProfile | null);
+}
+
+function normalizeInternalUser(profile: RawInternalUserProfile | null): InternalUserProfile | null {
+  if (!profile) return null;
+  const modulos = Array.isArray(profile.modulos) ? profile.modulos[0] : profile.modulos;
+  return {
+    ...profile,
+    modulos: modulos ?? null,
+  };
+}
+
+function assertAdminCanViewTarget(
+  requester: InternalUserProfile | null,
+  target: InternalUserProfile | null,
+  requesterIsMegaMaster: boolean,
+) {
+  if (!requester || requester.status === false || requester.acesso !== 'administrador') {
+    return { ok: false as const, status: 403, message: 'A seleção de cliente é restrita a administradores ativos.' };
+  }
+
+  if (!requesterIsMegaMaster && requester.modulos?.admin !== true && requester.modulos?.marketing !== true) {
+    return { ok: false as const, status: 403, message: 'Administrador sem módulo Admin ou Crescimento habilitado.' };
+  }
+
+  if (!target || target.status === false) {
+    return { ok: false as const, status: 404, message: 'Cliente selecionado não encontrado ou inativo.' };
+  }
+
+  if (target.modulos?.marketing !== true) {
+    return { ok: false as const, status: 403, message: 'Módulo Crescimento não habilitado para o cliente selecionado.' };
+  }
+
+  return { ok: true as const };
+}
+
+async function getMarketingConfig(serviceClient: ReturnType<typeof createClient>, targetUserId: string) {
+  const { data, error } = await serviceClient
+    .schema('RetificaPremium')
+    .from('Marketing_Config')
+    .select('modulo_habilitado, site_key_hash, allowed_origins, ga4_property_id, ga4_status, updated_at')
+    .eq('fk_criado_por', targetUserId)
+    .maybeSingle();
+
+  if (error) throw new Error(`Não foi possível carregar configuração de marketing: ${error.message}`);
+  const config = isRecord(data) ? data : {};
+
+  return {
+    moduloHabilitado: config.modulo_habilitado === true,
+    ga4Status: typeof config.ga4_status === 'string' ? config.ga4_status : 'not_connected',
+    hasSiteKey: Boolean(config.site_key_hash),
+    allowedOrigins: Array.isArray(config.allowed_origins) ? config.allowed_origins : [],
+    updatedAt: typeof config.updated_at === 'string' ? config.updated_at : null,
+    ga4PropertyId: typeof config.ga4_property_id === 'string' ? config.ga4_property_id : null,
+  };
+}
+
+async function getMarketingIntegrations(serviceClient: ReturnType<typeof createClient>, targetUserId: string) {
+  const { data, error } = await serviceClient
+    .schema('RetificaPremium')
+    .from('Marketing_Integracoes')
+    .select('provider, status, external_account_name, last_sync_at, last_error')
+    .eq('fk_criado_por', targetUserId)
+    .order('provider', { ascending: true });
+
+  if (error) throw new Error(`Não foi possível carregar integrações de marketing: ${error.message}`);
+
+  return (data ?? []).map((item) => ({
+    provider: item.provider as MarketingProvider,
+    status: item.status as MarketingIntegrationStatus,
+    accountName: item.external_account_name ?? null,
+    lastSyncAt: item.last_sync_at ?? null,
+    lastError: item.last_error ?? null,
+  }));
+}
+
+async function getMarketingEvents(serviceClient: ReturnType<typeof createClient>, targetUserId: string, previousStartIso: string) {
+  const { data, error } = await serviceClient
+    .schema('RetificaPremium')
+    .from('Marketing_Site_Eventos')
+    .select('id_marketing_site_eventos, event_type, occurred_at, page_path, page_title, source, medium')
+    .eq('fk_criado_por', targetUserId)
+    .gte('occurred_at', previousStartIso)
+    .order('occurred_at', { ascending: true });
+
+  if (error) throw new Error(`Não foi possível carregar eventos de marketing: ${error.message}`);
+  return data ?? [];
+}
+
+async function getMarketingLeads(serviceClient: ReturnType<typeof createClient>, targetUserId: string, previousStartIso: string) {
+  const { data, error } = await serviceClient
+    .schema('RetificaPremium')
+    .from('Marketing_Leads')
+    .select('occurred_at, source')
+    .eq('fk_criado_por', targetUserId)
+    .gte('occurred_at', previousStartIso)
+    .order('occurred_at', { ascending: true });
+
+  if (error) throw new Error(`Não foi possível carregar leads de marketing: ${error.message}`);
+  return data ?? [];
+}
+
+function buildEmptyDaily(periodDays: number, startDate: string): MarketingDailyMetric[] {
+  const start = new Date(`${startDate}T00:00:00.000Z`);
+  return Array.from({ length: periodDays }, (_, index) => ({
+    date: formatDate(addDays(start, index)),
+    visits: 0,
+    actions: 0,
+    leads: 0,
+  }));
+}
+
+function buildInternalSiteSummary(
+  periodDays: number,
+  events: Array<Record<string, unknown>>,
+  leads: Array<Record<string, unknown>>,
+) {
+  const range = getDateRange(periodDays);
+  const startIso = toIsoStartOfDay(range.startDate);
+  const previousStartIso = toIsoStartOfDay(range.previousStartDate);
+  const previousEndIso = toIsoEndOfDay(range.previousEndDate);
+
+  const currentEvents = events.filter((event) => String(event.occurred_at ?? '') >= startIso);
+  const previousEvents = events.filter((event) => {
+    const occurredAt = String(event.occurred_at ?? '');
+    return occurredAt >= previousStartIso && occurredAt <= previousEndIso;
+  });
+  const currentLeads = leads.filter((lead) => String(lead.occurred_at ?? '') >= startIso);
+  const previousLeads = leads.filter((lead) => {
+    const occurredAt = String(lead.occurred_at ?? '');
+    return occurredAt >= previousStartIso && occurredAt <= previousEndIso;
+  });
+
+  const currentVisits = currentEvents.filter((event) => event.event_type === 'page_view').length;
+  const currentActions = currentEvents.filter((event) => event.event_type === 'whatsapp_click' || event.event_type === 'form_submit').length;
+  const previousVisits = previousEvents.filter((event) => event.event_type === 'page_view').length;
+
+  const pageMap = new Map<string, MarketingPageMetric>();
+  currentEvents.forEach((event) => {
+    const path = String(event.page_path || '/');
+    const current = pageMap.get(path) ?? { path, title: typeof event.page_title === 'string' ? event.page_title : null, views: 0, conversions: 0 };
+    if (event.event_type === 'page_view') current.views += 1;
+    if (event.event_type === 'whatsapp_click' || event.event_type === 'form_submit' || event.event_type === 'lead_created') current.conversions += 1;
+    pageMap.set(path, current);
+  });
+
+  const sourceMap = new Map<string, MarketingSourceMetric>();
+  currentEvents.forEach((event) => {
+    const source = String(event.source || 'direto');
+    const medium = String(event.medium || 'sem meio');
+    const key = `${source}\u0000${medium}`;
+    const current = sourceMap.get(key) ?? { source, medium, visits: 0, leads: 0 };
+    if (event.event_type === 'page_view') current.visits += 1;
+    sourceMap.set(key, current);
+  });
+
+  currentLeads.forEach((lead) => {
+    const source = String(lead.source || 'direto');
+    const key = Array.from(sourceMap.keys()).find((item) => item.startsWith(`${source}\u0000`)) ?? `${source}\u0000sem meio`;
+    const current = sourceMap.get(key) ?? { source, medium: 'sem meio', visits: 0, leads: 0 };
+    current.leads += 1;
+    sourceMap.set(key, current);
+  });
+
+  const daily = buildEmptyDaily(periodDays, range.startDate);
+  const dailyByDate = new Map(daily.map((item) => [item.date, item]));
+  currentEvents.forEach((event) => {
+    const date = String(event.occurred_at ?? '').slice(0, 10);
+    const current = dailyByDate.get(date);
+    if (!current) return;
+    if (event.event_type === 'page_view') current.visits += 1;
+    if (event.event_type === 'whatsapp_click' || event.event_type === 'form_submit') current.actions += 1;
+  });
+  currentLeads.forEach((lead) => {
+    const date = String(lead.occurred_at ?? '').slice(0, 10);
+    const current = dailyByDate.get(date);
+    if (current) current.leads += 1;
+  });
+
+  return {
+    current: {
+      visits: currentVisits,
+      whatsappClicks: currentEvents.filter((event) => event.event_type === 'whatsapp_click').length,
+      formSubmits: currentEvents.filter((event) => event.event_type === 'form_submit').length,
+      leads: currentLeads.length,
+      conversionRate: roundRate(currentLeads.length, currentVisits),
+    },
+    previous: {
+      visits: previousVisits,
+      whatsappClicks: previousEvents.filter((event) => event.event_type === 'whatsapp_click').length,
+      formSubmits: previousEvents.filter((event) => event.event_type === 'form_submit').length,
+      leads: previousLeads.length,
+    },
+    pages: Array.from(pageMap.values()).sort((a, b) => b.views - a.views).slice(0, 8),
+    sources: Array.from(sourceMap.values()).sort((a, b) => b.visits - a.visits).slice(0, 8),
+    daily,
+    currentActions,
+  };
+}
+
+async function buildTargetMarketingResumo(
+  serviceClient: ReturnType<typeof createClient>,
+  targetUser: InternalUserProfile,
+  periodDays: number,
+) {
+  const range = getDateRange(periodDays);
+  const [config, integrations, events, leads] = await Promise.all([
+    getMarketingConfig(serviceClient, targetUser.id_usuarios),
+    getMarketingIntegrations(serviceClient, targetUser.id_usuarios),
+    getMarketingEvents(serviceClient, targetUser.id_usuarios, toIsoStartOfDay(range.previousStartDate)),
+    getMarketingLeads(serviceClient, targetUser.id_usuarios, toIsoStartOfDay(range.previousStartDate)),
+  ]);
+  const site = buildInternalSiteSummary(periodDays, events, leads);
+
+  return {
+    periodDays,
+    context: {
+      targetUserId: targetUser.id_usuarios,
+      targetName: targetUser.nome,
+      targetEmail: targetUser.email,
+    },
+    config,
+    integrations,
+    site: {
+      current: site.current,
+      previous: site.previous,
+      pages: site.pages,
+      sources: site.sources,
+      daily: site.daily,
+    },
+    campaigns: {
+      current: { spend: 0, clicks: 0, leads: 0, cpl: 0 },
+      items: [],
+      daily: [],
+      financialAvailable: false,
+    },
+  } as MarketingResumo & { context: JsonRecord };
+}
+
 function mergeGa4Summary(data: MarketingResumo, ga4: Ga4Summary, propertyId: string): MarketingResumo {
   const current = {
     ...data.site.current,
@@ -437,6 +738,7 @@ Deno.serve(async (request) => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   if (!supabaseUrl || !anonKey) return jsonResponse({ error: 'Configuração Supabase ausente.' }, 500, request);
 
   const token = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
@@ -452,21 +754,44 @@ Deno.serve(async (request) => {
   });
 
   try {
-    const body = await request.json().catch(() => ({})) as { p_periodo_dias?: unknown };
-    const { data, error } = await userClient
-      .schema('RetificaPremium')
-      .rpc('get_marketing_resumo', { p_periodo_dias: parsePeriod(body.p_periodo_dias) });
+    const body = await request.json().catch(() => ({})) as { p_periodo_dias?: unknown; p_target_user_id?: unknown };
+    const periodDays = parsePeriod(body.p_periodo_dias);
+    const targetUserId = typeof body.p_target_user_id === 'string' ? body.p_target_user_id.trim() : '';
+    let responseData: MarketingResumo;
+    let responseMessage = 'Resumo do módulo Crescimento carregado.';
 
-    if (error) throw new Error(error.message);
-    const envelope = data as { status?: number; mensagem?: string; dados?: unknown };
-    if (!envelope || envelope.status !== 200 || !envelope.dados) {
-      return jsonResponse({ error: envelope?.mensagem ?? 'Não foi possível carregar o módulo Crescimento.' }, envelope?.status === 403 ? 403 : 500, request);
+    if (targetUserId) {
+      if (!serviceRoleKey) return jsonResponse({ error: 'Configuração administrativa ausente para seleção de cliente.' }, 500, request);
+
+      const serviceClient = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
+      const requesterEmail = userData.user.email?.trim().toLowerCase() ?? '';
+      const [requester, targetUser] = await Promise.all([
+        getInternalUserByAuthEmail(serviceClient, requesterEmail),
+        getTargetUser(serviceClient, targetUserId),
+      ]);
+      const requesterIsMegaMaster = isMegaMasterEmail(requesterEmail, getSuperAdminEmails());
+      const access = assertAdminCanViewTarget(requester, targetUser, requesterIsMegaMaster);
+      if (!access.ok) return jsonResponse({ error: access.message }, access.status, request);
+
+      responseData = await buildTargetMarketingResumo(serviceClient, targetUser, periodDays);
+      responseMessage = 'Resumo do cliente selecionado carregado.';
+    } else {
+      const { data, error } = await userClient
+        .schema('RetificaPremium')
+        .rpc('get_marketing_resumo', { p_periodo_dias: periodDays });
+
+      if (error) throw new Error(error.message);
+      const envelope = data as { status?: number; mensagem?: string; dados?: unknown };
+      if (!envelope || envelope.status !== 200 || !envelope.dados) {
+        return jsonResponse({ error: envelope?.mensagem ?? 'Não foi possível carregar o módulo Crescimento.' }, envelope?.status === 403 ? 403 : 500, request);
+      }
+      responseMessage = envelope.mensagem ?? responseMessage;
+      responseData = envelope.dados as MarketingResumo;
     }
 
-    const periodDays = parsePeriod(body.p_periodo_dias);
-    const ga4PropertyId = (Deno.env.get('GA4_PROPERTY_ID') ?? '').trim();
+    const configPropertyId = typeof responseData.config.ga4PropertyId === 'string' ? responseData.config.ga4PropertyId.trim() : '';
+    const ga4PropertyId = configPropertyId || (Deno.env.get('GA4_PROPERTY_ID') ?? '').trim();
     const ga4ServiceAccountJson = Deno.env.get('GA4_SERVICE_ACCOUNT_JSON') ?? '';
-    let responseData = envelope.dados as MarketingResumo;
 
     if (ga4PropertyId && ga4ServiceAccountJson) {
       try {
@@ -490,7 +815,7 @@ Deno.serve(async (request) => {
 
     return jsonResponse({
       status: 200,
-      mensagem: envelope.mensagem ?? 'Resumo do módulo Crescimento carregado.',
+      mensagem: responseMessage,
       dados: responseData,
     }, 200, request);
   } catch (error) {
