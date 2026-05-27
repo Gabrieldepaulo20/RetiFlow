@@ -208,6 +208,7 @@ export default function MonthlyClosing() {
   const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false);
   const [returnToDraftAfterPreview, setReturnToDraftAfterPreview] = useState(false);
   const [templatePreviewLoading, setTemplatePreviewLoading] = useState(false);
+  const [generatedPreviewFechamento, setGeneratedPreviewFechamento] = useState<FechamentoListItem | null>(null);
 
   // Preview state
   const [selMonth, setSelMonth] = useState(defaultMonth);
@@ -336,6 +337,7 @@ export default function MonthlyClosing() {
   const closeTemplatePreview = useCallback(() => {
     setTemplatePreviewOpen(false);
     setTemplatePreviewLoading(false);
+    setGeneratedPreviewFechamento(null);
     if (returnToDraftAfterPreview) {
       setReturnToDraftAfterPreview(false);
       setDraftModalOpen(true);
@@ -347,20 +349,45 @@ export default function MonthlyClosing() {
     setTemplatePreviewOpen(false);
     setTemplatePreviewLoading(false);
     setReturnToDraftAfterPreview(false);
+    setGeneratedPreviewFechamento(null);
   }, []);
 
   const openDraftPreview = useCallback((draft: ClosingDraft) => {
     loadDraftIntoEditor(draft);
+    setGeneratedPreviewFechamento(null);
     setReturnToDraftAfterPreview(false);
     setDraftModalOpen(false);
     setTemplatePreviewOpen(true);
   }, [loadDraftIntoEditor]);
 
   const openActiveDraftPreview = useCallback(() => {
+    setGeneratedPreviewFechamento(null);
     setReturnToDraftAfterPreview(true);
     setDraftModalOpen(false);
     setTemplatePreviewOpen(true);
   }, []);
+
+  const openGeneratedPreview = useCallback(async (fechamento: FechamentoListItem) => {
+    if (fechamento.dados_json) {
+      setGeneratedPreviewFechamento(fechamento);
+      setReturnToDraftAfterPreview(false);
+      setDraftModalOpen(false);
+      setTemplatePreviewOpen(true);
+      return;
+    }
+
+    if (fechamento.pdf_url) {
+      try {
+        const url = await getFechamentoPDFSignedUrl(fechamento.pdf_url);
+        window.open(url, '_blank', 'noopener,noreferrer');
+      } catch {
+        toast({ title: 'Erro ao abrir visualização', description: 'Não foi possível gerar link seguro do PDF.', variant: 'destructive' });
+      }
+      return;
+    }
+
+    toast({ title: 'Visualização indisponível', description: 'Este fechamento não possui template salvo nem PDF armazenado.', variant: 'destructive' });
+  }, [toast]);
 
   const removeDraft = useCallback((draftId: string) => {
     setDrafts((current) => current.filter((draft) => draft.id !== draftId));
@@ -487,13 +514,19 @@ export default function MonthlyClosing() {
     [drafts, activeDraftId],
   );
   const modalPreviewDados = useMemo(
-    () => activeDraft ? buildDadosFromDraft({
+    () => generatedPreviewFechamento?.dados_json ?? (activeDraft ? buildDadosFromDraft({
       ...activeDraft,
       notes: previewNotes,
       discounts: descontos,
-    }) : null,
-    [activeDraft, previewNotes, descontos],
+    }) : null),
+    [activeDraft, generatedPreviewFechamento, previewNotes, descontos],
   );
+  const modalPreviewTitle = generatedPreviewFechamento
+    ? `Fechamento ${generatedPreviewFechamento.periodo}`
+    : 'Template final do fechamento';
+  const modalPreviewDescription = generatedPreviewFechamento
+    ? 'Esta é a visualização do template salvo para este fechamento já gerado.'
+    : 'Esta é a aparência de impressão e do PDF que ficará armazenado.';
 
   useEffect(() => {
     if (!draftModalOpen || !activeDraftId) return;
@@ -885,6 +918,15 @@ export default function MonthlyClosing() {
                         )}
                       </div>
                       <div className="flex w-full gap-2 sm:w-auto sm:shrink-0">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          aria-label={`Visualizar template do fechamento ${f.periodo}`}
+                          onClick={() => void openGeneratedPreview(f)}
+                          className="flex-1 sm:flex-none"
+                        >
+                          <Eye className="w-3.5 h-3.5 mr-1.5" /> Visualizar
+                        </Button>
                         <Button size="sm" variant="outline" onClick={() => handleDownload(f)} className="flex-1 sm:flex-none">
                           <Download className="w-3.5 h-3.5 mr-1.5" /> PDF
                         </Button>
@@ -1067,9 +1109,9 @@ export default function MonthlyClosing() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Visualização</p>
-                  <h3 className="mt-1 text-lg font-semibold">Template final do fechamento</h3>
+                  <h3 className="mt-1 text-lg font-semibold">{modalPreviewTitle}</h3>
                   <p className="text-sm text-muted-foreground">
-                    Esta é a aparência de impressão e do PDF que ficará armazenado.
+                    {modalPreviewDescription}
                   </p>
                 </div>
                 <Button variant="outline" onClick={() => void handlePrintPreview()} disabled={templatePreviewLoading || !modalPreviewDados}>
