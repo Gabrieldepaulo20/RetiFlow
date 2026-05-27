@@ -6,6 +6,7 @@ import {
   NOTA_PRINT_MAX_ROWS,
   NOTA_PRINT_OBSERVATIONS,
 } from '@/components/notes/notaPrintLayout';
+import { getNotaItemDetailLines } from '@/components/notes/notaItemDetails';
 
 const MAX_ROWS = NOTA_PRINT_MAX_ROWS;
 const LONG_MAX_ROWS = NOTA_PRINT_LONG_MAX_ROWS;
@@ -195,6 +196,24 @@ const styles = StyleSheet.create({
     minHeight: 21,
     fontSize: 8.3,
     justifyContent: 'center',
+  },
+  descCell: {
+    justifyContent: 'flex-start',
+  },
+  mainDescription: {
+    fontSize: 8.3,
+    lineHeight: 1.25,
+  },
+  detailLine: {
+    marginTop: 2,
+    marginLeft: 9,
+    paddingLeft: 5,
+    borderLeftWidth: 1,
+    borderLeftColor: '#d2d8de',
+    borderLeftStyle: 'solid',
+    color: '#555555',
+    fontSize: 7.4,
+    lineHeight: 1.25,
   },
   emptyRow: {
     color: '#ffffff',
@@ -406,17 +425,25 @@ function Via({
             <Text style={[styles.th, styles.totalCol]}>TOTAL</Text>
           </View>
 
-          {itens.map((item) => (
-            <View key={item.id_rel} style={styles.row}>
-              <Text style={[styles.td, styles.qtyCol]}>{item.quantidade}</Text>
-              <Text style={[styles.td, styles.descCol]}>
-                {item.descricao}
-                {item.detalhes ? `\n${item.detalhes}` : ''}
-              </Text>
-              <Text style={[styles.td, styles.unitCol]}>R$ {formatCurrency(item.preco_unitario)}</Text>
-              <Text style={[styles.td, styles.totalCol]}>R$ {formatCurrency(item.subtotal_item)}</Text>
-            </View>
-          ))}
+          {itens.map((item) => {
+            const detailLines = getNotaItemDetailLines(item);
+
+            return (
+              <View key={item.id_rel} style={styles.row}>
+                <Text style={[styles.td, styles.qtyCol]}>{item.quantidade}</Text>
+                <View style={[styles.td, styles.descCol, styles.descCell]}>
+                  <Text style={styles.mainDescription}>{item.descricao}</Text>
+                  {detailLines.map((line, index) => (
+                    <Text key={`${item.id_rel}-detail-${index}`} style={styles.detailLine}>
+                      {line}
+                    </Text>
+                  ))}
+                </View>
+                <Text style={[styles.td, styles.unitCol]}>R$ {formatCurrency(item.preco_unitario)}</Text>
+                <Text style={[styles.td, styles.totalCol]}>R$ {formatCurrency(item.subtotal_item)}</Text>
+              </View>
+            );
+          })}
 
           {Array.from({ length: paddingRows }).map((_, index) => (
             <View key={`empty-${index}`} style={styles.row}>

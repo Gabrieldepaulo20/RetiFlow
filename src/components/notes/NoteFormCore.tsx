@@ -48,6 +48,7 @@ import { getNotaServicoDetalhes, uploadNotaPDF, updateNotaPdfUrl } from '@/api/s
 import { getTiposDeMotor, getServicosItens } from '@/api/supabase/catalogo';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
 import { useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
+import { getNotaItemDetailLines } from '@/components/notes/notaItemDetails';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
@@ -211,6 +212,7 @@ export default function NoteFormCore({
   const [itemsLoadingFromDB, setItemsLoadingFromDB] = useState(false);
   const [engineTypeCatalog, setEngineTypeCatalog] = useState<string[]>([]);
   const [serviceCatalog, setServiceCatalog] = useState<string[]>([]);
+  const [activeServiceSuggestionItemId, setActiveServiceSuggestionItemId] = useState<string | null>(null);
 
   /* ── Populate form when editing an existing note ── */
   useEffect(() => {
@@ -270,13 +272,8 @@ export default function NoteFormCore({
         if (dbItems.length > 0) {
           setItems(
             dbItems.map((item) => {
-              const subLines: SubLine[] = item.detalhes
-                ? item.detalhes
-                    .split('\n')
-                    .slice(1)
-                    .filter(Boolean)
-                    .map((text) => ({ id: generateId('sl'), text }))
-                : [];
+              const subLines: SubLine[] = getNotaItemDetailLines(item)
+                .map((text) => ({ id: generateId('sl'), text }));
               return {
                 id: `db-${item.id_rel}`,
                 description: item.descricao,
@@ -388,6 +385,34 @@ export default function NoteFormCore({
   const normalizeItemText = (id: string) =>
     setItems((prev) => prev.map((item) => (item.id === id ? { ...item, description: toTitleCasePtBr(item.description) } : item)));
 
+  const closeServiceSuggestionsSoon = (itemId: string) => {
+    window.setTimeout(() => {
+      setActiveServiceSuggestionItemId((current) => (current === itemId ? null : current));
+    }, 120);
+  };
+
+  const getServiceSuggestions = (query: string) => {
+    if (noteType !== 'SERVICO') return [];
+
+    const normalizedQuery = normalizeWhitespace(query).toLocaleLowerCase('pt-BR');
+    if (!normalizedQuery) return [];
+
+    return serviceCatalog
+      .filter((name) => name.toLocaleLowerCase('pt-BR').includes(normalizedQuery))
+      .sort((a, b) => {
+        const aStarts = a.toLocaleLowerCase('pt-BR').startsWith(normalizedQuery);
+        const bStarts = b.toLocaleLowerCase('pt-BR').startsWith(normalizedQuery);
+        if (aStarts !== bStarts) return aStarts ? -1 : 1;
+        return a.localeCompare(b, 'pt-BR');
+      })
+      .slice(0, 6);
+  };
+
+  const selectServiceSuggestion = (itemId: string, serviceName: string) => {
+    updateItem(itemId, 'description', serviceName);
+    setActiveServiceSuggestionItemId(null);
+  };
+
   const normalizeSubLineText = (itemId: string, subId: string) =>
     setItems((prev) =>
       prev.map((item) =>
@@ -452,6 +477,35 @@ export default function NoteFormCore({
       }, 0),
     [items],
   );
+
+  const renderServiceSuggestions = (item: ServiceItem) => {
+    if (activeServiceSuggestionItemId !== item.id) return null;
+
+    const suggestions = getServiceSuggestions(item.description);
+    if (suggestions.length === 0) return null;
+
+    return (
+      <div
+        role="listbox"
+        className="absolute left-0 right-0 top-[calc(100%+4px)] z-30 overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-lg"
+      >
+        {suggestions.map((name) => (
+          <button
+            key={name}
+            type="button"
+            role="option"
+            className="block w-full px-3 py-2 text-left text-xs hover:bg-accent hover:text-accent-foreground"
+            onMouseDown={(event) => {
+              event.preventDefault();
+              selectServiceSuggestion(item.id, name);
+            }}
+          >
+            {name}
+          </button>
+        ))}
+      </div>
+    );
+  };
 
   /* ── Submit ── */
   const handleSubmit = async () => {
@@ -972,12 +1026,6 @@ export default function NoteFormCore({
         </Button>
       </div>
 
-      {serviceCatalog.length > 0 && (
-        <datalist id="service-catalog">
-          {serviceCatalog.map((nome) => <option key={nome} value={nome} />)}
-        </datalist>
-      )}
-
       {/* ── Column headers (desktop) ── */}
       <div className="hidden sm:grid sm:grid-cols-[1fr_52px_108px_60px_96px_60px] gap-2 px-1 text-[10px] uppercase font-semibold text-muted-foreground tracking-wider mb-1">
         <span>Descrição</span>
@@ -1009,14 +1057,24 @@ export default function NoteFormCore({
             <div key={item.id}>
               {/* ── Desktop row ── */}
               <div className="hidden sm:grid sm:grid-cols-[1fr_52px_108px_60px_96px_60px] gap-2 items-start">
-                <Input
-                  list={serviceCatalog.length > 0 ? 'service-catalog' : undefined}
-                  value={item.description}
-                  onChange={(e) => updateItem(item.id, 'description', e.target.value)}
-                  onBlur={() => normalizeItemText(item.id)}
-                  placeholder={noteType === 'COMPRA' ? 'Nome da peça / produto' : 'Descrição do serviço'}
-                  className="h-9 text-sm"
-                />
+                <div className="relative">
+                  <Input
+                    value={item.description}
+                    onChange={(e) => {
+                      updateItem(item.id, 'description', e.target.value);
+                      setActiveServiceSuggestionItemId(item.id);
+                    }}
+                    onFocus={() => setActiveServiceSuggestionItemId(item.id)}
+                    onBlur={() => {
+                      normalizeItemText(item.id);
+                      closeServiceSuggestionsSoon(item.id);
+                    }}
+                    placeholder={noteType === 'COMPRA' ? 'Nome da peça / produto' : 'Descrição do serviço'}
+                    className="h-9 text-sm"
+                    autoComplete="off"
+                  />
+                  {renderServiceSuggestions(item)}
+                </div>
                 <Input
                   type="number"
                   min="0"
@@ -1089,14 +1147,25 @@ export default function NoteFormCore({
                     <Trash2 className="w-3.5 h-3.5" />
                   </Button>
                 </div>
-                <Textarea
-                  value={item.description}
-                  onChange={(e) => updateItem(item.id, 'description', e.target.value)}
-                  onBlur={() => normalizeItemText(item.id)}
-                  placeholder={noteType === 'COMPRA' ? 'Nome da peça / produto' : 'Descrição do serviço'}
-                  className="min-h-[36px] resize-none text-sm"
-                  rows={1}
-                />
+                <div className="relative">
+                  <Textarea
+                    value={item.description}
+                    onChange={(e) => {
+                      updateItem(item.id, 'description', e.target.value);
+                      setActiveServiceSuggestionItemId(item.id);
+                    }}
+                    onFocus={() => setActiveServiceSuggestionItemId(item.id)}
+                    onBlur={() => {
+                      normalizeItemText(item.id);
+                      closeServiceSuggestionsSoon(item.id);
+                    }}
+                    placeholder={noteType === 'COMPRA' ? 'Nome da peça / produto' : 'Descrição do serviço'}
+                    className="min-h-[36px] resize-none text-sm"
+                    rows={1}
+                    autoComplete="off"
+                  />
+                  {renderServiceSuggestions(item)}
+                </div>
                 <div className="grid grid-cols-3 gap-2">
                   <div>
                     <p className="text-[10px] text-muted-foreground mb-1">Qtd</p>

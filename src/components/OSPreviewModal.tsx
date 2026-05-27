@@ -21,6 +21,7 @@ import { shareOrCopyText } from '@/lib/browserShare';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
 import { useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 import type { OsTemplateMode } from '@/api/supabase/modelos';
+import { getNotaItemDetailLines } from '@/components/notes/notaItemDetails';
 
 const MAX_ROWS = NOTA_PRINT_MAX_ROWS;
 const LONG_MAX_ROWS = NOTA_PRINT_LONG_MAX_ROWS;
@@ -294,14 +295,28 @@ function PreviewVia({
             </tr>
           </thead>
           <tbody>
-            {itens.map((item) => (
-              <tr key={item.id_rel}>
-                <td className="h-[21px] border border-[#dddddd] px-1 py-[3px] text-center">{item.quantidade}</td>
-                <td className="h-[21px] border border-[#dddddd] px-1 py-[3px]">{item.descricao}</td>
-                <td className="h-[21px] whitespace-nowrap border border-[#dddddd] px-1.5 py-[3px] text-right text-[12px]">R$ {formatCurrency(item.preco_unitario)}</td>
-                <td className="h-[21px] whitespace-nowrap border border-[#dddddd] px-1.5 py-[3px] text-right text-[12px]">R$ {formatCurrency(item.subtotal_item)}</td>
-              </tr>
-            ))}
+            {itens.map((item) => {
+              const detailLines = getNotaItemDetailLines(item);
+
+              return (
+                <tr key={item.id_rel}>
+                  <td className="h-[21px] border border-[#dddddd] px-1 py-[3px] text-center">{item.quantidade}</td>
+                  <td className="h-[21px] border border-[#dddddd] px-1 py-[3px] align-top">
+                    <div>{item.descricao}</div>
+                    {detailLines.map((line, index) => (
+                      <div
+                        key={`${item.id_rel}-detail-${index}`}
+                        className="ml-3 mt-1 border-l border-[#d2d8de] pl-2 text-[11px] leading-snug text-neutral-600"
+                      >
+                        {line}
+                      </div>
+                    ))}
+                  </td>
+                  <td className="h-[21px] whitespace-nowrap border border-[#dddddd] px-1.5 py-[3px] text-right text-[12px]">R$ {formatCurrency(item.preco_unitario)}</td>
+                  <td className="h-[21px] whitespace-nowrap border border-[#dddddd] px-1.5 py-[3px] text-right text-[12px]">R$ {formatCurrency(item.subtotal_item)}</td>
+                </tr>
+              );
+            })}
             {Array.from({ length: paddingRows }).map((_, index) => (
               <tr key={`empty-${index}`}>
                 <td className="h-[21px] border border-[#eeeeee]">&nbsp;</td>
