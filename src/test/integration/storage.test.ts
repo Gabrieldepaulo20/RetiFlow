@@ -154,7 +154,7 @@ describe.skipIf(skipIntegration)('Storage — PDFs e anexos privados com signed 
     const path = await notasApi.uploadNotaPDF(pdfBlob, osNumero);
     notaPaths.push(path);
 
-    expect(path).toMatch(/^notas\/\d{4}\/\d{2}\/OS-INT-/);
+    expect(path).toMatch(new RegExp(`^${login.data.user?.id}/\\d{4}/\\d{2}/OS-INT-`));
     expect(path.startsWith('http')).toBe(false);
 
     const signedUrl = await notasApi.getNotaPDFSignedUrl(path);

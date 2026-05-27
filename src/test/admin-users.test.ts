@@ -93,6 +93,64 @@ describe('callAdminUsersFunction', () => {
     expect(result.action_link).toBeUndefined();
   });
 
+  it('retries initial invite creation once when the function gateway returns 404', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.invoke
+        .mockResolvedValueOnce({
+          data: null,
+          error: {
+            message: 'FunctionsHttpError',
+            context: new Response(
+              JSON.stringify({ error: 'Function not found' }),
+              { status: 404 },
+            ),
+          },
+        })
+        .mockResolvedValueOnce({
+          data: {
+            mensagem: 'Usuário criado/convidado com segurança.',
+            id_usuarios: 'uuid-interno',
+          },
+          error: null,
+        });
+
+      const resultPromise = callAdminUsersFunction({
+        action: 'create_user',
+        email: 'novo@example.com',
+        name: 'Novo Usuário',
+        role: 'RECEPCAO',
+      });
+
+      await vi.advanceTimersByTimeAsync(450);
+
+      await expect(resultPromise).resolves.toMatchObject({ id_usuarios: 'uuid-interno' });
+      expect(mocks.invoke).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not retry resend invite failures to avoid duplicate emails', async () => {
+    mocks.invoke.mockResolvedValue({
+      data: null,
+      error: {
+        message: 'FunctionsHttpError',
+        context: new Response(
+          JSON.stringify({ error: 'Function not found' }),
+          { status: 404 },
+        ),
+      },
+    });
+
+    await expect(callAdminUsersFunction({
+      action: 'resend_invite',
+      userId: VALID_UUID,
+      email: 'novo@example.com',
+    })).rejects.toThrow('Function not found');
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+  });
+
   it('supports resending an invite through the admin function', async () => {
     mocks.invoke.mockResolvedValue({
       data: {

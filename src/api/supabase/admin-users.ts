@@ -83,6 +83,8 @@ type AdminUserAction =
       action: 'get_user_presence';
     };
 
+const RETRYABLE_CREATE_STATUSES = new Set([404, 408, 429, 500, 502, 503, 504]);
+
 async function getAccessToken() {
   const { data, error } = await supabase.auth.getSession();
   if (error || !data.session?.access_token) {
@@ -91,31 +93,79 @@ async function getAccessToken() {
   return data.session.access_token;
 }
 
-export async function callAdminUsersFunction(payload: AdminUserAction): Promise<AdminUserActionResult> {
-  const accessToken = await getAccessToken();
-  const { data, error } = await supabase.functions.invoke<AdminUserActionResult>('admin-users', {
+function isInitialInviteAction(payload: AdminUserAction) {
+  return payload.action === 'create_user' || payload.action === 'create_admin';
+}
+
+function getErrorResponse(error: unknown) {
+  return typeof error === 'object' && error !== null && 'context' in error
+    ? (error as { context?: unknown }).context
+    : null;
+}
+
+async function getFunctionErrorMessage(error: unknown) {
+  let message = error instanceof Error ? error.message : 'Erro ao executar ação administrativa.';
+  if (
+    !(error instanceof Error)
+    && typeof error === 'object'
+    && error !== null
+    && 'message' in error
+    && typeof (error as { message?: unknown }).message === 'string'
+  ) {
+    message = (error as { message: string }).message;
+  }
+  const context = getErrorResponse(error);
+
+  if (context instanceof Response) {
+    try {
+      const parsed = await context.clone().json() as { error?: string; mensagem?: string };
+      message = parsed.error ?? parsed.mensagem ?? message;
+    } catch {
+      // Mantém a mensagem original do SDK quando o corpo não é JSON.
+    }
+  }
+
+  return message;
+}
+
+function shouldRetryInitialInvite(error: unknown, payload: AdminUserAction) {
+  if (!isInitialInviteAction(payload)) return false;
+
+  const context = getErrorResponse(error);
+  if (context instanceof Response && RETRYABLE_CREATE_STATUSES.has(context.status)) {
+    return true;
+  }
+
+  const message = error instanceof Error ? error.message : '';
+  return /failed to fetch|networkerror|load failed/i.test(message);
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+async function invokeAdminUsersFunction(payload: AdminUserAction, accessToken: string) {
+  return supabase.functions.invoke<AdminUserActionResult>('admin-users', {
     body: payload,
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
   });
+}
+
+export async function callAdminUsersFunction(payload: AdminUserAction): Promise<AdminUserActionResult> {
+  const accessToken = await getAccessToken();
+  let { data, error } = await invokeAdminUsersFunction(payload, accessToken);
+
+  if (error && shouldRetryInitialInvite(error, payload)) {
+    await wait(450);
+    ({ data, error } = await invokeAdminUsersFunction(payload, accessToken));
+  }
 
   if (error) {
-    let message = error.message || 'Erro ao executar ação administrativa.';
-    const context = typeof error === 'object' && error !== null && 'context' in error
-      ? (error as { context?: unknown }).context
-      : null;
-
-    if (context instanceof Response) {
-      try {
-        const parsed = await context.clone().json() as { error?: string; mensagem?: string };
-        message = parsed.error ?? parsed.mensagem ?? message;
-      } catch {
-        // Mantém a mensagem original do SDK quando o corpo não é JSON.
-      }
-    }
-
-    throw new Error(message);
+    throw new Error(await getFunctionErrorMessage(error));
   }
 
   return data ?? {};
