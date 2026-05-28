@@ -70,8 +70,74 @@ const paymentIcons: Record<string, LucideIcon> = {
   DEBITO_AUTOMATICO: Landmark,
 };
 
+type BrandProfile = {
+  id: string;
+  name: string;
+  monogram: string;
+  markClass: string;
+  chipClass: string;
+  railClass: string;
+  cardClass: string;
+  footerClass: string;
+};
+
+const brandProfiles: BrandProfile[] = [
+  {
+    id: 'nubank',
+    name: 'Nubank',
+    monogram: 'Nu',
+    markClass: 'bg-[#820AD1] text-white shadow-sm',
+    chipClass: 'border-purple-200 bg-purple-50 text-purple-800',
+    railClass: 'bg-[#820AD1]',
+    cardClass: 'border-purple-300 bg-gradient-to-r from-purple-50/95 via-white to-white',
+    footerClass: 'border-purple-200 bg-purple-50/85',
+  },
+];
+
 function getCategoryIcon(iconName?: string | null) {
   return iconName && categoryIcons[iconName] ? categoryIcons[iconName] : ReceiptText;
+}
+
+function normalizeSearchText(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+function getSuggestionBrand(suggestion: EmailSuggestion | null): BrandProfile | null {
+  if (!suggestion) return null;
+  const source = normalizeSearchText([
+    suggestion.suggestedTitle,
+    suggestion.suggestedSupplierName,
+    suggestion.senderName,
+    suggestion.senderEmail,
+    suggestion.subject,
+  ].filter(Boolean).join(' '));
+
+  if (
+    source.includes('nubank') ||
+    source.includes('nu pagamentos') ||
+    /(^|[\s@._-])nu([\s@._-]|$)/.test(source)
+  ) {
+    return brandProfiles.find((brand) => brand.id === 'nubank') ?? null;
+  }
+
+  return null;
+}
+
+function BrandMark({ brand, className }: { brand: BrandProfile; className?: string }) {
+  return (
+    <span className={cn('inline-flex items-center justify-center font-black leading-none tracking-normal', className)}>
+      {brand.monogram}
+    </span>
+  );
+}
+
+function BrandChip({ brand }: { brand: BrandProfile }) {
+  return (
+    <span className={cn('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold shadow-sm', brand.chipClass)}>
+      <BrandMark brand={brand} className="h-4 min-w-4 rounded bg-white/70 px-1 text-[11px]" />
+      {brand.name}
+    </span>
+  );
 }
 
 function paymentMethodLabel(method: EmailSuggestion['suggestedPaymentMethod']) {
@@ -167,30 +233,37 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, onAccept, onDi
   const isPaid = suggestion.suggestedStatus === 'PAGO';
   const isScheduled = suggestion.suggestedStatus === 'AGENDADO';
   const isReview = suggestion.suggestedStatus === 'INCERTO';
+  const brand = getSuggestionBrand(suggestion);
   const CategoryIcon = getCategoryIcon(categoryIcon);
   const StatusIcon = isReview ? AlertCircle : isPaid ? CheckCircle2 : isScheduled ? Clock3 : MailOpen;
-  const railClass = isReview ? 'bg-rose-600' : isPaid ? 'bg-emerald-600' : isScheduled ? 'bg-cyan-600' : 'bg-amber-500';
+  const railClass = brand && !isReview ? brand.railClass : isReview ? 'bg-rose-600' : isPaid ? 'bg-emerald-600' : isScheduled ? 'bg-cyan-600' : 'bg-amber-500';
   const cardClass = isPaid
-    ? 'border-emerald-300 bg-gradient-to-r from-emerald-50/80 via-white to-white'
+    ? brand
+      ? brand.cardClass
+      : 'border-emerald-300 bg-gradient-to-r from-emerald-50/80 via-white to-white'
     : isReview
       ? 'border-rose-300 bg-gradient-to-r from-rose-50/85 via-white to-white'
       : isScheduled
-      ? 'border-cyan-300 bg-gradient-to-r from-cyan-50/80 via-white to-white'
-      : 'border-amber-300 bg-gradient-to-r from-amber-50/90 via-white to-white';
+        ? brand
+          ? brand.cardClass
+          : 'border-cyan-300 bg-gradient-to-r from-cyan-50/80 via-white to-white'
+        : brand
+          ? brand.cardClass
+          : 'border-amber-300 bg-gradient-to-r from-amber-50/90 via-white to-white';
   const iconClass = isPaid
-    ? 'bg-emerald-600 text-white shadow-sm'
+    ? brand ? brand.markClass : 'bg-emerald-600 text-white shadow-sm'
     : isReview
       ? 'bg-rose-600 text-white shadow-sm'
-    : isScheduled
-      ? 'bg-cyan-600 text-white shadow-sm'
-      : 'bg-amber-400 text-slate-950 shadow-sm';
+      : isScheduled
+        ? brand ? brand.markClass : 'bg-cyan-600 text-white shadow-sm'
+        : brand ? brand.markClass : 'bg-amber-400 text-slate-950 shadow-sm';
   const footerClass = isPaid
-    ? 'border-emerald-200 bg-emerald-50/85'
+    ? brand ? brand.footerClass : 'border-emerald-200 bg-emerald-50/85'
     : isReview
       ? 'border-rose-200 bg-rose-50/85'
-    : isScheduled
-      ? 'border-cyan-200 bg-cyan-50/85'
-      : 'border-amber-200 bg-amber-50/85';
+      : isScheduled
+        ? brand ? brand.footerClass : 'border-cyan-200 bg-cyan-50/85'
+        : brand ? brand.footerClass : 'border-amber-200 bg-amber-50/85';
 
   return (
     <motion.div
@@ -213,7 +286,7 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, onAccept, onDi
                     'relative mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl',
                     iconClass,
                   )}>
-                    <CategoryIcon className="h-5 w-5" />
+                    {brand ? <BrandMark brand={brand} className="text-lg" /> : <CategoryIcon className="h-5 w-5" />}
                     <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-slate-950 text-white shadow-sm">
                       <StatusIcon className="h-3 w-3" />
                     </span>
@@ -228,6 +301,7 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, onAccept, onDi
                       {suggestion.senderName} &middot; recebido {format(parseISO(suggestion.receivedAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                     </p>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
+                      {brand ? <BrandChip brand={brand} /> : null}
                       <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-sm">
                         <CategoryIcon className="h-3.5 w-3.5 text-slate-500" />
                         {categoryName}
@@ -309,6 +383,7 @@ function PaidSuggestionDialog({
 }) {
   const paidDate = suggestion?.suggestedPaidAt ? format(parseISO(suggestion.suggestedPaidAt), 'dd/MM/yyyy') : 'Confirmar data';
   const dueDate = suggestion?.suggestedDueDate ? format(parseISO(suggestion.suggestedDueDate), 'dd/MM/yyyy') : 'Sem vencimento';
+  const brand = getSuggestionBrand(suggestion);
   const CategoryIcon = getCategoryIcon(categoryIcon);
 
   return (
@@ -330,12 +405,13 @@ function PaidSuggestionDialog({
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Conta identificada</p>
             <div className="mt-2 flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200">
-                <CategoryIcon className="h-5 w-5" />
+              <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1', brand ? brand.markClass : 'bg-emerald-100 text-emerald-800 ring-emerald-200')}>
+                {brand ? <BrandMark brand={brand} className="text-base" /> : <CategoryIcon className="h-5 w-5" />}
               </div>
               <div className="min-w-0">
                 <p className="text-lg font-bold leading-snug text-foreground">{suggestion?.suggestedTitle ?? 'Conta paga'}</p>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {brand ? <BrandChip brand={brand} /> : null}
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
                     <CategoryIcon className="h-3.5 w-3.5 text-slate-500" />
                     {categoryName}
