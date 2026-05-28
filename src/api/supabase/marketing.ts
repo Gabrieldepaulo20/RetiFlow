@@ -22,8 +22,13 @@ export interface MarketingIntegrationSummary {
 
 export interface MarketingSiteTotals {
   visits: number;
+  sessions?: number;
+  pageViews?: number;
   whatsappClicks: number;
   formSubmits: number;
+  totalEvents?: number;
+  actionEvents?: number;
+  engagementRate?: number;
   leads: number;
   conversionRate?: number;
 }
@@ -45,6 +50,7 @@ export interface MarketingSourceMetric {
 export interface MarketingDailyMetric {
   date: string;
   visits: number;
+  pageViews?: number;
   actions: number;
   leads: number;
 }
@@ -68,6 +74,7 @@ export interface MarketingResumo {
   campaigns: {
     current: {
       spend: number;
+      impressions?: number;
       clicks: number;
       leads: number;
       cpl: number;

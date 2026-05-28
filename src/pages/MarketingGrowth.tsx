@@ -76,6 +76,10 @@ function formatCurrency(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
 }
 
+function formatPercent(value: number) {
+  return `${Number(value || 0).toFixed(1)}%`;
+}
+
 function getDelta(current: number, previous: number) {
   if (!previous && !current) return { label: 'sem histórico', positive: true, muted: true };
   if (!previous) return { label: 'novo período', positive: true, muted: false };
@@ -184,7 +188,9 @@ function EmptyIntegrationRail({ resumo }: { resumo: MarketingResumo }) {
 function SiteTab({ resumo }: { resumo: MarketingResumo }) {
   const current = resumo.site.current;
   const previous = resumo.site.previous;
-  const hasData = current.visits > 0 || current.whatsappClicks > 0 || current.formSubmits > 0 || current.leads > 0;
+  const actionEvents = current.actionEvents ?? (current.whatsappClicks + current.formSubmits);
+  const previousActionEvents = previous.actionEvents ?? (previous.whatsappClicks + previous.formSubmits);
+  const hasData = current.visits > 0 || Number(current.pageViews ?? 0) > 0 || actionEvents > 0 || current.leads > 0;
   const bestSource = resumo.site.sources.find((source) => source.visits > 0 || source.leads > 0);
   const bestPage = resumo.site.pages.find((page) => page.views > 0 || page.conversions > 0);
 
@@ -194,17 +200,33 @@ function SiteTab({ resumo }: { resumo: MarketingResumo }) {
         <MetricCard
           title="Visitantes"
           value={formatNumber(current.visits)}
-          detail={`Últimos ${resumo.periodDays} dias`}
+          detail="Usuários ativos no GA4"
           icon={Eye}
           delta={getDelta(current.visits, previous.visits)}
           tone="teal"
         />
         <MetricCard
-          title="Cliques no WhatsApp"
-          value={formatNumber(current.whatsappClicks)}
-          detail="Eventos próprios capturados"
+          title="Sessões"
+          value={formatNumber(current.sessions ?? 0)}
+          detail={`Últimos ${resumo.periodDays} dias`}
+          icon={Activity}
+          delta={getDelta(current.sessions ?? 0, previous.sessions ?? 0)}
+          tone="blue"
+        />
+        <MetricCard
+          title="Visualizações"
+          value={formatNumber(current.pageViews ?? 0)}
+          detail="Páginas vistas no site"
+          icon={BarChart3}
+          delta={getDelta(current.pageViews ?? 0, previous.pageViews ?? 0)}
+          tone="default"
+        />
+        <MetricCard
+          title="Cliques e ações"
+          value={formatNumber(actionEvents)}
+          detail="Eventos click/form/lead no GA4"
           icon={MousePointerClick}
-          delta={getDelta(current.whatsappClicks, previous.whatsappClicks)}
+          delta={getDelta(actionEvents, previousActionEvents)}
           tone="green"
         />
         <MetricCard
@@ -217,10 +239,26 @@ function SiteTab({ resumo }: { resumo: MarketingResumo }) {
         />
         <MetricCard
           title="Conversão"
-          value={`${Number(current.conversionRate ?? 0).toFixed(1)}%`}
+          value={formatPercent(current.conversionRate ?? 0)}
           detail="Leads sobre visitas"
           icon={Target}
           tone="amber"
+        />
+        <MetricCard
+          title="Engajamento"
+          value={formatPercent(current.engagementRate ?? 0)}
+          detail="Taxa de engajamento GA4"
+          icon={TrendingUp}
+          delta={getDelta(current.engagementRate ?? 0, previous.engagementRate ?? 0)}
+          tone="teal"
+        />
+        <MetricCard
+          title="Eventos totais"
+          value={formatNumber(current.totalEvents ?? 0)}
+          detail="Todos os eventos GA4"
+          icon={PlugZap}
+          delta={getDelta(current.totalEvents ?? 0, previous.totalEvents ?? 0)}
+          tone="blue"
         />
       </div>
 
@@ -259,6 +297,7 @@ function SiteTab({ resumo }: { resumo: MarketingResumo }) {
                   <YAxis tick={{ fontSize: 12 }} tickLine={false} axisLine={false} width={34} />
                   <RechartsTooltip />
                   <Area type="monotone" dataKey="visits" name="Visitas" stroke="hsl(var(--primary))" fill="url(#visitsGradient)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="pageViews" name="Visualizações" stroke="#0f766e" fill="transparent" strokeWidth={2} />
                   <Area type="monotone" dataKey="leads" name="Leads" stroke="hsl(var(--accent))" fill="transparent" strokeWidth={2} />
                 </AreaChart>
               </ResponsiveContainer>
@@ -298,7 +337,7 @@ function SiteTab({ resumo }: { resumo: MarketingResumo }) {
                   <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                   <p className="text-sm leading-relaxed text-foreground">
                     {current.visits > 0
-                      ? `O funil atual está em ${formatNumber(current.visits)} visitas -> ${formatNumber(current.whatsappClicks + current.formSubmits)} ações -> ${formatNumber(current.leads)} leads.`
+                      ? `O funil atual está em ${formatNumber(current.visits)} visitantes -> ${formatNumber(actionEvents)} ações -> ${formatNumber(current.leads)} leads.`
                       : 'O funil será calculado quando os primeiros eventos reais forem capturados.'}
                   </p>
                 </div>
@@ -366,8 +405,8 @@ function CampaignsTab({ resumo }: { resumo: MarketingResumo }) {
     <div className="space-y-5">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard title="Investimento" value={financialAvailable ? formatCurrency(resumo.campaigns.current.spend) : 'Pendente'} detail="Meta/Google Ads ainda não conectados" icon={CircleDollarSign} tone="default" />
+        <MetricCard title="Impressões" value={financialAvailable ? formatNumber(resumo.campaigns.current.impressions ?? 0) : 'Pendente'} detail="Search Console/Ads necessário" icon={Eye} tone="blue" />
         <MetricCard title="Cliques pagos" value={formatNumber(resumo.campaigns.current.clicks)} detail="Disponível após integração" icon={MousePointerClick} tone="teal" />
-        <MetricCard title="Leads de campanha" value={formatNumber(resumo.campaigns.current.leads)} detail="Atribuição por UTM/evento" icon={Target} tone="blue" />
         <MetricCard title="CPL" value={financialAvailable ? formatCurrency(resumo.campaigns.current.cpl) : 'Pendente'} detail="Custo por lead real" icon={TrendingUp} tone="amber" />
       </div>
 

@@ -15,8 +15,13 @@ interface MarketingIntegrationSummary {
 
 interface MarketingSiteTotals {
   visits: number;
+  sessions?: number;
+  pageViews?: number;
   whatsappClicks: number;
   formSubmits: number;
+  totalEvents?: number;
+  actionEvents?: number;
+  engagementRate?: number;
   leads: number;
   conversionRate?: number;
 }
@@ -38,6 +43,7 @@ interface MarketingSourceMetric {
 interface MarketingDailyMetric {
   date: string;
   visits: number;
+  pageViews?: number;
   actions: number;
   leads: number;
 }
@@ -87,6 +93,16 @@ interface Ga4RunReportResponse {
 interface Ga4Summary {
   currentVisits: number;
   previousVisits: number;
+  currentSessions: number;
+  previousSessions: number;
+  currentPageViews: number;
+  previousPageViews: number;
+  currentEvents: number;
+  previousEvents: number;
+  currentEngagementRate: number;
+  previousEngagementRate: number;
+  currentActionEvents: number;
+  previousActionEvents: number;
   daily: MarketingDailyMetric[];
   pages: MarketingPageMetric[];
   sources: MarketingSourceMetric[];
@@ -311,20 +327,28 @@ function metricValue(report: Ga4RunReportResponse, rowIndex: number, metricIndex
 function buildGa4Daily(report: Ga4RunReportResponse, existingDaily: MarketingDailyMetric[], periodDays: number) {
   const { startDate } = getDateRange(periodDays);
   const existingByDate = new Map(existingDaily.map((item) => [item.date, item]));
-  const visitsByDate = new Map<string, number>();
+  const metricsByDate = new Map<string, { visits: number; pageViews: number; actions: number }>();
 
   for (const row of report.rows ?? []) {
     const date = fromGaDate(row.dimensionValues?.[0]?.value ?? '');
-    if (date) visitsByDate.set(date, toNumber(row.metricValues?.[0]?.value));
+    if (date) {
+      metricsByDate.set(date, {
+        visits: toNumber(row.metricValues?.[0]?.value),
+        pageViews: toNumber(row.metricValues?.[1]?.value),
+        actions: toNumber(row.metricValues?.[2]?.value),
+      });
+    }
   }
 
   return Array.from({ length: periodDays }, (_, index) => {
     const date = formatDate(addDays(new Date(`${startDate}T00:00:00.000Z`), index));
     const existing = existingByDate.get(date);
+    const ga4 = metricsByDate.get(date);
     return {
       date,
-      visits: visitsByDate.get(date) ?? 0,
-      actions: existing?.actions ?? 0,
+      visits: ga4?.visits ?? 0,
+      pageViews: ga4?.pageViews ?? 0,
+      actions: Math.max(existing?.actions ?? 0, ga4?.actions ?? 0),
       leads: existing?.leads ?? 0,
     };
   });
@@ -364,25 +388,49 @@ function buildGa4Sources(report: Ga4RunReportResponse, existingSources: Marketin
     .slice(0, 8);
 }
 
+function isActionEventName(value: string) {
+  return /click|whatsapp|telefone|phone|call|form|submit|lead|generate_lead|cta|contato|contact/i.test(value);
+}
+
+function countActionEvents(report: Ga4RunReportResponse) {
+  return (report.rows ?? []).reduce((total, row) => {
+    const eventName = row.dimensionValues?.[0]?.value ?? '';
+    if (!isActionEventName(eventName)) return total;
+    return total + toNumber(row.metricValues?.[0]?.value);
+  }, 0);
+}
+
 async function fetchGa4Summary(propertyId: string, serviceAccountJson: string, periodDays: number, currentData: MarketingResumo): Promise<Ga4Summary> {
   const serviceAccount = parseServiceAccount(serviceAccountJson);
   const accessToken = await getGa4AccessToken(serviceAccount);
   const range = getDateRange(periodDays);
 
   const commonLimit = { limit: '8' };
-  const [currentReport, previousReport, dailyReport, pagesReport, sourcesReport] = await Promise.all([
+  const [currentReport, previousReport, dailyReport, pagesReport, sourcesReport, currentEventsReport, previousEventsReport] = await Promise.all([
     runGa4Report(accessToken, propertyId, {
       dateRanges: [{ startDate: range.startDate, endDate: range.endDate }],
-      metrics: [{ name: 'activeUsers' }],
+      metrics: [
+        { name: 'activeUsers' },
+        { name: 'sessions' },
+        { name: 'screenPageViews' },
+        { name: 'eventCount' },
+        { name: 'engagementRate' },
+      ],
     }),
     runGa4Report(accessToken, propertyId, {
       dateRanges: [{ startDate: range.previousStartDate, endDate: range.previousEndDate }],
-      metrics: [{ name: 'activeUsers' }],
+      metrics: [
+        { name: 'activeUsers' },
+        { name: 'sessions' },
+        { name: 'screenPageViews' },
+        { name: 'eventCount' },
+        { name: 'engagementRate' },
+      ],
     }),
     runGa4Report(accessToken, propertyId, {
       dateRanges: [{ startDate: range.startDate, endDate: range.endDate }],
       dimensions: [{ name: 'date' }],
-      metrics: [{ name: 'activeUsers' }],
+      metrics: [{ name: 'activeUsers' }, { name: 'screenPageViews' }, { name: 'eventCount' }],
       orderBys: [{ dimension: { dimensionName: 'date' } }],
     }),
     runGa4Report(accessToken, propertyId, {
@@ -399,11 +447,35 @@ async function fetchGa4Summary(propertyId: string, serviceAccountJson: string, p
       orderBys: [{ metric: { metricName: 'activeUsers' }, desc: true }],
       ...commonLimit,
     }),
+    runGa4Report(accessToken, propertyId, {
+      dateRanges: [{ startDate: range.startDate, endDate: range.endDate }],
+      dimensions: [{ name: 'eventName' }],
+      metrics: [{ name: 'eventCount' }],
+      orderBys: [{ metric: { metricName: 'eventCount' }, desc: true }],
+      limit: '25',
+    }),
+    runGa4Report(accessToken, propertyId, {
+      dateRanges: [{ startDate: range.previousStartDate, endDate: range.previousEndDate }],
+      dimensions: [{ name: 'eventName' }],
+      metrics: [{ name: 'eventCount' }],
+      orderBys: [{ metric: { metricName: 'eventCount' }, desc: true }],
+      limit: '25',
+    }),
   ]);
 
   return {
-    currentVisits: metricValue(currentReport, 0),
-    previousVisits: metricValue(previousReport, 0),
+    currentVisits: metricValue(currentReport, 0, 0),
+    previousVisits: metricValue(previousReport, 0, 0),
+    currentSessions: metricValue(currentReport, 0, 1),
+    previousSessions: metricValue(previousReport, 0, 1),
+    currentPageViews: metricValue(currentReport, 0, 2),
+    previousPageViews: metricValue(previousReport, 0, 2),
+    currentEvents: metricValue(currentReport, 0, 3),
+    previousEvents: metricValue(previousReport, 0, 3),
+    currentEngagementRate: metricValue(currentReport, 0, 4),
+    previousEngagementRate: metricValue(previousReport, 0, 4),
+    currentActionEvents: countActionEvents(currentEventsReport),
+    previousActionEvents: countActionEvents(previousEventsReport),
     daily: buildGa4Daily(dailyReport, currentData.site.daily, periodDays),
     pages: buildGa4Pages(pagesReport, currentData.site.pages),
     sources: buildGa4Sources(sourcesReport, currentData.site.sources),
@@ -630,15 +702,25 @@ function buildInternalSiteSummary(
   return {
     current: {
       visits: currentVisits,
+      sessions: 0,
+      pageViews: currentVisits,
       whatsappClicks: currentEvents.filter((event) => event.event_type === 'whatsapp_click').length,
       formSubmits: currentEvents.filter((event) => event.event_type === 'form_submit').length,
+      totalEvents: currentEvents.length,
+      actionEvents: currentActions,
+      engagementRate: 0,
       leads: currentLeads.length,
       conversionRate: roundRate(currentLeads.length, currentVisits),
     },
     previous: {
       visits: previousVisits,
+      sessions: 0,
+      pageViews: previousVisits,
       whatsappClicks: previousEvents.filter((event) => event.event_type === 'whatsapp_click').length,
       formSubmits: previousEvents.filter((event) => event.event_type === 'form_submit').length,
+      totalEvents: previousEvents.length,
+      actionEvents: previousEvents.filter((event) => event.event_type === 'whatsapp_click' || event.event_type === 'form_submit').length,
+      engagementRate: 0,
       leads: previousLeads.length,
     },
     pages: Array.from(pageMap.values()).sort((a, b) => b.views - a.views).slice(0, 8),
@@ -679,7 +761,7 @@ async function buildTargetMarketingResumo(
       daily: site.daily,
     },
     campaigns: {
-      current: { spend: 0, clicks: 0, leads: 0, cpl: 0 },
+      current: { spend: 0, impressions: 0, clicks: 0, leads: 0, cpl: 0 },
       items: [],
       daily: [],
       financialAvailable: false,
@@ -691,11 +773,21 @@ function mergeGa4Summary(data: MarketingResumo, ga4: Ga4Summary, propertyId: str
   const current = {
     ...data.site.current,
     visits: ga4.currentVisits,
+    sessions: ga4.currentSessions,
+    pageViews: ga4.currentPageViews,
+    totalEvents: ga4.currentEvents,
+    actionEvents: Math.max(data.site.current.actionEvents ?? 0, ga4.currentActionEvents),
+    engagementRate: Math.round(ga4.currentEngagementRate * 10000) / 100,
     conversionRate: roundRate(data.site.current.leads, ga4.currentVisits),
   };
   const previous = {
     ...data.site.previous,
     visits: ga4.previousVisits,
+    sessions: ga4.previousSessions,
+    pageViews: ga4.previousPageViews,
+    totalEvents: ga4.previousEvents,
+    actionEvents: Math.max(data.site.previous.actionEvents ?? 0, ga4.previousActionEvents),
+    engagementRate: Math.round(ga4.previousEngagementRate * 10000) / 100,
   };
 
   return {
