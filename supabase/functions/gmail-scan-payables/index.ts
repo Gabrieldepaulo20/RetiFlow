@@ -13,7 +13,7 @@ const baseCorsHeaders = {
   'Vary': 'Origin',
 };
 
-const scanVersion = 'ai-v4';
+const scanVersion = 'ai-v5';
 const supportedAttachmentTypes = new Set([
   'application/pdf',
   'image/png',
@@ -140,6 +140,10 @@ type GmailAttachment = {
 type PayableEmailAnalysis = {
   isPayable: boolean;
   suggestedStatus: 'PENDENTE' | 'PAGO' | 'AGENDADO' | 'INCERTO';
+  senderRisk: 'BAIXO' | 'MEDIO' | 'ALTO';
+  senderVerdict: string;
+  verificationSignals: string[];
+  fraudSignals: string[];
   title: string;
   amount: number | null;
   dueDate: string | null;
@@ -275,6 +279,39 @@ function parseJsonObject(text: string) {
   }
 }
 
+function emailDomain(email: string) {
+  return email.split('@')[1]?.trim().toLowerCase() ?? '';
+}
+
+function compactHeader(value: string, maxLength = 800) {
+  return value.replace(/\s+/g, ' ').trim().slice(0, maxLength);
+}
+
+function buildSecurityContext(headers: Array<{ name?: string; value?: string }>, labelIds: string[]) {
+  const names = [
+    'From',
+    'Sender',
+    'Reply-To',
+    'Return-Path',
+    'Authentication-Results',
+    'ARC-Authentication-Results',
+    'Received-SPF',
+    'DKIM-Signature',
+    'List-Unsubscribe',
+  ];
+  const headerLines = names
+    .map((name) => {
+      const value = header(headers, name);
+      return value ? `${name}: ${compactHeader(value)}` : '';
+    })
+    .filter(Boolean);
+
+  return [
+    `Rótulos Gmail: ${labelIds.length > 0 ? labelIds.join(', ') : 'nenhum'}`,
+    ...headerLines,
+  ].join('\n');
+}
+
 function normalizePaymentMethod(value: unknown): PayableEmailAnalysis['paymentMethod'] {
   const method = String(value ?? 'BOLETO').toUpperCase();
   return ['PIX', 'BOLETO', 'TRANSFERENCIA', 'CARTAO_CREDITO', 'CARTAO_DEBITO', 'DINHEIRO', 'CHEQUE', 'DEBITO_AUTOMATICO'].includes(method)
@@ -289,6 +326,20 @@ function normalizeSuggestedStatus(value: unknown): PayableEmailAnalysis['suggest
     : 'PENDENTE';
 }
 
+function normalizeSenderRisk(value: unknown): PayableEmailAnalysis['senderRisk'] {
+  const risk = String(value ?? 'MEDIO').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  if (risk === 'BAIXO' || risk === 'MEDIO' || risk === 'ALTO') return risk;
+  return 'MEDIO';
+}
+
+function normalizeStringList(value: unknown, limit = 4) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => String(item ?? '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
 function normalizeIsoDate(value: unknown) {
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   const extracted = extractDate(String(value ?? ''));
@@ -299,12 +350,17 @@ function normalizeAnalysis(raw: unknown, subject: string, senderName: string): P
   const root = isRecord(raw) ? raw : {};
   const amount = extractMoney(String(root.amount ?? '')) ?? (typeof root.amount === 'number' ? root.amount : null);
   const suggestedStatus = normalizeSuggestedStatus(root.suggestedStatus);
+  const senderRisk = normalizeSenderRisk(root.senderRisk);
   const paymentDate = normalizeIsoDate(root.paymentDate);
   const dueDate = normalizeIsoDate(root.dueDate) ?? (suggestedStatus === 'PAGO' ? paymentDate : null);
 
   return {
     isPayable: Boolean(root.isPayable),
     suggestedStatus,
+    senderRisk,
+    senderVerdict: String(root.senderVerdict ?? '').replace(/\s+/g, ' ').trim().slice(0, 180),
+    verificationSignals: normalizeStringList(root.verificationSignals),
+    fraudSignals: normalizeStringList(root.fraudSignals),
     title: String(root.title ?? buildTitle(subject, senderName)).replace(/\s+/g, ' ').trim().slice(0, 120),
     amount: typeof amount === 'number' && Number.isFinite(amount) && amount > 0 ? Number(amount.toFixed(2)) : null,
     dueDate: dueDate ? `${dueDate.slice(0, 10)}T00:00:00` : null,
@@ -316,12 +372,45 @@ function normalizeAnalysis(raw: unknown, subject: string, senderName: string): P
   };
 }
 
+function calibrateAnalysisConfidence(analysis: PayableEmailAnalysis, labelIds: string[]): PayableEmailAnalysis {
+  const labels = new Set(labelIds.map((label) => label.toUpperCase()));
+  const isSpamOrTrash = labels.has('SPAM') || labels.has('TRASH');
+  let cap = 100;
+
+  if (analysis.senderRisk === 'ALTO') cap = 40;
+  if (analysis.senderRisk === 'MEDIO') cap = Math.min(cap, 72);
+  if (isSpamOrTrash) {
+    cap = Math.min(cap, analysis.senderRisk === 'BAIXO' ? 68 : analysis.senderRisk === 'MEDIO' ? 55 : 35);
+  }
+
+  return {
+    ...analysis,
+    suggestedStatus: analysis.senderRisk === 'ALTO' ? 'INCERTO' : analysis.suggestedStatus,
+    confidence: Math.min(analysis.confidence, cap),
+  };
+}
+
+function buildSuggestionSnippet(analysis: PayableEmailAnalysis, snippet: string, labelIds: string[]) {
+  const labels = labelIds.filter((label) => label === 'SPAM' || label === 'TRASH');
+  const pieces = [
+    analysis.reason,
+    analysis.senderVerdict ? `Remetente: ${analysis.senderVerdict}` : '',
+    analysis.verificationSignals.length > 0 ? `Sinais oficiais: ${analysis.verificationSignals.join('; ')}` : '',
+    analysis.fraudSignals.length > 0 ? `Atenção: ${analysis.fraudSignals.join('; ')}` : '',
+    labels.length > 0 ? `Gmail marcou como ${labels.join('/')}` : '',
+    snippet,
+  ];
+  return pieces.filter(Boolean).join(' — ').slice(0, 500) || null;
+}
+
 async function analyzePayableEmail(params: {
   apiKey: string;
   subject: string;
   senderName: string;
   senderEmail: string;
   received: string;
+  labelIds: string[];
+  securityContext: string;
   snippet: string;
   bodyText: string;
   attachments: GmailAttachment[];
@@ -330,7 +419,12 @@ async function analyzePayableEmail(params: {
   const emailText = [
     `Assunto: ${params.subject}`,
     `Remetente: ${params.senderName} <${params.senderEmail}>`,
+    `Domínio do remetente: ${emailDomain(params.senderEmail) || 'desconhecido'}`,
     `Recebido em: ${params.received}`,
+    '',
+    'Sinais técnicos do Gmail e cabeçalhos:',
+    params.securityContext,
+    '',
     `Trecho: ${params.snippet}`,
     `Anexos analisáveis: ${params.attachments.map((attachment) => `${attachment.filename} (${attachment.mimeType})`).join(', ') || 'nenhum'}`,
     '',
@@ -343,10 +437,19 @@ async function analyzePayableEmail(params: {
     'Retorne SOMENTE JSON válido, sem Markdown.',
     '',
     'Formato obrigatório:',
-    '{ "isPayable": boolean, "suggestedStatus": "PENDENTE|PAGO|AGENDADO|INCERTO", "title": string, "supplierName": string, "amount": number|null, "dueDate": "YYYY-MM-DD"|null, "paymentDate": "YYYY-MM-DD"|null, "paymentMethod": "PIX|BOLETO|TRANSFERENCIA|CARTAO_CREDITO|CARTAO_DEBITO|DINHEIRO|CHEQUE|DEBITO_AUTOMATICO", "confidence": number, "reason": string }',
+    '{ "isPayable": boolean, "suggestedStatus": "PENDENTE|PAGO|AGENDADO|INCERTO", "senderRisk": "BAIXO|MEDIO|ALTO", "senderVerdict": string, "verificationSignals": string[], "fraudSignals": string[], "title": string, "supplierName": string, "amount": number|null, "dueDate": "YYYY-MM-DD"|null, "paymentDate": "YYYY-MM-DD"|null, "paymentMethod": "PIX|BOLETO|TRANSFERENCIA|CARTAO_CREDITO|CARTAO_DEBITO|DINHEIRO|CHEQUE|DEBITO_AUTOMATICO", "confidence": number, "reason": string }',
     '',
     'Regras:',
-    '- isPayable=true apenas para boleto, fatura, nota, mensalidade, cobrança, débito automático ou pagamento real que deva entrar em contas a pagar.',
+    '- Analise como auditor financeiro e antifraude: remetente, domínio, Reply-To, Return-Path, SPF, DKIM, DMARC, rótulos Gmail, corpo do e-mail, links, anexos e dados do boleto/fatura.',
+    '- isPayable=true apenas para boleto, fatura, nota, mensalidade, cobrança, débito automático ou pagamento real que deva entrar em contas a pagar E que não pareça golpe.',
+    '- senderRisk=BAIXO quando remetente/domínio/autenticação/beneficiário fazem sentido entre si. senderRisk=MEDIO quando faltam sinais oficiais ou há pequenas divergências. senderRisk=ALTO quando parecer phishing, golpe, cobrança falsa ou identidade conflitante.',
+    '- Se Gmail marcou como SPAM ou TRASH, trate como suspeito por padrão. Só use senderRisk=BAIXO se houver prova forte no anexo e autenticação/domínio coerentes.',
+    '- Nome visual do remetente, logotipo, texto bonito ou urgência não provam legitimidade.',
+    '- Compare From, Reply-To e Return-Path. Se apontarem para domínios diferentes sem explicação, reduza confiança ou marque risco alto.',
+    '- Confira Authentication-Results, SPF, DKIM e DMARC quando existirem. Falha de autenticação, domínio genérico ou domínio parecido com marca oficial são sinais de risco.',
+    '- Em boletos, confira se beneficiário/cedente/CNPJ/valor/vencimento fazem sentido com o fornecedor e remetente. Se beneficiário divergir do fornecedor, marque risco alto.',
+    '- Links encurtados, ameaça/urgência exagerada, Pix para pessoa física desconhecida, anexo executável ou cobrança inesperada são sinais fortes de fraude.',
+    '- Quando houver indício sério de golpe, retorne isPayable=false, senderRisk=ALTO, confidence baixo e explique em fraudSignals.',
     '- suggestedStatus=PAGO quando o e-mail/anexo for comprovante, recibo, confirmação de pagamento, débito automático já realizado, ou disser claramente que algo foi pago/quitado.',
     '- Para suggestedStatus=PAGO, paymentDate deve ser a data do pagamento quando existir. Se o e-mail disser apenas que está pago sem data clara, use paymentDate=null.',
     '- suggestedStatus=AGENDADO quando disser que o pagamento está agendado para uma data futura, sem confirmação de liquidação.',
@@ -359,7 +462,8 @@ async function analyzePayableEmail(params: {
     '- Se houver duas interpretações possíveis para uma data numérica, prefira o padrão brasileiro e uma data coerente com o recebimento do e-mail.',
     '- Para criar sugestão útil, valor e vencimento precisam estar claros no e-mail.',
     '- Use title simples para o usuário final, como "Boleto Viação Sertanezina" ou "Fatura Nubank Empresas".',
-    '- confidence de 0 a 100 representa segurança da sugestão.',
+    '- confidence de 0 a 100 representa segurança REAL da sugestão, incluindo legitimidade do remetente. 90+ só com cobrança clara e remetente/autenticação/beneficiário coerentes; 70-89 plausível; 55-69 precisa revisão; abaixo de 55 não deve virar sugestão.',
+    '- verificationSignals deve listar provas curtas de legitimidade. fraudSignals deve listar alertas curtos, se existirem.',
     '',
     emailText,
   ].join('\n');
@@ -503,10 +607,10 @@ Deno.serve(async (request) => {
   try {
     const accessToken = await refreshAccessToken(await decryptToken(connection.refresh_token_cipher));
     const queries = [
-      'newer_than:90d (boleto OR fatura OR "nota fiscal" OR vencimento OR pagamento)',
-      'newer_than:90d has:attachment (boleto OR fatura OR "nota fiscal" OR vencimento OR pagamento OR cobrança OR mensalidade OR invoice)',
-      'newer_than:120d ("comprovante de pagamento" OR comprovante OR recibo OR quitado OR pago OR "pagamento efetuado" OR "pagamento realizado")',
-      'newer_than:45d filename:pdf',
+      'in:anywhere newer_than:90d (boleto OR fatura OR "nota fiscal" OR vencimento OR pagamento)',
+      'in:anywhere newer_than:90d has:attachment (boleto OR fatura OR "nota fiscal" OR vencimento OR pagamento OR cobrança OR mensalidade OR invoice)',
+      'in:anywhere newer_than:120d ("comprovante de pagamento" OR comprovante OR recibo OR quitado OR pago OR "pagamento efetuado" OR "pagamento realizado")',
+      'in:anywhere newer_than:45d filename:pdf',
     ];
     const messageIds = Array.from(new Set((await Promise.all(
       queries.map((query, index) => listGmailMessageIds(accessToken, query, index === 3 ? 15 : 25)),
@@ -537,10 +641,12 @@ Deno.serve(async (request) => {
 
       const detail = await detailResponse.json() as {
         snippet?: string;
+        labelIds?: string[];
         internalDate?: string;
         payload?: GmailPayload & { headers?: Array<{ name?: string; value?: string }> };
       };
       const headers = detail.payload?.headers ?? [];
+      const labelIds = detail.labelIds ?? [];
       const subject = header(headers, 'Subject');
       const from = parseFrom(header(headers, 'From'));
       const received = detail.internalDate
@@ -548,25 +654,28 @@ Deno.serve(async (request) => {
         : new Date(header(headers, 'Date') || Date.now()).toISOString();
       const bodyText = extractPayloadText(detail.payload);
       const attachments = await getGmailAttachments({ accessToken, messageId, payload: detail.payload });
-      const text = `${subject}\n${from.name}\n${detail.snippet ?? ''}\n${bodyText}`;
+      const securityContext = buildSecurityContext(headers, labelIds);
+      const text = `${subject}\n${from.name}\n${from.email}\n${securityContext}\n${detail.snippet ?? ''}\n${bodyText}`;
       let analysis: PayableEmailAnalysis;
       try {
-        analysis = await analyzePayableEmail({
+        analysis = calibrateAnalysisConfidence(await analyzePayableEmail({
           apiKey: openAiKey,
           subject,
           senderName: from.name,
           senderEmail: from.email,
           received,
+          labelIds,
+          securityContext,
           snippet: detail.snippet ?? '',
           bodyText,
           attachments,
-        });
+        }), labelIds);
       } catch (error) {
         errors.push(`Mensagem ${messageId}: ${error instanceof Error ? error.message : 'falha na IA'}`);
         continue;
       }
 
-      if (!analysis.isPayable || !analysis.amount || !analysis.dueDate || analysis.confidence < 55) {
+      if (!analysis.isPayable || analysis.senderRisk === 'ALTO' || !analysis.amount || !analysis.dueDate || analysis.confidence < 60) {
         skipped += 1;
         await recordScannedMessage(service, existing?.id_gmail_scanned_messages ?? null, {
           fk_auth_user: userData.user.id,
@@ -598,7 +707,7 @@ Deno.serve(async (request) => {
           status: 'PENDING',
           status_sugerido: analysis.suggestedStatus,
           pago_em_sugerido: analysis.paymentDate,
-          trecho_email: [analysis.reason, detail.snippet].filter(Boolean).join(' — ').slice(0, 500) || null,
+          trecho_email: buildSuggestionSnippet(analysis, detail.snippet ?? '', labelIds),
         })
         .select('id_sugestoes_email')
         .single();

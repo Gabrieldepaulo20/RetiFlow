@@ -108,6 +108,13 @@ function ConfidenceBadge({ value }: { value: number }) {
 }
 
 function SuggestionStatusBadge({ suggestion }: { suggestion: EmailSuggestion }) {
+  if (suggestion.suggestedStatus === 'INCERTO') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-800 ring-1 ring-rose-300">
+        <AlertCircle className="h-3.5 w-3.5" /> Revisar
+      </span>
+    );
+  }
   if (suggestion.suggestedStatus === 'PAGO') {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
@@ -159,21 +166,28 @@ type SuggestionCardProps = {
 function SuggestionCard({ suggestion, categoryName, categoryIcon, onAccept, onDismiss }: SuggestionCardProps) {
   const isPaid = suggestion.suggestedStatus === 'PAGO';
   const isScheduled = suggestion.suggestedStatus === 'AGENDADO';
+  const isReview = suggestion.suggestedStatus === 'INCERTO';
   const CategoryIcon = getCategoryIcon(categoryIcon);
-  const StatusIcon = isPaid ? CheckCircle2 : isScheduled ? Clock3 : MailOpen;
-  const railClass = isPaid ? 'bg-emerald-600' : isScheduled ? 'bg-cyan-600' : 'bg-amber-500';
+  const StatusIcon = isReview ? AlertCircle : isPaid ? CheckCircle2 : isScheduled ? Clock3 : MailOpen;
+  const railClass = isReview ? 'bg-rose-600' : isPaid ? 'bg-emerald-600' : isScheduled ? 'bg-cyan-600' : 'bg-amber-500';
   const cardClass = isPaid
     ? 'border-emerald-300 bg-gradient-to-r from-emerald-50/80 via-white to-white'
-    : isScheduled
+    : isReview
+      ? 'border-rose-300 bg-gradient-to-r from-rose-50/85 via-white to-white'
+      : isScheduled
       ? 'border-cyan-300 bg-gradient-to-r from-cyan-50/80 via-white to-white'
       : 'border-amber-300 bg-gradient-to-r from-amber-50/90 via-white to-white';
   const iconClass = isPaid
     ? 'bg-emerald-600 text-white shadow-sm'
+    : isReview
+      ? 'bg-rose-600 text-white shadow-sm'
     : isScheduled
       ? 'bg-cyan-600 text-white shadow-sm'
       : 'bg-amber-400 text-slate-950 shadow-sm';
   const footerClass = isPaid
     ? 'border-emerald-200 bg-emerald-50/85'
+    : isReview
+      ? 'border-rose-200 bg-rose-50/85'
     : isScheduled
       ? 'border-cyan-200 bg-cyan-50/85'
       : 'border-amber-200 bg-amber-50/85';
@@ -249,9 +263,11 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, onAccept, onDi
 
               <div className={cn('flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between', footerClass)}>
                 <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-                  {isPaid ? <CalendarCheck2 className="h-4 w-4 text-emerald-700" /> : <CircleDollarSign className="h-4 w-4 text-amber-700" />}
+                  {isReview ? <AlertCircle className="h-4 w-4 text-rose-700" /> : isPaid ? <CalendarCheck2 className="h-4 w-4 text-emerald-700" /> : <CircleDollarSign className="h-4 w-4 text-amber-700" />}
                   <span>
-                    {isPaid
+                    {isReview
+                      ? 'A IA encontrou sinais que exigem conferência manual antes de usar esta conta.'
+                      : isPaid
                       ? 'A IA encontrou evidência de pagamento. Ao confirmar, a conta já entra como paga.'
                       : 'Ao confirmar, a conta entra para acompanhamento no contas a pagar.'}
                   </span>
@@ -265,7 +281,7 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, onAccept, onDi
                     className={cn('h-8 gap-1', isPaid && 'bg-emerald-600 text-white hover:bg-emerald-700')}
                     onClick={onAccept}
                   >
-                    <CheckCircle2 className="h-3.5 w-3.5" />{isPaid ? 'Adicionar paga' : 'Usar como conta'}
+                    <CheckCircle2 className="h-3.5 w-3.5" />{isPaid ? 'Adicionar paga' : isReview ? 'Revisar e usar' : 'Usar como conta'}
                   </Button>
                 </div>
               </div>
