@@ -388,9 +388,11 @@ export default function MarketingGrowth() {
   const [selectedUserId, setSelectedUserId] = useState('');
   const selectedPeriod = Number(periodDays);
   const selectableUsers = useMemo(() => {
-    const activeClientUsers = systemUsers.filter((user) => user.isActive && user.role !== 'ADMIN');
-    const withMarketing = activeClientUsers.filter((user) => user.moduleAccess?.marketing === true);
-    return withMarketing.length > 0 ? withMarketing : activeClientUsers;
+    return systemUsers.filter((user) => (
+      user.isActive
+      && user.role !== 'ADMIN'
+      && user.moduleAccess?.marketing === true
+    ));
   }, [systemUsers]);
   const selectedUser = useMemo(
     () => selectableUsers.find((user) => user.id === selectedUserId) ?? null,
@@ -492,8 +494,8 @@ export default function MarketingGrowth() {
         {isAdmin && !isLoadingUsers && selectableUsers.length === 0 ? (
           <SectionEmptyState
             icon={Users}
-            title="Nenhum cliente ativo disponível"
-            description="Crie ou reative um cliente operacional e habilite o módulo Crescimento para acompanhar sites, campanhas e leads."
+            title="Nenhum cliente com Crescimento habilitado"
+            description="Habilite o módulo Crescimento em pelo menos um cliente operacional para acompanhar sites, campanhas e leads."
             className="min-h-[260px]"
           />
         ) : null}
