@@ -370,6 +370,7 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, onAccept, onDi
 function PaidSuggestionDialog({
   suggestion,
   categoryName,
+  categoryIcon,
   open,
   onOpenChange,
   onConfirm,
