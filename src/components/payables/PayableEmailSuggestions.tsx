@@ -2,7 +2,36 @@ import { useEffect, useMemo, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertCircle, BadgeCheck, Bot, CalendarCheck2, CheckCircle2, ChevronRight, CircleDollarSign, Clock3, Link2, MailOpen, ReceiptText, RefreshCw, Sparkles, X } from 'lucide-react';
+import {
+  AlertCircle,
+  BadgeCheck,
+  Banknote,
+  Barcode,
+  Bot,
+  Building2,
+  CalendarCheck2,
+  CheckCircle2,
+  ChevronRight,
+  CircleDollarSign,
+  Clock3,
+  CreditCard,
+  Landmark,
+  Link2,
+  MailOpen,
+  MoreHorizontal,
+  Package,
+  QrCode,
+  ReceiptText,
+  RefreshCw,
+  Send,
+  Settings2,
+  Sparkles,
+  Users,
+  Wrench,
+  X,
+  Zap,
+  type LucideIcon,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -17,6 +46,56 @@ import { getGmailConnectionStatus, scanGmailPayables, startGmailOAuth, type Gmai
 
 function fmtBRL(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+const categoryIcons: Record<string, LucideIcon> = {
+  Building2,
+  Landmark,
+  MoreHorizontal,
+  Package,
+  Settings2,
+  Users,
+  Wrench,
+  Zap,
+};
+
+const paymentIcons: Record<string, LucideIcon> = {
+  BOLETO: Barcode,
+  PIX: QrCode,
+  TRANSFERENCIA: Send,
+  CARTAO_CREDITO: CreditCard,
+  CARTAO_DEBITO: CreditCard,
+  DINHEIRO: Banknote,
+  CHEQUE: Landmark,
+  DEBITO_AUTOMATICO: Landmark,
+};
+
+function getCategoryIcon(iconName?: string | null) {
+  return iconName && categoryIcons[iconName] ? categoryIcons[iconName] : ReceiptText;
+}
+
+function paymentMethodLabel(method: EmailSuggestion['suggestedPaymentMethod']) {
+  const labels: Record<string, string> = {
+    BOLETO: 'Boleto',
+    PIX: 'Pix',
+    TRANSFERENCIA: 'Transferência',
+    CARTAO_CREDITO: 'Cartão crédito',
+    CARTAO_DEBITO: 'Cartão débito',
+    DINHEIRO: 'Dinheiro',
+    CHEQUE: 'Cheque',
+    DEBITO_AUTOMATICO: 'Débito auto.',
+  };
+  return labels[method] ?? 'Pagamento';
+}
+
+function PaymentMethodChip({ method }: { method: EmailSuggestion['suggestedPaymentMethod'] }) {
+  const Icon = paymentIcons[method] ?? CircleDollarSign;
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-sm">
+      <Icon className="h-3.5 w-3.5 text-slate-500" />
+      {paymentMethodLabel(method)}
+    </span>
+  );
 }
 
 function ConfidenceBadge({ value }: { value: number }) {
@@ -72,13 +151,16 @@ function MetricBlock({ label, value, tone = 'neutral' }: { label: string; value:
 type SuggestionCardProps = {
   suggestion: EmailSuggestion;
   categoryName: string;
+  categoryIcon?: string | null;
   onAccept: () => void;
   onDismiss: () => void;
 };
 
-function SuggestionCard({ suggestion, categoryName, onAccept, onDismiss }: SuggestionCardProps) {
+function SuggestionCard({ suggestion, categoryName, categoryIcon, onAccept, onDismiss }: SuggestionCardProps) {
   const isPaid = suggestion.suggestedStatus === 'PAGO';
   const isScheduled = suggestion.suggestedStatus === 'AGENDADO';
+  const CategoryIcon = getCategoryIcon(categoryIcon);
+  const StatusIcon = isPaid ? CheckCircle2 : isScheduled ? Clock3 : MailOpen;
   const railClass = isPaid ? 'bg-emerald-600' : isScheduled ? 'bg-cyan-600' : 'bg-amber-500';
   const cardClass = isPaid
     ? 'border-emerald-300 bg-gradient-to-r from-emerald-50/80 via-white to-white'
@@ -114,10 +196,13 @@ function SuggestionCard({ suggestion, categoryName, onAccept, onDismiss }: Sugge
               <div className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="flex min-w-0 gap-3">
                   <div className={cn(
-                    'mt-0.5 shrink-0 rounded-xl p-2.5',
+                    'relative mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl',
                     iconClass,
                   )}>
-                    {isPaid ? <CheckCircle2 className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
+                    <CategoryIcon className="h-5 w-5" />
+                    <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-slate-950 text-white shadow-sm">
+                      <StatusIcon className="h-3 w-3" />
+                    </span>
                   </div>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -128,6 +213,13 @@ function SuggestionCard({ suggestion, categoryName, onAccept, onDismiss }: Sugge
                     <p className="mt-1 text-xs font-medium text-slate-600">
                       {suggestion.senderName} &middot; recebido {format(parseISO(suggestion.receivedAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                     </p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-sm">
+                        <CategoryIcon className="h-3.5 w-3.5 text-slate-500" />
+                        {categoryName}
+                      </span>
+                      <PaymentMethodChip method={suggestion.suggestedPaymentMethod} />
+                    </div>
                     {suggestion.emailSnippet ? (
                       <p className="mt-3 line-clamp-2 rounded-lg border border-slate-200 bg-white/85 px-3 py-2 text-xs font-medium leading-relaxed text-slate-700">
                         {suggestion.emailSnippet}
@@ -194,12 +286,14 @@ function PaidSuggestionDialog({
 }: {
   suggestion: EmailSuggestion | null;
   categoryName: string;
+  categoryIcon?: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
 }) {
   const paidDate = suggestion?.suggestedPaidAt ? format(parseISO(suggestion.suggestedPaidAt), 'dd/MM/yyyy') : 'Confirmar data';
   const dueDate = suggestion?.suggestedDueDate ? format(parseISO(suggestion.suggestedDueDate), 'dd/MM/yyyy') : 'Sem vencimento';
+  const CategoryIcon = getCategoryIcon(categoryIcon);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -219,8 +313,22 @@ function PaidSuggestionDialog({
         <div className="space-y-4 p-6">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Conta identificada</p>
-            <p className="mt-1 text-lg font-bold leading-snug text-foreground">{suggestion?.suggestedTitle ?? 'Conta paga'}</p>
-            <p className="mt-1 text-sm font-medium text-slate-600">{suggestion?.senderName ?? 'Gmail'} &middot; {categoryName}</p>
+            <div className="mt-2 flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200">
+                <CategoryIcon className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-lg font-bold leading-snug text-foreground">{suggestion?.suggestedTitle ?? 'Conta paga'}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
+                    <CategoryIcon className="h-3.5 w-3.5 text-slate-500" />
+                    {categoryName}
+                  </span>
+                  {suggestion ? <PaymentMethodChip method={suggestion.suggestedPaymentMethod} /> : null}
+                </div>
+                <p className="mt-2 text-sm font-medium text-slate-600">{suggestion?.senderName ?? 'Gmail'}</p>
+              </div>
+            </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
@@ -445,15 +553,19 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
             <p className="text-xs font-medium text-slate-600">Revise cada sugestão antes de aceitar</p>
           </div>
           <AnimatePresence mode="popLayout">
-            {pending.map((suggestion) => (
+            {pending.map((suggestion) => {
+              const category = categoryById.get(suggestion.suggestedCategoryId);
+              return (
               <SuggestionCard
                 key={suggestion.id}
                 suggestion={suggestion}
-                categoryName={categoryById.get(suggestion.suggestedCategoryId)?.name ?? 'Categoria'}
+                categoryName={category?.name ?? 'Categoria'}
+                categoryIcon={category?.icon}
                 onAccept={() => { void handleAccept(suggestion); }}
                 onDismiss={() => { void handleDismiss(suggestion); }}
               />
-            ))}
+              );
+            })}
           </AnimatePresence>
         </div>
       )}
@@ -480,6 +592,7 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
       <PaidSuggestionDialog
         suggestion={paidSuggestionToConfirm}
         categoryName={paidSuggestionToConfirm ? categoryById.get(paidSuggestionToConfirm.suggestedCategoryId)?.name ?? 'Categoria' : 'Categoria'}
+        categoryIcon={paidSuggestionToConfirm ? categoryById.get(paidSuggestionToConfirm.suggestedCategoryId)?.icon : undefined}
         open={paidSuggestionToConfirm !== null}
         onOpenChange={(open) => { if (!open) setPaidSuggestionToConfirm(null); }}
         onConfirm={() => { if (paidSuggestionToConfirm) void acceptSuggestionNow(paidSuggestionToConfirm); }}
