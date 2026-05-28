@@ -30,7 +30,6 @@ import {
   MousePointerClick,
   PlugZap,
   Sparkles,
-  Target,
   TrendingUp,
   Users,
 } from 'lucide-react';
@@ -57,7 +56,7 @@ const providerLabels: Record<string, string> = {
   clarity: 'Microsoft Clarity',
   meta_ads: 'Meta Ads',
   google_ads: 'Google Ads',
-  internal: 'Eventos próprios',
+  internal: 'Eventos do site',
 };
 
 const statusLabels: Record<string, { label: string; className: string }> = {
@@ -78,6 +77,27 @@ function formatCurrency(value: number) {
 
 function formatPercent(value: number) {
   return `${Number(value || 0).toFixed(1)}%`;
+}
+
+function parseChartDate(value: string) {
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day);
+}
+
+function formatShortChartDate(value: string, periodDays: number) {
+  const date = parseChartDate(value);
+  if (!date) return value;
+  const options: Intl.DateTimeFormatOptions = periodDays > 45
+    ? { month: '2-digit', year: '2-digit' }
+    : { day: '2-digit', month: '2-digit' };
+  return new Intl.DateTimeFormat('pt-BR', options).format(date);
+}
+
+function formatFullChartDate(value: string) {
+  const date = parseChartDate(value);
+  if (!date) return value;
+  return new Intl.DateTimeFormat('pt-BR').format(date);
 }
 
 function getDelta(current: number, previous: number) {
@@ -198,66 +218,35 @@ function SiteTab({ resumo }: { resumo: MarketingResumo }) {
     <div className="space-y-5">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
-          title="Visitantes"
+          title="Pessoas no site"
           value={formatNumber(current.visits)}
-          detail="Usuários ativos no GA4"
+          detail={`Últimos ${resumo.periodDays} dias`}
           icon={Eye}
           delta={getDelta(current.visits, previous.visits)}
           tone="teal"
         />
         <MetricCard
-          title="Sessões"
-          value={formatNumber(current.sessions ?? 0)}
-          detail={`Últimos ${resumo.periodDays} dias`}
-          icon={Activity}
-          delta={getDelta(current.sessions ?? 0, previous.sessions ?? 0)}
-          tone="blue"
-        />
-        <MetricCard
-          title="Visualizações"
+          title="Páginas vistas"
           value={formatNumber(current.pageViews ?? 0)}
-          detail="Páginas vistas no site"
+          detail="Total de páginas abertas"
           icon={BarChart3}
           delta={getDelta(current.pageViews ?? 0, previous.pageViews ?? 0)}
           tone="default"
         />
         <MetricCard
-          title="Cliques e ações"
+          title="Cliques no site"
           value={formatNumber(actionEvents)}
-          detail="Eventos click/form/lead no GA4"
+          detail="Botões, WhatsApp e formulários"
           icon={MousePointerClick}
           delta={getDelta(actionEvents, previousActionEvents)}
           tone="green"
         />
         <MetricCard
-          title="Leads"
+          title="Possíveis clientes"
           value={formatNumber(current.leads)}
-          detail="Formulários e eventos de lead"
+          detail="Contatos enviados pelo site"
           icon={Users}
           delta={getDelta(current.leads, previous.leads)}
-          tone="blue"
-        />
-        <MetricCard
-          title="Conversão"
-          value={formatPercent(current.conversionRate ?? 0)}
-          detail="Leads sobre visitas"
-          icon={Target}
-          tone="amber"
-        />
-        <MetricCard
-          title="Engajamento"
-          value={formatPercent(current.engagementRate ?? 0)}
-          detail="Taxa de engajamento GA4"
-          icon={TrendingUp}
-          delta={getDelta(current.engagementRate ?? 0, previous.engagementRate ?? 0)}
-          tone="teal"
-        />
-        <MetricCard
-          title="Eventos totais"
-          value={formatNumber(current.totalEvents ?? 0)}
-          detail="Todos os eventos GA4"
-          icon={PlugZap}
-          delta={getDelta(current.totalEvents ?? 0, previous.totalEvents ?? 0)}
           tone="blue"
         />
       </div>
@@ -266,7 +255,7 @@ function SiteTab({ resumo }: { resumo: MarketingResumo }) {
         <SectionEmptyState
           icon={PlugZap}
           title="Nenhum evento real capturado ainda"
-          description="Assim que o site enviar page views, cliques de WhatsApp ou formulários, os cards e gráficos passam a mostrar resultados reais deste tenant."
+          description="Assim que o site registrar visitas, cliques de WhatsApp ou formulários, os cards e gráficos passam a mostrar resultados reais deste cliente."
           className="min-h-[220px]"
         />
       ) : null}
@@ -277,10 +266,10 @@ function SiteTab({ resumo }: { resumo: MarketingResumo }) {
             <div className="mb-5 flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-semibold text-foreground">Evolução do site</h2>
-                <p className="text-sm text-muted-foreground">Visitas, ações e leads por dia.</p>
+                <p className="text-sm text-muted-foreground">Visitas, cliques e possíveis clientes por dia.</p>
               </div>
               <Badge variant="outline" className="border-primary/20 bg-primary/5 text-primary">
-                Dados próprios
+                Dados do site
               </Badge>
             </div>
             <div className="h-[280px]">
@@ -293,12 +282,22 @@ function SiteTab({ resumo }: { resumo: MarketingResumo }) {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value: string) => formatShortChartDate(value, resumo.periodDays)}
+                    tickLine={false}
+                    axisLine={false}
+                    minTickGap={34}
+                  />
                   <YAxis tick={{ fontSize: 12 }} tickLine={false} axisLine={false} width={34} />
-                  <RechartsTooltip />
+                  <RechartsTooltip
+                    labelFormatter={(value) => formatFullChartDate(String(value))}
+                    formatter={(value, name) => [formatNumber(Number(value)), name]}
+                  />
                   <Area type="monotone" dataKey="visits" name="Visitas" stroke="hsl(var(--primary))" fill="url(#visitsGradient)" strokeWidth={2} />
                   <Area type="monotone" dataKey="pageViews" name="Visualizações" stroke="#0f766e" fill="transparent" strokeWidth={2} />
-                  <Area type="monotone" dataKey="leads" name="Leads" stroke="hsl(var(--accent))" fill="transparent" strokeWidth={2} />
+                  <Area type="monotone" dataKey="leads" name="Possíveis clientes" stroke="hsl(var(--accent))" fill="transparent" strokeWidth={2} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -327,8 +326,8 @@ function SiteTab({ resumo }: { resumo: MarketingResumo }) {
                   <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                   <p className="text-sm leading-relaxed text-foreground">
                     {bestSource
-                      ? `A principal origem registrada foi ${bestSource.source}, com ${formatNumber(bestSource.visits)} visitas e ${formatNumber(bestSource.leads)} leads.`
-                      : 'As origens aparecem quando o site envia UTM, referrer ou eventos próprios.'}
+                      ? `A principal origem registrada foi ${bestSource.source}, com ${formatNumber(bestSource.visits)} visitas e ${formatNumber(bestSource.leads)} possíveis clientes.`
+                      : 'As origens aparecem quando o site informa de onde a pessoa veio, como Google, Instagram ou campanha.'}
                   </p>
                 </div>
               </div>
@@ -337,7 +336,7 @@ function SiteTab({ resumo }: { resumo: MarketingResumo }) {
                   <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                   <p className="text-sm leading-relaxed text-foreground">
                     {current.visits > 0
-                      ? `O funil atual está em ${formatNumber(current.visits)} visitantes -> ${formatNumber(actionEvents)} ações -> ${formatNumber(current.leads)} leads.`
+                      ? `O site trouxe ${formatNumber(current.visits)} pessoas, ${formatNumber(actionEvents)} cliques importantes e ${formatNumber(current.leads)} possíveis clientes. Taxa de contato: ${formatPercent(current.conversionRate ?? 0)}.`
                       : 'O funil será calculado quando os primeiros eventos reais forem capturados.'}
                   </p>
                 </div>
@@ -388,7 +387,7 @@ function SiteTab({ resumo }: { resumo: MarketingResumo }) {
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
-                <SectionEmptyState title="Sem origem registrada" description="UTMs e referrers serão agrupados aqui sem misturar dados entre tenants." />
+                <SectionEmptyState title="Sem origem registrada" description="Quando o site informar de onde a pessoa veio, as visitas serão agrupadas aqui." />
               )}
             </div>
           </CardContent>
@@ -407,13 +406,13 @@ function CampaignsTab({ resumo }: { resumo: MarketingResumo }) {
         <MetricCard title="Investimento" value={financialAvailable ? formatCurrency(resumo.campaigns.current.spend) : 'Pendente'} detail="Meta/Google Ads ainda não conectados" icon={CircleDollarSign} tone="default" />
         <MetricCard title="Impressões" value={financialAvailable ? formatNumber(resumo.campaigns.current.impressions ?? 0) : 'Pendente'} detail="Search Console/Ads necessário" icon={Eye} tone="blue" />
         <MetricCard title="Cliques pagos" value={formatNumber(resumo.campaigns.current.clicks)} detail="Disponível após integração" icon={MousePointerClick} tone="teal" />
-        <MetricCard title="CPL" value={financialAvailable ? formatCurrency(resumo.campaigns.current.cpl) : 'Pendente'} detail="Custo por lead real" icon={TrendingUp} tone="amber" />
+        <MetricCard title="Custo por contato" value={financialAvailable ? formatCurrency(resumo.campaigns.current.cpl) : 'Pendente'} detail="Quanto custou cada possível cliente" icon={TrendingUp} tone="amber" />
       </div>
 
       <SectionEmptyState
         icon={Megaphone}
         title="Campanhas aguardando integração segura"
-        description="A base já separa tenant, permissões e estados de campanha. Os dados financeiros entram quando Meta Ads ou Google Ads forem conectados pelo backend, sem tokens no navegador."
+        description="Os dados financeiros entram quando Meta Ads ou Google Ads forem conectados com segurança, sem credenciais no navegador."
         className="min-h-[240px]"
       />
     </div>
@@ -482,7 +481,7 @@ export default function MarketingGrowth() {
                   <Badge variant="outline" className={cn('shrink-0', health.className)}>{health.label}</Badge>
                 </div>
                 <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
-                  Resultados de site, leads e campanhas com dados reais do tenant atual. Integrações externas entram apenas por backend seguro.
+                  Resultados do site, possíveis clientes e campanhas com dados reais do cliente selecionado.
                 </p>
               </div>
             </div>
@@ -534,7 +533,7 @@ export default function MarketingGrowth() {
           <SectionEmptyState
             icon={Users}
             title="Nenhum cliente com Crescimento habilitado"
-            description="Habilite o módulo Crescimento em pelo menos um cliente operacional para acompanhar sites, campanhas e leads."
+            description="Habilite o módulo Crescimento em pelo menos um cliente operacional para acompanhar site, campanhas e possíveis clientes."
             className="min-h-[260px]"
           />
         ) : null}
@@ -593,7 +592,7 @@ export default function MarketingGrowth() {
                   <div>
                     <p className="text-sm font-semibold">Captura própria ainda não configurada</p>
                     <p className="mt-1 text-sm leading-relaxed">
-                      Para ativar eventos do site, configure uma chave pública por tenant e salve somente o hash no banco. Nenhum token de GA4, Meta ou Google Ads deve ir para o frontend.
+                      Para ativar eventos do site, configure uma chave pública por cliente. Nenhum token de GA4, Meta ou Google Ads deve ir para o navegador.
                     </p>
                   </div>
                 </div>
