@@ -20,8 +20,12 @@ function fmtBRL(value: number) {
 }
 
 function ConfidenceBadge({ value }: { value: number }) {
-  const tone = value >= 90 ? 'bg-success/10 text-success' : value >= 75 ? 'bg-primary/10 text-primary' : 'bg-warning/10 text-warning-foreground';
-  return <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium', tone)}><Sparkles className="h-2.5 w-2.5" />{value}% confiança</span>;
+  const tone = value >= 90
+    ? 'bg-slate-900 text-white ring-slate-900'
+    : value >= 75
+      ? 'bg-cyan-700 text-white ring-cyan-700'
+      : 'bg-amber-500 text-slate-950 ring-amber-500';
+  return <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ring-1', tone)}><Sparkles className="h-2.5 w-2.5" />{value}% confiança</span>;
 }
 
 function SuggestionStatusBadge({ suggestion }: { suggestion: EmailSuggestion }) {
@@ -40,7 +44,7 @@ function SuggestionStatusBadge({ suggestion }: { suggestion: EmailSuggestion }) 
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
+    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-950 ring-1 ring-amber-300">
       <ReceiptText className="h-3.5 w-3.5" /> A pagar
     </span>
   );
@@ -48,13 +52,18 @@ function SuggestionStatusBadge({ suggestion }: { suggestion: EmailSuggestion }) 
 
 function MetricBlock({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: 'neutral' | 'paid' | 'due' }) {
   const toneClass = tone === 'paid'
-    ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+    ? 'border-emerald-300 bg-emerald-100 text-emerald-950'
     : tone === 'due'
-      ? 'border-amber-200 bg-amber-50 text-amber-900'
-      : 'border-border/70 bg-background text-foreground';
+      ? 'border-amber-300 bg-amber-100 text-amber-950'
+      : 'border-slate-200 bg-white text-slate-950';
+  const labelClass = tone === 'paid'
+    ? 'text-emerald-800'
+    : tone === 'due'
+      ? 'text-amber-800'
+      : 'text-slate-600';
   return (
     <div className={cn('min-w-[132px] rounded-lg border px-3 py-2 shadow-sm', toneClass)}>
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className={cn('text-[10px] font-bold uppercase tracking-wide', labelClass)}>{label}</p>
       <p className="mt-1 text-sm font-bold leading-none">{value}</p>
     </div>
   );
@@ -70,7 +79,22 @@ type SuggestionCardProps = {
 function SuggestionCard({ suggestion, categoryName, onAccept, onDismiss }: SuggestionCardProps) {
   const isPaid = suggestion.suggestedStatus === 'PAGO';
   const isScheduled = suggestion.suggestedStatus === 'AGENDADO';
-  const railClass = isPaid ? 'bg-emerald-500' : isScheduled ? 'bg-sky-500' : 'bg-amber-500';
+  const railClass = isPaid ? 'bg-emerald-600' : isScheduled ? 'bg-cyan-600' : 'bg-amber-500';
+  const cardClass = isPaid
+    ? 'border-emerald-300 bg-gradient-to-r from-emerald-50/80 via-white to-white'
+    : isScheduled
+      ? 'border-cyan-300 bg-gradient-to-r from-cyan-50/80 via-white to-white'
+      : 'border-amber-300 bg-gradient-to-r from-amber-50/90 via-white to-white';
+  const iconClass = isPaid
+    ? 'bg-emerald-600 text-white shadow-sm'
+    : isScheduled
+      ? 'bg-cyan-600 text-white shadow-sm'
+      : 'bg-amber-400 text-slate-950 shadow-sm';
+  const footerClass = isPaid
+    ? 'border-emerald-200 bg-emerald-50/85'
+    : isScheduled
+      ? 'border-cyan-200 bg-cyan-50/85'
+      : 'border-amber-200 bg-amber-50/85';
 
   return (
     <motion.div
@@ -80,9 +104,8 @@ function SuggestionCard({ suggestion, categoryName, onAccept, onDismiss }: Sugge
       exit={{ opacity: 0, x: -20, transition: { duration: 0.2 } }}
     >
       <Card className={cn(
-        'overflow-hidden border-border/70 bg-background shadow-sm transition-shadow hover:shadow-md',
-        isPaid && 'border-emerald-200',
-        isScheduled && 'border-sky-200',
+        'overflow-hidden border shadow-sm transition-shadow hover:shadow-md',
+        cardClass,
       )}>
         <CardContent className="p-0">
           <div className="flex">
@@ -92,7 +115,7 @@ function SuggestionCard({ suggestion, categoryName, onAccept, onDismiss }: Sugge
                 <div className="flex min-w-0 gap-3">
                   <div className={cn(
                     'mt-0.5 shrink-0 rounded-xl p-2.5',
-                    isPaid ? 'bg-emerald-50 text-emerald-700' : isScheduled ? 'bg-sky-50 text-sky-700' : 'bg-amber-50 text-amber-700',
+                    iconClass,
                   )}>
                     {isPaid ? <CheckCircle2 className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
                   </div>
@@ -102,11 +125,11 @@ function SuggestionCard({ suggestion, categoryName, onAccept, onDismiss }: Sugge
                       <ConfidenceBadge value={suggestion.confidence} />
                     </div>
                     <p className="mt-2 text-base font-semibold leading-snug text-foreground">{suggestion.suggestedTitle || suggestion.subject}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
+                    <p className="mt-1 text-xs font-medium text-slate-600">
                       {suggestion.senderName} &middot; recebido {format(parseISO(suggestion.receivedAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                     </p>
                     {suggestion.emailSnippet ? (
-                      <p className="mt-3 line-clamp-2 rounded-lg bg-muted/45 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+                      <p className="mt-3 line-clamp-2 rounded-lg border border-slate-200 bg-white/85 px-3 py-2 text-xs font-medium leading-relaxed text-slate-700">
                         {suggestion.emailSnippet}
                       </p>
                     ) : null}
@@ -132,9 +155,9 @@ function SuggestionCard({ suggestion, categoryName, onAccept, onDismiss }: Sugge
                 </div>
               </div>
 
-              <div className="flex flex-col gap-3 border-t border-border/50 bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  {isPaid ? <CalendarCheck2 className="h-4 w-4 text-emerald-600" /> : <CircleDollarSign className="h-4 w-4 text-amber-600" />}
+              <div className={cn('flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between', footerClass)}>
+                <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                  {isPaid ? <CalendarCheck2 className="h-4 w-4 text-emerald-700" /> : <CircleDollarSign className="h-4 w-4 text-amber-700" />}
                   <span>
                     {isPaid
                       ? 'A IA encontrou evidência de pagamento. Ao confirmar, a conta já entra como paga.'
@@ -142,7 +165,7 @@ function SuggestionCard({ suggestion, categoryName, onAccept, onDismiss }: Sugge
                   </span>
                 </div>
                 <div className="flex gap-2 sm:justify-end">
-                  <Button variant="ghost" size="sm" className="h-8 gap-1 text-muted-foreground hover:text-destructive" onClick={onDismiss}>
+                  <Button variant="outline" size="sm" className="h-8 gap-1 border-slate-300 bg-white/80 text-slate-700 hover:bg-white hover:text-destructive" onClick={onDismiss}>
                     <X className="h-3.5 w-3.5" />Ignorar
                   </Button>
                   <Button
@@ -180,14 +203,14 @@ function PaidSuggestionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl overflow-hidden p-0">
-        <div className="bg-gradient-to-br from-emerald-600 via-emerald-500 to-cyan-500 px-6 py-5 text-white">
+      <DialogContent className="max-w-xl overflow-hidden border-emerald-200 p-0 shadow-2xl [&>button]:text-white [&>button]:opacity-90 [&>button:hover]:opacity-100">
+        <div className="bg-gradient-to-br from-emerald-700 via-emerald-600 to-cyan-700 px-6 py-5 text-white">
           <DialogHeader>
             <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/18 ring-1 ring-white/30">
               <BadgeCheck className="h-6 w-6" />
             </div>
             <DialogTitle className="text-xl text-white">Adicionar como conta paga?</DialogTitle>
-            <DialogDescription className="text-emerald-50">
+            <DialogDescription className="font-medium text-emerald-50">
               A IA encontrou evidência de pagamento no e-mail. Confira os dados antes de lançar no contas a pagar.
             </DialogDescription>
           </DialogHeader>
@@ -197,32 +220,32 @@ function PaidSuggestionDialog({
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Conta identificada</p>
             <p className="mt-1 text-lg font-bold leading-snug text-foreground">{suggestion?.suggestedTitle ?? 'Conta paga'}</p>
-            <p className="mt-1 text-sm text-muted-foreground">{suggestion?.senderName ?? 'Gmail'} &middot; {categoryName}</p>
+            <p className="mt-1 text-sm font-medium text-slate-600">{suggestion?.senderName ?? 'Gmail'} &middot; {categoryName}</p>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Valor pago</p>
+            <div className="rounded-xl border border-emerald-300 bg-emerald-100 p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-emerald-800">Valor pago</p>
               <p className="mt-2 text-2xl font-black text-emerald-900">{suggestion ? fmtBRL(suggestion.suggestedAmount) : 'R$ 0,00'}</p>
             </div>
-            <div className="rounded-xl border border-border bg-muted/30 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pago em</p>
-              <p className="mt-2 text-xl font-bold text-foreground">{paidDate}</p>
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-600">Pago em</p>
+              <p className="mt-2 text-xl font-bold text-slate-950">{paidDate}</p>
             </div>
-            <div className="rounded-xl border border-border bg-muted/30 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Vencimento</p>
-              <p className="mt-2 text-xl font-bold text-foreground">{dueDate}</p>
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-600">Vencimento</p>
+              <p className="mt-2 text-xl font-bold text-slate-950">{dueDate}</p>
             </div>
           </div>
 
-          <div className="rounded-xl border border-border/70 bg-background p-4">
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4">
             <div className="flex items-start gap-3">
-              <div className="rounded-lg bg-emerald-50 p-2 text-emerald-700">
+              <div className="rounded-lg bg-emerald-600 p-2 text-white">
                 <CalendarCheck2 className="h-4 w-4" />
               </div>
               <div>
                 <p className="text-sm font-semibold">O lançamento já entra como pago</p>
-                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                <p className="mt-1 text-sm font-medium leading-relaxed text-slate-700">
                   Se confirmar, a conta será criada com status pago, valor pago preenchido e data de pagamento destacada para o histórico financeiro.
                 </p>
               </div>
@@ -230,7 +253,7 @@ function PaidSuggestionDialog({
           </div>
         </div>
 
-        <DialogFooter className="border-t bg-muted/25 px-6 py-4">
+        <DialogFooter className="border-t bg-slate-50 px-6 py-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Voltar</Button>
           <Button className="bg-emerald-600 text-white hover:bg-emerald-700" onClick={onConfirm}>
             <CheckCircle2 className="mr-2 h-4 w-4" />
@@ -352,17 +375,17 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
 
   return (
     <div className="space-y-6">
-      <Card className="overflow-hidden border-border/60 bg-gradient-to-r from-slate-50 via-background to-cyan-50/50">
+      <Card className="overflow-hidden border-cyan-200 bg-white shadow-sm">
         <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-3">
-            <div className={cn('mt-0.5 rounded-xl p-2.5', gmailStatus?.connected ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary')}>
+            <div className={cn('mt-0.5 rounded-xl p-2.5 shadow-sm', gmailStatus?.connected ? 'bg-emerald-600 text-white' : 'bg-cyan-700 text-white')}>
               {gmailStatus?.connected ? <CheckCircle2 className="h-4 w-4" /> : <Link2 className="h-4 w-4" />}
             </div>
             <div className="min-w-0">
               <p className="text-sm font-semibold">
                 {gmailStatus?.connected ? 'Gmail conectado' : 'Conectar Gmail / Google Workspace'}
               </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
+              <p className="mt-0.5 text-xs font-medium text-slate-600">
                 {gmailStatus?.connected
                   ? `${gmailStatus.email ?? 'Conta conectada'}${gmailStatus.last_sync_at ? ` · última busca ${format(parseISO(gmailStatus.last_sync_at), "dd/MM/yyyy 'às' HH:mm")}` : ''}`
                   : 'Leia boletos, faturas e notas do e-mail com revisão antes de virar conta.'}
@@ -389,19 +412,19 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <div className="rounded-xl bg-primary/10 p-2 text-primary">
+          <div className="rounded-xl bg-slate-900 p-2 text-white shadow-sm">
             <Bot className="h-4 w-4" />
           </div>
           <div>
             <p className="text-sm font-semibold">Sugestões extraídas do e-mail</p>
-            <p className="text-xs text-muted-foreground">Contas detectadas automaticamente na caixa de entrada — escolha o que usar.</p>
+            <p className="text-xs font-medium text-slate-600">Contas detectadas automaticamente na caixa de entrada — escolha o que usar.</p>
           </div>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {paidPending.length > 0 ? <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-emerald-700"><BadgeCheck className="h-3.5 w-3.5" />{paidPending.length} pagas detectadas</span> : null}
-          {payablePending.length > 0 ? <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-amber-700"><ReceiptText className="h-3.5 w-3.5" />{payablePending.length} a pagar</span> : null}
-          {accepted.length > 0 ? <span className="flex items-center gap-1 text-success"><BadgeCheck className="h-3.5 w-3.5" />{accepted.length} aceitas</span> : null}
-          {dismissed.length > 0 ? <span>{dismissed.length} ignoradas</span> : null}
+          {paidPending.length > 0 ? <span className="flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-1 font-semibold text-white"><BadgeCheck className="h-3.5 w-3.5" />{paidPending.length} pagas detectadas</span> : null}
+          {payablePending.length > 0 ? <span className="flex items-center gap-1 rounded-full bg-amber-400 px-2 py-1 font-semibold text-slate-950"><ReceiptText className="h-3.5 w-3.5" />{payablePending.length} a pagar</span> : null}
+          {accepted.length > 0 ? <span className="flex items-center gap-1 font-semibold text-emerald-700"><BadgeCheck className="h-3.5 w-3.5" />{accepted.length} aceitas</span> : null}
+          {dismissed.length > 0 ? <span className="font-medium text-slate-600">{dismissed.length} ignoradas</span> : null}
         </div>
       </div>
 
@@ -419,7 +442,7 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <Badge variant="secondary" className="rounded-full">{pending.length} pendente{pending.length !== 1 ? 's' : ''}</Badge>
-            <p className="text-xs text-muted-foreground">Revise cada sugestão antes de aceitar</p>
+            <p className="text-xs font-medium text-slate-600">Revise cada sugestão antes de aceitar</p>
           </div>
           <AnimatePresence mode="popLayout">
             {pending.map((suggestion) => (
