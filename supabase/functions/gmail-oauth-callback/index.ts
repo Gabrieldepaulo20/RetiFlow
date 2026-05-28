@@ -30,6 +30,26 @@ function toBase64(bytes: Uint8Array) {
   return btoa(String.fromCharCode(...bytes));
 }
 
+function decodeBase64Url(value: string) {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padding = '='.repeat((4 - normalized.length % 4) % 4);
+  return atob(normalized + padding);
+}
+
+function getEmailFromIdToken(idToken?: string) {
+  if (!idToken) return '';
+
+  try {
+    const [, payload] = idToken.split('.');
+    if (!payload) return '';
+    const parsed = JSON.parse(decodeBase64Url(payload)) as { email?: string; email_verified?: boolean };
+    if (parsed.email_verified === false) return '';
+    return (parsed.email ?? '').trim().toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
 async function encryptionKey() {
   const secret = Deno.env.get('GOOGLE_TOKEN_ENCRYPTION_KEY') ?? '';
   if (secret.length < 24) throw new Error('GOOGLE_TOKEN_ENCRYPTION_KEY ausente ou fraca.');
@@ -89,15 +109,22 @@ Deno.serve(async (request) => {
   });
 
   if (!tokenResponse.ok) return redirectWithStatus('error', 'token_google');
-  const tokenData = await tokenResponse.json() as { access_token?: string; refresh_token?: string };
+  const tokenData = await tokenResponse.json() as { access_token?: string; refresh_token?: string; id_token?: string };
   if (!tokenData.access_token || !tokenData.refresh_token) return redirectWithStatus('error', 'sem_refresh_token');
 
   const profileResponse = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', {
     headers: { Authorization: `Bearer ${tokenData.access_token}` },
   });
-  if (!profileResponse.ok) return redirectWithStatus('error', 'perfil_gmail');
-  const profile = await profileResponse.json() as { emailAddress?: string };
-  const email = (profile.emailAddress ?? '').trim().toLowerCase();
+  let email = '';
+  if (profileResponse.ok) {
+    const profile = await profileResponse.json() as { emailAddress?: string };
+    email = (profile.emailAddress ?? '').trim().toLowerCase();
+  }
+  email ||= getEmailFromIdToken(tokenData.id_token);
+  if (!email) {
+    const { data: authUser } = await service.auth.admin.getUserById(stateRow.fk_auth_user);
+    email = (authUser.user?.email ?? '').trim().toLowerCase();
+  }
   if (!email) return redirectWithStatus('error', 'email_gmail');
 
   let encrypted: string;
