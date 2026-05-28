@@ -551,6 +551,8 @@ export interface EmailSuggestion {
   suggestedPaymentMethod: PaymentMethod;
   confidence: number;
   status: EmailSuggestionStatus;
+  suggestedStatus?: 'PENDENTE' | 'PAGO' | 'AGENDADO' | 'INCERTO';
+  suggestedPaidAt?: string;
   emailSnippet?: string;
   createdAt: string;
 }

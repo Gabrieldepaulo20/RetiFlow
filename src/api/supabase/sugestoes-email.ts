@@ -13,6 +13,8 @@ export interface SugestaoEmail {
   forma_pagamento_sugerida: string;
   confianca: number;
   status: 'PENDING' | 'ACCEPTED' | 'DISMISSED';
+  status_sugerido?: 'PENDENTE' | 'PAGO' | 'AGENDADO' | 'INCERTO';
+  pago_em_sugerido?: string | null;
   trecho_email: string | null;
   created_at: string;
   categoria_sugerida: { id: string; nome: string; cor: string; icone: string } | null;

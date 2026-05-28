@@ -13,7 +13,7 @@ const baseCorsHeaders = {
   'Vary': 'Origin',
 };
 
-const scanVersion = 'ai-v2';
+const scanVersion = 'ai-v4';
 const supportedAttachmentTypes = new Set([
   'application/pdf',
   'image/png',
@@ -139,9 +139,11 @@ type GmailAttachment = {
 
 type PayableEmailAnalysis = {
   isPayable: boolean;
+  suggestedStatus: 'PENDENTE' | 'PAGO' | 'AGENDADO' | 'INCERTO';
   title: string;
   amount: number | null;
   dueDate: string | null;
+  paymentDate: string | null;
   supplierName: string;
   paymentMethod: 'PIX' | 'BOLETO' | 'TRANSFERENCIA' | 'CARTAO_CREDITO' | 'CARTAO_DEBITO' | 'DINHEIRO' | 'CHEQUE' | 'DEBITO_AUTOMATICO';
   confidence: number;
@@ -280,18 +282,33 @@ function normalizePaymentMethod(value: unknown): PayableEmailAnalysis['paymentMe
     : 'BOLETO';
 }
 
+function normalizeSuggestedStatus(value: unknown): PayableEmailAnalysis['suggestedStatus'] {
+  const status = String(value ?? 'PENDENTE').toUpperCase();
+  return ['PENDENTE', 'PAGO', 'AGENDADO', 'INCERTO'].includes(status)
+    ? status as PayableEmailAnalysis['suggestedStatus']
+    : 'PENDENTE';
+}
+
+function normalizeIsoDate(value: unknown) {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const extracted = extractDate(String(value ?? ''));
+  return extracted ? extracted.slice(0, 10) : null;
+}
+
 function normalizeAnalysis(raw: unknown, subject: string, senderName: string): PayableEmailAnalysis {
   const root = isRecord(raw) ? raw : {};
   const amount = extractMoney(String(root.amount ?? '')) ?? (typeof root.amount === 'number' ? root.amount : null);
-  const dueDate = typeof root.dueDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(root.dueDate)
-    ? root.dueDate
-    : extractDate(String(root.dueDate ?? ''));
+  const suggestedStatus = normalizeSuggestedStatus(root.suggestedStatus);
+  const paymentDate = normalizeIsoDate(root.paymentDate);
+  const dueDate = normalizeIsoDate(root.dueDate) ?? (suggestedStatus === 'PAGO' ? paymentDate : null);
 
   return {
     isPayable: Boolean(root.isPayable),
+    suggestedStatus,
     title: String(root.title ?? buildTitle(subject, senderName)).replace(/\s+/g, ' ').trim().slice(0, 120),
     amount: typeof amount === 'number' && Number.isFinite(amount) && amount > 0 ? Number(amount.toFixed(2)) : null,
     dueDate: dueDate ? `${dueDate.slice(0, 10)}T00:00:00` : null,
+    paymentDate: paymentDate ? `${paymentDate.slice(0, 10)}T00:00:00` : null,
     supplierName: String(root.supplierName ?? (senderName || 'Fornecedor não identificado')).replace(/\s+/g, ' ').trim().slice(0, 120),
     paymentMethod: normalizePaymentMethod(root.paymentMethod),
     confidence: Math.max(0, Math.min(100, Number(root.confidence ?? 0))),
@@ -326,10 +343,14 @@ async function analyzePayableEmail(params: {
     'Retorne SOMENTE JSON válido, sem Markdown.',
     '',
     'Formato obrigatório:',
-    '{ "isPayable": boolean, "title": string, "supplierName": string, "amount": number|null, "dueDate": "YYYY-MM-DD"|null, "paymentMethod": "PIX|BOLETO|TRANSFERENCIA|CARTAO_CREDITO|CARTAO_DEBITO|DINHEIRO|CHEQUE|DEBITO_AUTOMATICO", "confidence": number, "reason": string }',
+    '{ "isPayable": boolean, "suggestedStatus": "PENDENTE|PAGO|AGENDADO|INCERTO", "title": string, "supplierName": string, "amount": number|null, "dueDate": "YYYY-MM-DD"|null, "paymentDate": "YYYY-MM-DD"|null, "paymentMethod": "PIX|BOLETO|TRANSFERENCIA|CARTAO_CREDITO|CARTAO_DEBITO|DINHEIRO|CHEQUE|DEBITO_AUTOMATICO", "confidence": number, "reason": string }',
     '',
     'Regras:',
     '- isPayable=true apenas para boleto, fatura, nota, mensalidade, cobrança, débito automático ou pagamento real que deva entrar em contas a pagar.',
+    '- suggestedStatus=PAGO quando o e-mail/anexo for comprovante, recibo, confirmação de pagamento, débito automático já realizado, ou disser claramente que algo foi pago/quitado.',
+    '- Para suggestedStatus=PAGO, paymentDate deve ser a data do pagamento quando existir. Se o e-mail disser apenas que está pago sem data clara, use paymentDate=null.',
+    '- suggestedStatus=AGENDADO quando disser que o pagamento está agendado para uma data futura, sem confirmação de liquidação.',
+    '- suggestedStatus=PENDENTE para boleto/fatura/cobrança ainda a pagar.',
     '- Promoções, propagandas, newsletter, venda de maquininha, desconto, campanha de marketing e avisos sem cobrança real devem ser isPayable=false.',
     '- Nunca invente valor ou vencimento. Se não estiver claro, use null.',
     '- Se houver PDF/imagem anexa, priorize o conteúdo do anexo sobre o texto do e-mail.',
@@ -484,10 +505,11 @@ Deno.serve(async (request) => {
     const queries = [
       'newer_than:90d (boleto OR fatura OR "nota fiscal" OR vencimento OR pagamento)',
       'newer_than:90d has:attachment (boleto OR fatura OR "nota fiscal" OR vencimento OR pagamento OR cobrança OR mensalidade OR invoice)',
+      'newer_than:120d ("comprovante de pagamento" OR comprovante OR recibo OR quitado OR pago OR "pagamento efetuado" OR "pagamento realizado")',
       'newer_than:45d filename:pdf',
     ];
     const messageIds = Array.from(new Set((await Promise.all(
-      queries.map((query, index) => listGmailMessageIds(accessToken, query, index === 2 ? 15 : 25)),
+      queries.map((query, index) => listGmailMessageIds(accessToken, query, index === 3 ? 15 : 25)),
     )).flat())).slice(0, 50);
 
     for (const messageId of messageIds) {
@@ -574,6 +596,8 @@ Deno.serve(async (request) => {
           forma_pagamento_sugerida: analysis.paymentMethod,
           confianca: analysis.confidence,
           status: 'PENDING',
+          status_sugerido: analysis.suggestedStatus,
+          pago_em_sugerido: analysis.paymentDate,
           trecho_email: [analysis.reason, detail.snippet].filter(Boolean).join(' — ').slice(0, 500) || null,
         })
         .select('id_sugestoes_email')
