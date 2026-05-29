@@ -7,8 +7,6 @@ import {
   BadgeCheck,
   Banknote,
   Barcode,
-  Bot,
-  Building2,
   CalendarCheck2,
   CheckCircle2,
   ChevronRight,
@@ -18,23 +16,20 @@ import {
   Landmark,
   Link2,
   MailOpen,
-  MoreHorizontal,
-  Package,
   QrCode,
   ReceiptText,
   RefreshCw,
   Send,
-  Settings2,
   Sparkles,
-  Users,
-  Wrench,
   X,
-  Zap,
   type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 import { useData } from '@/contexts/DataContext';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
@@ -42,21 +37,11 @@ import { cn } from '@/lib/utils';
 import { EmailSuggestion } from '@/types';
 import { buildPayableHistoryDescription } from '@/services/domain/payables';
 import { getGmailConnectionStatus, scanGmailPayables, startGmailOAuth, type GmailConnectionStatus } from '@/api/supabase/gmail-payables';
+import { getCategoryIcon } from '@/lib/payableCategoryIcon';
 
 function fmtBRL(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
-
-const categoryIcons: Record<string, LucideIcon> = {
-  Building2,
-  Landmark,
-  MoreHorizontal,
-  Package,
-  Settings2,
-  Users,
-  Wrench,
-  Zap,
-};
 
 const paymentIcons: Record<string, LucideIcon> = {
   BOLETO: Barcode,
@@ -92,10 +77,6 @@ const brandProfiles: BrandProfile[] = [
     footerClass: 'border-purple-200 bg-purple-50/85',
   },
 ];
-
-function getCategoryIcon(iconName?: string | null) {
-  return iconName && categoryIcons[iconName] ? categoryIcons[iconName] : ReceiptText;
-}
 
 function normalizeSearchText(value: string) {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -469,6 +450,23 @@ type PayableEmailSuggestionsProps = {
   onCreated?: (payableId: string) => void;
 };
 
+const AUTO_SCAN_ENABLED_KEY = 'payables.gmail.autoScan.enabled';
+const AUTO_SCAN_INTERVAL_KEY = 'payables.gmail.autoScan.intervalHours';
+
+function readAutoScanEnabled(): boolean {
+  if (typeof window === 'undefined') return false;
+  try { return window.localStorage.getItem(AUTO_SCAN_ENABLED_KEY) === '1'; } catch { return false; }
+}
+
+function readAutoScanIntervalHours(): number {
+  if (typeof window === 'undefined') return 12;
+  try {
+    const raw = window.localStorage.getItem(AUTO_SCAN_INTERVAL_KEY);
+    const parsed = raw ? Number(raw) : 12;
+    return [6, 12, 24].includes(parsed) ? parsed : 12;
+  } catch { return 12; }
+}
+
 export default function PayableEmailSuggestions({ onCreated }: PayableEmailSuggestionsProps) {
   const { emailSuggestions, refreshEmailSuggestions, acceptEmailSuggestion, dismissEmailSuggestion, payableCategories, addPayableHistoryEntry } = useData();
   const { user } = useAuth();
@@ -477,6 +475,8 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
   const [gmailLoading, setGmailLoading] = useState(true);
   const [gmailActionLoading, setGmailActionLoading] = useState(false);
   const [paidSuggestionToConfirm, setPaidSuggestionToConfirm] = useState<EmailSuggestion | null>(null);
+  const [autoScanEnabled, setAutoScanEnabled] = useState<boolean>(() => readAutoScanEnabled());
+  const [autoScanIntervalHours, setAutoScanIntervalHours] = useState<number>(() => readAutoScanIntervalHours());
 
   const categoryById = useMemo(() => new Map(payableCategories.map((c) => [c.id, c])), [payableCategories]);
   const pending = useMemo(() => emailSuggestions.filter((s) => s.status === 'PENDING'), [emailSuggestions]);
@@ -521,28 +521,52 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
     }
   }
 
-  async function handleScanGmail() {
+  async function handleScanGmail(options: { silent?: boolean } = {}) {
     setGmailActionLoading(true);
     try {
       const result = await scanGmailPayables();
       await refreshEmailSuggestions();
       const status = await getGmailConnectionStatus();
       setGmailStatus(status);
-      toast({
-        title: result.created > 0 ? 'Sugestões atualizadas' : 'Busca concluída',
-        description: `${result.created} sugestão${result.created === 1 ? '' : 'ões'} criada${result.created === 1 ? '' : 's'} · ${result.skipped} ignorada${result.skipped === 1 ? '' : 's'}.`,
-        variant: result.errors.length > 0 ? 'destructive' : 'default',
-      });
+      if (!options.silent || result.created > 0) {
+        toast({
+          title: result.created > 0 ? 'Sugestões atualizadas' : 'Busca concluída',
+          description: `${result.created} sugestão${result.created === 1 ? '' : 'ões'} criada${result.created === 1 ? '' : 's'} · ${result.skipped} ignorada${result.skipped === 1 ? '' : 's'}.`,
+          variant: result.errors.length > 0 ? 'destructive' : 'default',
+        });
+      }
     } catch (error) {
-      toast({
-        title: 'Não foi possível buscar no Gmail',
-        description: error instanceof Error ? error.message : 'Tente novamente em instantes.',
-        variant: 'destructive',
-      });
+      if (!options.silent) {
+        toast({
+          title: 'Não foi possível buscar no Gmail',
+          description: error instanceof Error ? error.message : 'Tente novamente em instantes.',
+          variant: 'destructive',
+        });
+      }
     } finally {
       setGmailActionLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try { window.localStorage.setItem(AUTO_SCAN_ENABLED_KEY, autoScanEnabled ? '1' : '0'); } catch { /* ignore */ }
+  }, [autoScanEnabled]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try { window.localStorage.setItem(AUTO_SCAN_INTERVAL_KEY, String(autoScanIntervalHours)); } catch { /* ignore */ }
+  }, [autoScanIntervalHours]);
+
+  useEffect(() => {
+    if (!autoScanEnabled || !gmailStatus?.connected) return;
+    const intervalMs = autoScanIntervalHours * 60 * 60 * 1000;
+    const id = window.setInterval(() => {
+      void handleScanGmail({ silent: true });
+    }, intervalMs);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoScanEnabled, autoScanIntervalHours, gmailStatus?.connected]);
 
   async function acceptSuggestionNow(suggestion: EmailSuggestion) {
     setPaidSuggestionToConfirm(null);
@@ -575,81 +599,87 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
 
   return (
     <div className="space-y-6">
-      <Card className="overflow-hidden border-cyan-200 bg-white shadow-sm">
-        <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
-            <div className={cn('mt-0.5 rounded-xl p-2.5 shadow-sm', gmailStatus?.connected ? 'bg-emerald-600 text-white' : 'bg-cyan-700 text-white')}>
-              {gmailStatus?.connected ? <CheckCircle2 className="h-4 w-4" /> : <Link2 className="h-4 w-4" />}
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold">
-                {gmailStatus?.connected ? 'Gmail conectado' : 'Conectar Gmail / Google Workspace'}
+      <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          {gmailStatus?.connected ? (
+            <span className="relative flex h-2.5 w-2.5 shrink-0">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+            </span>
+          ) : (
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-muted-foreground/40" aria-hidden />
+          )}
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-foreground">
+              {gmailStatus?.connected ? gmailStatus.email ?? 'Gmail conectado' : 'Gmail desconectado'}
+            </p>
+            <p className="truncate text-xs text-muted-foreground">
+              {gmailStatus?.connected
+                ? gmailStatus.last_sync_at
+                  ? `Última busca ${format(parseISO(gmailStatus.last_sync_at), "dd/MM 'às' HH:mm")}`
+                  : 'Pronto pra primeira busca'
+                : 'Conecte sua conta pra começar a receber sugestões'}
+            </p>
+            {gmailStatus?.last_error ? (
+              <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-destructive">
+                <AlertCircle className="h-3 w-3" />
+                {gmailStatus.last_error}
               </p>
-              <p className="mt-0.5 text-xs font-medium text-slate-600">
-                {gmailStatus?.connected
-                  ? `${gmailStatus.email ?? 'Conta conectada'}${gmailStatus.last_sync_at ? ` · última busca ${format(parseISO(gmailStatus.last_sync_at), "dd/MM/yyyy 'às' HH:mm")}` : ''}`
-                  : 'Leia boletos, faturas e notas do e-mail com revisão antes de virar conta.'}
-              </p>
-              {gmailStatus?.last_error ? (
-                <p className="mt-2 inline-flex items-center gap-1 text-xs text-destructive">
-                  <AlertCircle className="h-3.5 w-3.5" />
-                  {gmailStatus.last_error}
-                </p>
-              ) : null}
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2 sm:justify-end">
-            <Button variant={gmailStatus?.connected ? 'outline' : 'default'} size="sm" onClick={() => void handleConnectGmail()} disabled={gmailLoading || gmailActionLoading}>
-              {gmailStatus?.connected ? 'Reconectar' : 'Conectar Gmail'}
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => void handleScanGmail()} disabled={!gmailStatus?.connected || gmailActionLoading}>
-              <RefreshCw className={cn('mr-2 h-3.5 w-3.5', gmailActionLoading && 'animate-spin')} />
-              Buscar agora
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-5 text-white shadow-md">
-        <div className="absolute -right-12 -top-12 h-40 w-40 rounded-full bg-primary/20 blur-3xl" aria-hidden />
-        <div className="absolute -bottom-12 -left-10 h-32 w-32 rounded-full bg-emerald-500/15 blur-3xl" aria-hidden />
-        <div className="relative flex flex-wrap items-start justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/20 backdrop-blur">
-              <Bot className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-base font-semibold leading-tight">Sugestões extraídas do e-mail</p>
-              <p className="mt-1 text-xs text-slate-300">Contas detectadas automaticamente — confira e aceite o que fizer sentido.</p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {paidPending.length > 0 ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-white shadow">
-                <BadgeCheck className="h-3.5 w-3.5" />
-                {paidPending.length} paga{paidPending.length !== 1 ? 's' : ''} detectada{paidPending.length !== 1 ? 's' : ''}
-              </span>
-            ) : null}
-            {payablePending.length > 0 ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-400 px-3 py-1 text-xs font-semibold text-slate-950 shadow">
-                <ReceiptText className="h-3.5 w-3.5" />
-                {payablePending.length} a pagar
-              </span>
-            ) : null}
-            {accepted.length > 0 ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-emerald-200 ring-1 ring-white/20">
-                <BadgeCheck className="h-3.5 w-3.5" />
-                {accepted.length} já aceita{accepted.length !== 1 ? 's' : ''}
-              </span>
-            ) : null}
-            {dismissed.length > 0 ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300 ring-1 ring-white/10">
-                {dismissed.length} ignorada{dismissed.length !== 1 ? 's' : ''}
-              </span>
             ) : null}
           </div>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {gmailStatus?.connected ? (
+            <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-2.5 py-1.5">
+              <Switch
+                id="payables-autoscan-toggle"
+                checked={autoScanEnabled}
+                onCheckedChange={setAutoScanEnabled}
+              />
+              <Label htmlFor="payables-autoscan-toggle" className="cursor-pointer text-xs font-medium text-foreground">Auto</Label>
+              {autoScanEnabled ? (
+                <Select value={String(autoScanIntervalHours)} onValueChange={(value) => setAutoScanIntervalHours(Number(value))}>
+                  <SelectTrigger className="h-7 w-[110px] border-border/60 bg-background text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="6">A cada 6h</SelectItem>
+                    <SelectItem value="12">A cada 12h</SelectItem>
+                    <SelectItem value="24">1x por dia</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : null}
+            </div>
+          ) : null}
+          <Button size="sm" variant="outline" onClick={() => void handleScanGmail()} disabled={!gmailStatus?.connected || gmailActionLoading}>
+            <RefreshCw className={cn('mr-2 h-3.5 w-3.5', gmailActionLoading && 'animate-spin')} />
+            Buscar agora
+          </Button>
+          <Button variant={gmailStatus?.connected ? 'ghost' : 'default'} size="sm" onClick={() => void handleConnectGmail()} disabled={gmailLoading || gmailActionLoading}>
+            <Link2 className="mr-2 h-3.5 w-3.5" />
+            {gmailStatus?.connected ? 'Reconectar' : 'Conectar Gmail'}
+          </Button>
+        </div>
       </div>
+
+      {(paidPending.length > 0 || payablePending.length > 0 || accepted.length > 0 || dismissed.length > 0) ? (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          {paidPending.length > 0 ? (
+            <span className="inline-flex items-center gap-1.5 font-medium text-emerald-700">
+              <BadgeCheck className="h-3.5 w-3.5" />
+              {paidPending.length} paga{paidPending.length !== 1 ? 's' : ''}
+            </span>
+          ) : null}
+          {payablePending.length > 0 ? (
+            <span className="inline-flex items-center gap-1.5 font-medium text-amber-700">
+              <ReceiptText className="h-3.5 w-3.5" />
+              {payablePending.length} a pagar
+            </span>
+          ) : null}
+          {accepted.length > 0 ? <span>{accepted.length} aceita{accepted.length !== 1 ? 's' : ''}</span> : null}
+          {dismissed.length > 0 ? <span>{dismissed.length} ignorada{dismissed.length !== 1 ? 's' : ''}</span> : null}
+        </div>
+      ) : null}
 
       {pending.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border/60 py-16 text-center">

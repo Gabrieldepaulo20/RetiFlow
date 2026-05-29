@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { endOfMonth, format, startOfMonth } from 'date-fns';
+import { endOfMonth, format, parseISO, startOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { motion } from 'framer-motion';
 import { AlertCircle, AlertTriangle, CalendarCheck, CalendarClock, CheckCircle2, Clock, Copy, FileText, MailOpen, MoreHorizontal, Pencil, PlusCircle, Repeat, Search, Sparkles, Trash2, Wallet, XCircle } from 'lucide-react';
@@ -154,7 +154,7 @@ export default function ContasAPagar() {
       const nowTime = now.getTime();
       const inThirtyDays = nowTime + 30 * 24 * 60 * 60 * 1000;
       result = result.filter((payable) => {
-        const dueTime = new Date(payable.dueDate).getTime();
+        const dueTime = parseISO(payable.dueDate).getTime();
         if (periodFilter === 'current-month') return dueTime >= startCurrentMonth && dueTime <= endCurrentMonth;
         if (periodFilter === 'next-30') return dueTime >= nowTime && dueTime <= inThirtyDays;
         if (periodFilter === 'overdue') return isPayableOverdue(payable);
@@ -173,7 +173,6 @@ export default function ContasAPagar() {
       sub: hasDueToday ? `${dueToday.length} conta${dueToday.length !== 1 ? 's' : ''} no prazo` : 'Você pode respirar',
       Icon: CalendarCheck,
       tone: hasDueToday ? 'urgent' : 'ok',
-      onClick: () => { setStatusFilter('pendente'); setPeriodFilter('current-month'); },
     },
     {
       label: 'Em atraso',
@@ -181,7 +180,6 @@ export default function ContasAPagar() {
       sub: hasOverdue ? `${overduePayables.length} venceram` : 'Nenhum atraso',
       Icon: AlertTriangle,
       tone: hasOverdue ? 'danger' : 'ok',
-      onClick: () => setStatusFilter('vencido'),
     },
     {
       label: 'A pagar',
@@ -189,7 +187,6 @@ export default function ContasAPagar() {
       sub: `${pendingLike.length} conta${pendingLike.length !== 1 ? 's' : ''} pendente${pendingLike.length !== 1 ? 's' : ''}`,
       Icon: Clock,
       tone: 'warn',
-      onClick: () => setStatusFilter('pendente'),
     },
     {
       label: 'Pago no mês',
@@ -197,7 +194,6 @@ export default function ContasAPagar() {
       sub: format(now, "MMMM 'de' yyyy", { locale: ptBR }),
       Icon: CheckCircle2,
       tone: 'success',
-      onClick: () => setStatusFilter('pago'),
     },
   ] as const;
 
@@ -514,28 +510,25 @@ export default function ContasAPagar() {
           {summaryCards.map((card, index) => {
             const tone = kpiToneStyles[card.tone];
             return (
-              <motion.button
+              <motion.div
                 key={card.label}
-                type="button"
-                onClick={card.onClick}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.06, duration: 0.25 }}
-                whileHover={{ y: -2 }}
                 className={cn(
-                  'group relative w-full overflow-hidden rounded-2xl border p-5 text-left shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                  'relative overflow-hidden rounded-2xl border p-5 shadow-sm',
                   tone.card,
                 )}
               >
                 <div className="flex items-start justify-between gap-3">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{card.label}</span>
-                  <span className={cn('flex h-10 w-10 items-center justify-center rounded-xl transition-transform group-hover:scale-110', tone.icon)}>
+                  <span className={cn('flex h-10 w-10 items-center justify-center rounded-xl', tone.icon)}>
                     <card.Icon className="h-5 w-5" />
                   </span>
                 </div>
                 <p className={cn('mt-3 text-2xl font-display font-bold tracking-tight tabular-nums leading-tight', tone.value)}>{card.value}</p>
                 <p className="mt-1.5 text-xs font-medium text-muted-foreground">{card.sub}</p>
-              </motion.button>
+              </motion.div>
             );
           })}
         </div>
