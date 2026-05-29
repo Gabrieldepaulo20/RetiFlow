@@ -33,7 +33,6 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useData } from '@/contexts/DataContext';
@@ -611,21 +610,44 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
         </CardContent>
       </Card>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <div className="rounded-xl bg-slate-900 p-2 text-white shadow-sm">
-            <Bot className="h-4 w-4" />
+      <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-5 text-white shadow-md">
+        <div className="absolute -right-12 -top-12 h-40 w-40 rounded-full bg-primary/20 blur-3xl" aria-hidden />
+        <div className="absolute -bottom-12 -left-10 h-32 w-32 rounded-full bg-emerald-500/15 blur-3xl" aria-hidden />
+        <div className="relative flex flex-wrap items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/20 backdrop-blur">
+              <Bot className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-base font-semibold leading-tight">Sugestões extraídas do e-mail</p>
+              <p className="mt-1 text-xs text-slate-300">Contas detectadas automaticamente — confira e aceite o que fizer sentido.</p>
+            </div>
           </div>
-          <div>
-            <p className="text-sm font-semibold">Sugestões extraídas do e-mail</p>
-            <p className="text-xs font-medium text-slate-600">Contas detectadas automaticamente na caixa de entrada — escolha o que usar.</p>
+          <div className="flex flex-wrap items-center gap-2">
+            {paidPending.length > 0 ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-white shadow">
+                <BadgeCheck className="h-3.5 w-3.5" />
+                {paidPending.length} paga{paidPending.length !== 1 ? 's' : ''} detectada{paidPending.length !== 1 ? 's' : ''}
+              </span>
+            ) : null}
+            {payablePending.length > 0 ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-400 px-3 py-1 text-xs font-semibold text-slate-950 shadow">
+                <ReceiptText className="h-3.5 w-3.5" />
+                {payablePending.length} a pagar
+              </span>
+            ) : null}
+            {accepted.length > 0 ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-emerald-200 ring-1 ring-white/20">
+                <BadgeCheck className="h-3.5 w-3.5" />
+                {accepted.length} já aceita{accepted.length !== 1 ? 's' : ''}
+              </span>
+            ) : null}
+            {dismissed.length > 0 ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300 ring-1 ring-white/10">
+                {dismissed.length} ignorada{dismissed.length !== 1 ? 's' : ''}
+              </span>
+            ) : null}
           </div>
-        </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {paidPending.length > 0 ? <span className="flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-1 font-semibold text-white"><BadgeCheck className="h-3.5 w-3.5" />{paidPending.length} pagas detectadas</span> : null}
-          {payablePending.length > 0 ? <span className="flex items-center gap-1 rounded-full bg-amber-400 px-2 py-1 font-semibold text-slate-950"><ReceiptText className="h-3.5 w-3.5" />{payablePending.length} a pagar</span> : null}
-          {accepted.length > 0 ? <span className="flex items-center gap-1 font-semibold text-emerald-700"><BadgeCheck className="h-3.5 w-3.5" />{accepted.length} aceitas</span> : null}
-          {dismissed.length > 0 ? <span className="font-medium text-slate-600">{dismissed.length} ignoradas</span> : null}
         </div>
       </div>
 
@@ -640,26 +662,66 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
           </div>
         </div>
       ) : (
-        <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="rounded-full">{pending.length} pendente{pending.length !== 1 ? 's' : ''}</Badge>
-            <p className="text-xs font-medium text-slate-600">Revise cada sugestão antes de aceitar</p>
-          </div>
-          <AnimatePresence mode="popLayout">
-            {pending.map((suggestion) => {
-              const category = categoryById.get(suggestion.suggestedCategoryId);
-              return (
-              <SuggestionCard
-                key={suggestion.id}
-                suggestion={suggestion}
-                categoryName={category?.name ?? 'Categoria'}
-                categoryIcon={category?.icon}
-                onAccept={() => { void handleAccept(suggestion); }}
-                onDismiss={() => { void handleDismiss(suggestion); }}
-              />
-              );
-            })}
-          </AnimatePresence>
+        <div className="space-y-6">
+          {paidPending.length > 0 ? (
+            <section className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200">
+                  <BadgeCheck className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-emerald-900">Pagas detectadas</p>
+                  <p className="text-[11px] font-medium text-emerald-700/80">Aceite pra registrar como já quitadas</p>
+                </div>
+                <span className="ml-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">{paidPending.length}</span>
+              </div>
+              <AnimatePresence mode="popLayout">
+                {paidPending.map((suggestion) => {
+                  const category = categoryById.get(suggestion.suggestedCategoryId);
+                  return (
+                    <SuggestionCard
+                      key={suggestion.id}
+                      suggestion={suggestion}
+                      categoryName={category?.name ?? 'Categoria'}
+                      categoryIcon={category?.icon}
+                      onAccept={() => { void handleAccept(suggestion); }}
+                      onDismiss={() => { void handleDismiss(suggestion); }}
+                    />
+                  );
+                })}
+              </AnimatePresence>
+            </section>
+          ) : null}
+
+          {payablePending.length > 0 ? (
+            <section className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-100 text-amber-700 ring-1 ring-amber-200">
+                  <ReceiptText className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-amber-900">A pagar detectadas</p>
+                  <p className="text-[11px] font-medium text-amber-700/80">Revise e adicione no controle</p>
+                </div>
+                <span className="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">{payablePending.length}</span>
+              </div>
+              <AnimatePresence mode="popLayout">
+                {payablePending.map((suggestion) => {
+                  const category = categoryById.get(suggestion.suggestedCategoryId);
+                  return (
+                    <SuggestionCard
+                      key={suggestion.id}
+                      suggestion={suggestion}
+                      categoryName={category?.name ?? 'Categoria'}
+                      categoryIcon={category?.icon}
+                      onAccept={() => { void handleAccept(suggestion); }}
+                      onDismiss={() => { void handleDismiss(suggestion); }}
+                    />
+                  );
+                })}
+              </AnimatePresence>
+            </section>
+          ) : null}
         </div>
       )}
 

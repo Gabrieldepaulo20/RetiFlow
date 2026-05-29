@@ -3,7 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import { endOfMonth, format, startOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { motion } from 'framer-motion';
-import { AlertCircle, AlertTriangle, CalendarCheck, CheckCircle2, Clock, Copy, FileText, MailOpen, MoreHorizontal, Pencil, PlusCircle, Search, Trash2, Wallet, XCircle } from 'lucide-react';
+import { AlertCircle, AlertTriangle, CalendarCheck, CalendarClock, CheckCircle2, Clock, Copy, FileText, MailOpen, MoreHorizontal, Pencil, PlusCircle, Repeat, Search, Sparkles, Trash2, Wallet, XCircle } from 'lucide-react';
+import { getCategoryIcon } from '@/lib/payableCategoryIcon';
 import { useAuth } from '@/contexts/AuthContext';
 import { useData } from '@/contexts/DataContext';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -19,7 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { AccountPayable, PaymentMethod, PAYABLE_ENTRY_SOURCE_LABELS, PAYABLE_STATUS_COLORS, PAYABLE_STATUS_LABELS, PAYMENT_METHOD_LABELS, RECURRENCE_TYPE_LABELS } from '@/types';
+import { AccountPayable, PaymentMethod, PAYABLE_STATUS_COLORS, PAYABLE_STATUS_LABELS, PAYMENT_METHOD_LABELS, RECURRENCE_TYPE_LABELS } from '@/types';
 import { buildPayableHistoryDescription, calculatePayableFinalAmount, calculatePayableRemainingBalance, canCancelPayable, canEditPayable, canRegisterPayment, formatPayableDueDateLabel, getDueDateUrgencyLevel, getPayableDisplayStatus, isPayableEditRestricted, isPayableOverdue } from '@/services/domain/payables';
 import { getGmailOAuthFeedback } from '@/services/domain/gmailOAuth';
 import {
@@ -56,16 +57,15 @@ function PayableStatusBadge({ payable }: { payable: AccountPayable }) {
 function DueDateLabel({ payable }: { payable: AccountPayable }) {
   const urgency = getDueDateUrgencyLevel(payable);
   return (
-    <span className={cn('text-sm', urgency === 'overdue' && 'font-medium text-destructive', urgency === 'critical' && 'font-medium text-amber-600')}>
+    <span className={cn(
+      'text-xs font-medium',
+      urgency === 'overdue' && 'font-semibold text-destructive',
+      urgency === 'critical' && 'font-semibold text-amber-700',
+      urgency !== 'overdue' && urgency !== 'critical' && 'text-muted-foreground',
+    )}>
       {formatPayableDueDateLabel(payable)}
     </span>
   );
-}
-
-function SourceBadge({ payable }: { payable: AccountPayable }) {
-  const source = payable.entrySource ?? 'MANUAL';
-  const tone = source === 'IA_IMPORT' ? 'bg-primary/10 text-primary' : source === 'CAMERA_CAPTURE' ? 'bg-sky-100 text-sky-700' : source === 'AUTO_SERIES' ? 'bg-violet-100 text-violet-700' : 'bg-muted text-muted-foreground';
-  return <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium', tone)}>{PAYABLE_ENTRY_SOURCE_LABELS[source]}</span>;
 }
 
 type PageView = 'contas' | 'sugestoes';
@@ -164,12 +164,70 @@ export default function ContasAPagar() {
     return [...result].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   }, [activePayables, categoryFilter, endCurrentMonth, now, originFilter, periodFilter, search, startCurrentMonth, statusFilter]);
 
+  const hasDueToday = dueToday.length > 0;
+  const hasOverdue = overduePayables.length > 0;
   const summaryCards = [
-    { label: 'Total Pendente', value: fmtBRL(pendingLike.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0)), sub: `${pendingLike.length} conta${pendingLike.length !== 1 ? 's' : ''}`, Icon: Clock, iconClass: 'text-amber-600 bg-amber-50' },
-    { label: 'Total Vencido', value: overduePayables.length > 0 ? fmtBRL(overduePayables.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0)) : 'Nenhum', sub: overduePayables.length > 0 ? `${overduePayables.length} em atraso` : 'Tudo em dia', Icon: AlertTriangle, iconClass: overduePayables.length > 0 ? 'text-destructive bg-destructive/10' : 'text-muted-foreground bg-muted' },
-    { label: 'Pago no Mês', value: fmtBRL(paidThisMonth.reduce((sum, payable) => sum + (payable.paidAmount ?? payable.finalAmount), 0)), sub: format(now, "MMMM 'de' yyyy", { locale: ptBR }), Icon: CheckCircle2, iconClass: 'text-success bg-success/10' },
-    { label: 'Vence Hoje', value: dueToday.length > 0 ? fmtBRL(dueToday.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0)) : '—', sub: `${dueToday.length} conta${dueToday.length !== 1 ? 's' : ''}`, Icon: CalendarCheck, iconClass: dueToday.length > 0 ? 'text-orange-600 bg-orange-50' : 'text-muted-foreground bg-muted' },
-  ];
+    {
+      label: 'Vence hoje',
+      value: hasDueToday ? fmtBRL(dueToday.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0)) : 'Nada pra hoje',
+      sub: hasDueToday ? `${dueToday.length} conta${dueToday.length !== 1 ? 's' : ''} no prazo` : 'Você pode respirar',
+      Icon: CalendarCheck,
+      tone: hasDueToday ? 'urgent' : 'ok',
+      onClick: () => { setStatusFilter('pendente'); setPeriodFilter('current-month'); },
+    },
+    {
+      label: 'Em atraso',
+      value: hasOverdue ? fmtBRL(overduePayables.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0)) : 'Tudo em dia',
+      sub: hasOverdue ? `${overduePayables.length} venceram` : 'Nenhum atraso',
+      Icon: AlertTriangle,
+      tone: hasOverdue ? 'danger' : 'ok',
+      onClick: () => setStatusFilter('vencido'),
+    },
+    {
+      label: 'A pagar',
+      value: fmtBRL(pendingLike.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0)),
+      sub: `${pendingLike.length} conta${pendingLike.length !== 1 ? 's' : ''} pendente${pendingLike.length !== 1 ? 's' : ''}`,
+      Icon: Clock,
+      tone: 'warn',
+      onClick: () => setStatusFilter('pendente'),
+    },
+    {
+      label: 'Pago no mês',
+      value: fmtBRL(paidThisMonth.reduce((sum, payable) => sum + (payable.paidAmount ?? payable.finalAmount), 0)),
+      sub: format(now, "MMMM 'de' yyyy", { locale: ptBR }),
+      Icon: CheckCircle2,
+      tone: 'success',
+      onClick: () => setStatusFilter('pago'),
+    },
+  ] as const;
+
+  const kpiToneStyles: Record<typeof summaryCards[number]['tone'], { card: string; icon: string; value: string }> = {
+    urgent: {
+      card: 'border-amber-300/70 bg-gradient-to-br from-amber-50 via-white to-white shadow-amber-100/40',
+      icon: 'bg-amber-500 text-white shadow-md shadow-amber-200',
+      value: 'text-amber-900',
+    },
+    danger: {
+      card: 'border-destructive/40 bg-gradient-to-br from-red-50 via-white to-white shadow-red-100/40',
+      icon: 'bg-destructive text-destructive-foreground shadow-md shadow-red-200',
+      value: 'text-destructive',
+    },
+    warn: {
+      card: 'border-primary/30 bg-gradient-to-br from-primary/[0.05] via-white to-white shadow-primary/10',
+      icon: 'bg-primary text-primary-foreground shadow-md shadow-primary/20',
+      value: 'text-foreground',
+    },
+    success: {
+      card: 'border-emerald-300/70 bg-gradient-to-br from-emerald-50 via-white to-white shadow-emerald-100/40',
+      icon: 'bg-emerald-600 text-white shadow-md shadow-emerald-200',
+      value: 'text-emerald-900',
+    },
+    ok: {
+      card: 'border-border bg-gradient-to-br from-muted/30 via-white to-white',
+      icon: 'bg-muted text-muted-foreground',
+      value: 'text-muted-foreground',
+    },
+  };
 
   function updateRouteModal(modal?: string, id?: string) {
     const next = new URLSearchParams(searchParams);
@@ -398,14 +456,22 @@ export default function ContasAPagar() {
     <>
       <div className="space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-display font-bold">Contas a Pagar</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">Gerencie boletos, notas e despesas da retífica com entrada manual rápida ou importação assistida.</p>
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 via-primary/10 to-transparent ring-1 ring-primary/20">
+              <Wallet className="h-6 w-6 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-display font-bold tracking-tight">Contas a Pagar</h1>
+              <p className="mt-0.5 text-sm text-muted-foreground">Boletos, notas e despesas — entrada manual rápida ou importação assistida por IA.</p>
+            </div>
           </div>
           <div className="flex flex-col items-stretch gap-3 sm:items-end">
             <Tabs value={pageView} onValueChange={(value) => updatePageView(value as PageView)}>
               <TabsList className="grid h-10 grid-cols-2 rounded-xl">
-                <TabsTrigger value="contas">Contas</TabsTrigger>
+                <TabsTrigger value="contas" className="gap-2">
+                  <Wallet className="h-4 w-4" />
+                  Contas
+                </TabsTrigger>
                 <TabsTrigger value="sugestoes" className="relative gap-2">
                   <MailOpen className="h-4 w-4" />
                   Sugestões
@@ -419,8 +485,8 @@ export default function ContasAPagar() {
             </Tabs>
             {pageView === 'contas' ? (
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={() => updateRouteModal('import')}><FileText className="mr-2 h-4 w-4" />Importar com IA</Button>
-              <Button onClick={() => updateRouteModal('new')}><PlusCircle className="mr-2 h-4 w-4" />Nova Conta</Button>
+              <Button variant="outline" onClick={() => updateRouteModal('import')}><Sparkles className="mr-2 h-4 w-4" />Importar com IA</Button>
+              <Button onClick={() => updateRouteModal('new')} className="shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30"><PlusCircle className="mr-2 h-4 w-4" />Nova Conta</Button>
             </div>
             ) : null}
           </div>
@@ -445,11 +511,33 @@ export default function ContasAPagar() {
 
         {pageView === 'contas' ? <ErrorBoundary><>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {summaryCards.map((card, index) => (
-            <motion.div key={card.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.06, duration: 0.2 }}>
-              <Card><CardContent className="p-4"><div className="mb-3 flex items-start justify-between gap-2"><span className="text-xs font-medium text-muted-foreground">{card.label}</span><span className={cn('rounded-md p-1.5', card.iconClass)}><card.Icon className="h-3.5 w-3.5" /></span></div><p className="text-2xl font-display font-bold tracking-tight">{card.value}</p><p className="mt-1 text-xs text-muted-foreground">{card.sub}</p></CardContent></Card>
-            </motion.div>
-          ))}
+          {summaryCards.map((card, index) => {
+            const tone = kpiToneStyles[card.tone];
+            return (
+              <motion.button
+                key={card.label}
+                type="button"
+                onClick={card.onClick}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.06, duration: 0.25 }}
+                whileHover={{ y: -2 }}
+                className={cn(
+                  'group relative w-full overflow-hidden rounded-2xl border p-5 text-left shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                  tone.card,
+                )}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{card.label}</span>
+                  <span className={cn('flex h-10 w-10 items-center justify-center rounded-xl transition-transform group-hover:scale-110', tone.icon)}>
+                    <card.Icon className="h-5 w-5" />
+                  </span>
+                </div>
+                <p className={cn('mt-3 text-2xl font-display font-bold tracking-tight tabular-nums leading-tight', tone.value)}>{card.value}</p>
+                <p className="mt-1.5 text-xs font-medium text-muted-foreground">{card.sub}</p>
+              </motion.button>
+            );
+          })}
         </div>
 
         <Card>
@@ -475,27 +563,141 @@ export default function ContasAPagar() {
             {filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-4 py-24 text-center"><Wallet className="h-10 w-10 text-muted-foreground" /><div className="max-w-sm"><h3 className="text-base font-semibold">Nenhuma conta encontrada</h3><p className="text-sm text-muted-foreground">Ajuste os filtros ou cadastre a primeira conta.</p></div><Button variant="outline" onClick={() => { setStatusFilter('all'); setPeriodFilter('all'); setOriginFilter('all'); setCategoryFilter('all'); setSearchRaw(''); }}>Limpar filtros</Button></div>
             ) : (
-              <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
-                {filtered.map((payable) => (
-                  <Card key={payable.id} className={cn('border shadow-none', isPayableOverdue(payable) && 'border-destructive/30 bg-destructive/[0.02]')}>
-                    <CardContent className="flex flex-col gap-3 p-4">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="flex items-start gap-2">{payable.isUrgent ? <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" /> : null}<p className="truncate text-sm font-medium">{payable.title}</p></div>
-                          {payable.supplierName ? <p className="mt-1 truncate text-xs text-muted-foreground">{payable.supplierName}</p> : null}
+              <div className="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-3">
+                {filtered.map((payable, index) => {
+                  const urgency = getDueDateUrgencyLevel(payable);
+                  const displayStatus = getPayableDisplayStatus(payable);
+                  const overdue = isPayableOverdue(payable);
+                  const category = categoryById.get(payable.categoryId);
+                  const CategoryIcon = getCategoryIcon(category?.icon);
+                  const isPaid = displayStatus === 'PAGO';
+                  const isCancelled = displayStatus === 'CANCELADO';
+
+                  const rail = overdue
+                    ? 'bg-destructive'
+                    : urgency === 'critical' || payable.isUrgent
+                      ? 'bg-amber-500'
+                      : isPaid
+                        ? 'bg-emerald-500'
+                        : isCancelled
+                          ? 'bg-muted-foreground/50'
+                          : displayStatus === 'AGENDADO'
+                            ? 'bg-cyan-500'
+                            : 'bg-primary/70';
+
+                  const iconBox = overdue
+                    ? 'bg-destructive/10 text-destructive ring-destructive/20'
+                    : urgency === 'critical' || payable.isUrgent
+                      ? 'bg-amber-100 text-amber-700 ring-amber-200'
+                      : isPaid
+                        ? 'bg-emerald-100 text-emerald-700 ring-emerald-200'
+                        : isCancelled
+                          ? 'bg-muted text-muted-foreground ring-border'
+                          : 'bg-primary/10 text-primary ring-primary/20';
+
+                  const valueColor = overdue
+                    ? 'text-destructive'
+                    : isPaid
+                      ? 'text-emerald-700'
+                      : isCancelled
+                        ? 'text-muted-foreground line-through decoration-2 decoration-muted-foreground/40'
+                        : 'text-foreground';
+
+                  const primaryAction = canRegisterPayment(payable)
+                    ? { label: 'Registrar pagamento', onClick: () => openPayment(payable) }
+                    : canEditPayable(payable)
+                      ? { label: 'Editar', onClick: () => openEdit(payable) }
+                      : null;
+
+                  return (
+                    <motion.div
+                      key={payable.id}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: Math.min(index, 8) * 0.03, duration: 0.22 }}
+                      whileHover={{ y: -2 }}
+                      className={cn(
+                        'group relative flex overflow-hidden rounded-2xl border bg-card shadow-sm transition-shadow hover:shadow-md',
+                        overdue && 'border-destructive/40',
+                        isCancelled && 'opacity-70',
+                      )}
+                    >
+                      <div className={cn('w-1.5 shrink-0', rail)} />
+                      <div className="flex min-w-0 flex-1 flex-col gap-3 p-4">
+                        <div className="flex items-start gap-3">
+                          <div className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1', iconBox)}>
+                            <CategoryIcon className="h-5 w-5" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  {payable.isUrgent ? <AlertCircle className="h-3.5 w-3.5 shrink-0 text-destructive" aria-label="Urgente" /> : null}
+                                  <p className="truncate text-sm font-semibold text-foreground leading-tight">{payable.title}</p>
+                                </div>
+                                {payable.supplierName ? (
+                                  <p className="mt-0.5 truncate text-xs text-muted-foreground">{payable.supplierName}</p>
+                                ) : null}
+                              </div>
+                              <p className={cn('text-xl font-display font-bold tabular-nums tracking-tight whitespace-nowrap', valueColor)}>
+                                {fmtBRL(payable.finalAmount)}
+                              </p>
+                            </div>
+                          </div>
                         </div>
-                        {renderActions(payable)}
+
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <PayableStatusBadge payable={payable} />
+                          {category ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                              <CategoryIcon className="h-3 w-3" />
+                              {category.name}
+                            </span>
+                          ) : null}
+                          {(payable.totalInstallments ?? 0) > 1 ? (
+                            <Badge variant="outline" className="gap-1 text-[11px]">
+                              <Repeat className="h-3 w-3" />
+                              {payable.recurrenceIndex ?? 1}/{payable.totalInstallments}
+                            </Badge>
+                          ) : null}
+                          {payable.recurrence !== 'NENHUMA' ? (
+                            <Badge variant="outline" className="text-[11px]">{RECURRENCE_TYPE_LABELS[payable.recurrence]}</Badge>
+                          ) : null}
+                          {payable.entrySource === 'IA_IMPORT' ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                              <Sparkles className="h-3 w-3" /> IA
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div className="flex items-center gap-1.5 text-xs">
+                          <CalendarClock className={cn(
+                            'h-3.5 w-3.5 shrink-0',
+                            overdue ? 'text-destructive' : urgency === 'critical' ? 'text-amber-600' : 'text-muted-foreground',
+                          )} />
+                          <DueDateLabel payable={payable} />
+                        </div>
+
+                        <div className="mt-auto flex items-center gap-2 pt-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1"
+                            onClick={() => updateRouteModal('details', payable.id)}
+                          >
+                            Ver detalhes
+                          </Button>
+                          {primaryAction ? (
+                            <Button size="sm" className="flex-1" onClick={primaryAction.onClick}>
+                              {primaryAction.label}
+                            </Button>
+                          ) : null}
+                          <div className="shrink-0">{renderActions(payable)}</div>
+                        </div>
                       </div>
-                      <div className="flex flex-wrap gap-1.5"><span className={cn('inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium', categoryById.get(payable.categoryId)?.color ?? 'bg-muted text-muted-foreground')}>{categoryById.get(payable.categoryId)?.name ?? 'Categoria'}</span><SourceBadge payable={payable} />{(payable.totalInstallments ?? 0) > 1 ? <Badge variant="outline">{payable.recurrenceIndex ?? 1}/{payable.totalInstallments}</Badge> : null}{payable.recurrence !== 'NENHUMA' ? <Badge variant="outline">{RECURRENCE_TYPE_LABELS[payable.recurrence]}</Badge> : null}</div>
-                      <div className="flex items-center justify-between gap-3"><DueDateLabel payable={payable} /><p className="text-lg font-display font-bold tabular-nums">{fmtBRL(payable.finalAmount)}</p></div>
-                      <div className="flex items-center justify-between gap-2"><PayableStatusBadge payable={payable} /><span className="text-xs text-muted-foreground">{getDueDateUrgencyLevel(payable) === 'overdue' ? 'Atenção imediata' : 'Em acompanhamento'}</span></div>
-                      <div className="mt-auto grid grid-cols-2 gap-2">
-                        <Button variant="outline" size="sm" onClick={() => updateRouteModal('details', payable.id)}>Ver detalhes</Button>
-                        {canRegisterPayment(payable) ? <Button size="sm" onClick={() => openPayment(payable)}>Registrar pagamento</Button> : canEditPayable(payable) ? <Button variant="outline" size="sm" onClick={() => openEdit(payable)}>Editar</Button> : null}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                    </motion.div>
+                  );
+                })}
               </div>
             )}
           </CardContent>
