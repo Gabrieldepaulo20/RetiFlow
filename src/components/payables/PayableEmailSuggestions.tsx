@@ -38,6 +38,7 @@ import { EmailSuggestion } from '@/types';
 import { buildPayableHistoryDescription } from '@/services/domain/payables';
 import { getGmailConnectionStatus, scanGmailPayables, startGmailOAuth, type GmailConnectionStatus } from '@/api/supabase/gmail-payables';
 import { getCategoryIcon } from '@/lib/payableCategoryIcon';
+import { SupplierAvatar } from '@/components/payables/SupplierAvatar';
 
 function fmtBRL(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -153,6 +154,20 @@ function ConfidenceBadge({ value }: { value: number }) {
   return <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ring-1', tone)}><Sparkles className="h-2.5 w-2.5" />{value}% confiança</span>;
 }
 
+function SenderRiskBadge({ risk }: { risk?: 'BAIXO' | 'MEDIO' | 'ALTO' }) {
+  if (!risk || risk === 'BAIXO') return null;
+  const isHigh = risk === 'ALTO';
+  return (
+    <span className={cn(
+      'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ring-1',
+      isHigh ? 'bg-rose-600 text-white ring-rose-600' : 'bg-amber-100 text-amber-900 ring-amber-300',
+    )}>
+      <AlertCircle className="h-3 w-3" />
+      {isHigh ? 'Remetente suspeito' : 'Remetente a revisar'}
+    </span>
+  );
+}
+
 function SuggestionStatusBadge({ suggestion }: { suggestion: EmailSuggestion }) {
   if (suggestion.suggestedStatus === 'INCERTO') {
     return (
@@ -213,6 +228,10 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, onAccept, onDi
   const isPaid = suggestion.suggestedStatus === 'PAGO';
   const isScheduled = suggestion.suggestedStatus === 'AGENDADO';
   const isReview = suggestion.suggestedStatus === 'INCERTO';
+  const isHighRisk = suggestion.senderRisk === 'ALTO';
+  const verificationSignals = suggestion.verificationSignals ?? [];
+  const fraudSignals = suggestion.fraudSignals ?? [];
+  const [allowHighRisk, setAllowHighRisk] = useState(false);
   const brand = getSuggestionBrand(suggestion);
   const CategoryIcon = getCategoryIcon(categoryIcon);
   const StatusIcon = isReview ? AlertCircle : isPaid ? CheckCircle2 : isScheduled ? Clock3 : MailOpen;
@@ -255,6 +274,7 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, onAccept, onDi
       <Card className={cn(
         'overflow-hidden border shadow-sm transition-shadow hover:shadow-md',
         cardClass,
+        isHighRisk && 'border-rose-400 ring-1 ring-rose-300',
       )}>
         <CardContent className="p-0">
           <div className="flex">
@@ -262,11 +282,14 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, onAccept, onDi
             <div className="min-w-0 flex-1">
               <div className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="flex min-w-0 gap-3">
-                  <div className={cn(
-                    'relative mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl',
-                    iconClass,
-                  )}>
-                    {brand ? <BrandMark brand={brand} className="text-lg" /> : <CategoryIcon className="h-5 w-5" />}
+                  <div className="relative mt-0.5 shrink-0">
+                    {brand ? (
+                      <div className={cn('flex h-11 w-11 items-center justify-center rounded-xl', iconClass)}>
+                        <BrandMark brand={brand} className="text-lg" />
+                      </div>
+                    ) : (
+                      <SupplierAvatar name={suggestion.suggestedSupplierName} categoryIcon={categoryIcon} size={44} />
+                    )}
                     <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-slate-950 text-white shadow-sm">
                       <StatusIcon className="h-3 w-3" />
                     </span>
@@ -275,6 +298,7 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, onAccept, onDi
                     <div className="flex flex-wrap items-center gap-2">
                       <SuggestionStatusBadge suggestion={suggestion} />
                       <ConfidenceBadge value={suggestion.confidence} />
+                      <SenderRiskBadge risk={suggestion.senderRisk} />
                     </div>
                     <p className="mt-2 text-base font-semibold leading-snug text-foreground">{suggestion.suggestedTitle || suggestion.subject}</p>
                     <p className="mt-1 text-xs font-medium text-slate-600">
@@ -288,6 +312,20 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, onAccept, onDi
                       </span>
                       <PaymentMethodChip method={suggestion.suggestedPaymentMethod} />
                     </div>
+                    {verificationSignals.length > 0 || fraudSignals.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {verificationSignals.map((signal) => (
+                          <span key={`v-${signal}`} className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                            <BadgeCheck className="h-3 w-3" />{signal}
+                          </span>
+                        ))}
+                        {fraudSignals.map((signal) => (
+                          <span key={`f-${signal}`} className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-800">
+                            <AlertCircle className="h-3 w-3" />{signal}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                     {suggestion.emailSnippet ? (
                       <p className="mt-3 line-clamp-2 rounded-lg border border-slate-200 bg-white/85 px-3 py-2 text-xs font-medium leading-relaxed text-slate-700">
                         {suggestion.emailSnippet}
@@ -326,12 +364,19 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, onAccept, onDi
                       : 'Ao confirmar, a conta entra para acompanhamento no contas a pagar.'}
                   </span>
                 </div>
-                <div className="flex gap-2 sm:justify-end">
+                <div className="flex items-center gap-2 sm:justify-end">
+                  {isHighRisk && !allowHighRisk ? (
+                    <Button variant="ghost" size="sm" className="h-8 gap-1 text-rose-700 hover:bg-rose-100 hover:text-rose-800" onClick={() => setAllowHighRisk(true)}>
+                      Criar mesmo assim
+                    </Button>
+                  ) : null}
                   <Button variant="outline" size="sm" className="h-8 gap-1 border-slate-300 bg-white/80 text-slate-700 hover:bg-white hover:text-destructive" onClick={onDismiss}>
                     <X className="h-3.5 w-3.5" />Ignorar
                   </Button>
                   <Button
                     size="sm"
+                    disabled={isHighRisk && !allowHighRisk}
+                    title={isHighRisk && !allowHighRisk ? 'Remetente com sinais de fraude — confirme antes de criar.' : undefined}
                     className={cn('h-8 gap-1', isPaid && 'bg-emerald-600 text-white hover:bg-emerald-700')}
                     onClick={onAccept}
                   >
@@ -481,7 +526,16 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
   const categoryById = useMemo(() => new Map(payableCategories.map((c) => [c.id, c])), [payableCategories]);
   const pending = useMemo(() => emailSuggestions.filter((s) => s.status === 'PENDING'), [emailSuggestions]);
   const paidPending = useMemo(() => pending.filter((s) => s.suggestedStatus === 'PAGO'), [pending]);
-  const payablePending = useMemo(() => pending.filter((s) => s.suggestedStatus !== 'PAGO'), [pending]);
+  const payablePendingAll = useMemo(() => pending.filter((s) => s.suggestedStatus !== 'PAGO'), [pending]);
+  // Confiança < 55 vai para a seção "Incertas", para não poluir a lista principal.
+  const payablePending = useMemo(
+    () => payablePendingAll.filter((s) => s.confidence >= 55).sort((a, b) => b.confidence - a.confidence),
+    [payablePendingAll],
+  );
+  const uncertainPending = useMemo(
+    () => payablePendingAll.filter((s) => s.confidence < 55).sort((a, b) => b.confidence - a.confidence),
+    [payablePendingAll],
+  );
   const dismissed = useMemo(() => emailSuggestions.filter((s) => s.status === 'DISMISSED'), [emailSuggestions]);
   const accepted = useMemo(() => emailSuggestions.filter((s) => s.status === 'ACCEPTED'), [emailSuggestions]);
 
@@ -751,6 +805,33 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
                 })}
               </AnimatePresence>
             </section>
+          ) : null}
+
+          {uncertainPending.length > 0 ? (
+            <details className="group rounded-2xl border border-dashed border-border/70 bg-muted/20 p-3">
+              <summary className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-muted-foreground hover:text-foreground">
+                <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
+                <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
+                {uncertainPending.length} sugest{uncertainPending.length !== 1 ? 'ões' : 'ão'} incerta{uncertainPending.length !== 1 ? 's' : ''} (baixa confiança) — revise antes de usar
+              </summary>
+              <div className="mt-3 space-y-3">
+                <AnimatePresence mode="popLayout">
+                  {uncertainPending.map((suggestion) => {
+                    const category = categoryById.get(suggestion.suggestedCategoryId);
+                    return (
+                      <SuggestionCard
+                        key={suggestion.id}
+                        suggestion={suggestion}
+                        categoryName={category?.name ?? 'Categoria'}
+                        categoryIcon={category?.icon}
+                        onAccept={() => { void handleAccept(suggestion); }}
+                        onDismiss={() => { void handleDismiss(suggestion); }}
+                      />
+                    );
+                  })}
+                </AnimatePresence>
+              </div>
+            </details>
           ) : null}
         </div>
       )}

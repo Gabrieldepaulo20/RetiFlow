@@ -402,3 +402,97 @@ export type {
   PaymentMethod,
   RecurrenceType,
 };
+
+// ─── Perguntas contextuais (UX proativa) ─────────────────────────────────────
+// Detecta contas em estado "estranho" e sugere uma ação ao usuário, inline no card.
+
+export type ContextualQuestionType = 'probably_paid' | 'due_today' | 'due_soon' | 'scheduled_past';
+export type ContextualActionKind = 'mark_paid' | 'reschedule' | 'dismiss';
+export type ContextualActionVariant = 'success' | 'primary' | 'secondary' | 'ghost';
+export type ContextualTone = 'amber' | 'blue' | 'green';
+
+export interface ContextualAction {
+  label: string;
+  action: ContextualActionKind;
+  variant: ContextualActionVariant;
+}
+
+export interface ContextualQuestion {
+  type: ContextualQuestionType;
+  tone: ContextualTone;
+  message: string;
+  actions: ContextualAction[];
+}
+
+/**
+ * Analisa uma conta e retorna uma pergunta contextual, ou null se estiver em estado esperado.
+ * `now` é injetável para testes determinísticos.
+ * Só considera contas ativas a pagar (PENDENTE/PARCIAL/AGENDADO); PAGO/CANCELADO nunca perguntam.
+ */
+export function getContextualQuestion(payable: AccountPayable, now: Date = new Date()): ContextualQuestion | null {
+  if (payable.status === 'PAGO' || payable.status === 'CANCELADO') return null;
+
+  const today = startOfDay(now);
+  const due = startOfDay(parseISO(payable.dueDate));
+  const daysOverdue = differenceInCalendarDays(today, due); // > 0 = vencida; 0 = hoje; < 0 = futura
+  const isOpen = payable.status === 'PENDENTE' || payable.status === 'PARCIAL';
+
+  // 1. Vencida há mais de 2 dias e ainda em aberto → provavelmente já foi paga
+  if (isOpen && daysOverdue > 2) {
+    return {
+      type: 'probably_paid',
+      tone: 'amber',
+      message: `Esta conta venceu há ${daysOverdue} dias e segue em aberto. Ela já foi paga?`,
+      actions: [
+        { label: 'Sim, marcar como paga', action: 'mark_paid', variant: 'success' },
+        { label: 'Remarcar vencimento', action: 'reschedule', variant: 'secondary' },
+        { label: 'Ainda pendente', action: 'dismiss', variant: 'ghost' },
+      ],
+    };
+  }
+
+  // 2. Vence hoje
+  if (isOpen && daysOverdue === 0) {
+    return {
+      type: 'due_today',
+      tone: 'blue',
+      message: 'Esta conta vence hoje. Deseja registrar o pagamento?',
+      actions: [
+        { label: 'Pagar agora', action: 'mark_paid', variant: 'success' },
+        { label: 'Lembrar depois', action: 'dismiss', variant: 'ghost' },
+      ],
+    };
+  }
+
+  // 3. Vence em 1 a 3 dias
+  if (isOpen && daysOverdue < 0 && daysOverdue >= -3) {
+    const days = Math.abs(daysOverdue);
+    return {
+      type: 'due_soon',
+      tone: 'blue',
+      message: `Vence em ${days} dia${days > 1 ? 's' : ''}. Quer já registrar o pagamento?`,
+      actions: [
+        { label: 'Pagar agora', action: 'mark_paid', variant: 'primary' },
+        { label: 'Ok, ciente', action: 'dismiss', variant: 'ghost' },
+      ],
+    };
+  }
+
+  // 4. Agendada com data de agendamento já passada
+  if (payable.status === 'AGENDADO' && payable.scheduledFor) {
+    const scheduled = startOfDay(parseISO(payable.scheduledFor));
+    if (isBefore(scheduled, today)) {
+      return {
+        type: 'scheduled_past',
+        tone: 'green',
+        message: `Estava agendada para ${format(scheduled, 'dd/MM', { locale: ptBR })}. O pagamento foi realizado?`,
+        actions: [
+          { label: 'Sim, confirmar pagamento', action: 'mark_paid', variant: 'success' },
+          { label: 'Não, reagendar', action: 'reschedule', variant: 'secondary' },
+        ],
+      };
+    }
+  }
+
+  return null;
+}

@@ -11,6 +11,16 @@ vi.mock('@/contexts/AuthContext', () => ({
 
 const mockedUseAuth = vi.mocked(useAuth);
 
+// Campos do AuthContext que não variam por teste; mantém os mocks alinhados ao tipo real.
+const authBase = {
+  realUser: null,
+  supportSession: null,
+  isSupportImpersonating: false,
+  startSupportImpersonation: vi.fn(),
+  endSupportImpersonation: vi.fn(),
+  completeMfaLogin: vi.fn(),
+};
+
 const baseUser: User = {
   id: 'user-2',
   name: 'Paula Martins',
@@ -85,6 +95,7 @@ describe('ProtectedRoute', () => {
 
   it('redirects unauthenticated users to login', () => {
     mockedUseAuth.mockReturnValue({
+      ...authBase,
       authMode: 'development',
       user: null,
       session: null,
@@ -107,6 +118,7 @@ describe('ProtectedRoute', () => {
 
   it('waits for auth hydration before redirecting on page refresh', () => {
     mockedUseAuth.mockReturnValue({
+      ...authBase,
       authMode: 'real',
       user: null,
       session: null,
@@ -130,6 +142,7 @@ describe('ProtectedRoute', () => {
 
   it('redirects authenticated users without module access to the denied page', () => {
     mockedUseAuth.mockReturnValue({
+      ...authBase,
       authMode: 'development',
       user: baseUser,
       session: null,
@@ -152,6 +165,7 @@ describe('ProtectedRoute', () => {
 
   it('redirects authenticated users when their role is not allowed', () => {
     mockedUseAuth.mockReturnValue({
+      ...authBase,
       authMode: 'development',
       user: baseUser,
       session: null,
@@ -174,6 +188,7 @@ describe('ProtectedRoute', () => {
 
   it('renders the protected content when the user has access', () => {
     mockedUseAuth.mockReturnValue({
+      ...authBase,
       authMode: 'development',
       user: baseUser,
       session: null,
@@ -196,6 +211,7 @@ describe('ProtectedRoute', () => {
 
   it('shows a retry screen when profile loading fails — not login or access-denied', () => {
     mockedUseAuth.mockReturnValue({
+      ...authBase,
       authMode: 'real',
       user: null,
       session: null,
@@ -222,6 +238,7 @@ describe('ProtectedRoute', () => {
   it('renders admin content for authenticated admin user after server access revalidation', async () => {
     const refreshProfile = vi.fn().mockResolvedValue(true);
     mockedUseAuth.mockReturnValue({
+      ...authBase,
       authMode: 'real',
       user: adminUser,
       session: null,
@@ -247,6 +264,7 @@ describe('ProtectedRoute', () => {
 
   it('blocks non-admin from admin route and redirects to dashboard', () => {
     mockedUseAuth.mockReturnValue({
+      ...authBase,
       authMode: 'development',
       user: baseUser,
       session: null,
@@ -270,6 +288,7 @@ describe('ProtectedRoute', () => {
 
   it('shows loading screen for admin route during auth hydration', () => {
     mockedUseAuth.mockReturnValue({
+      ...authBase,
       authMode: 'real',
       user: null,
       session: null,

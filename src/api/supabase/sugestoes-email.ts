@@ -16,6 +16,9 @@ export interface SugestaoEmail {
   status_sugerido?: 'PENDENTE' | 'PAGO' | 'AGENDADO' | 'INCERTO';
   pago_em_sugerido?: string | null;
   trecho_email: string | null;
+  sender_risk?: 'BAIXO' | 'MEDIO' | 'ALTO' | null;
+  verification_signals?: string[] | null;
+  fraud_signals?: string[] | null;
   created_at: string;
   categoria_sugerida: { id: string; nome: string; cor: string; icone: string } | null;
 }

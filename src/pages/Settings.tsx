@@ -59,7 +59,7 @@ const DOC_ACCENT_PRESETS = [
 ];
 
 const mockClient: Client = { id: 'mock', name: 'Auto Peças Silva Ltda', docType: 'CNPJ', docNumber: '12.345.678/0001-90', phone: '(11) 3456-7890', email: 'contato@autopecassilva.com.br', address: 'Rua das Indústrias, 450', city: 'São Paulo', state: 'SP', notes: '', isActive: true, createdAt: '' };
-const mockNote: IntakeNote = { id: 'mock', number: 'OS-99', clientId: 'mock', createdAt: new Date().toISOString(), createdByUserId: '', status: 'EM_EXECUCAO', engineType: 'Cabeçote DOHC', vehicleModel: 'Civic 2.0 16v', plate: 'ABC-1234', complaint: '', observations: 'Cliente solicita urgência na entrega.', totalServices: 1200, totalProducts: 350, totalAmount: 1550, updatedAt: new Date().toISOString() };
+const mockNote: IntakeNote = { id: 'mock', number: 'OS-99', clientId: 'mock', createdAt: new Date().toISOString(), createdByUserId: '', status: 'EM_EXECUCAO', type: 'SERVICO', engineType: 'Cabeçote DOHC', vehicleModel: 'Civic 2.0 16v', plate: 'ABC-1234', complaint: '', observations: 'Cliente solicita urgência na entrega.', totalServices: 1200, totalProducts: 350, totalAmount: 1550, updatedAt: new Date().toISOString() };
 const mockServicesShort: IntakeService[] = [
   { id: 's1', noteId: 'mock', name: 'Retífica de cabeçote', description: '', price: 380, quantity: 1, subtotal: 380 },
   { id: 's2', noteId: 'mock', name: 'Plaqueamento de superfície', description: '', price: 220, quantity: 1, subtotal: 220 },

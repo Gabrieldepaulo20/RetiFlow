@@ -554,5 +554,11 @@ export interface EmailSuggestion {
   suggestedStatus?: 'PENDENTE' | 'PAGO' | 'AGENDADO' | 'INCERTO';
   suggestedPaidAt?: string;
   emailSnippet?: string;
+  /** Risco do remetente avaliado pela IA antifraude. */
+  senderRisk?: 'BAIXO' | 'MEDIO' | 'ALTO';
+  /** Sinais curtos de legitimidade (chips verdes). */
+  verificationSignals?: string[];
+  /** Sinais curtos de fraude/alerta (chips vermelhos). */
+  fraudSignals?: string[];
   createdAt: string;
 }

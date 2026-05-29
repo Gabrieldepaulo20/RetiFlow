@@ -1,4 +1,5 @@
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
+import type { Style } from '@react-pdf/types';
 import type { NotaServicoDetalhes, NotaServicoDetalhesItem } from '@/api/supabase/notas';
 import type { OsTemplateMode } from '@/api/supabase/modelos';
 import {
@@ -10,6 +11,12 @@ import { getNotaItemDetailLines } from '@/components/notes/notaItemDetails';
 
 const MAX_ROWS = NOTA_PRINT_MAX_ROWS;
 const LONG_MAX_ROWS = NOTA_PRINT_LONG_MAX_ROWS;
+
+// @react-pdf aceita estilos falsy (cond && estilo) em runtime, mas o tipo Style[] não.
+// Helper filtra os falsy preservando o tipo do estilo, sem `any`.
+function sx(...styles: Array<Style | false | null | undefined>): Style[] {
+  return styles.filter(Boolean) as Style[];
+}
 
 const styles = StyleSheet.create({
   page: {
@@ -363,11 +370,11 @@ function Via({
   const paddingRows = Math.max(0, maxRows - itens.length);
 
   return (
-    <View style={[styles.nota, fullPage && styles.notaFullPage]}>
-      <View style={[styles.notaHeader, fullPage && { minHeight: 116 }]}>
+    <View style={sx(styles.nota, fullPage && styles.notaFullPage)}>
+      <View style={sx(styles.notaHeader, fullPage && { minHeight: 116 })}>
         <View style={styles.headerSide}>
-          <Text style={[styles.headerTitle, fullPage && styles.headerTitleFull, { color: accentColor }]}>PREMIUM</Text>
-          <Text style={[styles.headerSubtitle, fullPage && styles.headerSubtitleFull]}>RETÍFICA DE CABEÇOTE</Text>
+          <Text style={sx(styles.headerTitle, fullPage && styles.headerTitleFull, { color: accentColor })}>PREMIUM</Text>
+          <Text style={sx(styles.headerSubtitle, fullPage && styles.headerSubtitleFull)}>RETÍFICA DE CABEÇOTE</Text>
         </View>
         <View style={[styles.headerSide, styles.headerRight, { borderLeftColor: accentColor }]}>
           <Text style={[styles.headerEyebrow, { color: accentColor }]}>ORDEM DE SERVIÇO</Text>
@@ -378,7 +385,7 @@ function Via({
         </View>
       </View>
 
-      <View style={[styles.clienteBox, fullPage && styles.clienteBoxFull]}>
+      <View style={sx(styles.clienteBox, fullPage && styles.clienteBoxFull)}>
         <View style={styles.notaInfos}>
           <View style={styles.infoGroup}>
             <Text style={styles.infoLabel}>O.S:</Text>

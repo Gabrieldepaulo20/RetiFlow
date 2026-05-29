@@ -100,7 +100,7 @@ function buildPdfDados(
       detalhes: null,
       quantidade: service.quantity,
       preco_unitario: service.price,
-      desconto_porcentagem: service.discount || 0,
+      desconto_porcentagem: 0, // desconto por serviço não é modelado em IntakeService (igual aos produtos)
       subtotal_item: service.subtotal,
     })),
     ...products.map((product, index) => ({
@@ -143,7 +143,7 @@ function buildPdfDados(
         id: `vehicle-${note.id}`,
         modelo: note.vehicleModel,
         placa: note.plate ?? '',
-        km: note.km,
+        km: note.km ?? 0,
         motor: note.engineType,
       },
       status: {

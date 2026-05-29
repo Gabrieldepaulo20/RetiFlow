@@ -1,11 +1,11 @@
 import { lazy, Suspense } from 'react';
-import type { CSSProperties } from 'react';
+import type { Style } from '@react-pdf/types';
 import type { NotaServicoDetalhes } from '@/api/supabase/notas';
 import { useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 
 interface NotaPDFViewerProps {
   dados: NotaServicoDetalhes;
-  style?: CSSProperties;
+  style?: Style;
 }
 
 const NotaPDFViewerInner = lazy(async () => {

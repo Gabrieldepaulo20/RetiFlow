@@ -33,7 +33,7 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react';
-import { getMarketingResumo, type MarketingResumo } from '@/api/supabase/marketing';
+import { getMarketingResumo, type MarketingProvider, type MarketingResumo } from '@/api/supabase/marketing';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSystemUsersQuery } from '@/hooks/useSystemUsersQuery';
 import { Badge } from '@/components/ui/badge';
@@ -176,7 +176,7 @@ function LoadingGrid() {
 }
 
 function EmptyIntegrationRail({ resumo }: { resumo: MarketingResumo }) {
-  const knownProviders = ['ga4', 'meta_ads', 'google_ads', 'clarity'];
+  const knownProviders: MarketingProvider[] = ['ga4', 'meta_ads', 'google_ads', 'clarity'];
   const activeByProvider = new Map(resumo.integrations.map((integration) => [integration.provider, integration]));
 
   return (

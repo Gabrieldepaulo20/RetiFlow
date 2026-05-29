@@ -5,6 +5,7 @@ import { ptBR } from 'date-fns/locale';
 import { motion } from 'framer-motion';
 import { AlertCircle, AlertTriangle, CalendarCheck, CalendarClock, CheckCircle2, Clock, Copy, FileText, MailOpen, MoreHorizontal, Pencil, PlusCircle, Repeat, Search, Sparkles, Trash2, Wallet, XCircle } from 'lucide-react';
 import { getCategoryIcon } from '@/lib/payableCategoryIcon';
+import { SupplierAvatar } from '@/components/payables/SupplierAvatar';
 import { useAuth } from '@/contexts/AuthContext';
 import { useData } from '@/contexts/DataContext';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -21,7 +22,8 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { AccountPayable, PaymentMethod, PAYABLE_STATUS_COLORS, PAYABLE_STATUS_LABELS, PAYMENT_METHOD_LABELS, RECURRENCE_TYPE_LABELS } from '@/types';
-import { buildPayableHistoryDescription, calculatePayableFinalAmount, calculatePayableRemainingBalance, canCancelPayable, canEditPayable, canRegisterPayment, formatPayableDueDateLabel, getDueDateUrgencyLevel, getPayableDisplayStatus, isPayableEditRestricted, isPayableOverdue } from '@/services/domain/payables';
+import { buildPayableHistoryDescription, calculatePayableFinalAmount, calculatePayableRemainingBalance, canCancelPayable, canEditPayable, canRegisterPayment, formatPayableDueDateLabel, getContextualQuestion, getDueDateUrgencyLevel, getPayableDisplayStatus, isPayableEditRestricted, isPayableOverdue, type ContextualActionKind } from '@/services/domain/payables';
+import { ContextualQuestionBanner } from '@/components/payables/ContextualQuestionBanner';
 import { getGmailOAuthFeedback } from '@/services/domain/gmailOAuth';
 import {
   normalizeDecimalInputDraft,
@@ -96,6 +98,15 @@ export default function ContasAPagar() {
   const [editOriginalAmount, setEditOriginalAmount] = useState('');
   const [editDocNumber, setEditDocNumber] = useState('');
   const [editPaymentMethod, setEditPaymentMethod] = useState<PaymentMethod>('PIX');
+  // Perguntas contextuais dispensadas nesta sessão (não reaparecem após o usuário fechar).
+  const [dismissedQuestions, setDismissedQuestions] = useState<Set<string>>(() => {
+    try {
+      const raw = sessionStorage.getItem('payable-contextual-dismissed');
+      return new Set<string>(raw ? (JSON.parse(raw) as string[]) : []);
+    } catch {
+      return new Set<string>();
+    }
+  });
 
   const pendingEmailSuggestions = useMemo(() => emailSuggestions.filter((s) => s.status === 'PENDING').length, [emailSuggestions]);
 
@@ -286,6 +297,30 @@ export default function ContasAPagar() {
     setEditDocNumber(payable.docNumber ?? '');
     setEditPaymentMethod(payable.paymentMethod ?? 'PIX');
     setDialogMode('edit');
+  }
+
+  function dismissContextualQuestion(payableId: string) {
+    setDismissedQuestions((previous) => {
+      const next = new Set(previous);
+      next.add(payableId);
+      try {
+        sessionStorage.setItem('payable-contextual-dismissed', JSON.stringify([...next]));
+      } catch {
+        // sessionStorage indisponível — mantém apenas em memória.
+      }
+      return next;
+    });
+  }
+
+  function handleContextualAction(payableId: string, action: ContextualActionKind) {
+    const payable = payables.find((item) => item.id === payableId);
+    if (!payable) return;
+    if (action === 'mark_paid') {
+      openPayment(payable);
+    } else if (action === 'reschedule') {
+      openEdit(payable);
+    }
+    dismissContextualQuestion(payableId);
   }
 
   async function handleDuplicate(payable: AccountPayable) {
@@ -565,6 +600,7 @@ export default function ContasAPagar() {
                   const CategoryIcon = getCategoryIcon(category?.icon);
                   const isPaid = displayStatus === 'PAGO';
                   const isCancelled = displayStatus === 'CANCELADO';
+                  const contextualQuestion = getContextualQuestion(payable, now);
 
                   const rail = overdue
                     ? 'bg-destructive'
@@ -577,16 +613,6 @@ export default function ContasAPagar() {
                           : displayStatus === 'AGENDADO'
                             ? 'bg-cyan-500'
                             : 'bg-primary/70';
-
-                  const iconBox = overdue
-                    ? 'bg-destructive/10 text-destructive ring-destructive/20'
-                    : urgency === 'critical' || payable.isUrgent
-                      ? 'bg-amber-100 text-amber-700 ring-amber-200'
-                      : isPaid
-                        ? 'bg-emerald-100 text-emerald-700 ring-emerald-200'
-                        : isCancelled
-                          ? 'bg-muted text-muted-foreground ring-border'
-                          : 'bg-primary/10 text-primary ring-primary/20';
 
                   const valueColor = overdue
                     ? 'text-destructive'
@@ -618,9 +644,7 @@ export default function ContasAPagar() {
                       <div className={cn('w-1.5 shrink-0', rail)} />
                       <div className="flex min-w-0 flex-1 flex-col gap-3 p-4">
                         <div className="flex items-start gap-3">
-                          <div className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1', iconBox)}>
-                            <CategoryIcon className="h-5 w-5" />
-                          </div>
+                          <SupplierAvatar name={payable.supplierName} categoryIcon={category?.icon} size={44} />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0">
@@ -670,6 +694,15 @@ export default function ContasAPagar() {
                           )} />
                           <DueDateLabel payable={payable} />
                         </div>
+
+                        {contextualQuestion && !dismissedQuestions.has(payable.id) ? (
+                          <ContextualQuestionBanner
+                            question={contextualQuestion}
+                            payableId={payable.id}
+                            onAction={handleContextualAction}
+                            onDismiss={dismissContextualQuestion}
+                          />
+                        ) : null}
 
                         <div className="mt-auto flex items-center gap-2 pt-1">
                           <Button

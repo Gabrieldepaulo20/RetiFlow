@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import PayableModalShell from '@/components/payables/PayableModalShell';
 import { useData } from '@/contexts/DataContext';
+import { SupplierAvatar } from '@/components/payables/SupplierAvatar';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -190,6 +191,7 @@ export default function PayableDetailsModal({
     : (payable.paymentNotes ?? null);
 
   async function handleRenamePayableTitle() {
+    if (!payable) return;
     const nextTitle = toTitleCasePtBr(titleDraft);
     if (!nextTitle) {
       toast({ title: 'Nome inválido', description: 'Informe um nome para a conta.', variant: 'destructive' });
@@ -222,6 +224,7 @@ export default function PayableDetailsModal({
   }
 
   async function handleRenameAttachment(attachmentId: string, currentName: string) {
+    if (!payable) return;
     const nextName = normalizeAttachmentDisplayName(attachmentNameDraft, currentName);
     if (nextName === currentName) {
       setEditingAttachmentId(null);
@@ -344,9 +347,12 @@ export default function PayableDetailsModal({
             <Card>
               <CardContent className="p-5 space-y-4">
                 <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold">Resumo financeiro</p>
-                    <p className="text-xs text-muted-foreground">Tudo que a cliente precisa bater o olho e entender.</p>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <SupplierAvatar name={payable.supplierName ?? payable.title} categoryIcon={category?.icon} size={44} />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">{payable.supplierName ?? 'Fornecedor não informado'}</p>
+                      <p className="text-xs text-muted-foreground">{category?.name ?? 'Sem categoria'}</p>
+                    </div>
                   </div>
                   {payable.isUrgent ? <Badge variant="secondary">Urgente</Badge> : null}
                 </div>

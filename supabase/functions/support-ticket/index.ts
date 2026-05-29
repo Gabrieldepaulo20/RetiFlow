@@ -111,7 +111,7 @@ async function sendSesEmail(params: {
   const secretKey = Deno.env.get('AWS_SECRET_ACCESS_KEY') ?? '';
   const from = Deno.env.get('SUPPORT_FROM_EMAIL') ?? '';
   const fromName = Deno.env.get('SUPPORT_FROM_NAME') ?? 'Sistema Retiflow';
-  const to = Deno.env.get('SUPPORT_TO_EMAIL') ?? 'gabrielwilliam208@gmail.com';
+  const to = Deno.env.get('SUPPORT_TO_EMAIL') ?? '';
   const replyTo = Deno.env.get('SUPPORT_REPLY_TO_EMAIL') ?? to;
 
   if (!accessKey || !secretKey || !from || !to) {
@@ -211,7 +211,7 @@ Deno.serve(async (request) => {
   }
 
   const userName = String(userData.user.user_metadata?.name ?? userData.user.email);
-  const supportTo = Deno.env.get('SUPPORT_TO_EMAIL') ?? 'gabrielwilliam208@gmail.com';
+  const supportTo = Deno.env.get('SUPPORT_TO_EMAIL') ?? '';
   const safeUserName = escapeHtml(userName);
   const safeUserEmail = escapeHtml(userData.user.email);
   const safeMessage = escapeHtml(message);

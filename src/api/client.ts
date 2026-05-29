@@ -1,6 +1,6 @@
 import { ApiError } from './errors';
 
-export interface ApiFetchOptions extends Omit<RequestInit, 'signal'> {
+export interface ApiFetchOptions<T = unknown> extends Omit<RequestInit, 'signal'> {
   /** Timeout em ms. Default: 10 000 ms */
   timeout?: number;
   /** AbortSignal externo (ex.: de useEffect cleanup). Será encadeado ao timeout. */
@@ -10,7 +10,7 @@ export interface ApiFetchOptions extends Omit<RequestInit, 'signal'> {
    * Passe `(raw) => schema.parse(raw)` para validar com Zod.
    * Se omitido, o corpo é retornado sem validação de runtime.
    */
-  validate?: <T>(raw: unknown) => T;
+  validate?: (raw: unknown) => T;
 }
 
 /**
@@ -26,7 +26,7 @@ export interface ApiFetchOptions extends Omit<RequestInit, 'signal'> {
  */
 export async function apiFetch<T = unknown>(
   url: string,
-  options: ApiFetchOptions = {},
+  options: ApiFetchOptions<T> = {},
 ): Promise<T> {
   const { timeout = 10_000, signal: externalSignal, validate, ...fetchInit } = options;
 
@@ -67,7 +67,7 @@ export async function apiFetch<T = unknown>(
 
     if (validate) {
       try {
-        return validate<T>(json);
+        return validate(json);
       } catch (validationError) {
         throw new ApiError(
           response.status,

@@ -14,6 +14,7 @@ import {
   formatCep,
   formatCpfCnpj,
   formatPhone,
+  lookupCep,
   lookupCnpj,
   sanitizeClientInput,
   stripDigits,

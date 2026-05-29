@@ -4,6 +4,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import NoteFormCore from '@/components/notes/NoteFormCore';
 import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { makeAuthCtx, makeDataCtx } from './helpers/contextMocks';
 
 vi.mock('@/contexts/DataContext', () => ({
   useData: vi.fn(),
@@ -25,6 +26,7 @@ const mockedUseAuth = vi.mocked(useAuth);
 describe('Note edit flow', () => {
   beforeEach(() => {
     mockedUseAuth.mockReturnValue({
+      ...makeAuthCtx(),
       authMode: 'development',
       user: {
         id: 'user-1',
@@ -75,6 +77,7 @@ describe('Note edit flow', () => {
     };
 
     mockedUseData.mockReturnValue({
+      ...makeDataCtx(),
       customers: [
         {
           id: 'client-1',

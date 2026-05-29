@@ -5,7 +5,7 @@ const variants = {
   initial: { opacity: 0.96 },
   enter: {
     opacity: 1,
-    transition: { duration: 0.08, ease: [0.22, 1, 0.36, 1] },
+    transition: { duration: 0.08, ease: [0.22, 1, 0.36, 1] as const },
   },
   exit: {
     opacity: 1,

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Kanban from '@/pages/Kanban';
 import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { makeAuthCtx, makeDataCtx } from './helpers/contextMocks';
 
 vi.mock('@/contexts/DataContext', () => ({
   useData: vi.fn(),
@@ -80,6 +81,7 @@ const mockedUseAuth = vi.mocked(useAuth);
 describe('Kanban', () => {
   beforeEach(() => {
     mockedUseAuth.mockReturnValue({
+      ...makeAuthCtx(),
       authMode: 'development',
       user: {
         id: 'user-1',
@@ -103,6 +105,7 @@ describe('Kanban', () => {
     });
 
     mockedUseData.mockReturnValue({
+      ...makeDataCtx(),
       customers: [
         {
           id: 'c1',

@@ -15,6 +15,7 @@ import {
   PayableCategory,
   PayableEntrySource,
   PayableHistory,
+  PayableStatus,
   PayableSupplier,
   PaymentMethod,
   RecurrenceType,
@@ -153,6 +154,9 @@ function supabaseToEmailSuggestion(item: SugestaoEmail): EmailSuggestion {
     suggestedStatus: item.status_sugerido ?? 'PENDENTE',
     suggestedPaidAt: item.pago_em_sugerido ?? undefined,
     emailSnippet: item.trecho_email ?? undefined,
+    senderRisk: item.sender_risk ?? undefined,
+    verificationSignals: item.verification_signals ?? undefined,
+    fraudSignals: item.fraud_signals ?? undefined,
     createdAt: item.created_at,
   };
 }
@@ -496,6 +500,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const map = new Map<string, Attachment[]>();
 
     for (const attachment of attachments) {
+      if (!attachment.noteId) continue;
       const bucket = map.get(attachment.noteId);
       if (bucket) {
         bucket.push(attachment);
@@ -854,8 +859,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [addActivity, bumpDataVersion]);
 
   const updatePayable = useCallback(async (id: string, data: Partial<AccountPayable>) => {
+    // status e paidAt são campos CONTROLADOS pelo servidor: só mudam via
+    // registrar_pagamento (PARCIAL/PAGO), cancelar (CANCELADO) ou excluir.
+    // serverStatus guarda o status autoritativo devolvido pelo backend para
+    // o estado local refletir exatamente o servidor (evita divergência por arredondamento).
+    let serverStatus: PayableStatus | undefined;
     if (IS_REAL_AUTH) {
       const current = payableById.get(id);
+      // Bloqueia mutação direta de status/pagamento sem caminho de persistência:
+      // antes caía no `else` (que não envia p_status/p_pago_em) e divergia em silêncio.
+      const setsUnsupportedStatus =
+        data.status !== undefined && data.status !== 'CANCELADO' && data.paidAmount === undefined && !('deletedAt' in data);
+      const setsPaidAtAlone = data.paidAt !== undefined && data.paidAmount === undefined;
+      if (setsUnsupportedStatus || setsPaidAtAlone) {
+        throw new Error('Alteração de status/pagamento não suportada diretamente. Use registrar pagamento, cancelar ou excluir a conta.');
+      }
       try {
         if ('deletedAt' in data) {
           await excluirContaPagar(id);
@@ -865,12 +883,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const prevPaid = current?.paidAmount ?? 0;
           const increment = Number((data.paidAmount - prevPaid).toFixed(2));
           if (increment > 0) {
-            await registrarPagamento({
+            const novoStatus = await registrarPagamento({
               p_id_contas_pagar: id,
               p_valor_pago: increment,
               p_pago_com: data.paidWith,
               p_observacoes_pagamento: data.paymentNotes,
             });
+            // Servidor é a fonte da verdade do status pós-pagamento (PARCIAL vs PAGO).
+            if (novoStatus) serverStatus = novoStatus as PayableStatus;
           }
         } else {
           const payload: Partial<InsertContaPagarPayload> = {};
@@ -899,7 +919,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
     }
     setPayables((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, ...data, updatedAt: new Date().toISOString() } : p)),
+      prev.map((p) =>
+        p.id === id
+          ? { ...p, ...data, ...(serverStatus ? { status: serverStatus } : {}), updatedAt: new Date().toISOString() }
+          : p,
+      ),
     );
     bumpDataVersion();
   }, [bumpDataVersion, payableById]);

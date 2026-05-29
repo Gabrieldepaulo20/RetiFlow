@@ -208,7 +208,7 @@ export default function AppLayout() {
     },
   };
 
-  const isModuleVisible = (item: typeof navItems[0]) => {
+  const isModuleVisible = (item: typeof navItems[number]) => {
     if (!user) return false;
     if (isAdminOperationalPortal && item.moduleKey === 'settings') return false;
     return canAccessModule(item.moduleKey);
@@ -277,8 +277,8 @@ export default function AppLayout() {
               {!collapsed && (
                 <>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-sidebar-accent-foreground truncate">{user.name}</p>
-                    <p className="text-xs text-sidebar-foreground/60 truncate">{user.role}</p>
+                    <p className="text-sm font-medium text-sidebar-accent-foreground truncate">{user?.name}</p>
+                    <p className="text-xs text-sidebar-foreground/60 truncate">{user?.role}</p>
                   </div>
                   <ChevronDown className="h-4 w-4 text-sidebar-foreground/60" />
                 </>
@@ -291,8 +291,8 @@ export default function AppLayout() {
             className="w-64"
           >
             <DropdownMenuLabel className="leading-tight">
-              <span className="block truncate text-sm">{user.name}</span>
-              <span className="block truncate text-xs font-normal text-muted-foreground">{user.email}</span>
+              <span className="block truncate text-sm">{user?.name}</span>
+              <span className="block truncate text-xs font-normal text-muted-foreground">{user?.email}</span>
               {isSupportImpersonating ? (
                 <span className="mt-1 block truncate text-[11px] font-normal text-amber-600">
                   Suporte por {realUser?.name}
@@ -317,7 +317,7 @@ export default function AppLayout() {
                 </DropdownMenuItem>
               </>
             ) : null}
-            {!isAdminOperationalPortal && canAccessModule('admin') && user.role === 'ADMIN' ? (
+            {!isAdminOperationalPortal && canAccessModule('admin') && user?.role === 'ADMIN' ? (
               <DropdownMenuItem onClick={() => navigate('/admin/usuarios')}>
                 <Users className="w-4 h-4 mr-2" /> Acessos de funcionários
               </DropdownMenuItem>

@@ -10,6 +10,7 @@ import {
   CheckCircle2, Timer, Users, Receipt,
   ArrowUpRight, ArrowDownRight, Minus, AlertTriangle,
   Wrench, Package, Info, Wallet, Landmark, PiggyBank, Layers3,
+  type LucideIcon,
 } from 'lucide-react';
 import {
   Tooltip,
@@ -231,7 +232,19 @@ export default function Dashboard() {
   }, [servicesForMetrics]);
 
   // ── KPI rows ─────────────────────────────────────────────────────────────
-  const kpisRow1 = [
+  type KpiCard = {
+    label: string;
+    value: string | number;
+    sub: string;
+    icon: LucideIcon;
+    iconClass: string;
+    subClass: string;
+    tooltip: string;
+    href: string;
+    trend?: number | null;
+  };
+
+  const kpisRow1: KpiCard[] = [
     {
       label: 'Em andamento',
       value: openCount,
@@ -276,7 +289,7 @@ export default function Dashboard() {
     },
   ];
 
-  const kpisRow2 = [
+  const kpisRow2: KpiCard[] = [
     {
       label: 'Faturamento do mês',
       value: `R$ ${fmtBRL(currentMonthRevenue)}`,
