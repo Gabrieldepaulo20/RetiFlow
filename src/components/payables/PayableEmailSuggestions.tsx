@@ -35,7 +35,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { EmailSuggestion } from '@/types';
-import { buildPayableHistoryDescription } from '@/services/domain/payables';
+import { buildPayableHistoryDescription, findPayableForSuggestion } from '@/services/domain/payables';
 import { getGmailConnectionStatus, scanGmailPayables, startGmailOAuth, type GmailConnectionStatus } from '@/api/supabase/gmail-payables';
 import { getCategoryIcon } from '@/lib/payableCategoryIcon';
 import { SupplierAvatar } from '@/components/payables/SupplierAvatar';
@@ -513,7 +513,7 @@ function readAutoScanIntervalHours(): number {
 }
 
 export default function PayableEmailSuggestions({ onCreated }: PayableEmailSuggestionsProps) {
-  const { emailSuggestions, refreshEmailSuggestions, acceptEmailSuggestion, dismissEmailSuggestion, payableCategories, addPayableHistoryEntry } = useData();
+  const { emailSuggestions, refreshEmailSuggestions, acceptEmailSuggestion, dismissEmailSuggestion, payableCategories, payables, addPayableHistoryEntry } = useData();
   const { user } = useAuth();
   const { toast } = useToast();
   const [gmailStatus, setGmailStatus] = useState<GmailConnectionStatus | null>(null);
@@ -524,7 +524,17 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
   const [autoScanIntervalHours, setAutoScanIntervalHours] = useState<number>(() => readAutoScanIntervalHours());
 
   const categoryById = useMemo(() => new Map(payableCategories.map((c) => [c.id, c])), [payableCategories]);
-  const pending = useMemo(() => emailSuggestions.filter((s) => s.status === 'PENDING'), [emailSuggestions]);
+  const pendingAll = useMemo(() => emailSuggestions.filter((s) => s.status === 'PENDING'), [emailSuggestions]);
+  // Sugestões cuja conta equivalente JÁ existe (import por IA ou cadastro manual) → fora da lista
+  // ativa, para uma seção "já cadastradas" — evita duplicata e inconsistência entre origens.
+  const alreadyRegistered = useMemo(
+    () => pendingAll.filter((s) => findPayableForSuggestion(s, payables) != null),
+    [pendingAll, payables],
+  );
+  const pending = useMemo(
+    () => pendingAll.filter((s) => findPayableForSuggestion(s, payables) == null),
+    [pendingAll, payables],
+  );
   const paidPending = useMemo(() => pending.filter((s) => s.suggestedStatus === 'PAGO'), [pending]);
   const payablePendingAll = useMemo(() => pending.filter((s) => s.suggestedStatus !== 'PAGO'), [pending]);
   // Confiança < 55 vai para a seção "Incertas", para não poluir a lista principal.
@@ -835,6 +845,30 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
           ) : null}
         </div>
       )}
+
+      {alreadyRegistered.length > 0 ? (
+        <details className="group rounded-2xl border border-emerald-200/70 bg-emerald-50/40 p-3">
+          <summary className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-emerald-800 hover:text-emerald-900">
+            <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
+            <BadgeCheck className="h-3.5 w-3.5" />
+            {alreadyRegistered.length} já cadastrada{alreadyRegistered.length !== 1 ? 's' : ''} no contas a pagar — não recria duplicata
+          </summary>
+          <div className="mt-3 space-y-2">
+            {alreadyRegistered.map((suggestion) => (
+              <div key={suggestion.id} className="flex items-center gap-3 rounded-xl border border-emerald-200/60 bg-white/70 px-4 py-2.5 text-sm">
+                <SupplierAvatar name={suggestion.suggestedSupplierName} categoryIcon={categoryById.get(suggestion.suggestedCategoryId)?.icon} size={32} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium">{suggestion.suggestedTitle}</p>
+                  <p className="text-xs text-muted-foreground">{fmtBRL(suggestion.suggestedAmount)} &middot; vence {format(parseISO(suggestion.suggestedDueDate), 'dd/MM/yyyy')}</p>
+                </div>
+                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={() => { void handleDismiss(suggestion); }}>
+                  Arquivar
+                </Button>
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
 
       {dismissed.length > 0 ? (
         <details className="group">

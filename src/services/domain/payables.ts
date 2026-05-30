@@ -267,13 +267,25 @@ export function formatPayableRecurrenceLabel(
  *
  * Uso: comparar a chave gerada com registros existentes não cancelados.
  */
+/** Normaliza nome de fornecedor para chave de dedup: sem acento, minúsculo, espaços colapsados. */
+function normalizeDedupName(value?: string | null): string {
+  return (value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function generatePayableDuplicateKey(
   p: Pick<
     AccountPayable,
     'supplierId' | 'supplierName' | 'docNumber' | 'originalAmount' | 'dueDate'
   >,
 ): string | null {
-  const supplierKey = p.supplierId ?? p.supplierName?.toLowerCase().trim();
+  // Prefere o NOME normalizado (denominador comum entre import por IA, sugestão de
+  // e-mail e cadastro manual). supplierId só como fallback quando não há nome.
+  const supplierKey = normalizeDedupName(p.supplierName) || p.supplierId;
   if (!supplierKey) return null;
 
   const docKey = p.docNumber?.toLowerCase().trim() ?? '';
@@ -304,6 +316,24 @@ export function findPayableDuplicate(
       if (p.status === 'CANCELADO') return false;
       return generatePayableDuplicateKey(p) === candidateKey;
     }) ?? null
+  );
+}
+
+/**
+ * Casa uma sugestão de e-mail com uma conta já existente (mesma chave de dedup).
+ * Usado para sinalizar "já cadastrada" e evitar duplicata entre import por IA e e-mail.
+ */
+export function findPayableForSuggestion(
+  suggestion: { suggestedSupplierName?: string; suggestedAmount: number; suggestedDueDate: string },
+  existing: AccountPayable[],
+): AccountPayable | null {
+  return findPayableDuplicate(
+    {
+      supplierName: suggestion.suggestedSupplierName,
+      originalAmount: suggestion.suggestedAmount,
+      dueDate: suggestion.suggestedDueDate,
+    },
+    existing,
   );
 }
 
