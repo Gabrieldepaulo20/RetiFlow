@@ -9,7 +9,7 @@ Cada bloco: implementar → typecheck + testes → commit. Atualizar status aqui
 |---|-------|--------|
 | 1 | A3 — Dedup import × e-mail (chave unificada, auto-dismiss, badge "já cadastrada") | ✅ feito (2026-05-30) |
 | 2 | A1 — Pergunta "já paga?" na sugestão vencida | ✅ feito (2026-05-30) |
-| 3 | B1+B2 — Redesign denso de sugestões e lista (clean/minimalista) | ⏳ pendente |
+| 3 | B1+B2 — Redesign denso de sugestões e lista (clean/minimalista) | ✅ feito (2026-05-30) — passo 1, aguarda review visual |
 | 4 | B4 — Kanban bonito + drag pelo card inteiro | ⏳ pendente |
 | 5 | B3 — Notas legíveis (alto contraste, status forte, animações; cliente idosa) | ⏳ pendente |
 | 6 | A2 — Cruzar e-mail "pago" → atualizar sugestão para PAGO (backend) | ⏳ pendente |

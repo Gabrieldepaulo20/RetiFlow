@@ -642,7 +642,7 @@ export default function ContasAPagar() {
                       )}
                     >
                       <div className={cn('w-1.5 shrink-0', rail)} />
-                      <div className="flex min-w-0 flex-1 flex-col gap-3 p-4">
+                      <div className="flex min-w-0 flex-1 flex-col gap-2.5 p-3.5">
                         <div className="flex items-start gap-3">
                           <SupplierAvatar name={payable.supplierName} categoryIcon={category?.icon} size={44} />
                           <div className="min-w-0 flex-1">

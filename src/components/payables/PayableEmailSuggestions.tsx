@@ -209,9 +209,9 @@ function MetricBlock({ label, value, tone = 'neutral' }: { label: string; value:
       ? 'text-amber-800'
       : 'text-slate-600';
   return (
-    <div className={cn('min-w-[132px] rounded-lg border px-3 py-2 shadow-sm', toneClass)}>
+    <div className={cn('min-w-[92px] rounded-lg border px-2.5 py-1.5 shadow-sm', toneClass)}>
       <p className={cn('text-[10px] font-bold uppercase tracking-wide', labelClass)}>{label}</p>
-      <p className="mt-1 text-sm font-bold leading-none">{value}</p>
+      <p className="mt-0.5 text-sm font-bold leading-none">{value}</p>
     </div>
   );
 }
@@ -282,7 +282,7 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, o
           <div className="flex">
             <div className={cn('w-1.5 shrink-0', railClass)} />
             <div className="min-w-0 flex-1">
-              <div className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex flex-col gap-3 p-3.5 lg:flex-row lg:items-start lg:justify-between">
                 <div className="flex min-w-0 gap-3">
                   <div className="relative mt-0.5 shrink-0">
                     {brand ? (
@@ -347,36 +347,24 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, o
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:min-w-[450px]">
+                <div className={cn('grid gap-2', isPaid ? 'grid-cols-3 lg:min-w-[320px]' : 'grid-cols-2 lg:min-w-[220px]')}>
                   <MetricBlock label="Valor" value={fmtBRL(suggestion.suggestedAmount)} />
                   <MetricBlock
-                    label={isPaid ? 'Vencimento original' : 'Vence em'}
+                    label={isPaid ? 'Venc. original' : 'Vence em'}
                     value={format(parseISO(suggestion.suggestedDueDate), 'dd/MM/yyyy')}
                     tone={isPaid ? 'neutral' : 'due'}
                   />
                   {isPaid ? (
                     <MetricBlock
                       label="Pago em"
-                      value={suggestion.suggestedPaidAt ? format(parseISO(suggestion.suggestedPaidAt), 'dd/MM/yyyy') : 'Confirmar data'}
+                      value={suggestion.suggestedPaidAt ? format(parseISO(suggestion.suggestedPaidAt), 'dd/MM/yyyy') : 'Confirmar'}
                       tone="paid"
                     />
-                  ) : (
-                    <MetricBlock label="Categoria" value={categoryName} />
-                  )}
+                  ) : null}
                 </div>
               </div>
 
-              <div className={cn('flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between', footerClass)}>
-                <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-                  {isReview ? <AlertCircle className="h-4 w-4 text-rose-700" /> : isPaid ? <CalendarCheck2 className="h-4 w-4 text-emerald-700" /> : <CircleDollarSign className="h-4 w-4 text-amber-700" />}
-                  <span>
-                    {isReview
-                      ? 'A IA encontrou sinais que exigem conferência manual antes de usar esta conta.'
-                      : isPaid
-                      ? 'A IA encontrou evidência de pagamento. Ao confirmar, a conta já entra como paga.'
-                      : 'Ao confirmar, a conta entra para acompanhamento no contas a pagar.'}
-                  </span>
-                </div>
+              <div className={cn('flex items-center justify-end gap-2 border-t px-4 py-2', footerClass)}>
                 <div className="flex items-center gap-2 sm:justify-end">
                   {isHighRisk && !allowHighRisk ? (
                     <Button variant="ghost" size="sm" className="h-8 gap-1 text-rose-700 hover:bg-rose-100 hover:text-rose-800" onClick={() => setAllowHighRisk(true)}>
