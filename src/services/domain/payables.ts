@@ -337,6 +337,21 @@ export function findPayableForSuggestion(
   );
 }
 
+/**
+ * Dias em atraso de uma sugestão de e-mail ainda não marcada como paga.
+ * Uma cobrança que já venceu provavelmente já foi paga — usado para oferecer
+ * "criar como paga" no card. Retorna null se for PAGO ou ainda não vencida.
+ */
+export function getSuggestionOverdueDays(
+  suggestion: { suggestedStatus?: string; suggestedDueDate: string },
+  now: Date = new Date(),
+): number | null {
+  if (suggestion.suggestedStatus === 'PAGO') return null;
+  const due = startOfDay(parseISO(suggestion.suggestedDueDate));
+  const days = differenceInCalendarDays(startOfDay(now), due);
+  return days > 0 ? days : null;
+}
+
 // ─── Construção de log de histórico ─────────────────────────────────────────
 
 interface BuildPayableHistoryEntryInput {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getContextualQuestion } from '@/services/domain/payables';
+import { getContextualQuestion, getSuggestionOverdueDays } from '@/services/domain/payables';
 import type { AccountPayable } from '@/types';
 
 const NOW = new Date('2026-05-29T12:00:00');
@@ -49,5 +49,15 @@ describe('getContextualQuestion', () => {
   it('pergunta sobre agendamento com data passada', () => {
     const q = getContextualQuestion(payable({ status: 'AGENDADO', scheduledFor: '2026-05-26', dueDate: '2026-06-10' }), NOW);
     expect(q?.type).toBe('scheduled_past');
+  });
+});
+
+describe('getSuggestionOverdueDays', () => {
+  it('retorna dias em atraso para sugestão vencida não paga', () => {
+    expect(getSuggestionOverdueDays({ suggestedDueDate: '2026-05-25', suggestedStatus: 'PENDENTE' }, NOW)).toBe(4);
+  });
+  it('retorna null para sugestão futura ou já paga', () => {
+    expect(getSuggestionOverdueDays({ suggestedDueDate: '2026-06-10', suggestedStatus: 'PENDENTE' }, NOW)).toBeNull();
+    expect(getSuggestionOverdueDays({ suggestedDueDate: '2026-05-01', suggestedStatus: 'PAGO' }, NOW)).toBeNull();
   });
 });

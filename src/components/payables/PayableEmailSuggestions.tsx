@@ -35,7 +35,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { EmailSuggestion } from '@/types';
-import { buildPayableHistoryDescription, findPayableForSuggestion } from '@/services/domain/payables';
+import { buildPayableHistoryDescription, findPayableForSuggestion, getSuggestionOverdueDays } from '@/services/domain/payables';
 import { getGmailConnectionStatus, scanGmailPayables, startGmailOAuth, type GmailConnectionStatus } from '@/api/supabase/gmail-payables';
 import { getCategoryIcon } from '@/lib/payableCategoryIcon';
 import { SupplierAvatar } from '@/components/payables/SupplierAvatar';
@@ -220,11 +220,13 @@ type SuggestionCardProps = {
   suggestion: EmailSuggestion;
   categoryName: string;
   categoryIcon?: string | null;
+  overdueDays?: number | null;
   onAccept: () => void;
+  onMarkPaid?: () => void;
   onDismiss: () => void;
 };
 
-function SuggestionCard({ suggestion, categoryName, categoryIcon, onAccept, onDismiss }: SuggestionCardProps) {
+function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, onAccept, onMarkPaid, onDismiss }: SuggestionCardProps) {
   const isPaid = suggestion.suggestedStatus === 'PAGO';
   const isScheduled = suggestion.suggestedStatus === 'AGENDADO';
   const isReview = suggestion.suggestedStatus === 'INCERTO';
@@ -330,6 +332,17 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, onAccept, onDi
                       <p className="mt-3 line-clamp-2 rounded-lg border border-slate-200 bg-white/85 px-3 py-2 text-xs font-medium leading-relaxed text-slate-700">
                         {suggestion.emailSnippet}
                       </p>
+                    ) : null}
+                    {!isPaid && overdueDays != null && onMarkPaid ? (
+                      <div className="mt-3 flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="flex items-start gap-1.5 text-xs font-medium text-amber-900">
+                          <Clock3 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                          Venceu há {overdueDays} dia{overdueDays > 1 ? 's' : ''} — provavelmente já foi paga.
+                        </p>
+                        <Button size="sm" className="h-7 shrink-0 gap-1 bg-emerald-600 px-2.5 text-xs text-white hover:bg-emerald-700" onClick={onMarkPaid}>
+                          <CheckCircle2 className="h-3.5 w-3.5" />Criar como paga
+                        </Button>
+                      </div>
                     ) : null}
                   </div>
                 </div>
@@ -513,7 +526,7 @@ function readAutoScanIntervalHours(): number {
 }
 
 export default function PayableEmailSuggestions({ onCreated }: PayableEmailSuggestionsProps) {
-  const { emailSuggestions, refreshEmailSuggestions, acceptEmailSuggestion, dismissEmailSuggestion, payableCategories, payables, addPayableHistoryEntry } = useData();
+  const { emailSuggestions, refreshEmailSuggestions, acceptEmailSuggestion, dismissEmailSuggestion, payableCategories, payables, updatePayable, addPayableHistoryEntry } = useData();
   const { user } = useAuth();
   const { toast } = useToast();
   const [gmailStatus, setGmailStatus] = useState<GmailConnectionStatus | null>(null);
@@ -654,6 +667,37 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
       return;
     }
     await acceptSuggestionNow(suggestion);
+  }
+
+  async function handleMarkPaid(suggestion: EmailSuggestion) {
+    // Cobrança vencida que o usuário confirma já ter sido paga: cria a conta e
+    // registra o pagamento total na data de hoje, em um passo.
+    const payable = await acceptEmailSuggestion(suggestion.id);
+    if (!payable) return;
+    try {
+      await updatePayable(payable.id, {
+        status: 'PAGO',
+        paidAmount: payable.finalAmount,
+        paidAt: new Date().toISOString(),
+        paidWith: payable.paymentMethod,
+      });
+    } catch (error) {
+      toast({
+        title: 'Conta criada, mas falhou ao marcar como paga',
+        description: error instanceof Error ? error.message : 'Registre o pagamento manualmente.',
+        variant: 'destructive',
+      });
+      onCreated?.(payable.id);
+      return;
+    }
+    addPayableHistoryEntry(buildPayableHistoryDescription({
+      payableId: payable.id,
+      action: 'PAID',
+      userId: user?.id ?? 'user-2',
+      extra: { paidAmount: payable.finalAmount },
+    }));
+    toast({ title: 'Conta criada e marcada como paga', description: `"${payable.title}" já entrou como quitada.` });
+    onCreated?.(payable.id);
   }
 
   async function handleDismiss(suggestion: EmailSuggestion) {
@@ -808,7 +852,9 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
                       suggestion={suggestion}
                       categoryName={category?.name ?? 'Categoria'}
                       categoryIcon={category?.icon}
+                      overdueDays={getSuggestionOverdueDays(suggestion)}
                       onAccept={() => { void handleAccept(suggestion); }}
+                      onMarkPaid={() => { void handleMarkPaid(suggestion); }}
                       onDismiss={() => { void handleDismiss(suggestion); }}
                     />
                   );
@@ -834,7 +880,9 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
                         suggestion={suggestion}
                         categoryName={category?.name ?? 'Categoria'}
                         categoryIcon={category?.icon}
+                        overdueDays={getSuggestionOverdueDays(suggestion)}
                         onAccept={() => { void handleAccept(suggestion); }}
+                        onMarkPaid={() => { void handleMarkPaid(suggestion); }}
                         onDismiss={() => { void handleDismiss(suggestion); }}
                       />
                     );
