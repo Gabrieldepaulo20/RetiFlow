@@ -63,6 +63,7 @@ export async function scanGmailPayables() {
     created: number;
     skipped: number;
     scanned: number;
+    reconciled?: number;
     errors: string[];
   }>('gmail-scan-payables');
 }

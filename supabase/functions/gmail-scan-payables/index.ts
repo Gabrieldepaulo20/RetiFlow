@@ -298,6 +298,14 @@ function emailDomain(email: string) {
   return email.split('@')[1]?.trim().toLowerCase() ?? '';
 }
 
+// Reconciliação: normaliza nome de fornecedor (sem acento/caixa) e compara mês YYYY-MM.
+function normSupplierName(value?: string | null): string {
+  return (value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+function sameYearMonth(a?: string | null, b?: string | null): boolean {
+  return !!a && !!b && a.slice(0, 7) === b.slice(0, 7);
+}
+
 function compactHeader(value: string, maxLength = 800) {
   return value.replace(/\s+/g, ' ').trim().slice(0, maxLength);
 }
@@ -632,6 +640,7 @@ Deno.serve(async (request) => {
   let created = 0;
   let skipped = 0;
   let scanned = 0;
+  let reconciled = 0;
 
   try {
     const accessToken = await refreshAccessToken(await decryptToken(connection.refresh_token_cipher));
@@ -721,6 +730,46 @@ Deno.serve(async (request) => {
         continue;
       }
 
+      // Reconciliação: e-mail de comprovante/pagamento que casa uma sugestão PENDENTE
+      // do mesmo boleto (fornecedor + valor ±2% + mesmo mês de vencimento) marca essa
+      // sugestão como PAGA, em vez de criar uma sugestão duplicada.
+      if (analysis.suggestedStatus === 'PAGO') {
+        const { data: pendingMatches } = await service
+          .schema('RetificaPremium')
+          .from('Sugestoes_Email')
+          .select('id_sugestoes_email, fornecedor_sugerido, valor_sugerido, vencimento_sugerido, status_sugerido')
+          .eq('fk_auth_user', userData.user.id)
+          .eq('status', 'PENDING');
+
+        const amount = analysis.amount ?? 0;
+        const match = (pendingMatches ?? []).find((c: Record<string, unknown>) =>
+          String(c.status_sugerido) !== 'PAGO' &&
+          normSupplierName(c.fornecedor_sugerido as string) === normSupplierName(analysis.supplierName) &&
+          Math.abs(Number(c.valor_sugerido) - amount) <= Math.max(1, amount * 0.02) &&
+          sameYearMonth(c.vencimento_sugerido as string, analysis.dueDate));
+
+        if (match) {
+          await service
+            .schema('RetificaPremium')
+            .from('Sugestoes_Email')
+            .update({ status_sugerido: 'PAGO', pago_em_sugerido: analysis.paymentDate })
+            .eq('id_sugestoes_email', match.id_sugestoes_email as string)
+            .eq('fk_auth_user', userData.user.id);
+
+          await recordScannedMessage(service, existing?.id_gmail_scanned_messages ?? null, {
+            fk_auth_user: userData.user.id,
+            gmail_message_id: messageId,
+            message_hash: `${scanVersion}:${await sha256Hex(`${text}\n${attachments.map((attachment) => attachment.filename).join('\n')}`)}`,
+            assunto: subject,
+            email_remetente: from.email,
+            recebido_em: received,
+            fk_sugestoes_email: match.id_sugestoes_email as string,
+          });
+          reconciled += 1;
+          continue;
+        }
+      }
+
       const { data: suggestion, error: suggestionError } = await service
         .schema('RetificaPremium')
         .from('Sugestoes_Email')
@@ -783,5 +832,5 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: message }, 500, request);
   }
 
-  return jsonResponse({ created, skipped, scanned, errors }, 200, request);
+  return jsonResponse({ created, skipped, scanned, reconciled, errors }, 200, request);
 });

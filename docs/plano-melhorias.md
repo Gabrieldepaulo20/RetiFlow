@@ -12,7 +12,7 @@ Cada bloco: implementar → typecheck + testes → commit. Atualizar status aqui
 | 3 | B1+B2 — Redesign denso de sugestões e lista (clean/minimalista) | ✅ feito (2026-05-30) — passo 1, aguarda review visual |
 | 4 | B4 — Kanban bonito + drag pelo card inteiro | ✅ feito (2026-06-01) |
 | 5 | B3 — Notas: status com ícone+texto, fontes maiores | ✅ passo 1 (2026-06-01); animações pendentes |
-| 6 | A2 — Cruzar e-mail "pago" → atualizar sugestão para PAGO (backend) | ⏳ pendente |
+| 6 | A2 — Cruzar e-mail "pago" → sugestão PAGO (backend) | ✅ feito (2026-06-01) — exige redeploy edge |
 | 7 | C1 — Thread de suporte + notificação in-app (resposta do chamado no sistema) | ⏳ pendente |
 
 ## Detalhe por bloco

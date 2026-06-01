@@ -593,10 +593,13 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
       await refreshEmailSuggestions();
       const status = await getGmailConnectionStatus();
       setGmailStatus(status);
-      if (!options.silent || result.created > 0) {
+      const reconciled = result.reconciled ?? 0;
+      if (!options.silent || result.created > 0 || reconciled > 0) {
         toast({
-          title: result.created > 0 ? 'Sugestões atualizadas' : 'Busca concluída',
-          description: `${result.created} sugestão${result.created === 1 ? '' : 'ões'} criada${result.created === 1 ? '' : 's'} · ${result.skipped} ignorada${result.skipped === 1 ? '' : 's'}.`,
+          title: result.created > 0 || reconciled > 0 ? 'Sugestões atualizadas' : 'Busca concluída',
+          description: `${result.created} criada${result.created === 1 ? '' : 's'}`
+            + (reconciled > 0 ? ` · ${reconciled} marcada${reconciled === 1 ? '' : 's'} como paga` : '')
+            + ` · ${result.skipped} ignorada${result.skipped === 1 ? '' : 's'}.`,
           variant: result.errors.length > 0 ? 'destructive' : 'default',
         });
       }
