@@ -479,10 +479,10 @@ export default function Kanban() {
                     ref={provided.innerRef}
                     {...provided.droppableProps}
                     className={cn(
-                      "space-y-2 min-h-[120px] rounded-lg transition-colors duration-200",
+                      "space-y-2 min-h-[140px] rounded-xl p-2 border transition-colors duration-200",
                       snapshot.isDraggingOver
-                        ? "bg-primary/[0.04] ring-1 ring-primary/15 ring-inset"
-                        : "",
+                        ? "bg-primary/[0.06] border-primary/25 ring-1 ring-primary/15 ring-inset"
+                        : "bg-muted/30 border-border/40",
                     )}
                   >
                     {col.notes.map((note, index) => {
@@ -505,22 +505,22 @@ export default function Kanban() {
                             <div
                               ref={provided.innerRef}
                               {...provided.draggableProps}
+                              {...provided.dragHandleProps}
                               onClick={() => setSelectedNote(note.id)}
                               className={cn(
-                                "group bg-card rounded-lg border border-t-2 border-border/50 cursor-pointer transition-all duration-150",
+                                "group bg-card rounded-xl border border-t-2 border-border/50 cursor-grab active:cursor-grabbing transition-all duration-150",
                                 CARD_ACCENT_BORDER[note.status],
-                                "hover:border-border/80 hover:shadow-sm hover:-translate-y-px",
+                                "hover:border-border/80 hover:shadow-md hover:-translate-y-0.5",
                                 snapshot.isDragging &&
-                                  "shadow-lg shadow-black/[0.1] border-border ring-1 ring-primary/15 rotate-[0.4deg] scale-[1.015] -translate-y-0",
+                                  "shadow-xl shadow-black/[0.12] border-border ring-2 ring-primary/20 rotate-[1deg] scale-[1.03] cursor-grabbing",
                               )}
                             >
                               <div className="p-3">
                                 {/* Top row: drag handle + number + type badge + indicators */}
                                 <div className="flex items-center gap-1.5">
                                   <div
-                                    {...provided.dragHandleProps}
-                                    className="opacity-0 group-hover:opacity-30 transition-opacity -ml-0.5 shrink-0"
-                                    onClick={(e) => e.stopPropagation()}
+                                    aria-hidden
+                                    className="opacity-0 group-hover:opacity-40 transition-opacity -ml-0.5 shrink-0"
                                   >
                                     <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
                                   </div>
