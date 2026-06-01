@@ -13,6 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { STATUS_LABELS, STATUS_COLORS, NoteStatus, NOTE_STATUS_ORDER, IntakeNote } from '@/types';
+import { getNoteStatusIcon } from '@/lib/noteStatusIcon';
 import {
   PlusCircle, Search, Share2, Download, Eye, FileText, ClipboardList,
   SlidersHorizontal, Check, MoreHorizontal, Pencil, FileSpreadsheet,
@@ -771,7 +772,7 @@ export default function IntakeNotes() {
                         </div>
                       </TableCell>
                       <TableCell className="max-w-[360px] py-4 align-middle">
-                        <p className="truncate text-[15px] font-semibold text-foreground">{client?.name}</p>
+                        <p className="truncate text-base font-bold text-foreground">{client?.name}</p>
                         {n.vehicleModel && (
                           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                             <span className="inline-flex min-w-0 items-center gap-1">
@@ -799,14 +800,20 @@ export default function IntakeNotes() {
                         </span>
                       </TableCell>
                       <TableCell className="py-4 align-middle">
-                        <Badge
-                          className={cn(
-                            STATUS_COLORS[n.status as NoteStatus],
-                            'rounded-full px-3 py-1 text-[11px] font-semibold shadow-none',
-                          )}
-                        >
-                          {STATUS_LABELS[n.status as NoteStatus]}
-                        </Badge>
+                        {(() => {
+                          const StatusIcon = getNoteStatusIcon(n.status as NoteStatus);
+                          return (
+                            <Badge
+                              className={cn(
+                                STATUS_COLORS[n.status as NoteStatus],
+                                'gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-bold shadow-none',
+                              )}
+                            >
+                              <StatusIcon className="h-3.5 w-3.5 shrink-0" />
+                              {STATUS_LABELS[n.status as NoteStatus]}
+                            </Badge>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell className="hidden py-4 text-right align-middle md:table-cell">
                         <div className="inline-flex items-center justify-end gap-2 rounded-xl bg-muted/35 px-3 py-2">
