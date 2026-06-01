@@ -44,7 +44,14 @@ AWS_SECRET_ACCESS_KEY
 SUPABASE_SERVICE_ROLE_KEY
 ```
 
-As credenciais AWS precisam permitir leitura do bucket inbound quando a regra usar S3.
+Para manter privilégio mínimo sem alterar a credencial usada pelo envio SES, prefira configurar também:
+
+```text
+SES_INBOUND_AWS_ACCESS_KEY_ID
+SES_INBOUND_AWS_SECRET_ACCESS_KEY
+```
+
+Essa credencial dedicada precisa somente de `s3:GetObject` no prefixo privado do bucket inbound. Sem ela, a Function usa a credencial AWS geral como fallback.
 
 ## Banco
 

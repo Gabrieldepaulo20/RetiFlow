@@ -88,9 +88,9 @@ function encodeS3Path(value: string) {
 
 async function fetchS3Mime(bucket: string, objectKey: string) {
   const region = Deno.env.get('AWS_REGION') ?? Deno.env.get('AWS_SES_REGION') ?? 'us-east-1';
-  const accessKey = Deno.env.get('AWS_ACCESS_KEY_ID') ?? '';
-  const secretKey = Deno.env.get('AWS_SECRET_ACCESS_KEY') ?? '';
-  const sessionToken = Deno.env.get('AWS_SESSION_TOKEN') ?? '';
+  const accessKey = Deno.env.get('SES_INBOUND_AWS_ACCESS_KEY_ID') ?? Deno.env.get('AWS_ACCESS_KEY_ID') ?? '';
+  const secretKey = Deno.env.get('SES_INBOUND_AWS_SECRET_ACCESS_KEY') ?? Deno.env.get('AWS_SECRET_ACCESS_KEY') ?? '';
+  const sessionToken = Deno.env.get('SES_INBOUND_AWS_SESSION_TOKEN') ?? Deno.env.get('AWS_SESSION_TOKEN') ?? '';
   if (!bucket || !objectKey || !accessKey || !secretKey) {
     throw new Error('Configuração S3 ausente.');
   }
@@ -133,6 +133,7 @@ async function fetchS3Mime(bucket: string, objectKey: string) {
     },
   });
 
+  if (response.status === 404) return '';
   if (!response.ok) throw new Error(`S3 retornou ${response.status}.`);
   return response.text();
 }
@@ -163,7 +164,7 @@ async function getRawMime(sesPayload: Record<string, unknown>) {
   const action = (receipt.action ?? {}) as Record<string, unknown>;
   const content = sesPayload.content;
   if (typeof content === 'string' && content.trim()) {
-    return action.encoding === 'Base64'
+    return String(action.encoding ?? '').toLowerCase() === 'base64'
       ? new TextDecoder().decode(Uint8Array.from(atob(content), (char) => char.charCodeAt(0)))
       : content;
   }
@@ -212,6 +213,7 @@ async function handleNotification(message: SnsMessage) {
 
   if (error) throw new Error('Falha ao registrar resposta.');
   const result = data as { status?: number; mensagem?: string } | null;
+  if (result?.status === 404) return { processed: false, reason: 'Chamado não encontrado.' };
   if (!result || result.status !== 200) throw new Error(result?.mensagem ?? 'Falha ao registrar resposta.');
 
   return { processed: true };
