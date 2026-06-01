@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Outlet, useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { AnimatedPage } from './AnimatedPage';
@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useData } from '@/contexts/DataContext';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
-import { getSupportTickets, submitSupportTicket, type SupportTicket, type SupportTicketStatus } from '@/api/supabase/support';
+import { getSupportTickets, markSupportTicketsRead, submitSupportTicket, type SupportTicket, type SupportTicketStatus } from '@/api/supabase/support';
 import { validateSupportMessage } from '@/services/domain/supportTickets';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -32,7 +32,7 @@ import { getInitials } from '@/lib/avatarInitials';
 import {
   LayoutDashboard, Users, FileText, KanbanSquare, Calendar, Settings, Wallet,
   Menu, Search, Bell, LogOut, ChevronLeft, ChevronRight, MoreHorizontal, Wrench, ChevronDown, MessageSquarePlus,
-  CheckCircle2, AlertCircle, PlusCircle, ArrowRightLeft, Paperclip, BellOff, Palette, FileCog, TrendingUp,
+  CheckCircle2, AlertCircle, PlusCircle, ArrowRightLeft, Paperclip, BellOff, Palette, FileCog, TrendingUp, MessageSquareReply,
 } from 'lucide-react';
 
 // ─── Notification helpers ───────────────────────────────────────────────────
@@ -112,39 +112,52 @@ export default function AppLayout() {
   const isAdminOperationalPortal = user?.role === 'ADMIN' && !isSupportImpersonating;
 
   const recentActivities = activities.slice(0, 20);
-  const unreadCount = Math.max(0, recentActivities.length - readCount);
+  const activityUnreadCount = Math.max(0, recentActivities.length - readCount);
+  const supportUnreadCount = supportTickets.filter((ticket) => ticket.resposta && !ticket.lida_em).length;
+  const totalUnreadCount = activityUnreadCount + supportUnreadCount;
 
   const handleOpenNotif = (open: boolean) => {
     setNotifOpen(open);
     if (open) setReadCount(recentActivities.length);
   };
 
+  const loadSupportTickets = useCallback(async (showLoading = false, notifyOnError = false) => {
+    if (showLoading) setSupportLoading(true);
+    try {
+      setSupportTickets(await getSupportTickets());
+    } catch (error) {
+      if (notifyOnError) {
+        toast({
+          title: 'Não foi possível carregar seus chamados',
+          description: error instanceof Error ? error.message : 'Tente novamente em instantes.',
+          variant: 'destructive',
+        });
+      }
+    } finally {
+      if (showLoading) setSupportLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    void loadSupportTickets();
+    const interval = window.setInterval(() => void loadSupportTickets(), 60_000);
+    return () => window.clearInterval(interval);
+  }, [loadSupportTickets, user?.email]);
+
   useEffect(() => {
     if (!supportOpen) return;
-    let cancelled = false;
-
     setSupportLoading(true);
-    getSupportTickets()
-      .then((tickets) => {
-        if (!cancelled) setSupportTickets(tickets);
-      })
+    markSupportTicketsRead()
+      .then(() => loadSupportTickets())
       .catch((error) => {
-        if (!cancelled) {
-          toast({
-            title: 'Não foi possível carregar seus chamados',
-            description: error instanceof Error ? error.message : 'Tente novamente em instantes.',
-            variant: 'destructive',
-          });
-        }
+        toast({
+          title: 'Não foi possível atualizar seus chamados',
+          description: error instanceof Error ? error.message : 'Tente novamente em instantes.',
+          variant: 'destructive',
+        });
       })
-      .finally(() => {
-        if (!cancelled) setSupportLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [supportOpen, toast]);
+      .finally(() => setSupportLoading(false));
+  }, [loadSupportTickets, supportOpen, toast]);
 
   const submitSupportRequest = async () => {
     const validation = validateSupportMessage(supportMessage);
@@ -330,6 +343,11 @@ export default function AppLayout() {
             ) : null}
             <DropdownMenuItem onClick={() => setSupportOpen(true)}>
               <MessageSquarePlus className="w-4 h-4 mr-2" /> Sugestões / Chamado
+              {supportUnreadCount > 0 ? (
+                <span className="ml-auto rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-bold leading-none text-destructive-foreground">
+                  {supportUnreadCount > 9 ? '9+' : supportUnreadCount}
+                </span>
+              ) : null}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => { logout(); navigate('/login'); }}>
               <LogOut className="w-4 h-4 mr-2" /> Sair
@@ -432,9 +450,9 @@ export default function AppLayout() {
               <PopoverTrigger asChild>
                 <Button variant="ghost" size="icon" className="relative rounded-xl border border-border/60 bg-background shadow-sm">
                   <Bell className="w-5 h-5" />
-                  {unreadCount > 0 && (
+                  {totalUnreadCount > 0 && (
                     <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center px-1">
-                      {unreadCount > 9 ? '9+' : unreadCount}
+                      {totalUnreadCount > 9 ? '9+' : totalUnreadCount}
                     </span>
                   )}
                 </Button>
@@ -445,10 +463,10 @@ export default function AppLayout() {
                   <div>
                     <p className="font-semibold text-sm">Notificações</p>
                     <p className="text-xs text-muted-foreground">
-                      {unreadCount > 0 ? `${unreadCount} nova${unreadCount > 1 ? 's' : ''}` : 'Tudo lido'}
+                      {totalUnreadCount > 0 ? `${totalUnreadCount} nova${totalUnreadCount > 1 ? 's' : ''}` : 'Tudo lido'}
                     </p>
                   </div>
-                  {unreadCount > 0 && (
+                  {activityUnreadCount > 0 && (
                     <button
                       className="text-xs text-primary hover:underline"
                       onClick={() => setReadCount(recentActivities.length)}
@@ -459,7 +477,7 @@ export default function AppLayout() {
                 </div>
 
                 <ScrollArea className="max-h-[400px]">
-                  {recentActivities.length === 0 ? (
+                  {recentActivities.length === 0 && supportUnreadCount === 0 ? (
                     <div className="flex flex-col items-center justify-center py-10 text-center px-6">
                       <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center mb-3">
                         <BellOff className="w-5 h-5 text-muted-foreground" />
@@ -471,10 +489,31 @@ export default function AppLayout() {
                     </div>
                   ) : (
                     <div className="py-1">
+                      {supportUnreadCount > 0 ? (
+                        <button
+                          type="button"
+                          className="flex w-full items-start gap-3 bg-primary/5 px-4 py-3 text-left transition-colors hover:bg-primary/10"
+                          onClick={() => {
+                            setNotifOpen(false);
+                            setSupportOpen(true);
+                          }}
+                        >
+                          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                            <MessageSquareReply className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-medium leading-relaxed text-foreground">
+                              {supportUnreadCount === 1 ? 'O suporte respondeu ao seu chamado.' : `O suporte respondeu a ${supportUnreadCount} chamados.`}
+                            </p>
+                            <p className="mt-1 text-[10px] text-muted-foreground">Abra para ver a resposta</p>
+                          </div>
+                          <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
+                        </button>
+                      ) : null}
                       {recentActivities.map((a, i) => {
                         const Icon = getActivityIcon(a.message);
                         const color = getActivityColor(a.message);
-                        const isUnread = i < unreadCount;
+                        const isUnread = i < activityUnreadCount;
                         return (
                           <button
                             key={a.id}
@@ -560,6 +599,11 @@ export default function AppLayout() {
                 ) : null}
                 <DropdownMenuItem onClick={() => setSupportOpen(true)}>
                   <MessageSquarePlus className="w-4 h-4 mr-2" /> Sugestões / Chamado
+                  {supportUnreadCount > 0 ? (
+                    <span className="ml-auto rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-bold leading-none text-destructive-foreground">
+                      {supportUnreadCount > 9 ? '9+' : supportUnreadCount}
+                    </span>
+                  ) : null}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => { logout(); navigate('/login'); }}>
                   <LogOut className="w-4 h-4 mr-2" /> Sair
@@ -713,6 +757,24 @@ export default function AppLayout() {
                         <p className="text-[13px] text-foreground/80 leading-snug line-clamp-2">{ticket.mensagem}</p>
                         {ticket.email_error ? (
                           <p className="mt-1 text-[11px] text-destructive/80 line-clamp-1">{ticket.email_error}</p>
+                        ) : null}
+                        {ticket.resposta ? (
+                          <div className="mt-3 rounded-md border border-primary/20 bg-primary/5 px-3 py-2.5">
+                            <div className="mb-1 flex items-center justify-between gap-3">
+                              <p className="flex items-center gap-1.5 text-[11px] font-semibold text-primary">
+                                <MessageSquareReply className="h-3.5 w-3.5" />
+                                Resposta do suporte
+                              </p>
+                              {ticket.respondido_em ? (
+                                <p className="text-[10px] tabular-nums text-muted-foreground">
+                                  {new Date(ticket.respondido_em).toLocaleString('pt-BR', {
+                                    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+                                  })}
+                                </p>
+                              ) : null}
+                            </div>
+                            <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-foreground/85">{ticket.resposta}</p>
+                          </div>
                         ) : null}
                       </div>
                     );

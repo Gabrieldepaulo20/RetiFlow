@@ -67,6 +67,14 @@ function formatEmailAddress(email: string, displayName?: string) {
   return safeName ? `"${safeName}" <${email}>` : email;
 }
 
+function getSupportReplyTo(ticketId: string) {
+  const inboundDomain = (Deno.env.get('SES_INBOUND_DOMAIN') ?? '').trim().toLowerCase();
+  if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(inboundDomain)) {
+    return `reply+${ticketId}@${inboundDomain}`;
+  }
+  return Deno.env.get('SUPPORT_REPLY_TO_EMAIL') ?? Deno.env.get('SUPPORT_TO_EMAIL') ?? '';
+}
+
 async function sha256Hex(value: string) {
   const bytes = new TextEncoder().encode(value);
   const hash = await crypto.subtle.digest('SHA-256', bytes);
@@ -104,6 +112,7 @@ async function sendSesEmail(params: {
   subject: string;
   text: string;
   html: string;
+  replyTo: string;
   request: Request;
 }) {
   const region = Deno.env.get('AWS_REGION') ?? Deno.env.get('AWS_SES_REGION') ?? 'us-east-1';
@@ -112,7 +121,7 @@ async function sendSesEmail(params: {
   const from = Deno.env.get('SUPPORT_FROM_EMAIL') ?? '';
   const fromName = Deno.env.get('SUPPORT_FROM_NAME') ?? 'Sistema Retiflow';
   const to = Deno.env.get('SUPPORT_TO_EMAIL') ?? '';
-  const replyTo = Deno.env.get('SUPPORT_REPLY_TO_EMAIL') ?? to;
+  const replyTo = params.replyTo || to;
 
   if (!accessKey || !secretKey || !from || !to) {
     throw new Error('SES não configurado. Configure AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, SUPPORT_FROM_EMAIL e SUPPORT_TO_EMAIL.');
@@ -239,8 +248,11 @@ Deno.serve(async (request) => {
   }
 
   try {
+    const replyTo = getSupportReplyTo(inserted.id_chamados_suporte);
+    const safeReplyTo = escapeHtml(replyTo);
     await sendSesEmail({
       request,
+      replyTo,
       subject: `Novo chamado Retiflow - ${userName}`,
       text: [
         'Novo chamado no Retiflow',
@@ -252,7 +264,7 @@ Deno.serve(async (request) => {
         'Mensagem:',
         message,
         '',
-        'Responda este e-mail para falar diretamente com o responsável.',
+        'Responda este e-mail para registrar a resposta diretamente no chamado.',
       ].join('\n'),
       html: `
         <!doctype html>
@@ -291,8 +303,8 @@ Deno.serve(async (request) => {
                     </tr>
                     <tr>
                       <td style="padding:18px 30px 30px;">
-                        <a href="mailto:${safeUserEmail}?subject=Re:%20Chamado%20Retiflow" style="display:inline-block;background:#17202a;color:#ffffff;text-decoration:none;border-radius:14px;padding:13px 18px;font-size:14px;font-weight:800;">Responder cliente</a>
-                        <p style="margin:16px 0 0;font-size:12px;line-height:1.6;color:#7a8796;">Este e-mail foi enviado automaticamente pelo Retiflow. Ao responder, a mensagem vai para o e-mail do solicitante.</p>
+                        <a href="mailto:${safeReplyTo}?subject=Re:%20Chamado%20Retiflow" style="display:inline-block;background:#17202a;color:#ffffff;text-decoration:none;border-radius:14px;padding:13px 18px;font-size:14px;font-weight:800;">Responder chamado</a>
+                        <p style="margin:16px 0 0;font-size:12px;line-height:1.6;color:#7a8796;">Este e-mail foi enviado automaticamente pelo Retiflow. Responda esta mensagem para registrar sua resposta no chamado e avisar o cliente no sistema.</p>
                       </td>
                     </tr>
                   </table>
