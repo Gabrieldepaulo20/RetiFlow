@@ -8,6 +8,12 @@ export type GmailConnectionStatus = {
   sync_enabled?: boolean;
   last_sync_at?: string | null;
   last_error?: string | null;
+  last_scan_messages_count?: number;
+  last_scan_attachments_count?: number;
+  last_scan_suggestions_count?: number;
+  last_scan_reconciled_count?: number;
+  last_scan_skipped_count?: number;
+  last_scan_errors_count?: number;
 };
 
 async function getAccessToken() {

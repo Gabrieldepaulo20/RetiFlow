@@ -154,6 +154,15 @@ function ConfidenceBadge({ value }: { value: number }) {
   return <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ring-1', tone)}><Sparkles className="h-2.5 w-2.5" />{value}% confiança</span>;
 }
 
+function GmailSyncMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="min-w-[88px] rounded-lg border border-border/60 bg-background px-2.5 py-2 shadow-sm">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-0.5 text-base font-bold leading-none text-foreground">{value}</p>
+    </div>
+  );
+}
+
 function SenderRiskBadge({ risk }: { risk?: 'BAIXO' | 'MEDIO' | 'ALTO' }) {
   if (!risk || risk === 'BAIXO') return null;
   const isHigh = risk === 'ALTO';
@@ -760,6 +769,22 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
           </Button>
         </div>
       </div>
+
+      {gmailStatus?.connected && gmailStatus.last_sync_at ? (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            <GmailSyncMetric label="E-mails lidos" value={gmailStatus.last_scan_messages_count ?? 0} />
+            <GmailSyncMetric label="Anexos" value={gmailStatus.last_scan_attachments_count ?? 0} />
+            <GmailSyncMetric label="Sugestões novas" value={gmailStatus.last_scan_suggestions_count ?? 0} />
+            <GmailSyncMetric label="Pagas conciliadas" value={gmailStatus.last_scan_reconciled_count ?? 0} />
+            <GmailSyncMetric label="Ignorados" value={gmailStatus.last_scan_skipped_count ?? 0} />
+            <GmailSyncMetric label="Pendências" value={gmailStatus.last_scan_errors_count ?? 0} />
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Resumo da última busca. E-mails sem cobrança clara ou já analisados são ignorados com segurança.
+          </p>
+        </div>
+      ) : null}
 
       {(paidPending.length > 0 || payablePending.length > 0 || accepted.length > 0 || dismissed.length > 0) ? (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">

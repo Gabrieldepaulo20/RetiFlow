@@ -645,6 +645,7 @@ Deno.serve(async (request) => {
   let skipped = 0;
   let scanned = 0;
   let reconciled = 0;
+  let attachmentsFound = 0;
 
   try {
     const accessToken = await refreshAccessToken(await decryptToken(connection.refresh_token_cipher));
@@ -697,6 +698,7 @@ Deno.serve(async (request) => {
         : new Date(header(headers, 'Date') || Date.now()).toISOString();
       const bodyText = extractPayloadText(detail.payload);
       const attachments = await getGmailAttachments({ accessToken, messageId, payload: detail.payload });
+      attachmentsFound += attachments.length;
       const securityContext = buildSecurityContext(headers, labelIds);
       const text = `${subject}\n${from.name}\n${from.email}\n${securityContext}\n${detail.snippet ?? ''}\n${bodyText}`;
       let analysis: PayableEmailAnalysis;
@@ -802,7 +804,11 @@ Deno.serve(async (request) => {
         .single();
 
       if (suggestionError || !suggestion) {
-        errors.push(`Mensagem ${messageId}: ${suggestionError?.message ?? 'falha ao criar sugestão'}`);
+        console.error('[gmail-scan-payables] Falha ao criar sugestão', {
+          messageId,
+          error: suggestionError?.message ?? 'resposta vazia',
+        });
+        errors.push(`Mensagem ${messageId}: não foi possível salvar a sugestão.`);
         continue;
       }
 
@@ -822,8 +828,17 @@ Deno.serve(async (request) => {
       .schema('RetificaPremium')
       .from('Gmail_Connections')
       .update({
+        status: 'CONNECTED',
         last_sync_at: new Date().toISOString(),
-        last_error: null,
+        last_error: errors.length > 0
+          ? `${errors.length} e-mail${errors.length === 1 ? '' : 's'} precisa${errors.length === 1 ? '' : 'm'} de nova tentativa.`
+          : null,
+        last_scan_messages_count: scanned,
+        last_scan_attachments_count: attachmentsFound,
+        last_scan_suggestions_count: created,
+        last_scan_reconciled_count: reconciled,
+        last_scan_skipped_count: skipped,
+        last_scan_errors_count: errors.length,
         updated_at: new Date().toISOString(),
       })
       .eq('id_gmail_connections', connection.id_gmail_connections);
@@ -832,7 +847,17 @@ Deno.serve(async (request) => {
     await service
       .schema('RetificaPremium')
       .from('Gmail_Connections')
-      .update({ status: 'ERROR', last_error: message, updated_at: new Date().toISOString() })
+      .update({
+        status: 'ERROR',
+        last_error: message,
+        last_scan_messages_count: scanned,
+        last_scan_attachments_count: attachmentsFound,
+        last_scan_suggestions_count: created,
+        last_scan_reconciled_count: reconciled,
+        last_scan_skipped_count: skipped,
+        last_scan_errors_count: errors.length + 1,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id_gmail_connections', connection.id_gmail_connections);
     return jsonResponse({ error: message }, 500, request);
   }
