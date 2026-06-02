@@ -93,6 +93,28 @@ describe('Supabase RPC base wrapper', () => {
     });
   });
 
+  it('uses the validated support-context RPC for monthly closings', async () => {
+    window.sessionStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify({
+      id: '11111111-1111-4111-8111-111111111111',
+      reason: 'validar fechamento',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      actorUser: { id: 'actor-id', email: 'gabrielwilliam208@gmail.com', name: 'Gabriel' },
+      targetUser: { id: '22222222-2222-4222-8222-222222222222', email: 'patricia@example.com', name: 'Patricia' },
+    }));
+    mocks.rpc.mockResolvedValue({
+      data: { status: 200, mensagem: 'ok', dados: [] },
+      error: null,
+    });
+
+    await callRPC('get_fechamentos', { p_limite: 10 });
+
+    expect(mocks.rpc).toHaveBeenCalledWith('get_fechamentos_contexto_suporte', {
+      p_limite: 10,
+      p_contexto_usuario_id: '22222222-2222-4222-8222-222222222222',
+      p_sessao_suporte: '11111111-1111-4111-8111-111111111111',
+    });
+  });
+
   it('blocks writes while a support context is active', async () => {
     window.sessionStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify({
       id: '11111111-1111-4111-8111-111111111111',

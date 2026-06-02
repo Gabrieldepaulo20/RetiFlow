@@ -19,6 +19,7 @@ const SUPPORT_CONTEXT_RPC_MAP: Record<string, string> = {
   get_contas_pagar: 'get_contas_pagar_contexto_suporte',
   get_conta_pagar_detalhes: 'get_conta_pagar_detalhes_contexto_suporte',
   get_fornecedores: 'get_fornecedores_contexto_suporte',
+  get_fechamentos: 'get_fechamentos_contexto_suporte',
 };
 
 const SUPPORT_BLOCKED_WRITE_RPCS = new Set([
@@ -40,12 +41,14 @@ const SUPPORT_BLOCKED_WRITE_RPCS = new Set([
   'novo_cliente',
   'reativar_cliente',
   'registrar_pagamento',
+  'registrar_acao_fechamento',
   'salvar_cliente_completo',
   'update_anexo_conta_pagar_nome',
   'update_categoria_conta_pagar',
   'update_cliente',
   'update_conta_pagar',
   'update_fatura',
+  'update_fechamento',
   'update_fornecedor',
   'update_nota_pdf_url',
   'update_nota_servico',

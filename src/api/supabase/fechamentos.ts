@@ -1,5 +1,6 @@
 import { callRPC, type RPCEnvelope } from './_base';
 import { supabase } from '@/lib/supabase';
+import { readStoredSupportContext } from '@/services/auth/supportContext';
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
 
@@ -89,6 +90,12 @@ function rpcMessage(rpcName: string, message: string) {
 }
 
 async function callMutationRPC(rpcName: string, params: Record<string, unknown>) {
+  if (readStoredSupportContext()) {
+    throw new Error(
+      `[${rpcName}] Ações de escrita em modo suporte estão bloqueadas até a auditoria backend por ação estar ativa.`,
+    );
+  }
+
   const { data, error } = await supabase.schema('RetificaPremium').rpc(rpcName, params);
 
   if (error) {
@@ -163,6 +170,10 @@ export async function uploadFechamentoPDF(
   idFechamento: string,
   pdfBlob: Blob,
 ): Promise<string> {
+  if (readStoredSupportContext()) {
+    throw new Error('[uploadFechamentoPDF] Uploads em modo suporte estão bloqueados.');
+  }
+
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.id) throw new Error('[uploadFechamentoPDF] Sessão sem usuário autenticado.');
   const path = `${user.id}/${idFechamento}.pdf`;
