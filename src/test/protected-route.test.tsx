@@ -14,6 +14,8 @@ const mockedUseAuth = vi.mocked(useAuth);
 // Campos do AuthContext que não variam por teste; mantém os mocks alinhados ao tipo real.
 const authBase = {
   realUser: null,
+  operationalUser: null,
+  supportTargetUser: null,
   supportSession: null,
   isSupportImpersonating: false,
   startSupportImpersonation: vi.fn(),
