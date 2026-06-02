@@ -10,6 +10,7 @@ import { buildCustomerAddressLabel } from '@/services/domain/customers';
 import { cn } from '@/lib/utils';
 import type { NotaServicoDetalhes, NotaServicoDetalhesItem } from '@/api/supabase/notas';
 import {
+  formatNotaClientPrintName,
   NOTA_PRINT_LONG_MAX_ROWS,
   NOTA_PRINT_MAX_ROWS,
   NOTA_PRINT_OBSERVATIONS,
@@ -260,7 +261,7 @@ function PreviewVia({
         )}
 
         <div className="mb-[3px] flex flex-wrap gap-x-[7px] gap-y-[3px]">
-          <PreviewField label="Cliente" value={cabecalho.cliente.nome} />
+          <PreviewField label="Cliente" value={formatNotaClientPrintName(cabecalho.cliente.nome)} />
         </div>
         <div className="mb-[3px] flex flex-wrap gap-x-[7px] gap-y-[3px]">
           <PreviewField label="Documento" value={cabecalho.cliente.documento} />

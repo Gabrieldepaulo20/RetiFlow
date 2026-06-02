@@ -3,6 +3,7 @@ import type { Style } from '@react-pdf/types';
 import type { NotaServicoDetalhes, NotaServicoDetalhesItem } from '@/api/supabase/notas';
 import type { OsTemplateMode } from '@/api/supabase/modelos';
 import {
+  formatNotaClientPrintName,
   NOTA_PRINT_LONG_MAX_ROWS,
   NOTA_PRINT_MAX_ROWS,
   NOTA_PRINT_OBSERVATIONS,
@@ -402,7 +403,7 @@ function Via({
         </View>
 
         <View style={styles.line}>
-          <FieldValue label="Cliente" value={cabecalho.cliente.nome} />
+          <FieldValue label="Cliente" value={formatNotaClientPrintName(cabecalho.cliente.nome)} />
         </View>
 
         <View style={styles.line}>
