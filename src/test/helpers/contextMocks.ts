@@ -15,6 +15,8 @@ export function makeAuthCtx(overrides: Partial<AuthCtx> = {}): AuthCtx {
     authMode: 'development',
     realUser: null,
     user: null,
+    operationalUser: null,
+    supportTargetUser: null,
     session: null,
     supportSession: null,
     isSupportImpersonating: false,

@@ -181,6 +181,7 @@ export default function AppLayout() {
   const isModuleVisible = (item: typeof navItems[number]) => {
     if (!user) return false;
     if (isAdminOperationalPortal && item.moduleKey === 'settings') return false;
+    if (isSupportImpersonating && item.moduleKey === 'settings') return false;
     return canAccessModule(item.moduleKey);
   };
 
@@ -265,7 +266,7 @@ export default function AppLayout() {
               <span className="block truncate text-xs font-normal text-muted-foreground">{user?.email}</span>
               {isSupportImpersonating ? (
                 <span className="mt-1 block truncate text-[11px] font-normal text-amber-600">
-                  Suporte por {realUser?.name}
+                  Empresa: {supportSession?.targetUser.name}
                 </span>
               ) : null}
             </DropdownMenuLabel>
@@ -274,7 +275,7 @@ export default function AppLayout() {
               <DropdownMenuItem onClick={() => navigate('/admin')}>
                 <LayoutDashboard className="w-4 h-4 mr-2" /> Voltar para o ADM
               </DropdownMenuItem>
-            ) : canAccessModule('settings') ? (
+            ) : !isSupportImpersonating && canAccessModule('settings') ? (
               <>
                 <DropdownMenuItem onClick={() => navigate('/configuracoes?tab=empresa')}>
                   <Settings className="w-4 h-4 mr-2" /> Configurações da empresa
@@ -287,7 +288,7 @@ export default function AppLayout() {
                 </DropdownMenuItem>
               </>
             ) : null}
-            {!isAdminOperationalPortal && canAccessModule('admin') && user?.role === 'ADMIN' ? (
+            {!isSupportImpersonating && !isAdminOperationalPortal && canAccessModule('admin') && user?.role === 'ADMIN' ? (
               <DropdownMenuItem onClick={() => navigate('/admin/usuarios')}>
                 <Users className="w-4 h-4 mr-2" /> Acessos de funcionários
               </DropdownMenuItem>

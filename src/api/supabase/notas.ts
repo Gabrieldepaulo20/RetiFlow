@@ -1,5 +1,6 @@
 import { callRPC } from './_base';
 import { NoteStatus, NoteType, IntakeNote, STATUS_LABELS } from '@/types';
+import { readStoredSupportContext } from '@/services/auth/supportContext';
 
 const NOTAS_BUCKET = 'notas';
 const DEFAULT_NOTA_PDF_SIGNED_URL_TTL = 60 * 60;
@@ -201,6 +202,10 @@ export async function getNotaPDFSignedUrl(
 }
 
 export async function uploadNotaPDF(blob: Blob, osNumero: string): Promise<string> {
+  if (readStoredSupportContext()) {
+    throw new Error('[uploadNotaPDF] Upload de PDF em modo suporte exige auditoria backend por ação.');
+  }
+
   const { supabase } = await import('@/lib/supabase');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.id) throw new Error('[uploadNotaPDF] Sessão sem usuário autenticado.');

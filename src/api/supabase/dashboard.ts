@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { readStoredSupportContext } from '@/services/auth/supportContext';
 import { supabaseToClient, type ClienteListItem } from './clientes';
 import { supabaseToIntakeNote, type NotaServico, type NotaServicoDetalhesItem } from './notas';
 import type { ContaPagar } from './contas-pagar';
@@ -39,8 +40,14 @@ export async function getDashboardResumo(params?: { p_limite?: number }) {
     throw new Error('Sessão Supabase não encontrada. Faça login novamente.');
   }
 
+  const supportContext = readStoredSupportContext();
   const { data, error } = await supabase.functions.invoke<{ dados?: DashboardResumo; error?: string }>('dashboard-resumo', {
-    body: params ?? {},
+    body: supportContext
+      ? {
+          ...(params ?? {}),
+          supportContext,
+        }
+      : (params ?? {}),
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 

@@ -57,6 +57,42 @@ async function callRpc<T>(
   return data as T;
 }
 
+function getSupportRpc(name: string, supportContext: SupportContext | null) {
+  if (!supportContext) return { name, params: {} };
+
+  const mapped: Record<string, string> = {
+    get_clientes: 'get_clientes_contexto_suporte',
+    get_notas_servico: 'get_notas_servico_contexto_suporte',
+    get_contas_pagar: 'get_contas_pagar_contexto_suporte',
+    get_nota_servico_detalhes: 'get_nota_servico_detalhes_contexto_suporte',
+  };
+
+  return {
+    name: mapped[name] ?? name,
+    params: mapped[name]
+      ? {
+          p_contexto_usuario_id: supportContext.targetUserId,
+          p_sessao_suporte: supportContext.sessionId,
+        }
+      : {},
+  };
+}
+
+type SupportContext = {
+  sessionId: string;
+  targetUserId: string;
+};
+
+function parseSupportContext(value: unknown): SupportContext | null {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as Record<string, unknown>;
+  const sessionId = typeof candidate.sessionId === 'string' ? candidate.sessionId : '';
+  const targetUserId = typeof candidate.targetUserId === 'string' ? candidate.targetUserId : '';
+  const uuidPattern = /^[0-9a-f-]{36}$/i;
+  if (!uuidPattern.test(sessionId) || !uuidPattern.test(targetUserId)) return null;
+  return { sessionId, targetUserId };
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: getCorsHeaders(request) });
   if (request.method !== 'POST') return jsonResponse({ error: 'Método não permitido.' }, 405, request);
@@ -78,12 +114,16 @@ Deno.serve(async (request) => {
   });
 
   try {
-    const body = await request.json().catch(() => ({})) as { p_limite?: unknown };
+    const body = await request.json().catch(() => ({})) as { p_limite?: unknown; supportContext?: unknown };
     const limit = parseLimit(body.p_limite);
+    const supportContext = parseSupportContext(body.supportContext);
+    const clientesRpc = getSupportRpc('get_clientes', supportContext);
+    const notasRpc = getSupportRpc('get_notas_servico', supportContext);
+    const contasRpc = getSupportRpc('get_contas_pagar', supportContext);
     const [notasEnvelope, clientesEnvelope, contasEnvelope, categoriasEnvelope] = await Promise.all([
-      callRpc<{ dados?: Array<Record<string, unknown>>; total?: number }>(userClient, 'get_notas_servico', { p_limite: limit }),
-      callRpc<{ dados?: Array<Record<string, unknown>>; total?: number }>(userClient, 'get_clientes', { p_limite: limit }),
-      callRpc<{ dados?: Array<Record<string, unknown>>; total?: number }>(userClient, 'get_contas_pagar', { p_limite: limit }),
+      callRpc<{ dados?: Array<Record<string, unknown>>; total?: number }>(userClient, notasRpc.name, { p_limite: limit, ...notasRpc.params }),
+      callRpc<{ dados?: Array<Record<string, unknown>>; total?: number }>(userClient, clientesRpc.name, { p_limite: limit, ...clientesRpc.params }),
+      callRpc<{ dados?: Array<Record<string, unknown>>; total?: number }>(userClient, contasRpc.name, { p_limite: limit, ...contasRpc.params }),
       callRpc<{ dados?: Array<Record<string, unknown>> }>(userClient, 'get_categorias_conta_pagar', { p_ativo: true }),
     ]);
 
@@ -94,11 +134,12 @@ Deno.serve(async (request) => {
       const noteId = typeof nota.id_notas_servico === 'string' ? nota.id_notas_servico : '';
       if (!noteId) return;
 
+      const detalhesRpc = getSupportRpc('get_nota_servico_detalhes', supportContext);
       try {
         const detalhes = await callRpc<{
           status?: number;
           itens_servico?: Array<Record<string, unknown>>;
-        }>(userClient, 'get_nota_servico_detalhes', { p_id_nota_servico: noteId });
+        }>(userClient, detalhesRpc.name, { p_id_nota_servico: noteId, ...detalhesRpc.params });
 
         if (detalhes.status !== 200 || !Array.isArray(detalhes.itens_servico)) return;
         detalhes.itens_servico.forEach((item) => servicos.push({ ...item, note_id: noteId }));

@@ -225,8 +225,8 @@ const Ctx = createContext<DataCtx | null>(null);
 const uid = () => generateId();
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const { user, isAuthLoading } = useAuth();
-  const activeUserId = IS_REAL_AUTH ? user?.id ?? null : null;
+  const { operationalUser, isAuthLoading } = useAuth();
+  const activeUserId = IS_REAL_AUTH ? operationalUser?.id ?? null : null;
 
   // Carrega estado do localStorage uma única vez na montagem.
   // useRef garante execução única mesmo em StrictMode double-render.

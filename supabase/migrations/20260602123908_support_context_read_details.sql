@@ -1,0 +1,3 @@
+-- Migration version applied via Supabase MCP to add support-context detail RPCs.
+-- The local SQL body is consolidated in 20260602123040_support_context_read_rpcs.sql
+-- so clean environments receive the complete support-context read layer in one pass.

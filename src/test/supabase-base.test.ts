@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { callRPC, extractDados } from '@/api/supabase/_base';
+import { SUPPORT_SESSION_STORAGE_KEY } from '@/services/auth/supportContext';
 
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -22,6 +23,7 @@ describe('Supabase RPC base wrapper', () => {
   beforeEach(() => {
     mocks.rpc.mockReset();
     mocks.logError.mockReset();
+    window.sessionStorage.clear();
   });
 
   it('returns the standard envelope when the RPC succeeds', async () => {
@@ -67,6 +69,43 @@ describe('Supabase RPC base wrapper', () => {
 
     await expect(callRPC('insert_algo')).rejects.toThrow('[insert_algo] Não autenticado');
     expect(mocks.logError).toHaveBeenCalledOnce();
+  });
+
+  it('uses the validated support-context RPC for contextual reads', async () => {
+    window.sessionStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify({
+      id: '11111111-1111-4111-8111-111111111111',
+      reason: 'validar cliente',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      actorUser: { id: 'actor-id', email: 'gabrielwilliam208@gmail.com', name: 'Gabriel' },
+      targetUser: { id: '22222222-2222-4222-8222-222222222222', email: 'patricia@example.com', name: 'Patricia' },
+    }));
+    mocks.rpc.mockResolvedValue({
+      data: { status: 200, mensagem: 'ok', dados: [] },
+      error: null,
+    });
+
+    await callRPC('get_clientes', { p_limite: 10 });
+
+    expect(mocks.rpc).toHaveBeenCalledWith('get_clientes_contexto_suporte', {
+      p_limite: 10,
+      p_contexto_usuario_id: '22222222-2222-4222-8222-222222222222',
+      p_sessao_suporte: '11111111-1111-4111-8111-111111111111',
+    });
+  });
+
+  it('blocks writes while a support context is active', async () => {
+    window.sessionStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify({
+      id: '11111111-1111-4111-8111-111111111111',
+      reason: 'validar cliente',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      actorUser: { id: 'actor-id', email: 'gabrielwilliam208@gmail.com', name: 'Gabriel' },
+      targetUser: { id: '22222222-2222-4222-8222-222222222222', email: 'patricia@example.com', name: 'Patricia' },
+    }));
+
+    await expect(callRPC('novo_cliente', { p_payload: { nome: 'Cliente' } })).rejects.toThrow(
+      'Ações de escrita em modo suporte estão bloqueadas',
+    );
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
   it('extractDados returns data and rejects absent data explicitly', () => {

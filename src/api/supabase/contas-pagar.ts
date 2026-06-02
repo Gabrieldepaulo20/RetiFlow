@@ -1,5 +1,6 @@
 import { callRPC } from './_base';
 import { supabase } from '@/lib/supabase';
+import { readStoredSupportContext } from '@/services/auth/supportContext';
 
 export interface ContaPagar {
   id_contas_pagar: string;
@@ -184,6 +185,10 @@ export async function uploadAnexoContaPagar(params: {
   contaPagarId: string;
   file: File;
 }) {
+  if (readStoredSupportContext()) {
+    throw new Error('[uploadAnexoContaPagar] Upload de anexos em modo suporte exige auditoria backend por ação.');
+  }
+
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.id) throw new Error('[uploadAnexoContaPagar] Sessão sem usuário autenticado.');
   const safeName = sanitizeStorageName(params.file.name);

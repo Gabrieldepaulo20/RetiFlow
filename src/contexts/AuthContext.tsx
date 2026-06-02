@@ -15,13 +15,16 @@ import { supabase } from '@/lib/supabase';
 import { dbUserToSystemUser } from '@/services/auth/supabaseUserMapping';
 import { canUserAccessModule, getDefaultRedirect } from '@/services/auth/defaultRedirect';
 import { isSuperAdmin } from '@/services/auth/superAdmin';
+import {
+  readStoredSupportSession,
+  writeStoredSupportSession,
+} from '@/services/auth/supportContext';
 import { callAdminUsersFunction } from '@/api/supabase/admin-users';
 import { touchUserPresence } from '@/api/supabase/presence';
 import { isMfaChallengeRequired, getMfaAssuranceLevel } from '@/services/auth/mfa';
 import { markSessionExpiredByInactivity, SESSION_INACTIVITY_TIMEOUT_MS } from '@/services/auth/inactivitySession';
 
 const AUTH_SESSION_STORAGE_KEY = 'auth.session';
-const SUPPORT_SESSION_STORAGE_KEY = 'support.impersonation';
 export const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
 interface LoginResult {
@@ -37,6 +40,8 @@ interface AuthContextType {
   authMode: AuthMode;
   realUser: SystemUser | null;
   user: SystemUser | null;
+  operationalUser: SystemUser | null;
+  supportTargetUser: SystemUser | null;
   session: AuthSession | null;
   supportSession: SupportImpersonationSession | null;
   isSupportImpersonating: boolean;
@@ -76,34 +81,6 @@ function createRealSession(user: SystemUser): AuthSession {
     },
     authenticatedAt: new Date().toISOString(),
   };
-}
-
-function readStoredSupportSession() {
-  if (typeof window === 'undefined') return null;
-
-  try {
-    const raw = window.sessionStorage.getItem(SUPPORT_SESSION_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as SupportImpersonationSession;
-    if (!parsed?.id || !parsed?.actorUser?.id || !parsed?.targetUser?.id || !parsed.expiresAt) return null;
-    if (new Date(parsed.expiresAt).getTime() <= Date.now()) {
-      window.sessionStorage.removeItem(SUPPORT_SESSION_STORAGE_KEY);
-      return null;
-    }
-    return parsed;
-  } catch {
-    window.sessionStorage.removeItem(SUPPORT_SESSION_STORAGE_KEY);
-    return null;
-  }
-}
-
-function writeStoredSupportSession(supportSession: SupportImpersonationSession | null) {
-  if (typeof window === 'undefined') return;
-  if (!supportSession) {
-    window.sessionStorage.removeItem(SUPPORT_SESSION_STORAGE_KEY);
-    return;
-  }
-  window.sessionStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify(supportSession));
 }
 
 async function fetchProfileFromSupabase(): Promise<{
@@ -305,7 +282,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [applyProfileResult]);
 
   const realUser = session?.user ?? null;
-  const user = realUser && supportSession ? supportSession.targetUser : realUser;
+  const supportTargetUser = realUser && supportSession ? supportSession.targetUser : null;
+  const operationalUser = supportTargetUser ?? realUser;
+  const user = realUser;
 
   useEffect(() => {
     if (!IS_REAL_AUTH || !realUser?.id) return undefined;
@@ -519,12 +498,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       authMode,
       realUser,
       user,
+      operationalUser,
+      supportTargetUser,
       session,
       supportSession,
       isSupportImpersonating: Boolean(realUser && supportSession),
       isAuthLoading,
       profileError,
-      isAuthenticated: Boolean(user),
+      isAuthenticated: Boolean(realUser),
       login,
       logout,
       startSupportImpersonation,
@@ -534,10 +515,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       completeMfaLogin,
       can,
       canAccessModule,
-      isAdmin: user?.role === 'ADMIN',
+      isAdmin: realUser?.role === 'ADMIN',
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [authMode, realUser, user, session, supportSession, isAuthLoading, profileError, login, logout, startSupportImpersonation, endSupportImpersonation, retryAuth, refreshProfile, completeMfaLogin, can, canAccessModule, moduleAccessVersion],
+    [authMode, realUser, user, operationalUser, supportTargetUser, session, supportSession, isAuthLoading, profileError, login, logout, startSupportImpersonation, endSupportImpersonation, retryAuth, refreshProfile, completeMfaLogin, can, canAccessModule, moduleAccessVersion],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
