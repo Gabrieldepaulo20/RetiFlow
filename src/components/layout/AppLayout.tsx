@@ -3,7 +3,6 @@ import { Outlet, useNavigate, useLocation, Navigate, Link } from 'react-router-d
 import { AnimatePresence } from 'framer-motion';
 import { AnimatedPage } from './AnimatedPage';
 import { useAuth } from '@/contexts/AuthContext';
-import { useData } from '@/contexts/DataContext';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { getSupportTickets, markSupportTicketsRead, submitSupportTicket, type SupportTicket, type SupportTicketStatus } from '@/api/supabase/support';
@@ -32,44 +31,8 @@ import { getInitials } from '@/lib/avatarInitials';
 import {
   LayoutDashboard, Users, FileText, KanbanSquare, Calendar, Settings, Wallet,
   Menu, Search, Bell, LogOut, ChevronLeft, ChevronRight, MoreHorizontal, Wrench, ChevronDown, MessageSquarePlus,
-  CheckCircle2, AlertCircle, PlusCircle, ArrowRightLeft, Paperclip, BellOff, Palette, FileCog, TrendingUp, MessageSquareReply,
+  AlertCircle, BellOff, Palette, FileCog, TrendingUp, MessageSquareReply,
 } from 'lucide-react';
-
-// ─── Notification helpers ───────────────────────────────────────────────────
-
-function getActivityIcon(message: string) {
-  const m = message.toLowerCase();
-  if (m.includes('criada') || m.includes('cadastr') || m.includes('adicionad')) return PlusCircle;
-  if (m.includes('status') || m.includes('movida') || m.includes('aprovad') || m.includes('entregue') || m.includes('finaliz')) return ArrowRightLeft;
-  if (m.includes('anexo') || m.includes('arquivo') || m.includes('pdf') || m.includes('foto')) return Paperclip;
-  if (m.includes('cancelad') || m.includes('descartad') || m.includes('erro')) return AlertCircle;
-  if (m.includes('concluíd') || m.includes('pronta') || m.includes('pront')) return CheckCircle2;
-  return FileText;
-}
-
-function getActivityColor(message: string) {
-  const m = message.toLowerCase();
-  if (m.includes('cancelad') || m.includes('descartad') || m.includes('erro')) return 'text-destructive bg-destructive/10';
-  if (m.includes('concluíd') || m.includes('finaliz') || m.includes('entregue')) return 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30';
-  if (m.includes('aprovad') || m.includes('pronta') || m.includes('pront')) return 'text-green-600 bg-green-50 dark:bg-green-950/30';
-  if (m.includes('status') || m.includes('movida')) return 'text-amber-600 bg-amber-50 dark:bg-amber-950/30';
-  return 'text-primary bg-primary/10';
-}
-
-function formatNotifTime(iso: string): string {
-  const d = new Date(iso);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  const diffH = Math.floor(diffMin / 60);
-  const diffD = Math.floor(diffH / 24);
-  if (diffMin < 1) return 'Agora mesmo';
-  if (diffMin < 60) return `${diffMin}min atrás`;
-  if (diffH < 24) return `${diffH}h atrás`;
-  if (diffD === 1) return 'Ontem';
-  if (diffD < 7) return `${diffD} dias atrás`;
-  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
-}
 
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', moduleKey: 'dashboard' },
@@ -86,14 +49,12 @@ const mobileNav = navItems.slice(0, 4);
 
 export default function AppLayout() {
   const { user, realUser, supportSession, isSupportImpersonating, endSupportImpersonation, logout, canAccessModule } = useAuth();
-  const { activities } = useData();
   const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
   const isMobile = useIsMobile();
   const [collapsed, setCollapsed] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
-  const [readCount, setReadCount] = useState(0);
   const [supportOpen, setSupportOpen] = useState(false);
   const [supportMessage, setSupportMessage] = useState('');
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
@@ -111,14 +72,10 @@ export default function AppLayout() {
   const initials = getInitials(user?.name);
   const isAdminOperationalPortal = user?.role === 'ADMIN' && !isSupportImpersonating;
 
-  const recentActivities = activities.slice(0, 20);
-  const activityUnreadCount = Math.max(0, recentActivities.length - readCount);
   const supportUnreadCount = supportTickets.filter((ticket) => ticket.resposta && !ticket.lida_em).length;
-  const totalUnreadCount = activityUnreadCount + supportUnreadCount;
 
   const handleOpenNotif = (open: boolean) => {
     setNotifOpen(open);
-    if (open) setReadCount(recentActivities.length);
   };
 
   const loadSupportTickets = useCallback(async (showLoading = false, notifyOnError = false) => {
@@ -450,9 +407,9 @@ export default function AppLayout() {
               <PopoverTrigger asChild>
                 <Button variant="ghost" size="icon" className="relative rounded-xl border border-border/60 bg-background shadow-sm">
                   <Bell className="w-5 h-5" />
-                  {totalUnreadCount > 0 && (
+                  {supportUnreadCount > 0 && (
                     <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center px-1">
-                      {totalUnreadCount > 9 ? '9+' : totalUnreadCount}
+                      {supportUnreadCount > 9 ? '9+' : supportUnreadCount}
                     </span>
                   )}
                 </Button>
@@ -463,28 +420,20 @@ export default function AppLayout() {
                   <div>
                     <p className="font-semibold text-sm">Notificações</p>
                     <p className="text-xs text-muted-foreground">
-                      {totalUnreadCount > 0 ? `${totalUnreadCount} nova${totalUnreadCount > 1 ? 's' : ''}` : 'Tudo lido'}
+                      {supportUnreadCount > 0 ? `${supportUnreadCount} nova${supportUnreadCount > 1 ? 's' : ''}` : 'Tudo lido'}
                     </p>
                   </div>
-                  {activityUnreadCount > 0 && (
-                    <button
-                      className="text-xs text-primary hover:underline"
-                      onClick={() => setReadCount(recentActivities.length)}
-                    >
-                      Marcar todas como lidas
-                    </button>
-                  )}
                 </div>
 
                 <ScrollArea className="max-h-[400px]">
-                  {recentActivities.length === 0 && supportUnreadCount === 0 ? (
+                  {supportUnreadCount === 0 ? (
                     <div className="flex flex-col items-center justify-center py-10 text-center px-6">
                       <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center mb-3">
                         <BellOff className="w-5 h-5 text-muted-foreground" />
                       </div>
                       <p className="text-sm font-medium text-foreground">Sem notificações</p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        As atividades do sistema aparecerão aqui.
+                        Respostas do suporte aparecerão aqui.
                       </p>
                     </div>
                   ) : (
@@ -510,52 +459,9 @@ export default function AppLayout() {
                           <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
                         </button>
                       ) : null}
-                      {recentActivities.map((a, i) => {
-                        const Icon = getActivityIcon(a.message);
-                        const color = getActivityColor(a.message);
-                        const isUnread = i < activityUnreadCount;
-                        return (
-                          <button
-                            key={a.id}
-                            type="button"
-                            className={cn(
-                              'w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-muted/60 transition-colors',
-                              isUnread && 'bg-primary/5 hover:bg-primary/10',
-                            )}
-                            onClick={() => {
-                              if (a.noteId) {
-                                setNotifOpen(false);
-                                navigate(`/notas-entrada/${a.noteId}`);
-                              }
-                            }}
-                          >
-                            <div className={cn('mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', color)}>
-                              <Icon className="w-4 h-4" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs leading-relaxed text-foreground">{a.message}</p>
-                              <p className="text-[10px] text-muted-foreground mt-1">{formatNotifTime(a.createdAt)}</p>
-                            </div>
-                            {isUnread && (
-                              <span className="mt-1.5 w-2 h-2 rounded-full bg-primary shrink-0" />
-                            )}
-                          </button>
-                        );
-                      })}
                     </div>
                   )}
                 </ScrollArea>
-
-                {recentActivities.length > 0 && (
-                  <div className="border-t px-4 py-2.5">
-                    <button
-                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                      onClick={() => { setNotifOpen(false); navigate('/notas-entrada'); }}
-                    >
-                      Ver todas as notas de entrada →
-                    </button>
-                  </div>
-                )}
               </PopoverContent>
             </Popover>
 

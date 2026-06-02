@@ -54,7 +54,7 @@ import {
 } from '@/api/supabase/contas-pagar';
 import { getCategorias, type Categoria } from '@/api/supabase/categorias';
 import { getFornecedores, type Fornecedor } from '@/api/supabase/fornecedores';
-import { getLogs, insertLog, type LogAtividade } from '@/api/supabase/logs';
+import { insertLog } from '@/api/supabase/logs';
 import {
   aceitarSugestaoEmail,
   getSugestoesEmail,
@@ -123,16 +123,6 @@ function supabaseToPayableSupplier(f: Fornecedor): PayableSupplier {
     email: f.email ?? undefined,
     isActive: f.ativo,
     createdAt: f.created_at,
-  };
-}
-
-function supabaseToActivityLog(log: LogAtividade): ActivityLog {
-  return {
-    id: String(log.id_log),
-    noteId: log.entidade_id || undefined,
-    message: log.descricao,
-    userId: log.usuario?.id ?? '',
-    createdAt: log.created_at,
   };
 }
 
@@ -373,9 +363,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     getFornecedores({ p_ativo: true, p_limite: 200 }).then(({ dados }) => {
       if (!cancelled && dados.length > 0) setPayableSuppliers(dados.map(supabaseToPayableSupplier));
     }).catch(() => {});
-    getLogs({ p_limite: 50 }).then(({ dados }) => {
-      if (!cancelled) setActivities(dados.map(supabaseToActivityLog));
-    }).catch(() => {});
     getSugestoesEmail()
       .then((dados) => {
         if (!cancelled) setEmailSuggestions(dados.map(supabaseToEmailSuggestion));
@@ -423,8 +410,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
         p_entidade_id: noteId ?? '',
         p_descricao: message,
       })
-        .then(() => getLogs({ p_limite: 50 }))
-        .then(({ dados }) => setActivities(dados.map(supabaseToActivityLog)))
         .catch(() => {});
     }
   }, []);

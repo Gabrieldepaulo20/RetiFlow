@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { classifyGmailApiFailure } from '../_shared/gmail-api-errors.ts';
 
 function redirectWithStatus(status: 'connected' | 'error', message?: string) {
   const configuredOrigin = Deno.env.get('APP_ORIGIN') ?? Deno.env.get('APP_BASE_URL') ?? Deno.env.get('AUTH_REDIRECT_TO');
@@ -115,11 +116,13 @@ Deno.serve(async (request) => {
   const profileResponse = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', {
     headers: { Authorization: `Bearer ${tokenData.access_token}` },
   });
-  let email = '';
-  if (profileResponse.ok) {
-    const profile = await profileResponse.json() as { emailAddress?: string };
-    email = (profile.emailAddress ?? '').trim().toLowerCase();
+  if (!profileResponse.ok) {
+    const failure = await classifyGmailApiFailure(profileResponse, 'profile');
+    return redirectWithStatus('error', failure.code);
   }
+
+  const profile = await profileResponse.json() as { emailAddress?: string };
+  let email = (profile.emailAddress ?? '').trim().toLowerCase();
   email ||= getEmailFromIdToken(tokenData.id_token);
   if (!email) {
     const { data: authUser } = await service.auth.admin.getUserById(stateRow.fk_auth_user);

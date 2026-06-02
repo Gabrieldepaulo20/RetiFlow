@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { classifyGmailApiFailure } from '../_shared/gmail-api-errors.ts';
 
 const localDevOrigins = new Set([
   'http://localhost:5173',
@@ -599,7 +600,10 @@ async function listGmailMessageIds(accessToken: string, query: string, maxResult
   listUrl.searchParams.set('q', query);
 
   const listResponse = await fetch(listUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
-  if (!listResponse.ok) throw new Error(`Falha ao listar Gmail (${listResponse.status}).`);
+  if (!listResponse.ok) {
+    const failure = await classifyGmailApiFailure(listResponse, 'list messages');
+    throw new Error(failure.message);
+  }
   const list = await listResponse.json() as { messages?: Array<{ id: string }> };
   return (list.messages ?? []).map((item) => item.id);
 }
@@ -673,7 +677,8 @@ Deno.serve(async (request) => {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       if (!detailResponse.ok) {
-        errors.push(`Mensagem ${messageId}: erro ${detailResponse.status}`);
+        const failure = await classifyGmailApiFailure(detailResponse, 'get message');
+        errors.push(`Mensagem ${messageId}: ${failure.message}`);
         continue;
       }
 

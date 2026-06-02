@@ -26,6 +26,16 @@ describe('gmail oauth feedback', () => {
       description: 'A chave segura para guardar o token do Gmail ainda não está configurada.',
       variant: 'destructive',
     });
+
+    expect(getGmailOAuthFeedback('error', 'gmail_api_disabled')).toMatchObject({
+      description: 'A API do Gmail ainda não está habilitada no Google Cloud. Ative a Gmail API e conecte novamente.',
+      variant: 'destructive',
+    });
+
+    expect(getGmailOAuthFeedback('error', 'gmail_permission_missing')).toMatchObject({
+      description: 'A autorização não concedeu permissão de leitura do Gmail. Conecte novamente e aceite a permissão solicitada.',
+      variant: 'destructive',
+    });
   });
 
   it('keeps unknown callback errors honest without leaking internals', () => {
