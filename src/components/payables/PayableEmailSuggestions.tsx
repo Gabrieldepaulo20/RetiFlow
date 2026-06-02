@@ -36,7 +36,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { EmailSuggestion } from '@/types';
 import { buildPayableHistoryDescription, findPayableForSuggestion, getSuggestionOverdueDays } from '@/services/domain/payables';
-import { getGmailConnectionStatus, scanGmailPayables, startGmailOAuth, type GmailConnectionStatus } from '@/api/supabase/gmail-payables';
+import { getGmailConnectionStatus, scanGmailPayables, startGmailOAuth, updateGmailAutoSyncSettings, type GmailConnectionStatus } from '@/api/supabase/gmail-payables';
 import { getCategoryIcon } from '@/lib/payableCategoryIcon';
 import { SupplierAvatar } from '@/components/payables/SupplierAvatar';
 
@@ -505,23 +505,6 @@ type PayableEmailSuggestionsProps = {
   onCreated?: (payableId: string) => void;
 };
 
-const AUTO_SCAN_ENABLED_KEY = 'payables.gmail.autoScan.enabled';
-const AUTO_SCAN_INTERVAL_KEY = 'payables.gmail.autoScan.intervalHours';
-
-function readAutoScanEnabled(): boolean {
-  if (typeof window === 'undefined') return false;
-  try { return window.localStorage.getItem(AUTO_SCAN_ENABLED_KEY) === '1'; } catch { return false; }
-}
-
-function readAutoScanIntervalHours(): number {
-  if (typeof window === 'undefined') return 12;
-  try {
-    const raw = window.localStorage.getItem(AUTO_SCAN_INTERVAL_KEY);
-    const parsed = raw ? Number(raw) : 12;
-    return [6, 12, 24].includes(parsed) ? parsed : 12;
-  } catch { return 12; }
-}
-
 export default function PayableEmailSuggestions({ onCreated }: PayableEmailSuggestionsProps) {
   const { emailSuggestions, refreshEmailSuggestions, acceptEmailSuggestion, dismissEmailSuggestion, payableCategories, payables, updatePayable, addPayableHistoryEntry } = useData();
   const { user } = useAuth();
@@ -530,8 +513,8 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
   const [gmailLoading, setGmailLoading] = useState(true);
   const [gmailActionLoading, setGmailActionLoading] = useState(false);
   const [paidSuggestionToConfirm, setPaidSuggestionToConfirm] = useState<EmailSuggestion | null>(null);
-  const [autoScanEnabled, setAutoScanEnabled] = useState<boolean>(() => readAutoScanEnabled());
-  const [autoScanIntervalHours, setAutoScanIntervalHours] = useState<number>(() => readAutoScanIntervalHours());
+  const [autoScanEnabled, setAutoScanEnabled] = useState(false);
+  const [autoScanIntervalHours, setAutoScanIntervalHours] = useState(12);
 
   const categoryById = useMemo(() => new Map(payableCategories.map((c) => [c.id, c])), [payableCategories]);
   const pendingAll = useMemo(() => emailSuggestions.filter((s) => s.status === 'PENDING'), [emailSuggestions]);
@@ -559,12 +542,20 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
   const dismissed = useMemo(() => emailSuggestions.filter((s) => s.status === 'DISMISSED'), [emailSuggestions]);
   const accepted = useMemo(() => emailSuggestions.filter((s) => s.status === 'ACCEPTED'), [emailSuggestions]);
 
+  function applyGmailStatus(status: GmailConnectionStatus) {
+    setGmailStatus(status);
+    setAutoScanEnabled(Boolean(status.auto_sync_enabled));
+    setAutoScanIntervalHours([6, 12, 24].includes(status.auto_sync_interval_hours ?? 12)
+      ? status.auto_sync_interval_hours ?? 12
+      : 12);
+  }
+
   useEffect(() => {
     let cancelled = false;
     setGmailLoading(true);
     getGmailConnectionStatus()
       .then((status) => {
-        if (!cancelled) setGmailStatus(status);
+        if (!cancelled) applyGmailStatus(status);
       })
       .catch((error) => {
         if (!cancelled) {
@@ -601,7 +592,7 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
       const result = await scanGmailPayables();
       await refreshEmailSuggestions();
       const status = await getGmailConnectionStatus();
-      setGmailStatus(status);
+      applyGmailStatus(status);
       const reconciled = result.reconciled ?? 0;
       if (!options.silent || result.created > 0 || reconciled > 0) {
         toast({
@@ -625,25 +616,44 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
     }
   }
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try { window.localStorage.setItem(AUTO_SCAN_ENABLED_KEY, autoScanEnabled ? '1' : '0'); } catch { /* ignore */ }
-  }, [autoScanEnabled]);
+  async function handleAutoScanEnabledChange(enabled: boolean) {
+    setGmailActionLoading(true);
+    try {
+      const status = await updateGmailAutoSyncSettings(enabled, autoScanIntervalHours);
+      applyGmailStatus(status);
+      toast({
+        title: enabled ? 'Busca automática ativada' : 'Busca automática pausada',
+        description: enabled
+          ? 'O Retiflow continuará buscando novas contas mesmo com esta página fechada.'
+          : 'Você ainda pode buscar novas contas manualmente.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Não foi possível atualizar a busca automática',
+        description: error instanceof Error ? error.message : 'Tente novamente em instantes.',
+        variant: 'destructive',
+      });
+    } finally {
+      setGmailActionLoading(false);
+    }
+  }
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try { window.localStorage.setItem(AUTO_SCAN_INTERVAL_KEY, String(autoScanIntervalHours)); } catch { /* ignore */ }
-  }, [autoScanIntervalHours]);
-
-  useEffect(() => {
-    if (!autoScanEnabled || !gmailStatus?.connected) return;
-    const intervalMs = autoScanIntervalHours * 60 * 60 * 1000;
-    const id = window.setInterval(() => {
-      void handleScanGmail({ silent: true });
-    }, intervalMs);
-    return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoScanEnabled, autoScanIntervalHours, gmailStatus?.connected]);
+  async function handleAutoScanIntervalChange(value: string) {
+    const intervalHours = Number(value);
+    setGmailActionLoading(true);
+    try {
+      const status = await updateGmailAutoSyncSettings(autoScanEnabled, intervalHours);
+      applyGmailStatus(status);
+    } catch (error) {
+      toast({
+        title: 'Não foi possível alterar o intervalo',
+        description: error instanceof Error ? error.message : 'Tente novamente em instantes.',
+        variant: 'destructive',
+      });
+    } finally {
+      setGmailActionLoading(false);
+    }
+  }
 
   async function acceptSuggestionNow(suggestion: EmailSuggestion) {
     setPaidSuggestionToConfirm(null);
@@ -734,6 +744,11 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
                 {gmailStatus.last_error}
               </p>
             ) : null}
+            {autoScanEnabled && gmailStatus?.next_auto_sync_at ? (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Próxima busca automática {format(parseISO(gmailStatus.next_auto_sync_at), "dd/MM 'às' HH:mm")}
+              </p>
+            ) : null}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -742,11 +757,12 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
               <Switch
                 id="payables-autoscan-toggle"
                 checked={autoScanEnabled}
-                onCheckedChange={setAutoScanEnabled}
+                onCheckedChange={(enabled) => void handleAutoScanEnabledChange(enabled)}
+                disabled={gmailActionLoading}
               />
               <Label htmlFor="payables-autoscan-toggle" className="cursor-pointer text-xs font-medium text-foreground">Auto</Label>
               {autoScanEnabled ? (
-                <Select value={String(autoScanIntervalHours)} onValueChange={(value) => setAutoScanIntervalHours(Number(value))}>
+                <Select value={String(autoScanIntervalHours)} onValueChange={(value) => void handleAutoScanIntervalChange(value)} disabled={gmailActionLoading}>
                   <SelectTrigger className="h-7 w-[110px] border-border/60 bg-background text-xs">
                     <SelectValue />
                   </SelectTrigger>

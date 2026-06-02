@@ -28,6 +28,7 @@ const maxAttachmentsPerMessage = 3;
 const OPENAI_UPLOAD_TIMEOUT_MS = 60_000;
 const OPENAI_RESPONSES_TIMEOUT_MS = 45_000;
 const OPENAI_MAX_OUTPUT_TOKENS = 1200;
+const scheduledRetryDelayMs = 60 * 60 * 1000;
 
 async function fetchWithTimeout(url: string | URL, init: RequestInit, timeoutMs: number) {
   const controller = new AbortController();
@@ -65,6 +66,10 @@ function jsonResponse(body: unknown, status: number, request: Request) {
     status,
     headers: { ...getCorsHeaders(request), 'Content-Type': 'application/json' },
   });
+}
+
+function isUuid(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function fromBase64(value: string) {
@@ -619,19 +624,31 @@ Deno.serve(async (request) => {
   if (!supabaseUrl || !anonKey || !serviceKey) return jsonResponse({ error: 'Configuração Supabase ausente.' }, 500, request);
   if (!openAiKey) return jsonResponse({ error: 'OPENAI_API_KEY não configurada na Supabase Function.' }, 500, request);
 
+  const requestBody = await request.json().catch(() => ({})) as { scheduledUserId?: unknown; maxMessages?: unknown };
   const token = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
-  if (!token) return jsonResponse({ error: 'Autenticação obrigatória.' }, 401, request);
-
-  const authClient = createClient(supabaseUrl, anonKey, { auth: { persistSession: false } });
-  const { data: userData, error: userError } = await authClient.auth.getUser(token);
-  if (userError || !userData.user) return jsonResponse({ error: 'Usuário autenticado obrigatório.' }, 401, request);
-
+  const cronSecret = request.headers.get('x-retiflow-cron-secret')?.trim() ?? '';
   const service = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+  const isScheduled = Boolean(cronSecret) && isUuid(requestBody.scheduledUserId);
+  let authUserId = '';
+
+  if (isScheduled) {
+    const { data: secretIsValid, error: secretError } = await service
+      .schema('RetificaPremium')
+      .rpc('validate_gmail_auto_sync_cron_secret', { p_secret: cronSecret });
+    if (secretError || secretIsValid !== true) return jsonResponse({ error: 'Autenticação interna inválida.' }, 401, request);
+    authUserId = requestBody.scheduledUserId as string;
+  } else {
+    if (!token) return jsonResponse({ error: 'Autenticação obrigatória.' }, 401, request);
+    const authClient = createClient(supabaseUrl, anonKey, { auth: { persistSession: false } });
+    const { data: userData, error: userError } = await authClient.auth.getUser(token);
+    if (userError || !userData.user) return jsonResponse({ error: 'Usuário autenticado obrigatório.' }, 401, request);
+    authUserId = userData.user.id;
+  }
   const { data: connection, error: connectionError } = await service
     .schema('RetificaPremium')
     .from('Gmail_Connections')
     .select('*')
-    .eq('fk_auth_user', userData.user.id)
+    .eq('fk_auth_user', authUserId)
     .eq('status', 'CONNECTED')
     .eq('sync_enabled', true)
     .order('updated_at', { ascending: false })
@@ -655,9 +672,12 @@ Deno.serve(async (request) => {
       'in:anywhere newer_than:120d ("comprovante de pagamento" OR comprovante OR recibo OR quitado OR pago OR "pagamento efetuado" OR "pagamento realizado")',
       'in:anywhere newer_than:45d filename:pdf',
     ];
+    const maxMessages = isScheduled && Number.isInteger(requestBody.maxMessages)
+      ? Math.min(Math.max(Number(requestBody.maxMessages), 1), 12)
+      : 50;
     const messageIds = Array.from(new Set((await Promise.all(
       queries.map((query, index) => listGmailMessageIds(accessToken, query, index === 3 ? 15 : 25)),
-    )).flat())).slice(0, 50);
+    )).flat())).slice(0, maxMessages);
 
     for (const messageId of messageIds) {
       scanned += 1;
@@ -665,7 +685,7 @@ Deno.serve(async (request) => {
         .schema('RetificaPremium')
         .from('Gmail_Scanned_Messages')
         .select('id_gmail_scanned_messages,fk_sugestoes_email,message_hash')
-        .eq('fk_auth_user', userData.user.id)
+        .eq('fk_auth_user', authUserId)
         .eq('gmail_message_id', messageId)
         .maybeSingle();
 
@@ -726,7 +746,7 @@ Deno.serve(async (request) => {
       if (!analysis.isPayable || !analysis.amount || !analysis.dueDate || analysis.confidence < 40) {
         skipped += 1;
         await recordScannedMessage(service, existing?.id_gmail_scanned_messages ?? null, {
-          fk_auth_user: userData.user.id,
+          fk_auth_user: authUserId,
           gmail_message_id: messageId,
           message_hash: `${scanVersion}:${await sha256Hex(`${text}\n${attachments.map((attachment) => attachment.filename).join('\n')}`)}`,
           assunto: subject,
@@ -745,7 +765,7 @@ Deno.serve(async (request) => {
           .schema('RetificaPremium')
           .from('Sugestoes_Email')
           .select('id_sugestoes_email, fornecedor_sugerido, valor_sugerido, vencimento_sugerido, status_sugerido')
-          .eq('fk_auth_user', userData.user.id)
+          .eq('fk_auth_user', authUserId)
           .eq('status', 'PENDING');
 
         const amount = analysis.amount ?? 0;
@@ -761,10 +781,10 @@ Deno.serve(async (request) => {
             .from('Sugestoes_Email')
             .update({ status_sugerido: 'PAGO', pago_em_sugerido: analysis.paymentDate })
             .eq('id_sugestoes_email', match.id_sugestoes_email as string)
-            .eq('fk_auth_user', userData.user.id);
+            .eq('fk_auth_user', authUserId);
 
           await recordScannedMessage(service, existing?.id_gmail_scanned_messages ?? null, {
-            fk_auth_user: userData.user.id,
+            fk_auth_user: authUserId,
             gmail_message_id: messageId,
             message_hash: `${scanVersion}:${await sha256Hex(`${text}\n${attachments.map((attachment) => attachment.filename).join('\n')}`)}`,
             assunto: subject,
@@ -781,7 +801,7 @@ Deno.serve(async (request) => {
         .schema('RetificaPremium')
         .from('Sugestoes_Email')
         .insert({
-          fk_auth_user: userData.user.id,
+          fk_auth_user: authUserId,
           assunto: subject || analysis.title,
           nome_remetente: from.name,
           email_remetente: from.email,
@@ -813,7 +833,7 @@ Deno.serve(async (request) => {
       }
 
       await recordScannedMessage(service, existing?.id_gmail_scanned_messages ?? null, {
-        fk_auth_user: userData.user.id,
+        fk_auth_user: authUserId,
         gmail_message_id: messageId,
         message_hash: `${scanVersion}:${await sha256Hex(`${text}\n${attachments.map((attachment) => attachment.filename).join('\n')}`)}`,
         assunto: subject,
@@ -824,12 +844,13 @@ Deno.serve(async (request) => {
       created += 1;
     }
 
+    const completedAt = new Date().toISOString();
     await service
       .schema('RetificaPremium')
       .from('Gmail_Connections')
       .update({
         status: 'CONNECTED',
-        last_sync_at: new Date().toISOString(),
+        last_sync_at: completedAt,
         last_error: errors.length > 0
           ? `${errors.length} e-mail${errors.length === 1 ? '' : 's'} precisa${errors.length === 1 ? '' : 'm'} de nova tentativa.`
           : null,
@@ -839,16 +860,22 @@ Deno.serve(async (request) => {
         last_scan_reconciled_count: reconciled,
         last_scan_skipped_count: skipped,
         last_scan_errors_count: errors.length,
-        updated_at: new Date().toISOString(),
+        updated_at: completedAt,
+        ...(isScheduled ? {
+          last_auto_sync_at: completedAt,
+          next_auto_sync_at: new Date(Date.now() + Number(connection.auto_sync_interval_hours ?? 12) * 60 * 60 * 1000).toISOString(),
+          auto_sync_failures: 0,
+        } : {}),
       })
       .eq('id_gmail_connections', connection.id_gmail_connections);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Erro desconhecido ao buscar Gmail.';
+    const failedAt = new Date().toISOString();
     await service
       .schema('RetificaPremium')
       .from('Gmail_Connections')
       .update({
-        status: 'ERROR',
+        status: isScheduled ? 'CONNECTED' : 'ERROR',
         last_error: message,
         last_scan_messages_count: scanned,
         last_scan_attachments_count: attachmentsFound,
@@ -856,7 +883,12 @@ Deno.serve(async (request) => {
         last_scan_reconciled_count: reconciled,
         last_scan_skipped_count: skipped,
         last_scan_errors_count: errors.length + 1,
-        updated_at: new Date().toISOString(),
+        updated_at: failedAt,
+        ...(isScheduled ? {
+          last_auto_sync_at: failedAt,
+          next_auto_sync_at: new Date(Date.now() + scheduledRetryDelayMs).toISOString(),
+          auto_sync_failures: Number(connection.auto_sync_failures ?? 0) + 1,
+        } : {}),
       })
       .eq('id_gmail_connections', connection.id_gmail_connections);
     return jsonResponse({ error: message }, 500, request);

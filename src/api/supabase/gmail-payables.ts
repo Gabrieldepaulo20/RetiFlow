@@ -14,6 +14,11 @@ export type GmailConnectionStatus = {
   last_scan_reconciled_count?: number;
   last_scan_skipped_count?: number;
   last_scan_errors_count?: number;
+  auto_sync_enabled?: boolean;
+  auto_sync_interval_hours?: number;
+  next_auto_sync_at?: string | null;
+  last_auto_sync_at?: string | null;
+  auto_sync_failures?: number;
 };
 
 async function getAccessToken() {
@@ -55,6 +60,14 @@ async function invokeAuthed<T>(name: string, body?: Record<string, unknown>) {
 
 export async function getGmailConnectionStatus() {
   const env = await callRPC<GmailConnectionStatus>('get_gmail_connection_status');
+  return env.dados ?? { connected: false };
+}
+
+export async function updateGmailAutoSyncSettings(enabled: boolean, intervalHours: number) {
+  const env = await callRPC<GmailConnectionStatus>('update_gmail_auto_sync_settings', {
+    p_enabled: enabled,
+    p_interval_hours: intervalHours,
+  });
   return env.dados ?? { connected: false };
 }
 
