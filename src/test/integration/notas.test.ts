@@ -138,4 +138,154 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
 
     await client.auth.signOut();
   });
+
+  it('bloqueia criacao de O.S. duplicada na mesma conta', async () => {
+    const { client } = await signInAsTestUser();
+    const suffix = String(Date.now());
+
+    const createdClient = await callRpc(client, 'salvar_cliente_completo', {
+      p_payload: {
+        nome: `${TEST_PREFIX} Cliente OS Duplicada ${suffix}`,
+        documento: `7${suffix.slice(-10).padStart(10, '0')}`,
+        tipo_documento: 'CPF',
+        status: true,
+      },
+    });
+    expect(createdClient.status).toBe(200);
+    const clientId = createdClient.id_cliente as string;
+    createdClientIds.add(clientId);
+
+    const firstNote = await callRpc(client, 'nova_nota', {
+      p_payload: {
+        tipo_nota: 'Serviço',
+        numero_nota: `OS-${suffix}`,
+        fk_clientes: clientId,
+        defeito: 'Teste de duplicidade de O.S.',
+        total_servicos: 0,
+        total_produtos: 0,
+        total: 0,
+        veiculo: {
+          modelo: 'Motor duplicidade',
+          placa: null,
+          km: 0,
+          motor: 'Gasolina',
+        },
+        itens: [
+          {
+            descricao: `${TEST_PREFIX} Item duplicidade ${suffix}`,
+            quantidade: 1,
+            valor: 0,
+            desconto: 0,
+          },
+        ],
+      },
+    });
+
+    expect(firstNote.status).toBe(200);
+    const noteId = firstNote.id_nota as string;
+    createdNoteIds.add(noteId);
+
+    const firstDetails = await callRpc(client, 'get_nota_servico_detalhes', {
+      p_id_nota_servico: noteId,
+    });
+    expect(firstDetails.status).toBe(200);
+    createdVehicleIds.add((firstDetails.cabecalho as { veiculo: { id: string } }).veiculo.id);
+
+    const duplicatedNote = await callRpc(client, 'nova_nota', {
+      p_payload: {
+        tipo_nota: 'Serviço',
+        numero_nota: `OS-${suffix}`,
+        fk_clientes: clientId,
+        defeito: 'Tentativa duplicada',
+        total_servicos: 0,
+        total_produtos: 0,
+        total: 0,
+        veiculo: {
+          modelo: 'Motor duplicidade',
+          placa: null,
+          km: 0,
+          motor: 'Gasolina',
+        },
+        itens: [],
+      },
+    });
+
+    expect(duplicatedNote.status).toBe(400);
+    expect(duplicatedNote.code).toBe('duplicate_os');
+    expect(duplicatedNote.mensagem).toContain('Já existe uma O.S.');
+
+    await client.auth.signOut();
+  });
+
+  it('bloqueia O.S. equivalente numericamente com formato diferente', async () => {
+    const { client } = await signInAsTestUser();
+    const suffix = String(Date.now());
+    const osNumber = suffix.slice(-9);
+
+    const createdClient = await callRpc(client, 'salvar_cliente_completo', {
+      p_payload: {
+        nome: `${TEST_PREFIX} Cliente OS Equivalente ${suffix}`,
+        documento: `6${suffix.slice(-10).padStart(10, '0')}`,
+        tipo_documento: 'CPF',
+        status: true,
+      },
+    });
+    expect(createdClient.status).toBe(200);
+    const clientId = createdClient.id_cliente as string;
+    createdClientIds.add(clientId);
+
+    const firstNote = await callRpc(client, 'nova_nota', {
+      p_payload: {
+        tipo_nota: 'Serviço',
+        numero_nota: `000${osNumber}`,
+        fk_clientes: clientId,
+        defeito: 'Teste de O.S. numericamente equivalente',
+        total_servicos: 0,
+        total_produtos: 0,
+        total: 0,
+        veiculo: {
+          modelo: 'Motor equivalente',
+          placa: null,
+          km: 0,
+          motor: 'Gasolina',
+        },
+        itens: [],
+      },
+    });
+
+    expect(firstNote.status).toBe(200);
+    const noteId = firstNote.id_nota as string;
+    createdNoteIds.add(noteId);
+
+    const firstDetails = await callRpc(client, 'get_nota_servico_detalhes', {
+      p_id_nota_servico: noteId,
+    });
+    expect(firstDetails.status).toBe(200);
+    createdVehicleIds.add((firstDetails.cabecalho as { veiculo: { id: string } }).veiculo.id);
+
+    const equivalentNote = await callRpc(client, 'nova_nota', {
+      p_payload: {
+        tipo_nota: 'Serviço',
+        numero_nota: `OS-${osNumber}`,
+        fk_clientes: clientId,
+        defeito: 'Tentativa numericamente equivalente',
+        total_servicos: 0,
+        total_produtos: 0,
+        total: 0,
+        veiculo: {
+          modelo: 'Motor equivalente',
+          placa: null,
+          km: 0,
+          motor: 'Gasolina',
+        },
+        itens: [],
+      },
+    });
+
+    expect(equivalentNote.status).toBe(400);
+    expect(equivalentNote.code).toBe('duplicate_os');
+    expect(equivalentNote.mensagem).toContain('Já existe uma O.S.');
+
+    await client.auth.signOut();
+  });
 });

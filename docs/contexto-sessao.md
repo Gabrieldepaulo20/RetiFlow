@@ -128,3 +128,26 @@ Plano aprovado para executar em fases:
   - 880 PDFs verificados com sucesso.
   - 0 falhas.
   - Total migrado: 72.570.891 bytes.
+
+## Protecao Contra Duplicidade De O.S. - 2026-06-03
+
+- Pedido: impedir que o frontend ou qualquer chamada de criacao gere O.S. duplicada.
+- Migration local criada: `supabase/migrations/20260603150000_enforce_unique_service_order_numbers.sql`.
+- Migration aplicada no projeto Supabase `dqeoxxokvvcpssajycgq` com nome remoto `enforce_unique_service_order_numbers`.
+- `RetificaPremium.nova_nota` agora valida duplicidade antes do insert:
+  - bloqueia O.S. exatamente igual na mesma conta;
+  - bloqueia O.S. numericamente equivalente mesmo com formatos diferentes, como `000123` e `OS-123`;
+  - retorna envelope `status: 400`, `code: duplicate_os` e mensagem `Já existe uma O.S. com este número para esta conta.`
+- Criado indice unico exato `idx_notas_servico_owner_os_unique` em `(criado_por_usuario, lower(btrim(os)))` para reforcar duplicidade exata.
+- Nao foi criado indice unico numerico porque existem conflitos numericos historicos importados/legados que precisam de saneamento manual antes.
+- Teste real adicionado em `src/test/integration/notas.test.ts`:
+  - cria uma O.S. e confirma que a segunda com mesmo numero falha;
+  - cria uma O.S. em formato numerico com zeros e confirma que `OS-<numero>` equivalente falha.
+- Validacao especifica executada:
+  - `npm run test:integration -- src/test/integration/notas.test.ts --run`: passou, 3 testes.
+- Validacao final executada:
+  - `npx tsc --noEmit`: passou.
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh.
+  - `npm test -- --run`: passou, 42 arquivos e 320 testes.
+  - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks.
+  - `npm run test:integration`: passou, 16 arquivos e 53 testes.
