@@ -214,3 +214,32 @@ Plano aprovado para executar em fases:
   - `npm test -- --run`: passou, 42 arquivos e 320 testes.
   - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks.
   - `npm run test:integration`: passou, 16 arquivos e 53 testes.
+
+## Fechamento Historico De O.S. Da Retifica Premium - 2026-06-03
+
+- Pedido: marcar como finalizadas as O.S. antigas da Retifica Premium com data ate 30/04/2026, pois provavelmente ja foram pagas/encerradas.
+- Criado script `scripts/oneoff/close-retifica-premium-old-service-orders.mjs` com modo dry-run/apply.
+- Criterio aplicado:
+  - dono interno Retifica Premium: `b3a55ae3-45d0-4083-85a1-704cf2b3d0e5`;
+  - status origem: `Aberto` (`fk_status = 9`);
+  - status destino: `Finalizado` (`fk_status = 20`);
+  - corte por `prazo < 2026-05-01T00:00:00.000Z`, ou seja, ate 30/04/2026;
+  - `finalizado_em` preserva a data historica de `prazo`, nao a data da execucao.
+- Dry-run confirmou:
+  - 756 O.S. candidatas;
+  - valor total R$ 694.017,00.
+- Execucao real com `node scripts/oneoff/close-retifica-premium-old-service-orders.mjs --apply`:
+  - 756 O.S. atualizadas para `Finalizado`;
+  - 0 falhas;
+  - 0 O.S. abertas restantes antes de maio/2026 pelo criterio de `prazo`.
+- Validacao SQL pos-aplicacao:
+  - 756 O.S. no corte;
+  - todas com status `Finalizado`;
+  - todas com `finalizado_em` preenchido igual ao `prazo`;
+  - valor total finalizado no corte: R$ 694.017,00.
+- Validacao final executada:
+  - `npx tsc --noEmit`: passou.
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh.
+  - `npm test -- --run`: passou, 42 arquivos e 320 testes.
+  - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks.
+  - `npm run test:integration`: passou, 16 arquivos e 53 testes.
