@@ -20,6 +20,7 @@ const SUPPORT_CONTEXT_RPC_MAP: Record<string, string> = {
   get_conta_pagar_detalhes: 'get_conta_pagar_detalhes_contexto_suporte',
   get_fornecedores: 'get_fornecedores_contexto_suporte',
   get_fechamentos: 'get_fechamentos_contexto_suporte',
+  get_sugestoes_email: 'get_sugestoes_email_contexto_suporte',
 };
 
 const SUPPORT_BLOCKED_WRITE_RPCS = new Set([

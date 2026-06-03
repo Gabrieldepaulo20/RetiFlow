@@ -75,10 +75,10 @@ type PageView = 'contas' | 'sugestoes';
 export default function ContasAPagar() {
   const { payables, payableCategories, updatePayable, addPayable, addPayableHistoryEntry, emailSuggestions } = useData();
   const { user, isSupportImpersonating } = useAuth();
-  // Sugestões de e-mail / Gmail ainda NÃO são support-context aware (rodam sob o
-  // auth.uid() do Mega Master). Em modo suporte isso mostraria dados do suporte,
-  // não da empresa acessada — então a aba fica bloqueada até existir RPC por contexto.
-  const suggestionsEnabled = !isSupportImpersonating;
+  // Sugestões em modo suporte: a leitura é escopada à empresa via
+  // get_sugestoes_email_contexto_suporte (SUPPORT_CONTEXT_RPC_MAP). A aba fica
+  // disponível, mas em SOMENTE LEITURA (sem Gmail/scan/aceitar — writes da empresa).
+  const suggestionsEnabled = true;
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [pageView, setPageView] = useState<PageView>(() => searchParams.get('view') === 'sugestoes' ? 'sugestoes' : 'contas');
@@ -535,7 +535,7 @@ export default function ContasAPagar() {
           <ErrorBoundary>
             <Card>
               <CardContent className="p-6">
-                <PayableEmailSuggestions onCreated={(id) => {
+                <PayableEmailSuggestions supportMode={isSupportImpersonating} onCreated={(id) => {
                   const next = new URLSearchParams(searchParams);
                   next.delete('view');
                   next.set('modal', 'details');

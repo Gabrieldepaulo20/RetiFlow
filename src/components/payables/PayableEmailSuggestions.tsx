@@ -230,12 +230,13 @@ type SuggestionCardProps = {
   categoryName: string;
   categoryIcon?: string | null;
   overdueDays?: number | null;
+  readOnly?: boolean;
   onAccept: () => void;
   onMarkPaid?: () => void;
   onDismiss: () => void;
 };
 
-function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, onAccept, onMarkPaid, onDismiss }: SuggestionCardProps) {
+function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, readOnly = false, onAccept, onMarkPaid, onDismiss }: SuggestionCardProps) {
   const isPaid = suggestion.suggestedStatus === 'PAGO';
   const isScheduled = suggestion.suggestedStatus === 'AGENDADO';
   const isReview = suggestion.suggestedStatus === 'INCERTO';
@@ -342,7 +343,7 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, o
                         {suggestion.emailSnippet}
                       </p>
                     ) : null}
-                    {!isPaid && overdueDays != null && onMarkPaid ? (
+                    {!isPaid && overdueDays != null && onMarkPaid && !readOnly ? (
                       <div className="mt-3 flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
                         <p className="flex items-start gap-1.5 text-xs font-medium text-amber-900">
                           <Clock3 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
@@ -373,6 +374,7 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, o
                 </div>
               </div>
 
+              {!readOnly ? (
               <div className={cn('flex items-center justify-end gap-2 border-t px-4 py-2', footerClass)}>
                 <div className="flex items-center gap-2 sm:justify-end">
                   {isHighRisk && !allowHighRisk ? (
@@ -394,6 +396,7 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, o
                   </Button>
                 </div>
               </div>
+              ) : null}
             </div>
           </div>
         </CardContent>
@@ -503,9 +506,11 @@ function PaidSuggestionDialog({
 
 type PayableEmailSuggestionsProps = {
   onCreated?: (payableId: string) => void;
+  /** Modo suporte: leitura apenas — esconde Gmail/scan e as ações de sugestão (writes são da empresa). */
+  supportMode?: boolean;
 };
 
-export default function PayableEmailSuggestions({ onCreated }: PayableEmailSuggestionsProps) {
+export default function PayableEmailSuggestions({ onCreated, supportMode = false }: PayableEmailSuggestionsProps) {
   const { emailSuggestions, refreshEmailSuggestions, acceptEmailSuggestion, dismissEmailSuggestion, payableCategories, payables, updatePayable, addPayableHistoryEntry } = useData();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -551,6 +556,12 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
   }
 
   useEffect(() => {
+    // Em modo suporte não consultamos o Gmail: a conexão é da empresa (auth uid dela),
+    // não do suporte — chamar aqui mostraria o Gmail do suporte. Painel fica oculto.
+    if (supportMode) {
+      setGmailLoading(false);
+      return;
+    }
     let cancelled = false;
     setGmailLoading(true);
     getGmailConnectionStatus()
@@ -569,7 +580,7 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [supportMode]);
 
   async function handleConnectGmail() {
     setGmailActionLoading(true);
@@ -717,6 +728,13 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
 
   return (
     <div className="space-y-6">
+      {supportMode ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-900">
+          Modo suporte — somente leitura. As sugestões abaixo são da empresa acessada. Conectar Gmail, buscar e aceitar/ignorar são ações da própria empresa.
+        </div>
+      ) : null}
+      {!supportMode ? (
+      <>
       <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           {gmailStatus?.connected ? (
@@ -801,6 +819,8 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
           </p>
         </div>
       ) : null}
+      </>
+      ) : null}
 
       {(paidPending.length > 0 || payablePending.length > 0 || accepted.length > 0 || dismissed.length > 0) ? (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -854,6 +874,7 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
                       suggestion={suggestion}
                       categoryName={category?.name ?? 'Categoria'}
                       categoryIcon={category?.icon}
+                      readOnly={supportMode}
                       onAccept={() => { void handleAccept(suggestion); }}
                       onDismiss={() => { void handleDismiss(suggestion); }}
                     />
@@ -884,6 +905,7 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
                       suggestion={suggestion}
                       categoryName={category?.name ?? 'Categoria'}
                       categoryIcon={category?.icon}
+                      readOnly={supportMode}
                       overdueDays={getSuggestionOverdueDays(suggestion)}
                       onAccept={() => { void handleAccept(suggestion); }}
                       onMarkPaid={() => { void handleMarkPaid(suggestion); }}
@@ -912,6 +934,7 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
                         suggestion={suggestion}
                         categoryName={category?.name ?? 'Categoria'}
                         categoryIcon={category?.icon}
+                        readOnly={supportMode}
                         overdueDays={getSuggestionOverdueDays(suggestion)}
                         onAccept={() => { void handleAccept(suggestion); }}
                         onMarkPaid={() => { void handleMarkPaid(suggestion); }}
@@ -941,9 +964,11 @@ export default function PayableEmailSuggestions({ onCreated }: PayableEmailSugge
                   <p className="truncate text-xs font-medium">{suggestion.suggestedTitle}</p>
                   <p className="text-xs text-muted-foreground">{fmtBRL(suggestion.suggestedAmount)} &middot; vence {format(parseISO(suggestion.suggestedDueDate), 'dd/MM/yyyy')}</p>
                 </div>
-                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={() => { void handleDismiss(suggestion); }}>
-                  Arquivar
-                </Button>
+                {!supportMode ? (
+                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={() => { void handleDismiss(suggestion); }}>
+                    Arquivar
+                  </Button>
+                ) : null}
               </div>
             ))}
           </div>

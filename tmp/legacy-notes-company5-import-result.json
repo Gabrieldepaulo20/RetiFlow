@@ -1,0 +1,23 @@
+{
+  "generated_at": "2026-06-03T12:36:33.237Z",
+  "mode": "dry-run",
+  "legacy_company_id": 5,
+  "target_owner": {
+    "id": "b3a55ae3-45d0-4083-85a1-704cf2b3d0e5",
+    "nome": "Retífica Premium"
+  },
+  "planned_notes": 880,
+  "counters": {
+    "source_notes": 891,
+    "inserted_notes": 0,
+    "inserted_items": 0,
+    "skipped_deleted": 7,
+    "skipped_duplicate_legacy_os": 4,
+    "skipped_existing_os": 0,
+    "skipped_missing_client": 0,
+    "skipped_missing_vehicle": 0,
+    "skipped_missing_items": 0,
+    "failed": 0
+  },
+  "failures": []
+}

@@ -4,6 +4,9 @@ import { createRequire } from 'node:module';
 import { createClient } from '@supabase/supabase-js';
 
 const LEGACY_COMPANY_ID = Number(process.env.LEGACY_COMPANY_ID ?? 5);
+const LEGACY_LIMIT = Number(process.env.LEGACY_LIMIT ?? 0);
+const HTTP_TIMEOUT_MS = Number(process.env.HTTP_TIMEOUT_MS ?? 3000);
+const PDF_LOOKUP_MODE = process.env.PDF_LOOKUP_MODE ?? 'db';
 const LEGACY_CONNECTION_PATH = process.env.LEGACY_CONNECTION_PATH
   ?? '/Users/gabrielwilliamdepaulo/Documents/RetificaPremium/controle_de_notas/amplify/backend/function/controledenotas/src/connectionBD.js';
 const LEGACY_AMPLIFY_CONFIG_PATH = process.env.LEGACY_AMPLIFY_CONFIG_PATH
@@ -67,6 +70,16 @@ function pickFirst(row, names) {
   return null;
 }
 
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function listColumns(connection, tableName) {
   try {
     const [rows] = await connection.query(`show columns from \`${tableName}\``);
@@ -88,13 +101,14 @@ async function queryIfTableExists(connection, tableName, sql, params = []) {
 }
 
 async function fetchLegacyPdfLink(endpoint, os) {
+  if (PDF_LOOKUP_MODE === 'skip' || PDF_LOOKUP_MODE === 'db') return { status: 'skipped_by_mode', link: null };
   if (!endpoint || !os) return { status: 'skipped', link: null };
   const url = new URL('/servico/pdf-link', endpoint);
   url.searchParams.set('empresaId', String(LEGACY_COMPANY_ID));
   url.searchParams.set('os', String(os));
 
   try {
-    const response = await fetch(url, { method: 'GET' });
+    const response = await fetchWithTimeout(url, { method: 'GET' });
     if (!response.ok) return { status: `http_${response.status}`, link: null };
     const data = await response.json();
     return { status: data?.s3_link ? 'ok' : 'missing', link: data?.s3_link ?? null };
@@ -104,9 +118,10 @@ async function fetchLegacyPdfLink(endpoint, os) {
 }
 
 async function checkPdfReachable(url) {
+  if (PDF_LOOKUP_MODE === 'skip') return { status: 'skipped_by_mode' };
   if (!url || !/^https?:\/\//i.test(url)) return { status: 'skipped' };
   try {
-    const response = await fetch(url, { method: 'HEAD' });
+    const response = await fetchWithTimeout(url, { method: 'HEAD' });
     return { status: response.ok ? 'ok' : `http_${response.status}` };
   } catch (error) {
     return { status: 'error', error: error instanceof Error ? error.message : String(error) };
@@ -115,7 +130,9 @@ async function checkPdfReachable(url) {
 
 async function buildSupabaseSnapshot() {
   const supabaseUrl = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
-  const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_ROLE;
+  const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY
+    || env.VITE_SUPABASE_SERVICE_ROLE_KEY
+    || env.SUPABASE_SERVICE_ROLE;
   if (!supabaseUrl || !serviceRoleKey) {
     return { available: false, reason: 'Supabase service env ausente.' };
   }
@@ -163,13 +180,15 @@ async function buildSupabaseSnapshot() {
 
 function classifyNote({ note, client, vehicle, items, existingOs, duplicateLegacyOs, pdf }) {
   const reasons = [];
+  if (Number(note.deletado ?? 0) === 1) reasons.push('excluida_legado');
   if (existingOs) reasons.push('duplicada');
   if (duplicateLegacyOs) reasons.push('duplicada_legado');
   if (!client || (!cleanText(client.nome) && !digits(client.documento))) reasons.push('sem_cliente');
-  if (!vehicle || (!cleanText(vehicle.modelo) && !normalizePlate(vehicle.placa))) reasons.push('sem_veiculo');
+  if (!vehicle || (!cleanText(vehicle.veiculo ?? vehicle.modelo) && !normalizePlate(vehicle.placa))) reasons.push('sem_veiculo');
   if (!items || items.length === 0) reasons.push('sem_itens');
-  if (!pdf.link) reasons.push('sem_pdf');
+  if (!pdf.link && PDF_LOOKUP_MODE !== 'skip') reasons.push('sem_pdf');
 
+  if (reasons.includes('excluida_legado')) return 'excluida_legado';
   if (reasons.includes('duplicada')) return 'duplicada';
   if (reasons.includes('sem_cliente')) return 'sem_cliente';
   if (reasons.includes('sem_veiculo')) return 'sem_veiculo';
@@ -193,10 +212,11 @@ async function main() {
 
   const connection = await ConnectBD();
   try {
-    const [serviceRows] = await connection.query(
+    const serviceSql = [
       'select * from servico where empresa_id = ? order by coalesce(updated_at, created_at) desc',
-      [LEGACY_COMPANY_ID],
-    );
+      LEGACY_LIMIT > 0 ? `limit ${LEGACY_LIMIT}` : '',
+    ].filter(Boolean).join(' ');
+    const [serviceRows] = await connection.query(serviceSql, [LEGACY_COMPANY_ID]);
     const [clientRows] = await connection.query(
       'select * from cliente where empresa_id = ?',
       [LEGACY_COMPANY_ID],
@@ -207,6 +227,13 @@ async function main() {
       'select v.* from veiculo v join cliente c on c.id_cliente = v.cliente_id where c.empresa_id = ?',
       [LEGACY_COMPANY_ID],
     );
+    const serviceIds = serviceRows.map((row) => row.id_servico).filter((id) => id !== null && id !== undefined);
+    const itemRows = serviceIds.length > 0
+      ? (await connection.query(
+          `select * from servico_item where servico_id in (${serviceIds.map(() => '?').join(',')})`,
+          serviceIds,
+        ))[0]
+      : [];
 
     const serviceColumns = await listColumns(connection, 'servico');
     const candidateItemTables = ['servico_item', 'servico_itens', 'item_servico', 'itens_servico', 'itens'];
@@ -218,10 +245,18 @@ async function main() {
     const supabaseSnapshot = await buildSupabaseSnapshot();
     const clientsByLegacyId = new Map(clientRows.map((row) => [String(row.id_cliente), row]));
     const vehiclesByClientId = new Map();
+    const vehiclesByLegacyId = new Map();
     for (const vehicle of vehicleRows) {
       const key = String(vehicle.cliente_id ?? '');
       if (!vehiclesByClientId.has(key)) vehiclesByClientId.set(key, []);
       vehiclesByClientId.get(key).push(vehicle);
+      vehiclesByLegacyId.set(String(vehicle.id_veiculo), vehicle);
+    }
+    const itemsByServiceId = new Map();
+    for (const item of itemRows) {
+      const key = String(item.servico_id ?? '');
+      if (!itemsByServiceId.has(key)) itemsByServiceId.set(key, []);
+      itemsByServiceId.get(key).push(item);
     }
 
     const legacyOsCounts = serviceRows.reduce((map, row) => {
@@ -242,16 +277,21 @@ async function main() {
       const clientId = String(pickFirst(service, ['cliente_id', 'fk_cliente', 'id_cliente']) ?? '');
       const client = clientsByLegacyId.get(clientId) ?? null;
       const vehicles = vehiclesByClientId.get(clientId) ?? [];
-      const vehicle = vehicles[0] ?? null;
+      const serviceVehicleId = pickFirst(service, ['veiculo_id', 'fk_veiculo', 'id_veiculo']);
+      const vehicle = vehiclesByLegacyId.get(String(serviceVehicleId)) ?? vehicles[0] ?? null;
       const pdfFromDb = cleanText(service.s3_link);
-      const pdfFromApi = pdfFromDb ? { status: 'from_db', link: pdfFromDb } : await fetchLegacyPdfLink(legacyEndpoint, os);
+      const pdfFromApi = pdfFromDb
+        ? { status: 'from_db', link: pdfFromDb }
+        : await fetchLegacyPdfLink(legacyEndpoint, os);
       const pdfHead = await checkPdfReachable(pdfFromApi.link);
 
-      const items = [];
-      if (existingItemTables.length > 0) {
-        // Mantem inventario conservador: a relacao exata sera revisada no relatorio antes de importacao real.
-        items.push({ source: existingItemTables.join(','), status: 'table_present_unmapped' });
-      }
+      const items = (itemsByServiceId.get(String(service.id_servico)) ?? []).map((item) => ({
+        legacy_id: item.id_item,
+        descricao: cleanText(item.descricao),
+        quantidade: Number(item.quantidade ?? 0),
+        valor_unitario: Number(item.valor_unitario ?? 0),
+        desconto_item: Number(item.desconto_item ?? 0),
+      }));
 
       const classification = classifyNote({
         note: service,
@@ -277,10 +317,19 @@ async function main() {
         } : null,
         vehicle: vehicle ? {
           legacy_id: pickFirst(vehicle, ['id_veiculo', 'id', 'veiculo_id']),
-          modelo: cleanText(vehicle.modelo),
+          modelo: cleanText(vehicle.veiculo ?? vehicle.modelo),
           placa: normalizePlate(vehicle.placa),
           km: pickFirst(vehicle, ['km', 'quilometragem']),
         } : null,
+        totals: {
+          valor_total: Number(service.valor_total ?? 0),
+          desconto_nota: Number(service.desconto_nota ?? 0),
+          itens_count: items.length,
+          itens_total: items.reduce((sum, item) => {
+            const bruto = Math.max(0, item.quantidade || 0) * Math.max(0, item.valor_unitario || 0);
+            return sum + bruto * (1 - Math.min(100, Math.max(0, item.desconto_item || 0)) / 100);
+          }, 0),
+        },
         pdf: {
           source: pdfFromDb ? 'servico.s3_link' : 'legacy_api',
           lookup_status: pdfFromApi.status,
@@ -290,6 +339,7 @@ async function main() {
         flags: {
           os_exists_in_retiflow: existingOsSet.has(os),
           duplicate_legacy_os: (legacyOsCounts.get(os) ?? 0) > 1,
+          deleted_in_legacy: Number(service.deletado ?? 0) === 1,
           item_tables_seen: existingItemTables,
         },
       });
@@ -304,6 +354,9 @@ async function main() {
       generated_at: new Date().toISOString(),
       mode: 'read_only_dry_run',
       legacy_company_id: LEGACY_COMPANY_ID,
+      legacy_limit: LEGACY_LIMIT || null,
+      pdf_lookup_mode: PDF_LOOKUP_MODE,
+      http_timeout_ms: HTTP_TIMEOUT_MS,
       legacy_endpoint_configured: Boolean(legacyEndpoint),
       legacy_s3_bucket_configured: Boolean(legacyConfig.aws_user_files_s3_bucket),
       supabase_snapshot: {
@@ -321,6 +374,7 @@ async function main() {
         legacy_notes: serviceRows.length,
         legacy_clients: clientRows.length,
         legacy_vehicles: vehicleRows.length,
+        legacy_items: itemRows.length,
         ...summary,
       },
       notes,
