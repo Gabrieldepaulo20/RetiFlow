@@ -76,13 +76,12 @@ export default function ContasAPagar() {
   const { payables, payableCategories, updatePayable, addPayable, addPayableHistoryEntry, emailSuggestions } = useData();
   const { user, isSupportImpersonating } = useAuth();
   // Sugestões em modo suporte: a leitura é escopada à empresa via
-  // get_sugestoes_email_contexto_suporte (SUPPORT_CONTEXT_RPC_MAP). A aba fica
-  // disponível, mas em SOMENTE LEITURA (sem Gmail/scan/aceitar — writes da empresa).
+  // get_sugestoes_email_contexto_suporte e as ações usam RPCs de escrita
+  // auditadas por contexto. Gmail/scan continuam ocultos no componente.
   const suggestionsEnabled = true;
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [pageView, setPageView] = useState<PageView>(() => searchParams.get('view') === 'sugestoes' ? 'sugestoes' : 'contas');
-  // Em modo suporte, a aba de sugestões é desligada (ver suggestionsEnabled acima).
   const effectiveView: PageView = suggestionsEnabled ? pageView : 'contas';
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all');

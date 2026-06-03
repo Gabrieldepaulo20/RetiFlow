@@ -506,7 +506,7 @@ function PaidSuggestionDialog({
 
 type PayableEmailSuggestionsProps = {
   onCreated?: (payableId: string) => void;
-  /** Modo suporte: leitura apenas — esconde Gmail/scan e as ações de sugestão (writes são da empresa). */
+  /** Modo suporte: esconde Gmail/scan; sugestões continuam acionáveis via RPCs auditadas por contexto. */
   supportMode?: boolean;
 };
 
@@ -730,7 +730,7 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
     <div className="space-y-6">
       {supportMode ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-900">
-          Modo suporte — somente leitura. As sugestões abaixo são da empresa acessada. Conectar Gmail, buscar e aceitar/ignorar são ações da própria empresa.
+          Modo suporte — sugestões da empresa acessada. Aceitar e ignorar são auditados; conectar Gmail e buscar novos e-mails continuam exclusivos da própria empresa.
         </div>
       ) : null}
       {!supportMode ? (
@@ -874,7 +874,6 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
                       suggestion={suggestion}
                       categoryName={category?.name ?? 'Categoria'}
                       categoryIcon={category?.icon}
-                      readOnly={supportMode}
                       onAccept={() => { void handleAccept(suggestion); }}
                       onDismiss={() => { void handleDismiss(suggestion); }}
                     />
@@ -905,7 +904,6 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
                       suggestion={suggestion}
                       categoryName={category?.name ?? 'Categoria'}
                       categoryIcon={category?.icon}
-                      readOnly={supportMode}
                       overdueDays={getSuggestionOverdueDays(suggestion)}
                       onAccept={() => { void handleAccept(suggestion); }}
                       onMarkPaid={() => { void handleMarkPaid(suggestion); }}
@@ -934,7 +932,6 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
                         suggestion={suggestion}
                         categoryName={category?.name ?? 'Categoria'}
                         categoryIcon={category?.icon}
-                        readOnly={supportMode}
                         overdueDays={getSuggestionOverdueDays(suggestion)}
                         onAccept={() => { void handleAccept(suggestion); }}
                         onMarkPaid={() => { void handleMarkPaid(suggestion); }}
@@ -964,11 +961,9 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
                   <p className="truncate text-xs font-medium">{suggestion.suggestedTitle}</p>
                   <p className="text-xs text-muted-foreground">{fmtBRL(suggestion.suggestedAmount)} &middot; vence {format(parseISO(suggestion.suggestedDueDate), 'dd/MM/yyyy')}</p>
                 </div>
-                {!supportMode ? (
-                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={() => { void handleDismiss(suggestion); }}>
-                    Arquivar
-                  </Button>
-                ) : null}
+                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={() => { void handleDismiss(suggestion); }}>
+                  Arquivar
+                </Button>
               </div>
             ))}
           </div>

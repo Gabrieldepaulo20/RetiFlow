@@ -298,3 +298,50 @@ Plano aprovado para executar em fases:
   - `npm test -- --run`: passou, 42 arquivos e 320 testes.
   - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks.
   - Browser local abriu `http://127.0.0.1:8080/contas-a-pagar` e carregou o app; sem sessao local, caiu no login operacional, entao a checagem visual com dados reais ficou limitada.
+
+## Modo Suporte Operacional Em Contas A Pagar - 2026-06-03
+
+- Pedido: permitir que o Mega Master trabalhe no modulo Contas a Pagar em modo suporte, gravando dados na empresa acessada e deixando auditoria explicita.
+- Migrations locais criadas:
+  - `supabase/migrations/20260603183000_support_context_payables_writes.sql`;
+  - `supabase/migrations/20260603184000_support_context_payable_owner_trigger.sql`;
+  - `supabase/migrations/20260603184500_support_context_payables_history_enum.sql`;
+  - `supabase/migrations/20260603185000_support_context_payables_update_enum.sql`;
+  - `supabase/migrations/20260603185500_support_context_payable_trigger_privileges.sql`.
+- Migrations aplicadas no projeto Supabase `dqeoxxokvvcpssajycgq`:
+  - `support_context_payables_writes`;
+  - `support_context_payables_enum_cast_fix`;
+  - `support_context_payable_owner_trigger`;
+  - `support_context_payables_history_enum`;
+  - `support_context_payables_update_enum`;
+  - `support_context_payable_trigger_privileges`.
+- Banco/RPC:
+  - criada tabela privada `RetificaPremium.Logs_Acoes_Suporte`;
+  - criadas RPCs `_contexto_suporte` para criar/editar/pagar/cancelar/excluir contas, anexos, fornecedores, categorias e aceitar/ignorar sugestoes de e-mail;
+  - `Contas_Pagar` e `Contas_Pagar_Anexos` gravam `fk_criado_por` no usuario alvo resolvido por `resolve_suporte_contexto_usuario_id`;
+  - `Sugestoes_Email` atualiza pelo `auth_id` do usuario alvo;
+  - trigger `enforce_payable_owner` agora aceita escrita em usuario-alvo somente quando existe sessao de suporte ativa para Mega Master/Admin.
+  - helper interna do trigger teve execucao direta revogada de `authenticated`, ficando disponivel apenas para uso interno/service role.
+- Frontend:
+  - `SUPPORT_CONTEXT_RPC_MAP` passou a mapear as escritas permitidas de Contas a Pagar para as RPCs auditadas;
+  - as escritas de outros modulos continuam bloqueadas em modo suporte;
+  - sugestoes de e-mail voltaram a permitir aceitar, arquivar e registrar como paga em modo suporte;
+  - conexao Gmail e busca/scan manual continuam ocultas para suporte.
+- Validacao real no Supabase:
+  - teste positivo criou, editou e registrou pagamento de uma conta no usuario alvo, conferiu `fk_criado_por`, conferiu pelo menos 3 logs de suporte e limpou os dados temporarios;
+  - teste negativo confirmou que usuario comum segue recebendo `403` mesmo com tentativa de contexto de suporte.
+  - prova curta apos ajuste de privilegios confirmou que a escrita de suporte ainda passa pelo trigger.
+- Validacao final executada:
+  - `npx tsc --noEmit`: passou.
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh.
+  - `npm test -- --run`: passou, 42 arquivos e 322 testes.
+  - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks/import dinamico.
+  - `npm run test:integration`: passou, 16 arquivos e 53 testes.
+- Limpeza pos-integracao:
+  - testes de integracao recriaram `integration.test@retifica.com` e um `tenant-isolation-...@retifica.test`;
+  - removidos 2 usuarios de teste de `RetificaPremium.Usuarios`/`Modulos`;
+  - removido 1 usuario de teste do Supabase Auth;
+  - validado que restaram 0 usuarios nesses padroes.
+- Observacao estrutural:
+  - `Categorias_Contas_Pagar` e `Fornecedores_Contas_Pagar` nao possuem `fk_criado_por` hoje; as variantes de suporte para essas tabelas sao auditadas, mas seguem no contrato global atual ate uma futura mudanca de schema.
+  - Upload binario de anexo em modo suporte ainda deve ser tratado com cuidado no frontend/Storage; a escrita de metadado existe por RPC, mas o envio de arquivo precisa respeitar path/owner seguro.

@@ -115,7 +115,61 @@ describe('Supabase RPC base wrapper', () => {
     });
   });
 
-  it('blocks writes while a support context is active', async () => {
+  it('uses audited support-context RPCs for payable writes', async () => {
+    window.sessionStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify({
+      id: '11111111-1111-4111-8111-111111111111',
+      reason: 'registrar conta',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      actorUser: { id: 'actor-id', email: 'gabrielwilliam208@gmail.com', name: 'Gabriel' },
+      targetUser: { id: '22222222-2222-4222-8222-222222222222', email: 'patricia@example.com', name: 'Patricia' },
+    }));
+    mocks.rpc.mockResolvedValue({
+      data: { status: 200, mensagem: 'ok', id_contas_pagar: '33333333-3333-4333-8333-333333333333' },
+      error: null,
+    });
+
+    await callRPC('insert_conta_pagar', {
+      p_titulo: 'Conta suporte',
+      p_fk_categorias: '44444444-4444-4444-8444-444444444444',
+      p_data_vencimento: '2026-06-30',
+      p_valor_original: 100,
+    });
+
+    expect(mocks.rpc).toHaveBeenCalledWith('insert_conta_pagar_contexto_suporte', {
+      p_titulo: 'Conta suporte',
+      p_fk_categorias: '44444444-4444-4444-8444-444444444444',
+      p_data_vencimento: '2026-06-30',
+      p_valor_original: 100,
+      p_contexto_usuario_id: '22222222-2222-4222-8222-222222222222',
+      p_sessao_suporte: '11111111-1111-4111-8111-111111111111',
+    });
+  });
+
+  it('uses audited support-context RPCs for email suggestion actions', async () => {
+    window.sessionStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify({
+      id: '11111111-1111-4111-8111-111111111111',
+      reason: 'aceitar sugestao',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      actorUser: { id: 'actor-id', email: 'gabrielwilliam208@gmail.com', name: 'Gabriel' },
+      targetUser: { id: '22222222-2222-4222-8222-222222222222', email: 'patricia@example.com', name: 'Patricia' },
+    }));
+    mocks.rpc.mockResolvedValue({
+      data: { status: 200, mensagem: 'ok', id_contas_pagar: '33333333-3333-4333-8333-333333333333' },
+      error: null,
+    });
+
+    await callRPC('aceitar_sugestao_email', {
+      p_id_sugestoes_email: '55555555-5555-4555-8555-555555555555',
+    });
+
+    expect(mocks.rpc).toHaveBeenCalledWith('aceitar_sugestao_email_contexto_suporte', {
+      p_id_sugestoes_email: '55555555-5555-4555-8555-555555555555',
+      p_contexto_usuario_id: '22222222-2222-4222-8222-222222222222',
+      p_sessao_suporte: '11111111-1111-4111-8111-111111111111',
+    });
+  });
+
+  it('keeps unsupported writes blocked while a support context is active', async () => {
     window.sessionStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify({
       id: '11111111-1111-4111-8111-111111111111',
       reason: 'validar cliente',
