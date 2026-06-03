@@ -279,3 +279,22 @@ Plano aprovado para executar em fases:
   - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks.
 - Observacao:
   - `npm run test:integration` nao foi rodado porque a mudanca foi apenas de logica/UI no frontend e nao alterou banco, RPC, Storage, Auth ou Edge Function.
+
+## Correcao De Layout Nos Cards De Contas A Pagar - 2026-06-03
+
+- Pedido: corrigir bug visual em que o aviso contextual dentro do card de Contas a Pagar quebrava o texto palavra por palavra e deixava botoes cortados/espremidos ao navegar pelo Dashboard.
+- `src/components/payables/ContextualQuestionBanner.tsx`:
+  - banner agora ocupa a largura disponivel com `min-w-0` e `overflow-hidden`;
+  - texto usa quebra normal e `break-words`, sem ser espremido pelos botoes;
+  - acoes ficam em linha propria com `flex-wrap`, permitindo quebra segura.
+- `src/pages/ContasAPagar.tsx`:
+  - rodape dos cards agora permite quebra de linha entre botoes;
+  - botoes principais ganharam largura minima para nao cortar labels como `Registrar pagamento`.
+- Observacao:
+  - mudanca apenas visual/frontend; nao altera banco, RPCs, Auth, Storage ou Edge Functions.
+- Validacao executada:
+  - `npx tsc --noEmit`: passou.
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh.
+  - `npm test -- --run`: passou, 42 arquivos e 320 testes.
+  - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks.
+  - Browser local abriu `http://127.0.0.1:8080/contas-a-pagar` e carregou o app; sem sessao local, caiu no login operacional, entao a checagem visual com dados reais ficou limitada.

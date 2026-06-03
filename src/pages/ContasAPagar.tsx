@@ -712,21 +712,21 @@ export default function ContasAPagar() {
                           />
                         ) : null}
 
-                        <div className="mt-auto flex items-center gap-2 pt-1">
+                        <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
                           <Button
                             variant="outline"
                             size="sm"
-                            className="flex-1"
+                            className="min-w-[9rem] flex-1"
                             onClick={() => updateRouteModal('details', payable.id)}
                           >
                             Ver detalhes
                           </Button>
                           {primaryAction ? (
-                            <Button size="sm" className="flex-1" onClick={primaryAction.onClick}>
+                            <Button size="sm" className="min-w-[10rem] flex-1" onClick={primaryAction.onClick}>
                               {primaryAction.label}
                             </Button>
                           ) : null}
-                          <div className="shrink-0">{renderActions(payable)}</div>
+                          <div className="ml-auto shrink-0">{renderActions(payable)}</div>
                         </div>
                       </div>
                     </motion.div>

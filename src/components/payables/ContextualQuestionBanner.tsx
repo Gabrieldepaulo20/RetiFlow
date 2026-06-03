@@ -47,13 +47,15 @@ export function ContextualQuestionBanner({ question, payableId, onAction, onDism
   return (
     <div
       role="status"
-      className={cn('flex flex-col gap-2 rounded-xl border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between', tone.box)}
+      className={cn('w-full min-w-0 overflow-hidden rounded-xl border px-3 py-2.5', tone.box)}
     >
       <div className="flex min-w-0 items-start gap-2">
         <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', tone.icon)} aria-hidden />
-        <p className={cn('text-xs font-medium leading-relaxed', tone.text)}>{question.message}</p>
+        <p className={cn('min-w-0 whitespace-normal break-words text-xs font-medium leading-relaxed', tone.text)}>
+          {question.message}
+        </p>
       </div>
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="mt-3 flex min-w-0 flex-wrap items-center gap-1.5">
         {question.actions.map((action: ContextualAction) => {
           if (action.action === 'dismiss') {
             const props = actionButtonProps(action.variant);
@@ -62,7 +64,7 @@ export function ContextualQuestionBanner({ question, payableId, onAction, onDism
                 key={action.action}
                 size="sm"
                 variant={props.variant}
-                className={cn('px-2 text-xs', props.className)}
+                className={cn('min-w-fit px-2 text-xs', props.className)}
                 onClick={() => onDismiss(payableId)}
               >
                 {action.label}
@@ -75,7 +77,7 @@ export function ContextualQuestionBanner({ question, payableId, onAction, onDism
               key={action.action}
               size="sm"
               variant={props.variant}
-              className={cn('px-2.5 text-xs', props.className)}
+              className={cn('min-w-fit px-2.5 text-xs', props.className)}
               onClick={() => onAction(payableId, action.action)}
             >
               {action.label}
