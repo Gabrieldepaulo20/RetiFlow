@@ -261,3 +261,21 @@ Plano aprovado para executar em fases:
   - 0 usuarios suspeitos restantes em Supabase Auth.
 - Observacao:
   - `npm run test:integration` nao foi rodado depois desta limpeza porque os testes recriam o usuario `integration.test@retifica.com` quando executados com `.env.integration` configurado.
+
+## Dashboard Faturamento Historico E Lucro A Partir De Junho - 2026-06-03
+
+- Pedido: no Dashboard, permitir ver corretamente faturamento de 2025 e 2026 por filtro, e iniciar a contabilizacao de lucro apenas agora, de junho/2026 para frente.
+- `src/pages/Dashboard.tsx`:
+  - filtro de periodo agora gera botoes de anos reais encontrados nos dados, como `2026` e `2025`;
+  - o filtro de ano usa o periodo completo do ano passado e o ano atual ate hoje;
+  - faturamento historico continua disponivel para 2025/2026 pelo valor de todas as O.S. e pelo valor entregue/fechado;
+  - lucro contabilizado usa regra fixa de inicio em `01/06/2026`;
+  - para periodos anteriores a junho/2026, o card de lucro fica neutro e mostra que o lucro passa a contar somente a partir de 01/06/2026;
+  - contas pagas entram no calculo de lucro apenas dentro da janela iniciada em 01/06/2026.
+- Validacao executada:
+  - `npx tsc --noEmit`: passou.
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh.
+  - `npm test -- --run`: passou, 42 arquivos e 320 testes.
+  - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks.
+- Observacao:
+  - `npm run test:integration` nao foi rodado porque a mudanca foi apenas de logica/UI no frontend e nao alterou banco, RPC, Storage, Auth ou Edge Function.

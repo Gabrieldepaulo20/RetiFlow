@@ -43,15 +43,14 @@ const ACTIVE_STATUSES = new Set<NoteStatus>([
 
 const REVENUE_RECOGNIZED_STATUSES = new Set<NoteStatus>(['ENTREGUE', 'FINALIZADO']);
 const PAID_PAYABLE_STATUSES = new Set(['PAGO', 'PARCIAL']);
+const PROFIT_START_DATE = startOfDay(new Date(2026, 5, 1));
 
-type DashboardRangePreset = '30d' | '90d' | 'month' | 'year' | 'custom';
+type DashboardRangePreset = '30d' | '90d' | 'month' | `year-${number}` | 'custom';
 
 const RANGE_OPTIONS: Array<{ value: DashboardRangePreset; label: string }> = [
   { value: '30d', label: '30 dias' },
   { value: '90d', label: '90 dias' },
   { value: 'month', label: 'Este mês' },
-  { value: 'year', label: 'Ano' },
-  { value: 'custom', label: 'Personalizado' },
 ];
 
 const BAR_COLORS: Partial<Record<NoteStatus, string>> = {
@@ -112,6 +111,31 @@ export default function Dashboard() {
   const endCurrent = endOfMonth(now).getTime();
   const startPrev = startOfMonth(subMonths(now, 1)).getTime();
   const endPrev = endOfMonth(subMonths(now, 1)).getTime();
+  const availableFinancialYears = useMemo(() => {
+    const years = new Set<number>();
+    notes.forEach((note) => {
+      const createdYear = new Date(note.createdAt).getFullYear();
+      if (Number.isFinite(createdYear)) years.add(createdYear);
+      if (REVENUE_RECOGNIZED_STATUSES.has(note.status)) {
+        const revenueYear = new Date(getRevenueDate(note)).getFullYear();
+        if (Number.isFinite(revenueYear)) years.add(revenueYear);
+      }
+    });
+    return Array.from(years).sort((a, b) => b - a);
+  }, [notes]);
+
+  const periodRangeOptions = useMemo(
+    () => [
+      ...RANGE_OPTIONS,
+      ...availableFinancialYears.map((year) => ({
+        value: `year-${year}` as DashboardRangePreset,
+        label: String(year),
+      })),
+      { value: 'custom' as DashboardRangePreset, label: 'Personalizado' },
+    ],
+    [availableFinancialYears],
+  );
+
   const selectedPeriod = useMemo(() => {
     const todayEnd = endOfDay(now);
 
@@ -131,11 +155,14 @@ export default function Dashboard() {
       };
     }
 
-    if (rangePreset === 'year') {
+    if (rangePreset.startsWith('year-')) {
+      const selectedYear = Number(rangePreset.replace('year-', ''));
+      const safeYear = Number.isFinite(selectedYear) ? selectedYear : now.getFullYear();
+      const isCurrentYear = safeYear === now.getFullYear();
       return {
-        start: startOfDay(new Date(now.getFullYear(), 0, 1)),
-        end: todayEnd,
-        label: String(now.getFullYear()),
+        start: startOfDay(new Date(safeYear, 0, 1)),
+        end: isCurrentYear ? todayEnd : endOfDay(new Date(safeYear, 11, 31)),
+        label: String(safeYear),
       };
     }
 
@@ -162,11 +189,21 @@ export default function Dashboard() {
 
   const selectedPeriodStart = selectedPeriod.start.getTime();
   const selectedPeriodEnd = selectedPeriod.end.getTime();
+  const profitPeriodStart = Math.max(selectedPeriodStart, PROFIT_START_DATE.getTime());
+  const profitEnabledForPeriod = selectedPeriodEnd >= PROFIT_START_DATE.getTime();
+  const profitWindowLabel = profitEnabledForPeriod
+    ? `${format(new Date(profitPeriodStart), 'dd/MM/yyyy')} até ${format(selectedPeriod.end, 'dd/MM/yyyy')}`
+    : 'a partir de 01/06/2026';
   const isInSelectedPeriod = useCallback((value?: string | null) => {
     if (!value) return false;
     const time = new Date(value).getTime();
     return Number.isFinite(time) && time >= selectedPeriodStart && time <= selectedPeriodEnd;
   }, [selectedPeriodEnd, selectedPeriodStart]);
+  const isInProfitPeriod = useCallback((value?: string | null) => {
+    if (!value || !profitEnabledForPeriod) return false;
+    const time = new Date(value).getTime();
+    return Number.isFinite(time) && time >= profitPeriodStart && time <= selectedPeriodEnd;
+  }, [profitEnabledForPeriod, profitPeriodStart, selectedPeriodEnd]);
 
   // ── Core metrics ────────────────────────────────────────────────────────
   const openCount = useMemo(
@@ -448,12 +485,22 @@ export default function Dashboard() {
     [periodDeliveredNotes],
   );
 
+  const periodProfitNotes = useMemo(
+    () => notes.filter((note) => isInProfitPeriod(note.createdAt)),
+    [isInProfitPeriod, notes],
+  );
+
+  const periodProfitNotesAmount = useMemo(
+    () => periodProfitNotes.reduce((sum, note) => sum + note.totalAmount, 0),
+    [periodProfitNotes],
+  );
+
   const periodPaidPayables = useMemo(
     () => activePayables.filter((payable) => (
       PAID_PAYABLE_STATUSES.has(payable.status)
-      && isInSelectedPeriod(payable.paidAt ?? payable.updatedAt ?? payable.dueDate)
+      && isInProfitPeriod(payable.paidAt ?? payable.updatedAt ?? payable.dueDate)
     )),
-    [activePayables, isInSelectedPeriod],
+    [activePayables, isInProfitPeriod],
   );
 
   const periodPaidExpenses = useMemo(
@@ -461,8 +508,8 @@ export default function Dashboard() {
     [periodPaidPayables],
   );
 
-  const periodProfit = periodAllNotesAmount - periodPaidExpenses;
-  const periodProfitMargin = periodAllNotesAmount > 0 ? (periodProfit / periodAllNotesAmount) * 100 : null;
+  const periodProfit = periodProfitNotesAmount - periodPaidExpenses;
+  const periodProfitMargin = periodProfitNotesAmount > 0 ? (periodProfit / periodProfitNotesAmount) * 100 : null;
 
   const periodFinancialData = useMemo(() => {
     const days = Math.max(0, differenceInDays(selectedPeriod.end, selectedPeriod.start));
@@ -796,15 +843,22 @@ export default function Dashboard() {
                   <h2 className="text-base font-semibold leading-tight">Resultado financeiro</h2>
                   <p className="text-xs text-muted-foreground">Período: {selectedPeriod.label}</p>
                 </div>
-                <Badge className={cn('ml-0 lg:ml-2', periodProfit >= 0 ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-50' : 'bg-red-50 text-red-700 hover:bg-red-50')}>
-                  {periodProfit >= 0 ? 'Lucro positivo' : 'Lucro negativo'}
+                <Badge className={cn(
+                  'ml-0 lg:ml-2',
+                  !profitEnabledForPeriod
+                    ? 'bg-slate-100 text-slate-600 hover:bg-slate-100'
+                    : periodProfit >= 0
+                      ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-50'
+                      : 'bg-red-50 text-red-700 hover:bg-red-50',
+                )}>
+                  {!profitEnabledForPeriod ? 'Lucro inicia em jun/26' : periodProfit >= 0 ? 'Lucro positivo' : 'Lucro negativo'}
                 </Badge>
               </div>
             </div>
 
             <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
               <div className="flex flex-wrap gap-1.5 rounded-xl border border-border/70 bg-background p-1">
-                {RANGE_OPTIONS.map((option) => (
+                {periodRangeOptions.map((option) => (
                   <button
                     key={option.value}
                     type="button"
@@ -900,29 +954,33 @@ export default function Dashboard() {
                 </div>
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
-                {periodPaidPayables.length} pagamento{periodPaidPayables.length !== 1 ? 's' : ''} confirmado{periodPaidPayables.length !== 1 ? 's' : ''}
+                {periodPaidPayables.length} pagamento{periodPaidPayables.length !== 1 ? 's' : ''} no lucro · {profitWindowLabel}
               </p>
             </button>
 
             <div className={cn(
               'rounded-2xl border p-4',
-              periodProfit >= 0
+              !profitEnabledForPeriod
+                ? 'border-slate-200 bg-slate-50'
+                : periodProfit >= 0
                 ? 'border-primary/25 bg-primary/5'
                 : 'border-red-200 bg-red-50/60',
             )}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-medium text-muted-foreground">Lucro do período</p>
-                  <p className={cn('mt-2 text-2xl font-display font-bold leading-none', periodProfit >= 0 ? 'text-primary' : 'text-red-700')}>
-                    R$ {fmtBRLFull(periodProfit)}
+                  <p className="text-xs font-medium text-muted-foreground">Lucro contabilizado</p>
+                  <p className={cn('mt-2 text-2xl font-display font-bold leading-none', !profitEnabledForPeriod ? 'text-muted-foreground' : periodProfit >= 0 ? 'text-primary' : 'text-red-700')}>
+                    {profitEnabledForPeriod ? `R$ ${fmtBRLFull(periodProfit)}` : '—'}
                   </p>
                 </div>
-                <div className={cn('flex h-9 w-9 items-center justify-center rounded-xl', periodProfit >= 0 ? 'bg-primary/10 text-primary' : 'bg-red-100 text-red-700')}>
+                <div className={cn('flex h-9 w-9 items-center justify-center rounded-xl', !profitEnabledForPeriod ? 'bg-slate-100 text-slate-500' : periodProfit >= 0 ? 'bg-primary/10 text-primary' : 'bg-red-100 text-red-700')}>
                   <PiggyBank className="h-4 w-4" />
                 </div>
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
-                O.S. lançadas menos contas pagas{periodProfitMargin !== null ? ` · margem ${periodProfitMargin.toFixed(1)}%` : ''}
+                {profitEnabledForPeriod
+                  ? `${periodProfitNotes.length} O.S. desde ${format(new Date(profitPeriodStart), 'dd/MM/yyyy')} menos contas pagas${periodProfitMargin !== null ? ` · margem ${periodProfitMargin.toFixed(1)}%` : ''}`
+                  : 'Lucro passa a contar somente de 01/06/2026 em diante'}
               </p>
             </div>
           </div>
