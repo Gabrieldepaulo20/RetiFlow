@@ -74,10 +74,16 @@ type PageView = 'contas' | 'sugestoes';
 
 export default function ContasAPagar() {
   const { payables, payableCategories, updatePayable, addPayable, addPayableHistoryEntry, emailSuggestions } = useData();
-  const { user } = useAuth();
+  const { user, isSupportImpersonating } = useAuth();
+  // Sugestões de e-mail / Gmail ainda NÃO são support-context aware (rodam sob o
+  // auth.uid() do Mega Master). Em modo suporte isso mostraria dados do suporte,
+  // não da empresa acessada — então a aba fica bloqueada até existir RPC por contexto.
+  const suggestionsEnabled = !isSupportImpersonating;
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [pageView, setPageView] = useState<PageView>(() => searchParams.get('view') === 'sugestoes' ? 'sugestoes' : 'contas');
+  // Em modo suporte, a aba de sugestões é desligada (ver suggestionsEnabled acima).
+  const effectiveView: PageView = suggestionsEnabled ? pageView : 'contas';
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all');
   const [originFilter, setOriginFilter] = useState<OriginFilter>('all');
@@ -497,24 +503,26 @@ export default function ContasAPagar() {
             </div>
           </div>
           <div className="flex flex-col items-stretch gap-3 sm:items-end">
-            <Tabs value={pageView} onValueChange={(value) => updatePageView(value as PageView)}>
-              <TabsList className="grid h-10 grid-cols-2 rounded-xl">
+            <Tabs value={effectiveView} onValueChange={(value) => updatePageView(value as PageView)}>
+              <TabsList className={cn('grid h-10 rounded-xl', suggestionsEnabled ? 'grid-cols-2' : 'grid-cols-1')}>
                 <TabsTrigger value="contas" className="gap-2">
                   <Wallet className="h-4 w-4" />
                   Contas
                 </TabsTrigger>
-                <TabsTrigger value="sugestoes" className="relative gap-2">
-                  <MailOpen className="h-4 w-4" />
-                  Sugestões
-                  {pendingEmailSuggestions > 0 ? (
-                    <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
-                      {pendingEmailSuggestions}
-                    </span>
-                  ) : null}
-                </TabsTrigger>
+                {suggestionsEnabled ? (
+                  <TabsTrigger value="sugestoes" className="relative gap-2">
+                    <MailOpen className="h-4 w-4" />
+                    Sugestões
+                    {pendingEmailSuggestions > 0 ? (
+                      <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                        {pendingEmailSuggestions}
+                      </span>
+                    ) : null}
+                  </TabsTrigger>
+                ) : null}
               </TabsList>
             </Tabs>
-            {pageView === 'contas' ? (
+            {effectiveView === 'contas' ? (
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={() => updateRouteModal('import')}><Sparkles className="mr-2 h-4 w-4" />Importar com IA</Button>
               <Button onClick={() => updateRouteModal('new')} className="shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30"><PlusCircle className="mr-2 h-4 w-4" />Nova Conta</Button>
@@ -523,7 +531,7 @@ export default function ContasAPagar() {
           </div>
         </div>
 
-        {pageView === 'sugestoes' ? (
+        {effectiveView === 'sugestoes' ? (
           <ErrorBoundary>
             <Card>
               <CardContent className="p-6">
@@ -540,7 +548,7 @@ export default function ContasAPagar() {
           </ErrorBoundary>
         ) : null}
 
-        {pageView === 'contas' ? <ErrorBoundary><>
+        {effectiveView === 'contas' ? <ErrorBoundary><>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {summaryCards.map((card, index) => {
             const tone = kpiToneStyles[card.tone];

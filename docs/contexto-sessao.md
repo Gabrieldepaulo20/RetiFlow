@@ -37,7 +37,8 @@ Plano aprovado para executar em fases:
 - Validacao de PDF antigo usa endpoint legado `/servico/pdf-link`; S3 so e conferido se credenciais ja estiverem configuradas no ambiente.
 - Placa vazia sera persistida como `NULL`, nunca como string vazia nem fallback `XXX0000`.
 - Linhas descritivas aparecem no PDF com descricao normal e colunas de quantidade/valor/total em branco quando nao ha valor financeiro.
-- Previews principais de nota e fechamento devem abrir PDF real em nova aba, priorizando fidelidade visual.
+- Preview principal da nota deve preservar fidelidade visual.
+- Preview principal do fechamento deve abrir em popup/modal na mesma tela, com rolagem suave, no mesmo comportamento esperado da nota de entrada. Abrir PDF em nova aba fica como acao explicita.
 
 ## Pendencias De Validacao Manual
 
@@ -62,7 +63,8 @@ Plano aprovado para executar em fases:
 - Confirmado no schema remoto que `RetificaPremium.Veiculos.placa` esta nullable e segue unique quando preenchida.
 - Formulario de O.S. preserva itens com descricao mesmo quando valor/quantidade financeira estao vazios ou zerados.
 - PDFs e previews de nota/fechamento mostram linhas descritivas sem quantidade, valor e total, mantendo a descricao.
-- PDF salvo abre por signed URL; PDF ainda nao salvo abre por blob temporario em nova aba usando helper unico em `src/lib/printPdf.ts`.
+- PDF salvo abre por signed URL; PDF ainda nao salvo pode gerar blob temporario usando helper unico em `src/lib/printPdf.ts`.
+- A visualizacao principal de fechamento foi corrigida depois: `Visualizar` abre modal interno com `ClosingHtmlPreview`; quando o fechamento salvo so tiver `pdf_url`, o PDF assinado aparece embutido no mesmo popup.
 
 ### Validacao Executada
 
@@ -77,3 +79,11 @@ Plano aprovado para executar em fases:
 
 - O teste manual de criacao/edicao foi coberto por integracao real com cleanup por prefixo de teste, porque o fluxo depende de sessao Supabase e RPCs remotos.
 - A automacao visual local nao foi usada para abrir novas abas de PDF nesta rodada; a fidelidade do PDF foi preservada no codigo pelos templates existentes e pela abertura via signed URL/blob.
+
+## Ajuste - 2026-06-03
+
+- Pedido do produto: fechamento deve visualizar igual nota de entrada, em popup na mesma tela, com scroll fluido.
+- `src/pages/MonthlyClosing.tsx` ajustado para que botoes `Visualizar` de rascunhos e fechamentos gerados abram o modal interno.
+- Fechamentos com `dados_json` usam `ClosingHtmlPreview` no modal.
+- Fechamentos antigos com apenas `pdf_url` usam signed URL embutida em `iframe` dentro do modal.
+- Botao `Abrir PDF` continua disponivel como acao separada para abrir/baixar o PDF real quando necessario.
