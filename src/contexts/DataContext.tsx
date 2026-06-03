@@ -324,7 +324,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     const loadCoreDashboardData = async () => {
       try {
-        const resumo = await getDashboardResumo({ p_limite: 500 });
+        const resumo = await getDashboardResumo({ p_limite: 5000 });
         if (cancelled) return;
         const loaded = dashboardResumoToDomainData(resumo);
         setCustomers(loaded.clients);
@@ -338,16 +338,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // Fallback compatível caso a Function ainda não tenha sido publicada no ambiente.
       }
 
-      getClientes({ p_limite: 500 }).then(({ dados }) => {
+      getClientes({ p_limite: 5000 }).then(({ dados }) => {
         if (!cancelled) setCustomers(dados.map(supabaseToClient));
       }).catch(() => {});
-      getNotasServico({ p_limite: 500 }).then(({ dados }) => {
+      getNotasServico({ p_limite: 5000 }).then(({ dados }) => {
         if (cancelled) return;
         const loaded = dados.map(supabaseToIntakeNote);
         setNotes(loaded);
         setNoteCounter(getNextNoteCounter(loaded.map((n) => n.number)));
       }).catch(() => {});
-      getContasPagar({ p_limite: 500 }).then(({ dados }) => {
+      getContasPagar({ p_limite: 5000 }).then(({ dados }) => {
         if (!cancelled) setPayables(dados.map(supabaseToAccountPayable));
       }).catch(() => {});
       getCategorias(true).then((cats) => {
@@ -983,7 +983,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     };
     if (IS_REAL_AUTH) {
       const dbId = await aceitarSugestaoEmail(id);
-      const refreshed = await getContasPagar({ p_limite: 500 });
+      const refreshed = await getContasPagar({ p_limite: 5000 });
       setPayables(refreshed.dados.map(supabaseToAccountPayable));
       setEmailSuggestions((prev) => prev.map((s) => s.id === id ? { ...s, status: 'ACCEPTED' } : s));
       bumpDataVersion();

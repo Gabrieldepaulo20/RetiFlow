@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '@/contexts/DataContext';
@@ -10,6 +10,7 @@ import {
   CheckCircle2, Timer, Users, Receipt,
   ArrowUpRight, ArrowDownRight, Minus, AlertTriangle,
   Wrench, Package, Info, Wallet, Landmark, PiggyBank, Layers3,
+  CalendarDays, Filter,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -27,7 +28,7 @@ import { motion } from 'framer-motion';
 import { useReducedMotion } from 'framer-motion';
 import {
   format, subMonths, startOfMonth, endOfMonth,
-  differenceInDays, parseISO,
+  differenceInDays, parseISO, subDays, startOfDay, endOfDay, eachDayOfInterval,
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -39,6 +40,19 @@ import { SectionEmptyState, SectionErrorState } from '@/components/ui/section-st
 const ACTIVE_STATUSES = new Set<NoteStatus>([
   'ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'PRONTO', 'ENTREGUE',
 ]);
+
+const REVENUE_RECOGNIZED_STATUSES = new Set<NoteStatus>(['ENTREGUE', 'FINALIZADO']);
+const PAID_PAYABLE_STATUSES = new Set(['PAGO', 'PARCIAL']);
+
+type DashboardRangePreset = '30d' | '90d' | 'month' | 'year' | 'custom';
+
+const RANGE_OPTIONS: Array<{ value: DashboardRangePreset; label: string }> = [
+  { value: '30d', label: '30 dias' },
+  { value: '90d', label: '90 dias' },
+  { value: 'month', label: 'Este mês' },
+  { value: 'year', label: 'Ano' },
+  { value: 'custom', label: 'Personalizado' },
+];
 
 const BAR_COLORS: Partial<Record<NoteStatus, string>> = {
   ABERTO: 'hsl(var(--info))',
@@ -68,6 +82,16 @@ function pct(a: number, b: number) {
   return ((a - b) / b) * 100;
 }
 
+function parseDateInput(value: string, fallback: Date) {
+  if (!value) return fallback;
+  const parsed = new Date(`${value}T00:00:00`);
+  return Number.isFinite(parsed.getTime()) ? parsed : fallback;
+}
+
+function getRevenueDate(note: { finalizedAt?: string; updatedAt: string; createdAt: string }) {
+  return note.finalizedAt ?? note.updatedAt ?? note.createdAt;
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 // Active statuses joined for URL param
@@ -79,12 +103,70 @@ export default function Dashboard() {
   const prefersReducedMotion = useReducedMotion();
   const serviceMetricsLoading = false;
   const serviceMetricsError = false;
+  const [rangePreset, setRangePreset] = useState<DashboardRangePreset>('30d');
+  const [customStartDate, setCustomStartDate] = useState(() => format(subDays(new Date(), 29), 'yyyy-MM-dd'));
+  const [customEndDate, setCustomEndDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
 
   const now = useMemo(() => new Date(), []);
   const startCurrent = startOfMonth(now).getTime();
   const endCurrent = endOfMonth(now).getTime();
   const startPrev = startOfMonth(subMonths(now, 1)).getTime();
   const endPrev = endOfMonth(subMonths(now, 1)).getTime();
+  const selectedPeriod = useMemo(() => {
+    const todayEnd = endOfDay(now);
+
+    if (rangePreset === '90d') {
+      return {
+        start: startOfDay(subDays(now, 89)),
+        end: todayEnd,
+        label: 'últimos 90 dias',
+      };
+    }
+
+    if (rangePreset === 'month') {
+      return {
+        start: startOfMonth(now),
+        end: todayEnd,
+        label: format(now, "MMMM 'de' yyyy", { locale: ptBR }),
+      };
+    }
+
+    if (rangePreset === 'year') {
+      return {
+        start: startOfDay(new Date(now.getFullYear(), 0, 1)),
+        end: todayEnd,
+        label: String(now.getFullYear()),
+      };
+    }
+
+    if (rangePreset === 'custom') {
+      const fallbackStart = startOfDay(subDays(now, 29));
+      const fallbackEnd = todayEnd;
+      const parsedStart = startOfDay(parseDateInput(customStartDate, fallbackStart));
+      const parsedEnd = endOfDay(parseDateInput(customEndDate, fallbackEnd));
+      const start = parsedStart.getTime() <= parsedEnd.getTime() ? parsedStart : parsedEnd;
+      const end = parsedStart.getTime() <= parsedEnd.getTime() ? parsedEnd : parsedStart;
+      return {
+        start,
+        end,
+        label: `${format(start, 'dd/MM/yyyy')} até ${format(end, 'dd/MM/yyyy')}`,
+      };
+    }
+
+    return {
+      start: startOfDay(subDays(now, 29)),
+      end: todayEnd,
+      label: 'últimos 30 dias',
+    };
+  }, [customEndDate, customStartDate, now, rangePreset]);
+
+  const selectedPeriodStart = selectedPeriod.start.getTime();
+  const selectedPeriodEnd = selectedPeriod.end.getTime();
+  const isInSelectedPeriod = useCallback((value?: string | null) => {
+    if (!value) return false;
+    const time = new Date(value).getTime();
+    return Number.isFinite(time) && time >= selectedPeriodStart && time <= selectedPeriodEnd;
+  }, [selectedPeriodEnd, selectedPeriodStart]);
 
   // ── Core metrics ────────────────────────────────────────────────────────
   const openCount = useMemo(
@@ -92,24 +174,29 @@ export default function Dashboard() {
     [notes],
   );
 
-  const finalizedNotes = useMemo(
-    () => notes.filter(n => n.status === 'FINALIZADO'),
+  const revenueRecognizedNotes = useMemo(
+    () => notes.filter(n => REVENUE_RECOGNIZED_STATUSES.has(n.status)),
+    [notes],
+  );
+
+  const allNotesTotalAmount = useMemo(
+    () => notes.reduce((sum, note) => sum + note.totalAmount, 0),
     [notes],
   );
 
   const totalRevenue = useMemo(
-    () => finalizedNotes.reduce((s, n) => s + n.totalAmount, 0),
-    [finalizedNotes],
+    () => revenueRecognizedNotes.reduce((s, n) => s + n.totalAmount, 0),
+    [revenueRecognizedNotes],
   );
 
   const avgDays = useMemo(() => {
-    const fin = finalizedNotes.filter(n => n.finalizedAt);
+    const fin = revenueRecognizedNotes.filter(n => getRevenueDate(n));
     if (!fin.length) return null;
     const total = fin.reduce((sum, n) => {
-      return sum + differenceInDays(new Date(n.finalizedAt!), new Date(n.createdAt));
+      return sum + differenceInDays(new Date(getRevenueDate(n)), new Date(n.createdAt));
     }, 0);
     return (total / fin.length).toFixed(1);
-  }, [finalizedNotes]);
+  }, [revenueRecognizedNotes]);
 
   const overdueNotes = useMemo(() => {
     const threshold = Date.now() - 7 * 86_400_000;
@@ -125,32 +212,30 @@ export default function Dashboard() {
 
   // ── Monthly revenue ──────────────────────────────────────────────────────
   const currentMonthRevenue = useMemo(
-    () => finalizedNotes
-      .filter(n => n.finalizedAt)
+    () => revenueRecognizedNotes
       .filter(n => {
-        const t = new Date(n.finalizedAt!).getTime();
+        const t = new Date(getRevenueDate(n)).getTime();
         return t >= startCurrent && t <= endCurrent;
       })
       .reduce((s, n) => s + n.totalAmount, 0),
-    [finalizedNotes, startCurrent, endCurrent],
+    [revenueRecognizedNotes, startCurrent, endCurrent],
   );
 
   const prevMonthRevenue = useMemo(
-    () => finalizedNotes
-      .filter(n => n.finalizedAt)
+    () => revenueRecognizedNotes
       .filter(n => {
-        const t = new Date(n.finalizedAt!).getTime();
+        const t = new Date(getRevenueDate(n)).getTime();
         return t >= startPrev && t <= endPrev;
       })
       .reduce((s, n) => s + n.totalAmount, 0),
-    [finalizedNotes, startPrev, endPrev],
+    [revenueRecognizedNotes, startPrev, endPrev],
   );
 
   const monthGrowth = pct(currentMonthRevenue, prevMonthRevenue);
 
   // ── Ticket médio ────────────────────────────────────────────────────────
-  const ticketMedio = finalizedNotes.length > 0
-    ? totalRevenue / finalizedNotes.length
+  const ticketMedio = revenueRecognizedNotes.length > 0
+    ? totalRevenue / revenueRecognizedNotes.length
     : 0;
 
   // ── Clientes ativos ─────────────────────────────────────────────────────
@@ -167,8 +252,9 @@ export default function Dashboard() {
     [notes],
   );
 
-  const successRate = closedNotes.length > 0
-    ? Math.round((finalizedNotes.length / closedNotes.length) * 100)
+  const successBaseCount = closedNotes.filter(n => n.status !== 'FINALIZADO').length + revenueRecognizedNotes.length;
+  const successRate = successBaseCount > 0
+    ? Math.round((revenueRecognizedNotes.length / successBaseCount) * 100)
     : 0;
 
   // ── Status distribution ──────────────────────────────────────────────────
@@ -197,22 +283,20 @@ export default function Dashboard() {
       const d = subMonths(now, 5 - i);
       const start = startOfMonth(d).getTime();
       const end = endOfMonth(d).getTime();
-      const valor = finalizedNotes
-        .filter(n => n.finalizedAt)
+      const valor = revenueRecognizedNotes
         .filter(n => {
-          const t = new Date(n.finalizedAt!).getTime();
+          const t = new Date(getRevenueDate(n)).getTime();
           return t >= start && t <= end;
         })
         .reduce((sum, n) => sum + n.totalAmount, 0);
-      const count = finalizedNotes
-        .filter(n => n.finalizedAt)
+      const count = revenueRecognizedNotes
         .filter(n => {
-          const t = new Date(n.finalizedAt!).getTime();
+          const t = new Date(getRevenueDate(n)).getTime();
           return t >= start && t <= end;
         }).length;
       return { month: format(d, 'MMM', { locale: ptBR }), valor, count };
     });
-  }, [finalizedNotes, now]);
+  }, [revenueRecognizedNotes, now]);
 
   // ── Top serviços ─────────────────────────────────────────────────────────
   const servicesForMetrics = services;
@@ -256,24 +340,24 @@ export default function Dashboard() {
       href: `/notas-entrada?status=${ACTIVE_STATUSES_PARAM}`,
     },
     {
-      label: 'Finalizadas',
-      value: finalizedNotes.length,
+      label: 'Entregues',
+      value: revenueRecognizedNotes.length,
       sub: `Taxa de sucesso: ${successRate}%`,
       icon: CheckCircle2,
       iconClass: 'text-emerald-600 bg-emerald-50',
       subClass: 'text-muted-foreground',
-      tooltip: 'O.S. concluídas com sucesso. A taxa de sucesso é calculada sobre todos os estágios finais (Finalizado, Cancelado, Descartado, Sem conserto).',
-      href: '/notas-entrada?status=FINALIZADO',
+      tooltip: 'O.S. entregues ou fechadas com sucesso. A taxa compara entregues/finalizadas contra canceladas, descartadas e sem conserto.',
+      href: '/notas-entrada?status=ENTREGUE,FINALIZADO',
     },
     {
-      label: 'Faturamento total',
+      label: 'Valor entregue',
       value: `R$ ${fmtBRL(totalRevenue)}`,
-      sub: 'Notas finalizadas',
+      sub: 'O.S. entregues/fechadas',
       icon: DollarSign,
       iconClass: 'text-primary bg-primary/10',
       subClass: 'text-muted-foreground',
-      tooltip: 'Soma do valor total de todas as O.S. com status Finalizado desde a abertura do sistema.',
-      href: '/notas-entrada?status=FINALIZADO',
+      tooltip: 'Soma do valor total das O.S. com status Entregue ou Finalizado desde a abertura do sistema.',
+      href: '/notas-entrada?status=ENTREGUE,FINALIZADO',
     },
     {
       label: 'Tempo médio',
@@ -284,8 +368,8 @@ export default function Dashboard() {
         ? 'text-amber-600 bg-amber-50'
         : 'text-sky-600 bg-sky-50',
       subClass: 'text-muted-foreground',
-      tooltip: 'Média de dias entre a abertura e a finalização de uma O.S. Calculado apenas sobre notas finalizadas.',
-      href: '/notas-entrada?status=FINALIZADO',
+      tooltip: 'Média de dias entre a abertura e a entrega/fechamento da O.S.',
+      href: '/notas-entrada?status=ENTREGUE,FINALIZADO',
     },
   ];
 
@@ -300,19 +384,19 @@ export default function Dashboard() {
       iconClass: 'text-violet-600 bg-violet-50',
       subClass: monthGrowth === null ? 'text-muted-foreground' : monthGrowth >= 0 ? 'text-emerald-600 font-medium' : 'text-red-500 font-medium',
       trend: monthGrowth,
-      tooltip: 'Receita gerada pelas O.S. finalizadas no mês atual. Comparação percentual em relação ao mês anterior.',
-      href: '/notas-entrada?status=FINALIZADO',
+      tooltip: 'Receita gerada pelas O.S. entregues ou fechadas no mês atual. Comparação percentual em relação ao mês anterior.',
+      href: '/notas-entrada?status=ENTREGUE,FINALIZADO',
     },
     {
       label: 'Ticket médio',
       value: ticketMedio > 0 ? `R$ ${fmtBRL(ticketMedio)}` : '—',
-      sub: `Base: ${finalizedNotes.length} O.S. finalizadas`,
+      sub: `Base: ${revenueRecognizedNotes.length} O.S. entregues`,
       icon: Receipt,
       iconClass: 'text-orange-600 bg-orange-50',
       subClass: 'text-muted-foreground',
       trend: null,
-      tooltip: 'Valor médio por O.S. finalizada. Calculado dividindo o faturamento total pelo número de O.S. finalizadas.',
-      href: '/notas-entrada?status=FINALIZADO',
+      tooltip: 'Valor médio por O.S. entregue ou fechada. Calculado dividindo o valor entregue pelo número de O.S. entregues/fechadas.',
+      href: '/notas-entrada?status=ENTREGUE,FINALIZADO',
     },
     {
       label: 'Clientes cadastrados',
@@ -343,6 +427,80 @@ export default function Dashboard() {
     () => payables.filter((payable) => payable.deletedAt == null),
     [payables],
   );
+
+  const periodNotes = useMemo(
+    () => notes.filter((note) => isInSelectedPeriod(note.createdAt)),
+    [isInSelectedPeriod, notes],
+  );
+
+  const periodAllNotesAmount = useMemo(
+    () => periodNotes.reduce((sum, note) => sum + note.totalAmount, 0),
+    [periodNotes],
+  );
+
+  const periodDeliveredNotes = useMemo(
+    () => revenueRecognizedNotes.filter((note) => isInSelectedPeriod(getRevenueDate(note))),
+    [isInSelectedPeriod, revenueRecognizedNotes],
+  );
+
+  const periodDeliveredAmount = useMemo(
+    () => periodDeliveredNotes.reduce((sum, note) => sum + note.totalAmount, 0),
+    [periodDeliveredNotes],
+  );
+
+  const periodPaidPayables = useMemo(
+    () => activePayables.filter((payable) => (
+      PAID_PAYABLE_STATUSES.has(payable.status)
+      && isInSelectedPeriod(payable.paidAt ?? payable.updatedAt ?? payable.dueDate)
+    )),
+    [activePayables, isInSelectedPeriod],
+  );
+
+  const periodPaidExpenses = useMemo(
+    () => periodPaidPayables.reduce((sum, payable) => sum + (payable.paidAmount ?? payable.finalAmount), 0),
+    [periodPaidPayables],
+  );
+
+  const periodProfit = periodAllNotesAmount - periodPaidExpenses;
+  const periodProfitMargin = periodAllNotesAmount > 0 ? (periodProfit / periodAllNotesAmount) * 100 : null;
+
+  const periodFinancialData = useMemo(() => {
+    const days = Math.max(0, differenceInDays(selectedPeriod.end, selectedPeriod.start));
+    const groupByMonth = days > 70;
+    const rows = new Map<string, { label: string; entrada: number; saida: number; lucro: number }>();
+    const getKey = (date: Date) => groupByMonth ? format(date, 'yyyy-MM') : format(date, 'yyyy-MM-dd');
+    const getLabel = (date: Date) => groupByMonth ? format(date, 'MM/yy') : format(date, 'dd/MM');
+    const ensure = (date: Date) => {
+      const key = getKey(date);
+      if (!rows.has(key)) rows.set(key, { label: getLabel(date), entrada: 0, saida: 0, lucro: 0 });
+      return rows.get(key)!;
+    };
+
+    if (groupByMonth) {
+      let cursor = startOfMonth(selectedPeriod.start);
+      while (cursor.getTime() <= selectedPeriod.end.getTime()) {
+        ensure(cursor);
+        cursor = startOfMonth(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1));
+      }
+    } else {
+      eachDayOfInterval({ start: selectedPeriod.start, end: selectedPeriod.end }).forEach(ensure);
+    }
+
+    periodNotes.forEach((note) => {
+      const row = ensure(new Date(note.createdAt));
+      row.entrada += note.totalAmount;
+    });
+    periodPaidPayables.forEach((payable) => {
+      const row = ensure(new Date(payable.paidAt ?? payable.updatedAt ?? payable.dueDate));
+      row.saida += payable.paidAmount ?? payable.finalAmount;
+    });
+
+    return Array.from(rows.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, row]) => ({ ...row, lucro: row.entrada - row.saida }));
+  }, [periodNotes, periodPaidPayables, selectedPeriod.end, selectedPeriod.start]);
+
+  const hasPeriodFinancialData = periodFinancialData.some((item) => item.entrada > 0 || item.saida > 0);
 
   const openFinancialPayables = useMemo(
     () => activePayables.filter((payable) => payable.status !== 'PAGO' && payable.status !== 'CANCELADO'),
@@ -428,11 +586,10 @@ export default function Dashboard() {
   const endYear = new Date(currentYear, 11, 31, 23, 59, 59).getTime();
 
   const yearlyRevenue = useMemo(
-    () => finalizedNotes
-      .filter(n => n.finalizedAt)
-      .filter(n => { const t = new Date(n.finalizedAt!).getTime(); return t >= startYear && t <= endYear; })
+    () => revenueRecognizedNotes
+      .filter(n => { const t = new Date(getRevenueDate(n)).getTime(); return t >= startYear && t <= endYear; })
       .reduce((s, n) => s + n.totalAmount, 0),
-    [finalizedNotes, startYear, endYear],
+    [revenueRecognizedNotes, startYear, endYear],
   );
 
   const yearlyExpenses = useMemo(
@@ -476,10 +633,9 @@ export default function Dashboard() {
       const date = subMonths(now, 5 - index);
       const start = startOfMonth(date).getTime();
       const end = endOfMonth(date).getTime();
-      const revenue = finalizedNotes
-        .filter((note) => note.finalizedAt)
+      const revenue = revenueRecognizedNotes
         .filter((note) => {
-          const time = new Date(note.finalizedAt!).getTime();
+          const time = new Date(getRevenueDate(note)).getTime();
           return time >= start && time <= end;
         })
         .reduce((sum, note) => sum + note.totalAmount, 0);
@@ -497,7 +653,7 @@ export default function Dashboard() {
         balance: revenue - expenses,
       };
     });
-  }, [activePayables, finalizedNotes, now]);
+  }, [activePayables, revenueRecognizedNotes, now]);
 
   const financeKpis = [
     {
@@ -627,6 +783,178 @@ export default function Dashboard() {
           </p>
         </div>
       </div>
+
+      <Card className="overflow-hidden border-primary/20 shadow-sm">
+        <CardContent className="p-0">
+          <div className="flex flex-col gap-4 border-b border-border/70 bg-muted/20 p-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <Filter className="h-4 w-4" />
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold leading-tight">Resultado financeiro</h2>
+                  <p className="text-xs text-muted-foreground">Período: {selectedPeriod.label}</p>
+                </div>
+                <Badge className={cn('ml-0 lg:ml-2', periodProfit >= 0 ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-50' : 'bg-red-50 text-red-700 hover:bg-red-50')}>
+                  {periodProfit >= 0 ? 'Lucro positivo' : 'Lucro negativo'}
+                </Badge>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
+              <div className="flex flex-wrap gap-1.5 rounded-xl border border-border/70 bg-background p-1">
+                {RANGE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setRangePreset(option.value)}
+                    className={cn(
+                      'h-8 rounded-lg px-3 text-xs font-medium transition',
+                      rangePreset === option.value
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+
+              {rangePreset === 'custom' ? (
+                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/70 bg-background px-2.5 py-2">
+                  <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                  <label className="sr-only" htmlFor="dashboard-start-date">Data inicial</label>
+                  <input
+                    id="dashboard-start-date"
+                    type="date"
+                    value={customStartDate}
+                    onChange={(event) => setCustomStartDate(event.target.value)}
+                    className="h-8 rounded-lg border border-border bg-background px-2 text-xs font-medium outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
+                  />
+                  <span className="text-xs text-muted-foreground">até</span>
+                  <label className="sr-only" htmlFor="dashboard-end-date">Data final</label>
+                  <input
+                    id="dashboard-end-date"
+                    type="date"
+                    value={customEndDate}
+                    onChange={(event) => setCustomEndDate(event.target.value)}
+                    className="h-8 rounded-lg border border-border bg-background px-2 text-xs font-medium outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
+                  />
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
+            <button
+              type="button"
+              onClick={() => navigate('/notas-entrada')}
+              className="rounded-2xl border border-border/70 bg-background p-4 text-left transition hover:border-primary/30 hover:bg-primary/5"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Valor de todas O.S.</p>
+                  <p className="mt-2 text-2xl font-display font-bold leading-none">R$ {fmtBRL(periodAllNotesAmount)}</p>
+                </div>
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-700">
+                  <FileText className="h-4 w-4" />
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                {periodNotes.length} O.S. no período · total geral R$ {fmtBRL(allNotesTotalAmount)}
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigate('/notas-entrada?status=ENTREGUE,FINALIZADO')}
+              className="rounded-2xl border border-border/70 bg-background p-4 text-left transition hover:border-emerald-300 hover:bg-emerald-50/60"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Valor entregue/fechado</p>
+                  <p className="mt-2 text-2xl font-display font-bold leading-none text-emerald-700">R$ {fmtBRL(periodDeliveredAmount)}</p>
+                </div>
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+                  <CheckCircle2 className="h-4 w-4" />
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                {periodDeliveredNotes.length} O.S. entregues · geral R$ {fmtBRL(totalRevenue)}
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigate('/contas-a-pagar')}
+              className="rounded-2xl border border-border/70 bg-background p-4 text-left transition hover:border-red-200 hover:bg-red-50/50"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Contas pagas</p>
+                  <p className="mt-2 text-2xl font-display font-bold leading-none text-red-600">R$ {fmtBRL(periodPaidExpenses)}</p>
+                </div>
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-50 text-red-600">
+                  <Landmark className="h-4 w-4" />
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                {periodPaidPayables.length} pagamento{periodPaidPayables.length !== 1 ? 's' : ''} confirmado{periodPaidPayables.length !== 1 ? 's' : ''}
+              </p>
+            </button>
+
+            <div className={cn(
+              'rounded-2xl border p-4',
+              periodProfit >= 0
+                ? 'border-primary/25 bg-primary/5'
+                : 'border-red-200 bg-red-50/60',
+            )}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Lucro do período</p>
+                  <p className={cn('mt-2 text-2xl font-display font-bold leading-none', periodProfit >= 0 ? 'text-primary' : 'text-red-700')}>
+                    R$ {fmtBRLFull(periodProfit)}
+                  </p>
+                </div>
+                <div className={cn('flex h-9 w-9 items-center justify-center rounded-xl', periodProfit >= 0 ? 'bg-primary/10 text-primary' : 'bg-red-100 text-red-700')}>
+                  <PiggyBank className="h-4 w-4" />
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                O.S. lançadas menos contas pagas{periodProfitMargin !== null ? ` · margem ${periodProfitMargin.toFixed(1)}%` : ''}
+              </p>
+            </div>
+          </div>
+
+          <div className="border-t border-border/70 px-2 pb-4">
+            {hasPeriodFinancialData ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={periodFinancialData} margin={{ top: 18, right: 16, left: 0, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 10 }} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
+                  <RechartsTooltip
+                    formatter={(value: number, name: string) => [
+                      `R$ ${value.toLocaleString('pt-BR')}`,
+                      name === 'entrada' ? 'O.S. lançadas' : name === 'saida' ? 'Contas pagas' : 'Lucro',
+                    ]}
+                    contentStyle={{ fontSize: 12 }}
+                  />
+                  <Bar dataKey="entrada" name="entrada" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="saida" name="saida" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <SectionEmptyState
+                title="Sem movimentação no período"
+                description="Escolha outro intervalo para ver entradas, contas pagas e lucro."
+                className="min-h-[220px] border-0 bg-transparent px-2"
+              />
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* KPI rows */}
       <TooltipProvider delayDuration={400}>

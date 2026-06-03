@@ -44,7 +44,7 @@ function jsonResponse(body: unknown, status: number, request: Request) {
 function parseLimit(value: unknown) {
   const parsed = Number(value ?? 500);
   if (!Number.isFinite(parsed)) return 500;
-  return Math.max(1, Math.min(Math.trunc(parsed), 500));
+  return Math.max(1, Math.min(Math.trunc(parsed), 5000));
 }
 
 async function callRpc<T>(

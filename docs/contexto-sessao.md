@@ -188,3 +188,29 @@ Plano aprovado para executar em fases:
   - `npm test -- --run`: passou, 42 arquivos e 320 testes.
   - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks.
   - `npm run test:integration`: passou, 16 arquivos e 53 testes.
+
+## Dashboard Financeiro Por Periodo - 2026-06-03
+
+- Pedido: no Dashboard, mostrar para a cliente o valor de todas as O.S., valor das O.S. entregues/fechadas, contas pagas e lucro por periodo filtrado.
+- `src/pages/Dashboard.tsx`:
+  - criado painel "Resultado financeiro" no topo do Dashboard;
+  - filtro com atalhos `30 dias`, `90 dias`, `Este mes`, `Ano` e `Personalizado`;
+  - filtro personalizado usa campos `date` nativos do navegador para abrir calendario;
+  - cards mostram:
+    - valor de todas as O.S. lancadas no periodo;
+    - valor entregue/fechado considerando status `ENTREGUE` e `FINALIZADO`;
+    - contas pagas no periodo considerando `PAGO` e `PARCIAL`;
+    - lucro do periodo = valor das O.S. lancadas - contas pagas;
+  - grafico do periodo compara entradas de O.S. e contas pagas, agrupando por dia ou por mes conforme o tamanho do intervalo;
+  - KPIs antigos de faturamento passaram a considerar `ENTREGUE` + `FINALIZADO`, nao apenas `FINALIZADO`.
+- `src/contexts/DataContext.tsx`:
+  - carga principal do dashboard aumentada de `p_limite: 500` para `p_limite: 5000`, para evitar calculos financeiros em amostra pequena no piloto.
+- `supabase/functions/dashboard-resumo/index.ts`:
+  - teto controlado de `parseLimit` aumentado para `5000`;
+  - Function `dashboard-resumo` publicada no projeto Supabase `dqeoxxokvvcpssajycgq`.
+- Validacao executada:
+  - `npx tsc --noEmit`: passou.
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh.
+  - `npm test -- --run`: passou, 42 arquivos e 320 testes.
+  - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks.
+  - `npm run test:integration`: passou, 16 arquivos e 53 testes.
