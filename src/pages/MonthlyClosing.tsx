@@ -1181,9 +1181,9 @@ export default function MonthlyClosing() {
       </Dialog>
 
       <Dialog open={templatePreviewOpen} onOpenChange={(open) => { if (open) setTemplatePreviewOpen(true); else closeTemplatePreview(); }}>
-        <DialogContent className="h-[94dvh] max-h-[94dvh] w-[calc(100vw-1rem)] max-w-[min(1200px,calc(100vw-1rem))] gap-0 overflow-hidden p-0 sm:rounded-2xl [&>button]:right-3 [&>button]:top-3">
+        <DialogContent className="flex h-[94dvh] max-h-[94dvh] w-[calc(100vw-1rem)] max-w-[min(1200px,calc(100vw-1rem))] flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl [&>button]:right-3 [&>button]:top-3">
           <DialogTitle className="sr-only">Visualização do template do fechamento</DialogTitle>
-          <div className="flex h-full flex-col">
+          <div className="flex min-h-0 flex-1 flex-col">
             <div className="shrink-0 border-b px-4 py-3 pr-12 sm:px-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -1202,13 +1202,13 @@ export default function MonthlyClosing() {
                 </Button>
               </div>
             </div>
-            <div className="min-h-0 flex-1 bg-muted/40">
+            <div className="min-h-0 flex-1 overflow-hidden bg-muted/40">
               {templatePreviewLoading ? (
                 <div className="flex h-full items-center justify-center">
                   <DualSpinner />
                 </div>
               ) : modalPreviewDados ? (
-                <div className="h-full overflow-y-auto overscroll-contain scroll-smooth scrollbar-thin">
+                <div className="h-full min-h-0 overflow-y-auto overscroll-contain scroll-smooth px-0 scrollbar-thin">
                   <ClosingHtmlPreview dados={modalPreviewDados} accentColor={templateSettings?.corFechamento} />
                 </div>
               ) : storedPdfPreviewUrl ? (
