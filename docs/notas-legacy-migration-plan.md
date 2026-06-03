@@ -42,3 +42,28 @@ Somente depois da revisao do relatorio:
 2. Criar script separado de importacao com `--apply`.
 3. Fazer importacao em lote pequeno.
 4. Validar PDF, cliente, veiculo, itens, totais e fechamento.
+
+## Execucao Real - 2026-06-03
+
+- Script de importacao criado: `scripts/oneoff/import-legacy-notes-company5.mjs`.
+- Modo padrao do script: dry-run, sem gravar dados.
+- Modo de escrita: `--apply`.
+- Criterios aplicados:
+  - importar apenas empresa legado `id=5`;
+  - importar apenas notas nao excluidas no legado;
+  - pular OS duplicada no legado;
+  - pular OS ja existente no Retiflow;
+  - exigir cliente ja existente na conta Retifica Premium por documento;
+  - exigir veiculo e ao menos uma linha de servico;
+  - preservar link de PDF legado em `pdf_url`.
+- Resultado da execucao com `--apply`:
+  - 880 notas inseridas;
+  - 1.919 itens vinculados;
+  - 7 notas excluidas no legado ignoradas;
+  - 4 notas com OS duplicada deixadas pendentes;
+  - 0 falhas.
+- Validacao read-only posterior:
+  - conta Retifica Premium com 158 clientes;
+  - conta Retifica Premium com 880 notas;
+  - 1.919 linhas em `Rel_NotaS_Serv` para essas notas;
+  - 880 notas com PDF legado referenciado.

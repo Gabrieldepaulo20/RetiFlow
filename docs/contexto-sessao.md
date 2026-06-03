@@ -87,3 +87,22 @@ Plano aprovado para executar em fases:
 - Fechamentos com `dados_json` usam `ClosingHtmlPreview` no modal.
 - Fechamentos antigos com apenas `pdf_url` usam signed URL embutida em `iframe` dentro do modal.
 - Botao `Abrir PDF` continua disponivel como acao separada para abrir/baixar o PDF real quando necessario.
+
+## Importacao De Notas Legadas - 2026-06-03
+
+- Destino confirmado: usuario interno `Retifica Premium` existente.
+- Diagnostico corrigido para mapear `servico.veiculo_id`, `servico_item` e PDFs em `servico.s3_link`.
+- Resultado do dry-run corrigido para empresa legado `id=5`:
+  - 891 notas encontradas no legado.
+  - 880 notas migraveis.
+  - 7 notas marcadas como excluidas no legado.
+  - 4 notas pendentes por OS duplicada no legado.
+  - 1.919 itens/linhas de servico migraveis.
+- Importacao real executada com `node scripts/oneoff/import-legacy-notes-company5.mjs --apply`.
+- Resultado gravado no Supabase:
+  - 880 notas inseridas na conta Retifica Premium.
+  - 1.919 itens vinculados em `Rel_NotaS_Serv`.
+  - 880 notas com referencia de PDF legado em `pdf_url`.
+  - 0 falhas, 0 clientes ausentes, 0 veiculos ausentes, 0 notas sem itens.
+- Dry-run pos-importacao retornou `planned_notes: 0` e `skipped_existing_os: 880`, confirmando protecao contra duplicidade.
+- Pendencia manual: revisar as 4 OS duplicadas no legado antes de importar qualquer uma delas.
