@@ -151,3 +151,40 @@ Plano aprovado para executar em fases:
   - `npm test -- --run`: passou, 42 arquivos e 320 testes.
   - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks.
   - `npm run test:integration`: passou, 16 arquivos e 53 testes.
+
+## Saneamento Final De O.S. Duplicadas - 2026-06-03
+
+- Pedido: excluir por completo as O.S. conflitantes antigas e proibir duplicidade de O.S. por todos os formatos.
+- Criado script `scripts/oneoff/cleanup-duplicate-service-orders.mjs` com modo dry-run/apply.
+- Politica usada no saneamento:
+  - agrupar por conta e numero de O.S. normalizado;
+  - manter sempre a O.S. mais nova por `created_at`;
+  - excluir as O.S. mais antigas do grupo;
+  - remover itens de `Rel_NotaS_Serv`, notas de compra vinculadas, desvincular faturas quando houver, excluir a O.S. e remover o PDF no bucket privado `notas`.
+- Dry-run confirmou:
+  - 16 grupos duplicados;
+  - 16 O.S. antigas para excluir;
+  - 16 PDFs para remover do Storage.
+- Execucao real com `node scripts/oneoff/cleanup-duplicate-service-orders.mjs --apply`:
+  - 16 O.S. antigas excluidas;
+  - 30 linhas de itens excluidas;
+  - 16 PDFs removidos do Storage;
+  - 0 faturas desvinculadas;
+  - 0 notas de compra vinculadas excluidas;
+  - 0 falhas de Storage.
+- Validacao pos-saneamento:
+  - consulta SQL de duplicidade numerica retornou `[]`;
+  - as 16 O.S. excluidas nao existem mais em `Notas_de_Servico`;
+  - os 16 PDFs excluidos nao sao mais baixaveis no Storage.
+- Migration local criada: `supabase/migrations/20260603162000_enforce_numeric_unique_service_order_numbers.sql`.
+- Migration aplicada no projeto Supabase `dqeoxxokvvcpssajycgq` com nome remoto `enforce_numeric_unique_service_order_numbers`.
+- Indice unico numerico criado: `idx_notas_servico_owner_os_numeric_unique`.
+- O banco agora bloqueia, por conta, formatos numericamente equivalentes como `3698`, `03698` e `OS-3698`, alem do indice exato ja existente.
+- Validacao especifica executada:
+  - `npm run test:integration -- src/test/integration/notas.test.ts --run`: passou, 3 testes.
+- Validacao final executada:
+  - `npx tsc --noEmit`: passou.
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh.
+  - `npm test -- --run`: passou, 42 arquivos e 320 testes.
+  - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks.
+  - `npm run test:integration`: passou, 16 arquivos e 53 testes.
