@@ -17,7 +17,7 @@ import {
   NOTA_PRINT_PAGE,
   NOTA_PRINT_PORTRAIT_PAGE,
 } from '@/components/notes/notaPrintLayout';
-import { openPdfPrintDialog } from '@/lib/printPdf';
+import { createPdfPreviewWindow, openPdfInBrowser } from '@/lib/printPdf';
 import { shareOrCopyText } from '@/lib/browserShare';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
 import { useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
@@ -49,6 +49,9 @@ const formatDate = (value?: string | null) => {
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString('pt-BR');
 };
+
+const isInformationalItem = (item: Pick<NotaServicoDetalhesItem, 'preco_unitario' | 'subtotal_item'>) =>
+  item.preco_unitario <= 0 && item.subtotal_item <= 0;
 
 const chunkItems = <T,>(items: T[], size: number) => {
   if (items.length === 0) return [[]];
@@ -143,7 +146,7 @@ function buildPdfDados(
       veiculo: {
         id: `vehicle-${note.id}`,
         modelo: note.vehicleModel,
-        placa: note.plate ?? '',
+        placa: note.plate ?? null,
         km: note.km ?? 0,
         motor: note.engineType,
       },
@@ -163,10 +166,10 @@ function buildPdfDados(
   };
 }
 
-function PreviewField({ label, value }: { label: string; value?: string | null }) {
+function PreviewField({ label, value, fallback = '—' }: { label: string; value?: string | null; fallback?: string }) {
   return (
     <span className="mr-2 inline">
-      <strong>{label}:</strong> {value?.trim() ? value : '—'}
+      <strong>{label}:</strong> {value?.trim() ? value : fallback}
     </span>
   );
 }
@@ -270,7 +273,7 @@ function PreviewVia({
         <div className="mb-[3px] flex flex-wrap gap-x-[7px] gap-y-[3px]">
           <PreviewField label="CEP" value={cabecalho.cliente.cep} />
           <PreviewField label="Cidade" value={cabecalho.cliente.cidade} />
-          <PreviewField label="Placa" value={cabecalho.veiculo.placa} />
+          <PreviewField label="Placa" value={cabecalho.veiculo.placa} fallback="Não informada" />
           <PreviewField label="Veículo" value={cabecalho.veiculo.modelo} />
         </div>
         <div className="flex flex-wrap gap-x-[7px] gap-y-[3px]">
@@ -298,10 +301,11 @@ function PreviewVia({
           <tbody>
             {itens.map((item) => {
               const detailLines = getNotaItemDetailLines(item);
+              const informational = isInformationalItem(item);
 
               return (
                 <tr key={item.id_rel}>
-                  <td className="h-[21px] border border-[#dddddd] px-1 py-[3px] text-center">{item.quantidade}</td>
+                  <td className="h-[21px] border border-[#dddddd] px-1 py-[3px] text-center">{informational ? '' : item.quantidade}</td>
                   <td className="h-[21px] border border-[#dddddd] px-1 py-[3px] align-top">
                     <div>{item.descricao}</div>
                     {detailLines.map((line, index) => (
@@ -313,8 +317,12 @@ function PreviewVia({
                       </div>
                     ))}
                   </td>
-                  <td className="h-[21px] whitespace-nowrap border border-[#dddddd] px-1.5 py-[3px] text-right text-[12px]">R$ {formatCurrency(item.preco_unitario)}</td>
-                  <td className="h-[21px] whitespace-nowrap border border-[#dddddd] px-1.5 py-[3px] text-right text-[12px]">R$ {formatCurrency(item.subtotal_item)}</td>
+                  <td className="h-[21px] whitespace-nowrap border border-[#dddddd] px-1.5 py-[3px] text-right text-[12px]">
+                    {informational ? '' : `R$ ${formatCurrency(item.preco_unitario)}`}
+                  </td>
+                  <td className="h-[21px] whitespace-nowrap border border-[#dddddd] px-1.5 py-[3px] text-right text-[12px]">
+                    {informational ? '' : `R$ ${formatCurrency(item.subtotal_item)}`}
+                  </td>
                 </tr>
               );
             })}
@@ -489,13 +497,25 @@ export default function OSPreviewModal({
 
   const handlePrint = async () => {
     setBusyAction('print');
+    const previewWindow = createPdfPreviewWindow(`O.S. ${note.number}`);
     try {
       const url = await buildBlobUrl();
-      openPdfPrintDialog(url, `O.S. ${note.number}`);
-      window.setTimeout(() => URL.revokeObjectURL(url), 5000);
+      const opened = openPdfInBrowser(url, {
+        title: `O.S. ${note.number}`,
+        previewWindow,
+        revokeObjectUrlAfterMs: 30_000,
+      });
+      if (!opened) {
+        toast({
+          title: 'Pop-up bloqueado',
+          description: 'Permita pop-ups para abrir o PDF em uma nova aba.',
+          variant: 'destructive',
+        });
+      }
     } catch (error) {
+      previewWindow?.close();
       toast({
-        title: 'Não foi possível abrir para impressão',
+        title: 'Não foi possível abrir o PDF',
         description: error instanceof Error ? error.message : 'Tente novamente.',
         variant: 'destructive',
       });
@@ -548,7 +568,7 @@ export default function OSPreviewModal({
             </div>
             <div className="flex min-w-0 flex-wrap items-center gap-2 md:justify-end">
               <Button variant="outline" size="sm" onClick={() => void handlePrint()} disabled={busyAction !== null}>
-                <Printer className="w-4 h-4 mr-1.5" /> Abrir para imprimir
+                <Printer className="w-4 h-4 mr-1.5" /> Abrir PDF
               </Button>
               <Button variant="outline" size="sm" onClick={() => void handleDownload()} disabled={busyAction !== null}>
                 <Download className="w-4 h-4 mr-1.5" /> Baixar PDF

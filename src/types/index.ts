@@ -107,7 +107,7 @@ export interface IntakeNote {
   previousStatus?: NoteStatus;
   engineType: string;
   vehicleModel: string;
-  plate?: string;
+  plate?: string | null;
   km?: number;
   complaint: string;
   observations: string;

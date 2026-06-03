@@ -572,7 +572,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         total: note.totalAmount,
         veiculo: note.type === 'SERVICO' ? {
           modelo: note.vehicleModel || 'Não Identificado',
-          placa: note.plate || '',
+          placa: note.plate || null,
           km: note.km ?? 0,
           motor: note.engineType || 'Não Identificado',
         } : undefined,
@@ -628,7 +628,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (data.vehicleModel !== undefined || data.plate !== undefined || data.km !== undefined || data.engineType !== undefined) {
         payload.veiculo = {
           modelo: data.vehicleModel,
-          placa:  data.plate,
+          placa:  data.plate ?? null,
           km:     data.km,
           motor:  data.engineType,
         };

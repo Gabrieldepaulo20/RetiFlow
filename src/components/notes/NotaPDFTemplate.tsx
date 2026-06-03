@@ -317,6 +317,9 @@ const styles = StyleSheet.create({
 const formatCurrency = (value: number) =>
   value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const isInformationalItem = (item: Pick<NotaServicoDetalhesItem, 'preco_unitario' | 'subtotal_item'>) =>
+  item.preco_unitario <= 0 && item.subtotal_item <= 0;
+
 const formatDate = (value?: string | null) => {
   if (!value) return '—';
   const date = new Date(value);
@@ -414,7 +417,7 @@ function Via({
         <View style={styles.line}>
           <FieldValue label="CEP" value={cabecalho.cliente.cep} />
           <FieldValue label="Cidade" value={cabecalho.cliente.cidade} />
-          <FieldValue label="Placa" value={cabecalho.veiculo.placa} />
+          <FieldValue label="Placa" value={cabecalho.veiculo.placa || 'Não informada'} />
           <FieldValue label="Veículo" value={cabecalho.veiculo.modelo} />
         </View>
 
@@ -435,10 +438,11 @@ function Via({
 
           {itens.map((item) => {
             const detailLines = getNotaItemDetailLines(item);
+            const informational = isInformationalItem(item);
 
             return (
               <View key={item.id_rel} style={styles.row}>
-                <Text style={[styles.td, styles.qtyCol]}>{item.quantidade}</Text>
+                <Text style={[styles.td, styles.qtyCol]}>{informational ? '' : item.quantidade}</Text>
                 <View style={[styles.td, styles.descCol, styles.descCell]}>
                   <Text style={styles.mainDescription}>{item.descricao}</Text>
                   {detailLines.map((line, index) => (
@@ -447,8 +451,8 @@ function Via({
                     </Text>
                   ))}
                 </View>
-                <Text style={[styles.td, styles.unitCol]}>R$ {formatCurrency(item.preco_unitario)}</Text>
-                <Text style={[styles.td, styles.totalCol]}>R$ {formatCurrency(item.subtotal_item)}</Text>
+                <Text style={[styles.td, styles.unitCol]}>{informational ? '' : `R$ ${formatCurrency(item.preco_unitario)}`}</Text>
+                <Text style={[styles.td, styles.totalCol]}>{informational ? '' : `R$ ${formatCurrency(item.subtotal_item)}`}</Text>
               </View>
             );
           })}

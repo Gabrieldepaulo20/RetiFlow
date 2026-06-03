@@ -40,6 +40,7 @@ import {
 } from '@/api/supabase/notas';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
 import { useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
+import { createPdfPreviewWindow, openPdfInBrowser } from '@/lib/printPdf';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
@@ -288,6 +289,7 @@ export default function IntakeNotes() {
   }, [currentPage, totalPages]);
 
   const handleDownloadNotePDF = async (note: IntakeNote) => {
+    const previewWindow = createPdfPreviewWindow(`O.S. ${note.number}`);
     setResolvingPdfNoteId(note.id);
     try {
       if (note.pdfUrl) {
@@ -296,11 +298,10 @@ export default function IntakeNotes() {
           throw new Error('Não foi possível preparar o link seguro do PDF salvo.');
         }
 
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `OS-${note.number}.pdf`;
-        link.target = '_blank';
-        link.click();
+        openPdfInBrowser(url, {
+          title: `O.S. ${note.number}`,
+          previewWindow,
+        });
         return;
       }
 
@@ -317,19 +318,20 @@ export default function IntakeNotes() {
       await updateNotaPdfUrl(note.id, path);
 
       const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `OS-${note.number}.pdf`;
-      link.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      openPdfInBrowser(url, {
+        title: `O.S. ${note.number}`,
+        previewWindow,
+        revokeObjectUrlAfterMs: 30_000,
+      });
 
       toast({
         title: 'PDF gerado',
-        description: 'A O.S. foi gerada, salva no Supabase e baixada.',
+        description: 'A O.S. foi gerada, salva no Supabase e aberta em nova aba.',
       });
     } catch (error) {
+      previewWindow?.close();
       toast({
-        title: 'Não foi possível baixar a nota',
+        title: 'Não foi possível abrir a nota',
         description: error instanceof Error ? error.message : 'Tente novamente.',
         variant: 'destructive',
       });

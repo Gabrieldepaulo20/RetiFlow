@@ -53,3 +53,62 @@ export function openPdfPrintDialog(url: string, title = 'Imprimir documento') {
   `);
   popup.document.close();
 }
+
+export function createPdfPreviewWindow(title = 'Abrindo PDF') {
+  const popup = window.open('', '_blank', 'noopener,noreferrer');
+  if (!popup) return null;
+
+  const safeTitle = escapeHtmlAttribute(title);
+  popup.document.write(`
+    <!doctype html>
+    <html lang="pt-BR">
+      <head>
+        <meta charset="utf-8" />
+        <title>${safeTitle}</title>
+        <style>
+          body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            color: #334155;
+            background: #f8fafc;
+          }
+        </style>
+      </head>
+      <body>Preparando PDF...</body>
+    </html>
+  `);
+  popup.document.close();
+  return popup;
+}
+
+export function openPdfInBrowser(
+  url: string,
+  options: {
+    title?: string;
+    previewWindow?: Window | null;
+    revokeObjectUrlAfterMs?: number;
+  } = {},
+) {
+  const popup = options.previewWindow ?? window.open('', '_blank', 'noopener,noreferrer');
+
+  if (!popup) {
+    const fallback = window.open(url, '_blank', 'noopener,noreferrer');
+    if (!fallback) return false;
+  } else {
+    try {
+      if (options.title) popup.document.title = options.title;
+    } catch {
+      // Navegadores podem bloquear acesso ao documento depois da navegação.
+    }
+    popup.location.href = url;
+  }
+
+  if (url.startsWith('blob:') && options.revokeObjectUrlAfterMs) {
+    window.setTimeout(() => URL.revokeObjectURL(url), options.revokeObjectUrlAfterMs);
+  }
+
+  return true;
+}

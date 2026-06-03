@@ -19,7 +19,7 @@ export interface NotaServico {
   pdf_url: string | null;
   finalizado_em: string | null;
   cliente: { id: string; nome: string };
-  veiculo: { id: string; modelo: string; placa: string; km: number; motor: string };
+  veiculo: { id: string; modelo: string; placa: string | null; km: number; motor: string };
   status: { id: number; nome: string; index: number; tipo_status: string };
 }
 
@@ -53,7 +53,7 @@ export interface NovaNotaPayload {
   total?: number;
   veiculo?: {
     modelo: string;
-    placa: string;
+    placa: string | null;
     km: number;
     motor: string;
   };
@@ -112,7 +112,7 @@ export interface NotaServicoDetalhes {
       telefone: string | null;
       email: string | null;
     };
-    veiculo: { id: string; modelo: string; placa: string; km: number; motor: string };
+    veiculo: { id: string; modelo: string; placa: string | null; km: number; motor: string };
     status: { id: number; nome: string; index: number; tipo_status: string };
   };
   itens_servico: NotaServicoDetalhesItem[];

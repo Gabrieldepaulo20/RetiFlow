@@ -142,7 +142,7 @@ export function ClosingPDFTemplate({ dados, geradoEm, accentColor = '#0f7f95' }:
                     <Text style={s.continuation}>Parte {chunkIndex + 1} de {chunksTotal}</Text>
                   )}
                 </View>
-                <Text style={{ ...s.osPlate, color: accentColor }}>{nota.placa || '—'}</Text>
+                <Text style={{ ...s.osPlate, color: accentColor }}>{nota.placa || 'Não informada'}</Text>
               </View>
 
               {/* Items table header */}
@@ -155,15 +155,18 @@ export function ClosingPDFTemplate({ dados, geradoEm, accentColor = '#0f7f95' }:
               </View>
 
               {/* Items */}
-              {itens.map((item, i) => (
-                <View key={i} style={[s.tableRow, i % 2 === 1 ? s.tableRowAlt : {}]}>
-                  <Text style={s.colDesc}>{item.descricao}</Text>
-                  <Text style={s.colNum}>{item.quantidade}</Text>
-                  <Text style={s.colVal}>R$ {brl(item.preco_unitario)}</Text>
-                  <Text style={s.colNum}>{item.desconto_porcentagem > 0 ? `${item.desconto_porcentagem}%` : '—'}</Text>
-                  <Text style={s.colVal}>R$ {brl(item.subtotal)}</Text>
-                </View>
-              ))}
+              {itens.map((item, i) => {
+                const informational = item.preco_unitario <= 0 && item.subtotal <= 0;
+                return (
+                  <View key={i} style={[s.tableRow, i % 2 === 1 ? s.tableRowAlt : {}]}>
+                    <Text style={s.colDesc}>{item.descricao}</Text>
+                    <Text style={s.colNum}>{informational ? '' : item.quantidade}</Text>
+                    <Text style={s.colVal}>{informational ? '' : `R$ ${brl(item.preco_unitario)}`}</Text>
+                    <Text style={s.colNum}>{informational ? '' : item.desconto_porcentagem > 0 ? `${item.desconto_porcentagem}%` : '—'}</Text>
+                    <Text style={s.colVal}>{informational ? '' : `R$ ${brl(item.subtotal)}`}</Text>
+                  </View>
+                );
+              })}
 
               {/* OS totals */}
               {isLastChunk ? (

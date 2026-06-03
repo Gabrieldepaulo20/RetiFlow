@@ -16,7 +16,7 @@ export interface FechamentoNota {
   id: string;
   os: string;
   veiculo: string;
-  placa: string;
+  placa: string | null;
   itens: FechamentoItem[];
   total_original: number;
   desconto_nota: number;
@@ -75,7 +75,7 @@ export interface NotaDetalhesResult {
     total: number;
     total_servicos: number;
     cliente: { id: string; nome: string; documento: string };
-    veiculo: { modelo: string; placa: string; km: number; motor: string };
+    veiculo: { modelo: string; placa: string | null; km: number; motor: string };
     status: { nome: string };
   };
   itens_servico: NotaDetalhesItem[];

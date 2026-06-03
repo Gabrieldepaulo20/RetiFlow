@@ -67,6 +67,7 @@ import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
 import { useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
+import { createPdfPreviewWindow, openPdfInBrowser } from '@/lib/printPdf';
 
 /** Main workflow statuses for timeline display */
 const MAIN_FLOW: NoteStatus[] = [
@@ -204,7 +205,7 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
       criado_por_usuario: null,
       pdf_url: null,
       cliente: { id: client.id, nome: client.name, documento: client.docNumber ?? '', endereco: null, cep: null, cidade: null, telefone: null, email: null },
-      veiculo: { id: '', modelo: note.vehicleModel, placa: note.plate ?? '', km: note.km ?? 0, motor: note.engineType ?? '' },
+      veiculo: { id: '', modelo: note.vehicleModel, placa: note.plate ?? null, km: note.km ?? 0, motor: note.engineType ?? '' },
       status: { id: 0, nome: note.status, index: 0, tipo_status: 'ativo' },
     },
     itens_servico: localSvcs.map((s, i) => ({
@@ -923,6 +924,7 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                 variant="outline"
                 className="h-8 gap-1.5 text-xs"
                 onClick={async () => {
+                  const previewWindow = createPdfPreviewWindow(`O.S. ${pdfDados.cabecalho.os_numero}`);
                   try {
                     const storedUrl = pdfDados.cabecalho.pdf_url;
                     if (storedUrl) {
@@ -930,26 +932,26 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                       if (!resolvedUrl) {
                         throw new Error('Não foi possível preparar o link seguro do PDF.');
                       }
-                      const a = document.createElement('a');
-                      a.href = resolvedUrl;
-                      a.download = `OS-${pdfDados.cabecalho.os_numero}.pdf`;
-                      a.target = '_blank';
-                      a.click();
+                      openPdfInBrowser(resolvedUrl, {
+                        title: `O.S. ${pdfDados.cabecalho.os_numero}`,
+                        previewWindow,
+                      });
                     } else {
                       const blob = await generateNotaPdfBlob(pdfDados, templateSettings ? {
                         accentColor: templateSettings.corDocumento,
                         templateMode: templateSettings.osModelo,
                       } : undefined);
                       const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `OS-${pdfDados.cabecalho.os_numero}.pdf`;
-                      a.click();
-                      URL.revokeObjectURL(url);
+                      openPdfInBrowser(url, {
+                        title: `O.S. ${pdfDados.cabecalho.os_numero}`,
+                        previewWindow,
+                        revokeObjectUrlAfterMs: 30_000,
+                      });
                     }
                   } catch (error) {
+                    previewWindow?.close();
                     toast({
-                      title: 'Não foi possível baixar o PDF',
+                      title: 'Não foi possível abrir o PDF',
                       description: error instanceof Error ? error.message : 'Tente novamente.',
                       variant: 'destructive',
                     });
@@ -957,7 +959,7 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                 }}
               >
                 <Printer className="w-3.5 h-3.5" />
-                Baixar PDF
+                Abrir PDF
               </Button>
               <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setShowPDF(false)}>
                 <X className="w-4 h-4" />

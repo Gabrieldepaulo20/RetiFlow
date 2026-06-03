@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils';
 import { buildWhatsAppUrl, openExternalUrl } from '@/lib/browserShare';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
 import { useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
+import { createPdfPreviewWindow, openPdfInBrowser } from '@/lib/printPdf';
 
 const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
 
@@ -144,6 +145,7 @@ export default function IntakeNoteDetail() {
             onClick={async () => {
               const source = IS_REAL_AUTH ? realDetalhes : null;
               if (IS_REAL_AUTH && !source) { toast({ title: 'Dados ainda carregando' }); return; }
+              const previewWindow = createPdfPreviewWindow(`O.S. ${source?.cabecalho.os_numero ?? note.number}`);
               setIsDownloadingPDF(true);
               try {
                 if (source?.cabecalho.pdf_url) {
@@ -151,23 +153,23 @@ export default function IntakeNoteDetail() {
                   if (!resolvedUrl) {
                     throw new Error('Não foi possível preparar o link seguro do PDF.');
                   }
-                  const a = document.createElement('a');
-                  a.href = resolvedUrl;
-                  a.download = `OS-${source.cabecalho.os_numero}.pdf`;
-                  a.target = '_blank';
-                  a.click();
+                  openPdfInBrowser(resolvedUrl, {
+                    title: `O.S. ${source.cabecalho.os_numero}`,
+                    previewWindow,
+                  });
                 } else if (source) {
                   const blob = await generateNotaPdfBlob(source, templateSettings ? {
                     accentColor: templateSettings.corDocumento,
                     templateMode: templateSettings.osModelo,
                   } : undefined);
                   const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `OS-${note.number}.pdf`;
-                  a.click();
-                  URL.revokeObjectURL(url);
+                  openPdfInBrowser(url, {
+                    title: `O.S. ${note.number}`,
+                    previewWindow,
+                    revokeObjectUrlAfterMs: 30_000,
+                  });
                 } else {
+                  previewWindow?.close();
                   toast({
                     title: 'PDF ainda não disponível',
                     description: 'Atualize ou gere novamente a O.S. para preparar o documento de impressão.',
@@ -175,6 +177,7 @@ export default function IntakeNoteDetail() {
                   });
                 }
               } catch (error) {
+                previewWindow?.close();
                 toast({
                   title: 'Não foi possível abrir o PDF',
                   description: error instanceof Error ? error.message : 'Tente novamente.',

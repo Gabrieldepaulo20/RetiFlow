@@ -81,7 +81,7 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95' }: Props) {
                     )}
                   </div>
                   <p className="shrink-0 rounded-full bg-white px-3 py-1 text-xs font-semibold ring-1" style={{ color: accentColor, borderColor: `${accentColor}25` }}>
-                    {nota.placa || 'Sem placa'}
+                    {nota.placa || 'Não informada'}
                   </p>
                 </div>
 
@@ -93,21 +93,24 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95' }: Props) {
                     <span className="text-right">Desc.</span>
                     <span className="text-right">Total</span>
                   </div>
-                  {itens.map((item, index) => (
-                    <div
-                      key={`${item.descricao}-${index}`}
-                      className={cn(
-                        'grid grid-cols-[minmax(0,1fr)_56px_88px_72px_92px] items-start gap-0 border-t border-slate-100 px-4 py-2 text-sm',
-                        index % 2 === 1 && 'bg-slate-50/60',
-                      )}
-                    >
-                      <span className="min-w-0 pr-3 leading-snug">{item.descricao}</span>
-                      <span className="text-center tabular-nums">{item.quantidade}</span>
-                      <span className="text-right tabular-nums">R$ {brl(item.preco_unitario)}</span>
-                      <span className="text-right tabular-nums">{item.desconto_porcentagem > 0 ? `${item.desconto_porcentagem}%` : '-'}</span>
-                      <span className="text-right font-semibold tabular-nums">R$ {brl(item.subtotal)}</span>
-                    </div>
-                  ))}
+                  {itens.map((item, index) => {
+                    const informational = item.preco_unitario <= 0 && item.subtotal <= 0;
+                    return (
+                      <div
+                        key={`${item.descricao}-${index}`}
+                        className={cn(
+                          'grid grid-cols-[minmax(0,1fr)_56px_88px_72px_92px] items-start gap-0 border-t border-slate-100 px-4 py-2 text-sm',
+                          index % 2 === 1 && 'bg-slate-50/60',
+                        )}
+                      >
+                        <span className="min-w-0 pr-3 leading-snug">{item.descricao}</span>
+                        <span className="text-center tabular-nums">{informational ? '' : item.quantidade}</span>
+                        <span className="text-right tabular-nums">{informational ? '' : `R$ ${brl(item.preco_unitario)}`}</span>
+                        <span className="text-right tabular-nums">{informational ? '' : item.desconto_porcentagem > 0 ? `${item.desconto_porcentagem}%` : '-'}</span>
+                        <span className="text-right font-semibold tabular-nums">{informational ? '' : `R$ ${brl(item.subtotal)}`}</span>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {isLastChunk ? (

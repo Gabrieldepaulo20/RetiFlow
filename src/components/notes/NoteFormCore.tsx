@@ -532,17 +532,24 @@ export default function NoteFormCore({
       return;
     }
 
-    for (const item of normalizedItems.filter((i) => i.description)) {
-      const qty = parsePositiveNumber(item.quantity || '1', { allowZero: false, fieldLabel: 'quantidade' });
-      if (qty.error) {
-        toast({ title: 'Quantidade inválida', description: 'A quantidade deve ser maior que zero.', variant: 'destructive' });
-        return;
+    const describedItems = normalizedItems.filter((i) => i.description);
+    for (const item of describedItems) {
+      const unitPriceValue = normalizeMoneyInput(item.unitPrice).value ?? 0;
+
+      if (item.unitPrice.trim()) {
+        const unitPrice = parsePositiveNumber(item.unitPrice, { allowZero: true, fieldLabel: 'valor unitário' });
+        if (unitPrice.error) {
+          toast({ title: 'Valor unitário inválido', description: 'Informe um valor unitário válido.', variant: 'destructive' });
+          return;
+        }
       }
 
-      const unitPrice = parsePositiveNumber(item.unitPrice, { allowZero: false, fieldLabel: 'valor unitário' });
-      if (unitPrice.error) {
-        toast({ title: 'Valor unitário inválido', description: 'Informe um valor unitário válido.', variant: 'destructive' });
-        return;
+      if (unitPriceValue > 0 || item.quantity.trim()) {
+        const qty = parsePositiveNumber(item.quantity || '1', { allowZero: false, fieldLabel: 'quantidade' });
+        if (qty.error) {
+          toast({ title: 'Quantidade inválida', description: 'A quantidade deve ser maior que zero.', variant: 'destructive' });
+          return;
+        }
       }
 
       const discount = parsePositiveNumber(item.discount || '0', { allowZero: true, fieldLabel: 'desconto' });
@@ -552,8 +559,7 @@ export default function NoteFormCore({
       }
     }
 
-    const validItems = normalizedItems.filter((i) => i.description && (normalizeMoneyInput(i.unitPrice).value || 0) > 0);
-    const totalAmount = validItems.reduce((acc, item) => {
+    const totalAmount = describedItems.reduce((acc, item) => {
       const price = normalizeMoneyInput(item.unitPrice).value || 0;
       const disc = normalizeMoneyInput(item.discount).value || 0;
       const qty = normalizeMoneyInput(item.quantity).value || 1;
@@ -561,7 +567,7 @@ export default function NoteFormCore({
       return acc + sub - (sub * disc) / 100;
     }, 0);
 
-    const generatedComplaint = validItems
+    const generatedComplaint = describedItems
       .map((item) => item.description.trim())
       .filter(Boolean)
       .join('; ');
@@ -573,7 +579,7 @@ export default function NoteFormCore({
       parentNoteId: parentNoteId || undefined,
       engineType: toTitleCasePtBr(engineType) || 'Cabeçote',
       vehicleModel: toTitleCasePtBr(vehicleModel) || '-',
-      plate: normalizedPlate || undefined,
+      plate: normalizedPlate || null,
       km: km ? parseInt(onlyDigits(km), 10) : undefined,
       complaint: generatedComplaint || complaint.trim() || 'Serviços conforme descrição dos itens',
       observations: normalizeWhitespace(observations),
@@ -584,7 +590,7 @@ export default function NoteFormCore({
       totalAmount,
     };
 
-    const itemPayload = validItems.map((item) => {
+    const itemPayload = describedItems.map((item) => {
       const price = normalizeMoneyInput(item.unitPrice).value || 0;
       const disc = normalizeMoneyInput(item.discount).value || 0;
       const qty = normalizeMoneyInput(item.quantity).value || 1;

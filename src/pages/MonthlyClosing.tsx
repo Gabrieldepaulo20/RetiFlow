@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { ClosingHtmlPreview } from '@/components/closing/ClosingHtmlPreview';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { openPdfPrintDialog } from '@/lib/printPdf';
+import { createPdfPreviewWindow, openPdfInBrowser } from '@/lib/printPdf';
 import {
   getFechamentos,
   insertFechamento,
@@ -50,7 +50,7 @@ interface PreviewNote {
   id: string;
   os: string;
   veiculo: string;
-  placa: string;
+  placa: string | null;
   total: number;
   updatedAt: string;
   itens: Array<{
@@ -334,6 +334,11 @@ export default function MonthlyClosing() {
     setDraftModalOpen(true);
   }, [loadDraftIntoEditor]);
 
+  const activeDraft = useMemo(
+    () => drafts.find((draft) => draft.id === activeDraftId) ?? null,
+    [drafts, activeDraftId],
+  );
+
   const closeTemplatePreview = useCallback(() => {
     setTemplatePreviewOpen(false);
     setTemplatePreviewLoading(false);
@@ -352,42 +357,109 @@ export default function MonthlyClosing() {
     setGeneratedPreviewFechamento(null);
   }, []);
 
+  const renderClosingPdfBlob = useCallback(async (dados: FechamentoDadosJson, geradoEm: string) => {
+    const [{ pdf }, { ClosingPDFTemplate }] = await Promise.all([
+      import('@react-pdf/renderer'),
+      import('@/components/closing/ClosingPDFTemplate'),
+    ]);
+
+    return pdf(
+      <ClosingPDFTemplate
+        dados={dados}
+        geradoEm={geradoEm}
+        accentColor={templateSettings?.corFechamento}
+      />,
+    ).toBlob();
+  }, [templateSettings?.corFechamento]);
+
+  const openClosingPdfPreview = useCallback(async (dados: FechamentoDadosJson, title: string) => {
+    const previewWindow = createPdfPreviewWindow(title);
+    setTemplatePreviewLoading(true);
+    try {
+      const blob = await renderClosingPdfBlob(dados, dados.gerado_em);
+      const url = URL.createObjectURL(blob);
+      const opened = openPdfInBrowser(url, {
+        title,
+        previewWindow,
+        revokeObjectUrlAfterMs: 30_000,
+      });
+      if (!opened) {
+        toast({
+          title: 'Pop-up bloqueado',
+          description: 'Permita pop-ups para abrir o PDF em uma nova aba.',
+          variant: 'destructive',
+        });
+      }
+    } catch {
+      previewWindow?.close();
+      toast({ title: 'Erro ao abrir visualização', description: 'Não foi possível gerar o PDF do fechamento.', variant: 'destructive' });
+    } finally {
+      setTemplatePreviewLoading(false);
+    }
+  }, [renderClosingPdfBlob, toast]);
+
+  const openStoredClosingPdf = useCallback(async (fechamento: FechamentoListItem) => {
+    if (!fechamento.pdf_url) return false;
+    const previewWindow = createPdfPreviewWindow(`Fechamento ${fechamento.periodo}`);
+    try {
+      const url = await getFechamentoPDFSignedUrl(fechamento.pdf_url);
+      const opened = openPdfInBrowser(url, {
+        title: `Fechamento ${fechamento.periodo}`,
+        previewWindow,
+      });
+      if (!opened) {
+        toast({
+          title: 'Pop-up bloqueado',
+          description: 'Permita pop-ups para abrir o PDF em uma nova aba.',
+          variant: 'destructive',
+        });
+      }
+      return opened;
+    } catch {
+      previewWindow?.close();
+      toast({ title: 'Erro ao abrir PDF', description: 'Não foi possível gerar link seguro.', variant: 'destructive' });
+      return false;
+    }
+  }, [toast]);
+
   const openDraftPreview = useCallback((draft: ClosingDraft) => {
     loadDraftIntoEditor(draft);
     setGeneratedPreviewFechamento(null);
     setReturnToDraftAfterPreview(false);
     setDraftModalOpen(false);
-    setTemplatePreviewOpen(true);
-  }, [loadDraftIntoEditor]);
+    void openClosingPdfPreview(buildDadosFromDraft(draft), `Fechamento ${draft.periodLabel}`);
+  }, [loadDraftIntoEditor, openClosingPdfPreview]);
 
   const openActiveDraftPreview = useCallback(() => {
+    if (!activeDraft) return;
     setGeneratedPreviewFechamento(null);
     setReturnToDraftAfterPreview(true);
     setDraftModalOpen(false);
-    setTemplatePreviewOpen(true);
-  }, []);
+    const dados = buildDadosFromDraft({
+      ...activeDraft,
+      notes: previewNotes,
+      discounts: descontos,
+      updatedAt: new Date().toISOString(),
+    });
+    void openClosingPdfPreview(dados, `Fechamento ${activeDraft.periodLabel}`);
+  }, [activeDraft, descontos, openClosingPdfPreview, previewNotes]);
 
   const openGeneratedPreview = useCallback(async (fechamento: FechamentoListItem) => {
     if (fechamento.dados_json) {
       setGeneratedPreviewFechamento(fechamento);
       setReturnToDraftAfterPreview(false);
       setDraftModalOpen(false);
-      setTemplatePreviewOpen(true);
+      await openClosingPdfPreview(fechamento.dados_json, `Fechamento ${fechamento.periodo}`);
       return;
     }
 
     if (fechamento.pdf_url) {
-      try {
-        const url = await getFechamentoPDFSignedUrl(fechamento.pdf_url);
-        window.open(url, '_blank', 'noopener,noreferrer');
-      } catch {
-        toast({ title: 'Erro ao abrir visualização', description: 'Não foi possível gerar link seguro do PDF.', variant: 'destructive' });
-      }
+      await openStoredClosingPdf(fechamento);
       return;
     }
 
     toast({ title: 'Visualização indisponível', description: 'Este fechamento não possui template salvo nem PDF armazenado.', variant: 'destructive' });
-  }, [toast]);
+  }, [openClosingPdfPreview, openStoredClosingPdf, toast]);
 
   const removeDraft = useCallback((draftId: string) => {
     setDrafts((current) => current.filter((draft) => draft.id !== draftId));
@@ -449,7 +521,7 @@ export default function MonthlyClosing() {
           id: nota.id,
           os: nota.number,
           veiculo: nota.vehicleModel,
-          placa: nota.plate ?? '',
+          placa: nota.plate ?? null,
           total: nota.totalAmount,
           updatedAt: nota.updatedAt,
           itens: det?.itens_servico.map((i) => ({
@@ -509,10 +581,6 @@ export default function MonthlyClosing() {
 
   const grandTotal = useMemo(() => totals.reduce((a, b) => a + b.totalComDesconto, 0), [totals]);
   const grandTotalOriginal = useMemo(() => totals.reduce((a, n) => a + n.totalBruto, 0), [totals]);
-  const activeDraft = useMemo(
-    () => drafts.find((draft) => draft.id === activeDraftId) ?? null,
-    [drafts, activeDraftId],
-  );
   const modalPreviewDados = useMemo(
     () => generatedPreviewFechamento?.dados_json ?? (activeDraft ? buildDadosFromDraft({
       ...activeDraft,
@@ -574,21 +642,6 @@ export default function MonthlyClosing() {
       return { ...note, itens, total: recalcNoteTotal(itens) };
     }));
   }, []);
-
-  const renderClosingPdfBlob = useCallback(async (dados: FechamentoDadosJson, geradoEm: string) => {
-    const [{ pdf }, { ClosingPDFTemplate }] = await Promise.all([
-      import('@react-pdf/renderer'),
-      import('@/components/closing/ClosingPDFTemplate'),
-    ]);
-
-    return pdf(
-      <ClosingPDFTemplate
-        dados={dados}
-        geradoEm={geradoEm}
-        accentColor={templateSettings?.corFechamento}
-      />,
-    ).toBlob();
-  }, [templateSettings?.corFechamento]);
 
   /* ── Gerar fechamento ── */
   const generateDraft = useCallback(async (draft: ClosingDraft) => {
@@ -664,29 +717,26 @@ export default function MonthlyClosing() {
   /* ── Download PDF ── */
   const handleDownload = useCallback(async (fechamento: FechamentoListItem) => {
     if (fechamento.pdf_url) {
-      try {
-        const url = await getFechamentoPDFSignedUrl(fechamento.pdf_url);
-        window.open(url, '_blank', 'noopener,noreferrer');
-        await registrarAcaoFechamento({ p_id_fechamentos: fechamento.id_fechamentos, p_tipo: 'baixado' }).catch(() => {});
-      } catch {
-        toast({ title: 'Erro ao abrir PDF', description: 'Não foi possível gerar link seguro.', variant: 'destructive' });
-      }
+      const opened = await openStoredClosingPdf(fechamento);
+      if (opened) await registrarAcaoFechamento({ p_id_fechamentos: fechamento.id_fechamentos, p_tipo: 'baixado' }).catch(() => {});
       return;
     }
     if (!fechamento.dados_json) { toast({ title: 'PDF não disponível', variant: 'destructive' }); return; }
+    const previewWindow = createPdfPreviewWindow(`Fechamento ${fechamento.periodo}`);
     try {
       const blob = await renderClosingPdfBlob(fechamento.dados_json, fechamento.created_at);
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `fechamento-${fechamento.periodo?.replace(/\s/g, '-').toLowerCase()}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
+      openPdfInBrowser(url, {
+        title: `Fechamento ${fechamento.periodo}`,
+        previewWindow,
+        revokeObjectUrlAfterMs: 30_000,
+      });
       await registrarAcaoFechamento({ p_id_fechamentos: fechamento.id_fechamentos, p_tipo: 'baixado' });
     } catch {
+      previewWindow?.close();
       toast({ title: 'Erro ao gerar PDF', variant: 'destructive' });
     }
-  }, [toast, renderClosingPdfBlob]);
+  }, [openStoredClosingPdf, renderClosingPdfBlob, toast]);
 
   const handlePrintPreview = useCallback(async () => {
     if (!modalPreviewDados) {
@@ -694,18 +744,8 @@ export default function MonthlyClosing() {
       return;
     }
 
-    try {
-      setTemplatePreviewLoading(true);
-      const blob = await renderClosingPdfBlob(modalPreviewDados, modalPreviewDados.gerado_em);
-      const url = URL.createObjectURL(blob);
-      openPdfPrintDialog(url, `Fechamento ${modalPreviewDados.periodo}`);
-      window.setTimeout(() => URL.revokeObjectURL(url), 5000);
-    } catch {
-      toast({ title: 'Erro ao abrir impressão', variant: 'destructive' });
-    } finally {
-      setTemplatePreviewLoading(false);
-    }
-  }, [modalPreviewDados, renderClosingPdfBlob, toast]);
+    await openClosingPdfPreview(modalPreviewDados, `Fechamento ${modalPreviewDados.periodo}`);
+  }, [modalPreviewDados, openClosingPdfPreview, toast]);
 
   const years = useMemo(() => {
     const y = Number(defaultYear);
