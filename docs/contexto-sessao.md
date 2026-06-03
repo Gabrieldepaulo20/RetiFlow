@@ -243,3 +243,21 @@ Plano aprovado para executar em fases:
   - `npm test -- --run`: passou, 42 arquivos e 320 testes.
   - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks.
   - `npm run test:integration`: passou, 16 arquivos e 53 testes.
+
+## Limpeza De Usuarios De Integracao/Teste - 2026-06-03
+
+- Pedido: remover usuarios de integration/teste que estavam poluindo o sistema.
+- Diagnostico read-only identificou:
+  - 1 usuario fixo de teste `integration.test@retifica.com` com `auth_id`;
+  - 6 usuarios temporarios `tenant-isolation-...@retifica.test` sem `auth_id`;
+  - nenhum usuario operacional real nesses padroes.
+- Execucao real:
+  - 7 registros removidos de `RetificaPremium.Usuarios`;
+  - 7 registros removidos de `RetificaPremium.Modulos`;
+  - 0 logs vinculados encontrados/removidos;
+  - 1 usuario removido do Supabase Auth: `integration.test@retifica.com`.
+- Validacao pos-limpeza:
+  - 0 usuarios suspeitos restantes em `RetificaPremium.Usuarios`;
+  - 0 usuarios suspeitos restantes em Supabase Auth.
+- Observacao:
+  - `npm run test:integration` nao foi rodado depois desta limpeza porque os testes recriam o usuario `integration.test@retifica.com` quando executados com `.env.integration` configurado.
