@@ -44,3 +44,36 @@ Plano aprovado para executar em fases:
 - Rodar o script de diagnostico legado quando as credenciais locais estiverem disponiveis:
   - `node scripts/oneoff/analyze-legacy-notes-company5.mjs`
 - Revisar o relatorio gerado em `tmp/legacy-notes-company5-report.json` antes de qualquer importacao real.
+
+## Entrega - 2026-06-03
+
+### Fase 1: Diagnostico read-only de notas antigas
+
+- Entregue e enviado ao Git no commit `3a33c17`.
+- Criado script dry-run `scripts/oneoff/analyze-legacy-notes-company5.mjs`.
+- Criado documento `docs/notas-legacy-migration-plan.md`.
+- Nenhum dado legado foi importado ou gravado no Supabase.
+
+### Fases 2, 3 e 4: Placa opcional, linhas descritivas e PDF nativo
+
+- Placa ausente agora trafega como `NULL` no front, contratos TypeScript e RPCs.
+- Migration local criada: `supabase/migrations/20260603100000_note_optional_plate_and_informational_items.sql`.
+- Migration aplicada no projeto Supabase `dqeoxxokvvcpssajycgq`.
+- Confirmado no schema remoto que `RetificaPremium.Veiculos.placa` esta nullable e segue unique quando preenchida.
+- Formulario de O.S. preserva itens com descricao mesmo quando valor/quantidade financeira estao vazios ou zerados.
+- PDFs e previews de nota/fechamento mostram linhas descritivas sem quantidade, valor e total, mantendo a descricao.
+- PDF salvo abre por signed URL; PDF ainda nao salvo abre por blob temporario em nova aba usando helper unico em `src/lib/printPdf.ts`.
+
+### Validacao Executada
+
+- `npx tsc --noEmit`: passou.
+- `npm run lint`: passou com 8 warnings antigos de Fast Refresh em componentes compartilhados.
+- `npm test -- --run`: passou, 42 arquivos e 320 testes.
+- `npm run build`: passou, mantendo avisos conhecidos de bundle/chunk.
+- `npm run test:integration`: passou, 16 arquivos e 51 testes.
+- Novo teste real `src/test/integration/notas.test.ts` cria e atualiza uma O.S. sem placa, com linha apenas descritiva, valida retorno por RPC e limpa os registros criados.
+
+### Observacoes
+
+- O teste manual de criacao/edicao foi coberto por integracao real com cleanup por prefixo de teste, porque o fluxo depende de sessao Supabase e RPCs remotos.
+- A automacao visual local nao foi usada para abrir novas abas de PDF nesta rodada; a fidelidade do PDF foi preservada no codigo pelos templates existentes e pela abertura via signed URL/blob.
