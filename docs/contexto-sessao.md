@@ -106,3 +106,25 @@ Plano aprovado para executar em fases:
   - 0 falhas, 0 clientes ausentes, 0 veiculos ausentes, 0 notas sem itens.
 - Dry-run pos-importacao retornou `planned_notes: 0` e `skipped_existing_os: 880`, confirmando protecao contra duplicidade.
 - Pendencia manual: revisar as 4 OS duplicadas no legado antes de importar qualquer uma delas.
+
+## Migracao Dos PDFs Legados Para Storage - 2026-06-03
+
+- Criado script `scripts/oneoff/migrate-legacy-note-pdfs-to-storage.mjs`.
+- Dry-run completo confirmou que os 880 links legados em S3 baixavam corretamente e continham PDFs validos.
+- Execucao real com `node scripts/oneoff/migrate-legacy-note-pdfs-to-storage.mjs --apply`:
+  - 880 PDFs baixados do S3 legado.
+  - 880 PDFs enviados para o bucket privado `notas`.
+  - Paths organizados em `auth_id/legacy/company-5/ano/mes/OS-<numero>-<nota>.pdf`.
+  - `Notas_de_Servico.pdf_url` atualizado para o path interno do Storage.
+  - `Notas_de_Servico.pdf_formato` atualizado para `supabase_storage_legacy_s3`.
+- Ajuste SQL aplicado no projeto Supabase para garantir `storage.objects.owner` e `owner_id` iguais ao `auth_id` da conta Retifica Premium.
+- Validacao SQL final:
+  - 880 notas migradas.
+  - 880 objetos encontrados no Storage.
+  - 0 objetos faltando.
+  - 0 objetos com owner errado.
+  - 0 referencias externas `http` restantes.
+- Validacao por signed URL/download:
+  - 880 PDFs verificados com sucesso.
+  - 0 falhas.
+  - Total migrado: 72.570.891 bytes.

@@ -67,3 +67,20 @@ Somente depois da revisao do relatorio:
   - conta Retifica Premium com 880 notas;
   - 1.919 linhas em `Rel_NotaS_Serv` para essas notas;
   - 880 notas com PDF legado referenciado.
+
+## Migracao Dos PDFs Para Storage - 2026-06-03
+
+- Script criado: `scripts/oneoff/migrate-legacy-note-pdfs-to-storage.mjs`.
+- Modo padrao: dry-run, baixa e valida os PDFs legados sem gravar.
+- Modo de escrita: `--apply`.
+- Modo de validacao posterior: `--verify-existing`.
+- Estrutura dos arquivos no bucket privado `notas`:
+  - `auth_id/legacy/company-5/ano/mes/OS-<numero>-<nota>.pdf`
+- Resultado da execucao:
+  - 880 PDFs baixados do S3 legado;
+  - 880 PDFs enviados ao Storage do Supabase;
+  - 880 notas atualizadas para apontar para paths internos;
+  - 0 referencias externas restantes para esses PDFs;
+  - 0 objetos faltando;
+  - 0 objetos com owner incorreto;
+  - 880 PDFs validados por signed URL/download.
