@@ -125,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const realUser = session?.user ?? null;
     if (!supportSession) return;
+    if (IS_REAL_AUTH && isAuthLoading && !realUser) return;
     const expired = new Date(supportSession.expiresAt).getTime() <= Date.now();
     const actorMismatch = supportSession.actorUser.id !== realUser?.id;
     const requesterCannotImpersonate = !isSuperAdmin(realUser);
@@ -133,7 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSupportSession(null);
       writeStoredSupportSession(null);
     }
-  }, [session, supportSession]);
+  }, [isAuthLoading, session, supportSession]);
 
   const applyProfileResult = useCallback((
     result: { session: AuthSession | null; isTransientError: boolean },

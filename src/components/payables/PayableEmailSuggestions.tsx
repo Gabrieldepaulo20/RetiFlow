@@ -506,7 +506,7 @@ function PaidSuggestionDialog({
 
 type PayableEmailSuggestionsProps = {
   onCreated?: (payableId: string) => void;
-  /** Modo suporte: esconde Gmail/scan; sugestões continuam acionáveis via RPCs auditadas por contexto. */
+  /** Modo suporte: status, OAuth, scan e ações usam contexto auditado da empresa acessada. */
   supportMode?: boolean;
 };
 
@@ -556,12 +556,6 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
   }
 
   useEffect(() => {
-    // Em modo suporte não consultamos o Gmail: a conexão é da empresa (auth uid dela),
-    // não do suporte — chamar aqui mostraria o Gmail do suporte. Painel fica oculto.
-    if (supportMode) {
-      setGmailLoading(false);
-      return;
-    }
     let cancelled = false;
     setGmailLoading(true);
     getGmailConnectionStatus()
@@ -728,12 +722,6 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
 
   return (
     <div className="space-y-6">
-      {supportMode ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-900">
-          Modo suporte — sugestões da empresa acessada. Aceitar e ignorar são auditados; conectar Gmail e buscar novos e-mails continuam exclusivos da própria empresa.
-        </div>
-      ) : null}
-      {!supportMode ? (
       <>
       <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
@@ -820,7 +808,6 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
         </div>
       ) : null}
       </>
-      ) : null}
 
       {(paidPending.length > 0 || payablePending.length > 0 || accepted.length > 0 || dismissed.length > 0) ? (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">

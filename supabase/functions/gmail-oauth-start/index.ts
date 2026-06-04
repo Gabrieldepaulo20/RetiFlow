@@ -41,6 +41,103 @@ function jsonResponse(body: unknown, status: number, request: Request) {
   });
 }
 
+type SupportContextBody = {
+  supportContext?: {
+    sessionId?: unknown;
+    targetUserId?: unknown;
+  };
+  returnTo?: unknown;
+};
+
+function isUuid(value: unknown): value is string {
+  return typeof value === 'string'
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+async function resolveTargetAuthUserId(params: {
+  service: ReturnType<typeof createClient>;
+  actorAuthUserId: string;
+  supportContext?: SupportContextBody['supportContext'];
+}) {
+  if (!params.supportContext?.sessionId && !params.supportContext?.targetUserId) {
+    return {
+      authUserId: params.actorAuthUserId,
+      targetUsuarioId: null as string | null,
+      supportSessionId: null as string | null,
+    };
+  }
+
+  if (!isUuid(params.supportContext.sessionId) || !isUuid(params.supportContext.targetUserId)) {
+    throw new Error('Contexto de suporte inválido.');
+  }
+
+  const { data: actor, error: actorError } = await params.service
+    .schema('RetificaPremium')
+    .from('Usuarios')
+    .select('id_usuarios,email,acesso,Modulos(admin)')
+    .eq('auth_id', params.actorAuthUserId)
+    .maybeSingle();
+
+  const admin = Array.isArray(actor?.Modulos)
+    ? Boolean(actor.Modulos[0]?.admin)
+    : Boolean((actor?.Modulos as { admin?: boolean } | null)?.admin);
+
+  if (
+    actorError
+    || !actor
+    || String(actor.email ?? '').toLowerCase() !== 'gabrielwilliam208@gmail.com'
+    || String(actor.acesso ?? '') !== 'administrador'
+    || !admin
+  ) {
+    throw new Error('Somente o Mega Master pode conectar Gmail em modo suporte.');
+  }
+
+  const { data: session, error: sessionError } = await params.service
+    .schema('RetificaPremium')
+    .from('Sessoes_Suporte')
+    .select('id_sessao_suporte')
+    .eq('id_sessao_suporte', params.supportContext.sessionId)
+    .eq('fk_actor_usuarios', actor.id_usuarios)
+    .eq('fk_target_usuarios', params.supportContext.targetUserId)
+    .is('ended_at', null)
+    .gt('expires_at', new Date().toISOString())
+    .maybeSingle();
+
+  if (sessionError || !session) {
+    throw new Error('Sessão de suporte inválida ou expirada.');
+  }
+
+  const { data: target, error: targetError } = await params.service
+    .schema('RetificaPremium')
+    .from('Usuarios')
+    .select('id_usuarios,auth_id')
+    .eq('id_usuarios', params.supportContext.targetUserId)
+    .maybeSingle();
+
+  if (targetError || !target?.auth_id) {
+    throw new Error('Cliente alvo sem conta de autenticação para conectar Gmail.');
+  }
+
+  await params.service
+    .schema('RetificaPremium')
+    .from('Logs_Acoes_Suporte')
+    .insert({
+      fk_actor_usuarios: actor.id_usuarios,
+      fk_target_usuarios: target.id_usuarios,
+      fk_sessao_suporte: params.supportContext.sessionId,
+      acao: 'gmail_oauth_start',
+      entidade: 'Gmail_OAuth_States',
+      entidade_id: null,
+      descricao: 'Conexão Gmail iniciada em modo suporte.',
+    });
+
+  return {
+    authUserId: target.auth_id as string,
+    targetUsuarioId: target.id_usuarios as string,
+    supportSessionId: params.supportContext.sessionId,
+  };
+}
+
 function resolveRedirectUri() {
   const configured = Deno.env.get('GOOGLE_REDIRECT_URI')?.trim();
   if (configured) return configured;
@@ -63,6 +160,7 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: 'Configuração Supabase ausente.' }, 500, request);
   }
 
+  const requestBody = await request.json().catch(() => ({})) as SupportContextBody;
   const token = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
   if (!token) return jsonResponse({ error: 'Autenticação obrigatória.' }, 401, request);
 
@@ -75,11 +173,22 @@ Deno.serve(async (request) => {
 
   const state = crypto.randomUUID();
   const service = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+  let targetAuthUserId = data.user.id;
+  try {
+    targetAuthUserId = (await resolveTargetAuthUserId({
+      service,
+      actorAuthUserId: data.user.id,
+      supportContext: requestBody.supportContext,
+    })).authUserId;
+  } catch (error) {
+    return jsonResponse({ error: error instanceof Error ? error.message : 'Contexto de suporte inválido.' }, 403, request);
+  }
+
   const { error: stateError } = await service
     .schema('RetificaPremium')
     .from('Gmail_OAuth_States')
     .insert({
-      fk_auth_user: data.user.id,
+      fk_auth_user: targetAuthUserId,
       state,
       expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     });

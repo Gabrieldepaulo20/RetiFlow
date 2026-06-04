@@ -1,5 +1,6 @@
 import { callRPC } from './_base';
 import { supabase } from '@/lib/supabase';
+import { readStoredSupportContext } from '@/services/auth/supportContext';
 
 export type GmailConnectionStatus = {
   connected: boolean;
@@ -37,6 +38,7 @@ async function invokeAuthed<T>(name: string, body?: Record<string, unknown>) {
     throw new Error('Configuração Supabase ausente no frontend.');
   }
 
+  const supportContext = readStoredSupportContext();
   const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/${name}`, {
     method: 'POST',
     headers: {
@@ -44,7 +46,7 @@ async function invokeAuthed<T>(name: string, body?: Record<string, unknown>) {
       apikey: anonKey,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(body ?? {}),
+    body: JSON.stringify(supportContext ? { ...(body ?? {}), supportContext } : (body ?? {})),
   });
 
   const payload = await response.json().catch(() => null) as T | { error?: string } | null;

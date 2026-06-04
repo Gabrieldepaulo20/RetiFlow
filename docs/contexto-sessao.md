@@ -1,6 +1,6 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-06-03
+Atualizado em: 2026-06-04
 
 ## Estado Atual
 
@@ -345,3 +345,33 @@ Plano aprovado para executar em fases:
 - Observacao estrutural:
   - `Categorias_Contas_Pagar` e `Fornecedores_Contas_Pagar` nao possuem `fk_criado_por` hoje; as variantes de suporte para essas tabelas sao auditadas, mas seguem no contrato global atual ate uma futura mudanca de schema.
   - Upload binario de anexo em modo suporte ainda deve ser tratado com cuidado no frontend/Storage; a escrita de metadado existe por RPC, mas o envio de arquivo precisa respeitar path/owner seguro.
+
+## Modo Suporte Persistente E Gmail Da Empresa Alvo - 2026-06-04
+
+- Pedido: em modo suporte, remover a faixa superior fixa, manter apenas botao para sair do suporte, preservar suporte apos refresh e permitir operar Gmail/sugestoes da empresa acessada.
+- Frontend:
+  - sessao de suporte passou de `sessionStorage` para `localStorage`, com compatibilidade para limpar sessoes antigas em `sessionStorage`;
+  - `AuthContext` nao limpa mais o modo suporte enquanto a sessao Supabase real ainda esta restaurando no refresh;
+  - faixa superior de suporte removida de `AppLayout`; ficou apenas botao `Sair do suporte` no topo e no menu;
+  - painel de sugestoes/Gmail de Contas a Pagar nao e mais ocultado no suporte;
+  - `get_gmail_connection_status`, `update_gmail_auto_sync_settings`, `gmail-oauth-start` e `gmail-scan-payables` enviam contexto auditado da empresa alvo quando o Mega Master esta em suporte.
+- Banco/RPC:
+  - migration local criada e aplicada no projeto `dqeoxxokvvcpssajycgq`: `supabase/migrations/20260604103000_support_context_gmail_connection.sql`;
+  - criadas RPCs `get_gmail_connection_status_contexto_suporte` e `update_gmail_auto_sync_settings_contexto_suporte`;
+  - RPCs usam `resolve_suporte_contexto_usuario_id`, leem/alteram a conexao Gmail pelo `auth_id` do usuario alvo e registram log de suporte na alteracao de busca automatica.
+- Edge Functions:
+  - `gmail-oauth-start` publicada na versao 20, ainda com `verify_jwt=true`;
+  - em modo suporte, cria `Gmail_OAuth_States.fk_auth_user` para o usuario alvo, entao o callback salva a conexao Gmail na conta da empresa acessada;
+  - `gmail-scan-payables` publicada na versao 32, preservando `verify_jwt=false` porque tambem atende o agendador interno com segredo proprio;
+  - em modo suporte, scan valida Mega Master/Admin + `Sessoes_Suporte`, busca Gmail da conta alvo, cria/reconcilia sugestoes para o alvo e registra log de suporte.
+- Validacao remota:
+  - dry-run SQL com `begin/rollback` passou antes da migration;
+  - prova SQL remota criou sessao de suporte temporaria + conexao Gmail temporaria, simulou `auth.uid()` do Mega Master, leu status da conexao alvo, atualizou busca automatica, conferiu log e limpou tudo;
+  - chamadas reais as Functions publicadas confirmaram: scan normal sem Gmail retorna 400 `Gmail ainda nao conectado`; contexto de suporte invalido retorna 403 em `gmail-scan-payables` e `gmail-oauth-start`;
+  - limpeza final confirmou 0 usuarios integration, 0 conexoes Gmail integration, 0 sessoes de suporte integration e 0 logs integration.
+- Validacao final executada:
+  - `npx tsc --noEmit`: passou.
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh.
+  - `npm test -- --run`: passou, 42 arquivos e 323 testes.
+  - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks/import dinamico.
+  - `npm run test:integration`: passou, 16 arquivos e 53 testes.

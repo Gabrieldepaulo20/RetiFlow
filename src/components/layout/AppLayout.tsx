@@ -48,7 +48,7 @@ const navItems = [
 const mobileNav = navItems.slice(0, 4);
 
 export default function AppLayout() {
-  const { user, realUser, supportSession, isSupportImpersonating, endSupportImpersonation, logout, canAccessModule } = useAuth();
+  const { user, isSupportImpersonating, endSupportImpersonation, logout, canAccessModule } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
@@ -264,11 +264,6 @@ export default function AppLayout() {
             <DropdownMenuLabel className="leading-tight">
               <span className="block truncate text-sm">{user?.name}</span>
               <span className="block truncate text-xs font-normal text-muted-foreground">{user?.email}</span>
-              {isSupportImpersonating ? (
-                <span className="mt-1 block truncate text-[11px] font-normal text-amber-600">
-                  Empresa: {supportSession?.targetUser.name}
-                </span>
-              ) : null}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             {isAdminOperationalPortal ? (
@@ -296,7 +291,7 @@ export default function AppLayout() {
             <DropdownMenuSeparator />
             {isSupportImpersonating ? (
               <DropdownMenuItem onClick={() => void handleEndSupportMode()}>
-                <AlertCircle className="w-4 h-4 mr-2" /> Sair do modo suporte
+                <AlertCircle className="w-4 h-4 mr-2" /> Sair do suporte
               </DropdownMenuItem>
             ) : null}
             <DropdownMenuItem onClick={() => setSupportOpen(true)}>
@@ -355,31 +350,8 @@ export default function AppLayout() {
 
       {/* Main */}
       <div className={cn('flex-1 flex flex-col min-h-screen', !isMobile && (collapsed ? 'ml-[68px]' : 'ml-64'))}>
-        {isSupportImpersonating && supportSession ? (
-          <div className="sticky top-0 z-50 border-b border-amber-300 bg-amber-50 px-4 py-2 text-amber-950 shadow-sm">
-            <div className="mx-auto flex max-w-7xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold">
-                  Modo suporte ativo: acessando como {supportSession.targetUser.name}
-                </p>
-                <p className="truncate text-xs text-amber-800">
-                  Operador real: {supportSession.actorUser.email} · Motivo: {supportSession.reason}
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="shrink-0 border-amber-300 bg-white/80 text-amber-950 hover:bg-white"
-                onClick={() => void handleEndSupportMode()}
-              >
-                Sair do modo suporte
-              </Button>
-            </div>
-          </div>
-        ) : null}
         {/* Top bar */}
-        <header className={cn('h-16 border-b bg-card flex items-center px-4 gap-3 sticky z-30 shadow-sm', isSupportImpersonating ? 'top-[73px] sm:top-[57px]' : 'top-0')}>
+        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b bg-card px-4 shadow-sm">
           {isMobile && (
             <Sheet>
               <SheetTrigger asChild>
@@ -404,6 +376,17 @@ export default function AppLayout() {
             ) : null}
           </div>
           <div className="ml-auto flex items-center gap-2">
+            {isSupportImpersonating ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 shrink-0 border-amber-300 bg-amber-50 px-3 text-amber-900 hover:bg-amber-100"
+                onClick={() => void handleEndSupportMode()}
+              >
+                Sair do suporte
+              </Button>
+            ) : null}
             <Popover open={notifOpen} onOpenChange={handleOpenNotif}>
               <PopoverTrigger asChild>
                 <Button variant="ghost" size="icon" className="relative rounded-xl border border-border/60 bg-background shadow-sm">
@@ -490,14 +473,9 @@ export default function AppLayout() {
               <DropdownMenuContent align="end">
                 <DropdownMenuItem className="text-muted-foreground text-xs" disabled>{user.email}</DropdownMenuItem>
                 {isSupportImpersonating ? (
-                  <>
-                    <DropdownMenuItem className="text-amber-700 text-xs" disabled>
-                      Modo suporte por {realUser?.email}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => void handleEndSupportMode()}>
-                      <AlertCircle className="w-4 h-4 mr-2" /> Sair do modo suporte
-                    </DropdownMenuItem>
-                  </>
+                  <DropdownMenuItem onClick={() => void handleEndSupportMode()}>
+                    <AlertCircle className="w-4 h-4 mr-2" /> Sair do suporte
+                  </DropdownMenuItem>
                 ) : null}
                 {isAdminOperationalPortal ? (
                   <DropdownMenuItem onClick={() => navigate('/admin')}>

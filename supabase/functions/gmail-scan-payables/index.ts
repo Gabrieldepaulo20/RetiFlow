@@ -72,6 +72,88 @@ function isUuid(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
+type ScanRequestBody = {
+  scheduledUserId?: unknown;
+  maxMessages?: unknown;
+  supportContext?: {
+    sessionId?: unknown;
+    targetUserId?: unknown;
+  };
+};
+
+async function resolveSupportTarget(params: {
+  service: ReturnType<typeof createClient>;
+  actorAuthUserId: string;
+  supportContext?: ScanRequestBody['supportContext'];
+}) {
+  if (!params.supportContext?.sessionId && !params.supportContext?.targetUserId) {
+    return {
+      authUserId: params.actorAuthUserId,
+      actorUsuarioId: null as string | null,
+      targetUsuarioId: null as string | null,
+      supportSessionId: null as string | null,
+    };
+  }
+
+  if (!isUuid(params.supportContext.sessionId) || !isUuid(params.supportContext.targetUserId)) {
+    throw new Error('Contexto de suporte inválido.');
+  }
+
+  const { data: actor, error: actorError } = await params.service
+    .schema('RetificaPremium')
+    .from('Usuarios')
+    .select('id_usuarios,email,acesso,Modulos(admin)')
+    .eq('auth_id', params.actorAuthUserId)
+    .maybeSingle();
+
+  const admin = Array.isArray(actor?.Modulos)
+    ? Boolean(actor.Modulos[0]?.admin)
+    : Boolean((actor?.Modulos as { admin?: boolean } | null)?.admin);
+
+  if (
+    actorError
+    || !actor
+    || String(actor.email ?? '').toLowerCase() !== 'gabrielwilliam208@gmail.com'
+    || String(actor.acesso ?? '') !== 'administrador'
+    || !admin
+  ) {
+    throw new Error('Somente o Mega Master pode buscar Gmail em modo suporte.');
+  }
+
+  const { data: session, error: sessionError } = await params.service
+    .schema('RetificaPremium')
+    .from('Sessoes_Suporte')
+    .select('id_sessao_suporte')
+    .eq('id_sessao_suporte', params.supportContext.sessionId)
+    .eq('fk_actor_usuarios', actor.id_usuarios)
+    .eq('fk_target_usuarios', params.supportContext.targetUserId)
+    .is('ended_at', null)
+    .gt('expires_at', new Date().toISOString())
+    .maybeSingle();
+
+  if (sessionError || !session) {
+    throw new Error('Sessão de suporte inválida ou expirada.');
+  }
+
+  const { data: target, error: targetError } = await params.service
+    .schema('RetificaPremium')
+    .from('Usuarios')
+    .select('id_usuarios,auth_id')
+    .eq('id_usuarios', params.supportContext.targetUserId)
+    .maybeSingle();
+
+  if (targetError || !target?.auth_id) {
+    throw new Error('Cliente alvo sem conta de autenticação para buscar Gmail.');
+  }
+
+  return {
+    authUserId: target.auth_id as string,
+    actorUsuarioId: actor.id_usuarios as string,
+    targetUsuarioId: target.id_usuarios as string,
+    supportSessionId: params.supportContext.sessionId,
+  };
+}
+
 function fromBase64(value: string) {
   return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
 }
@@ -624,12 +706,17 @@ Deno.serve(async (request) => {
   if (!supabaseUrl || !anonKey || !serviceKey) return jsonResponse({ error: 'Configuração Supabase ausente.' }, 500, request);
   if (!openAiKey) return jsonResponse({ error: 'OPENAI_API_KEY não configurada na Supabase Function.' }, 500, request);
 
-  const requestBody = await request.json().catch(() => ({})) as { scheduledUserId?: unknown; maxMessages?: unknown };
+  const requestBody = await request.json().catch(() => ({})) as ScanRequestBody;
   const token = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
   const cronSecret = request.headers.get('x-retiflow-cron-secret')?.trim() ?? '';
   const service = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
   const isScheduled = Boolean(cronSecret) && isUuid(requestBody.scheduledUserId);
   let authUserId = '';
+  let supportAudit: {
+    actorUsuarioId: string;
+    targetUsuarioId: string;
+    supportSessionId: string;
+  } | null = null;
 
   if (isScheduled) {
     const { data: secretIsValid, error: secretError } = await service
@@ -642,7 +729,24 @@ Deno.serve(async (request) => {
     const authClient = createClient(supabaseUrl, anonKey, { auth: { persistSession: false } });
     const { data: userData, error: userError } = await authClient.auth.getUser(token);
     if (userError || !userData.user) return jsonResponse({ error: 'Usuário autenticado obrigatório.' }, 401, request);
-    authUserId = userData.user.id;
+    try {
+      const resolved = await resolveSupportTarget({
+        service,
+        actorAuthUserId: userData.user.id,
+        supportContext: requestBody.supportContext,
+      });
+      authUserId = resolved.authUserId;
+      supportAudit = resolved.actorUsuarioId && resolved.targetUsuarioId && resolved.supportSessionId
+        ? {
+          actorUsuarioId: resolved.actorUsuarioId,
+          targetUsuarioId: resolved.targetUsuarioId,
+          supportSessionId: resolved.supportSessionId,
+        }
+        : null;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Contexto de suporte inválido.';
+      return jsonResponse({ error: message }, 403, request);
+    }
   }
   const { data: connection, error: connectionError } = await service
     .schema('RetificaPremium')
@@ -845,7 +949,7 @@ Deno.serve(async (request) => {
     }
 
     const completedAt = new Date().toISOString();
-    await service
+    const { error: updateConnectionError } = await service
       .schema('RetificaPremium')
       .from('Gmail_Connections')
       .update({
@@ -868,6 +972,28 @@ Deno.serve(async (request) => {
         } : {}),
       })
       .eq('id_gmail_connections', connection.id_gmail_connections);
+
+    if (updateConnectionError) {
+      console.error('[gmail-scan-payables] Falha ao atualizar conexão Gmail', {
+        connectionId: connection.id_gmail_connections,
+        error: updateConnectionError.message,
+      });
+    }
+
+    if (!updateConnectionError && supportAudit) {
+      await service
+        .schema('RetificaPremium')
+        .from('Logs_Acoes_Suporte')
+        .insert({
+          fk_sessao_suporte: supportAudit.supportSessionId,
+          fk_actor_usuarios: supportAudit.actorUsuarioId,
+          fk_target_usuarios: supportAudit.targetUsuarioId,
+          acao: 'gmail_scan_payables',
+          entidade: 'Gmail_Connections',
+          entidade_id: connection.id_gmail_connections,
+          descricao: `Busca Gmail em modo suporte: ${scanned} analisado(s), ${attachmentsFound} anexo(s), ${created} sugestão(ões), ${reconciled} reconciliação(ões), ${skipped} ignorado(s), ${errors.length} erro(s).`,
+        });
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Erro desconhecido ao buscar Gmail.';
     const failedAt = new Date().toISOString();
