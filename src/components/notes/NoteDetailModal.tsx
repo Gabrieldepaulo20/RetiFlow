@@ -77,9 +77,8 @@ const MAIN_FLOW: NoteStatus[] = [
   'APROVADO',
   'EM_EXECUCAO',
   'AGUARDANDO_COMPRA',
-  'PRONTO',
+  'PRONTA',
   'ENTREGUE',
-  'FINALIZADO',
 ];
 
 const STATUS_ICON: Record<string, LucideIcon> = {
@@ -258,7 +257,7 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
   const isAguardando = note.status === 'AGUARDANDO_COMPRA';
   const allowed = ALLOWED_TRANSITIONS[note.status];
   const nextMainStatus = allowed.find(
-    (s) => !FINAL_STATUSES.has(s) || s === 'FINALIZADO',
+    (s) => !FINAL_STATUSES.has(s) || s === 'ENTREGUE',
   );
   const canAdvance = !isFinal && !isAguardando && nextMainStatus !== undefined;
   const mainFlowIdx = MAIN_FLOW.indexOf(note.status);
@@ -802,17 +801,18 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                         className="h-9 gap-1.5 border-red-200 text-xs text-red-600 hover:border-red-300 hover:bg-red-50/50 sm:h-8"
                       >
                         <Ban className="w-3.5 h-3.5" />
-                        Cancelar O.S.
+                        Recusar O.S.
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
                         <AlertDialogTitle>
-                          Cancelar {note.number}?
+                          Recusar {note.number}?
                         </AlertDialogTitle>
                         <AlertDialogDescription>
                           O cliente não aprovou o orçamento. A O.S. será movida
-                          para "Cancelado" (estágio final).
+                          para "Recusada" (estágio final) e o banho químico será
+                          faturado.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
@@ -820,10 +820,10 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                         <AlertDialogAction
                           className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                           onClick={() =>
-                            moveToFinal('CANCELADO', 'Cancelado')
+                            moveToFinal('RECUSADO', 'Recusada')
                           }
                         >
-                          Confirmar Cancelamento
+                          Confirmar Recusa
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
@@ -876,17 +876,17 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                         className="h-9 gap-1.5 text-xs text-muted-foreground hover:bg-muted/60 hover:text-zinc-600 sm:h-8"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                        Descartar O.S.
+                        Excluir O.S.
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
                         <AlertDialogTitle>
-                          Descartar {note.number}?
+                          Excluir {note.number}?
                         </AlertDialogTitle>
                         <AlertDialogDescription>
-                          A O.S. será movida para "Descartado" por erro. Essa
-                          ação não pode ser desfeita.
+                          A O.S. será movida para "Excluída" (anulação por
+                          engano/duplicata). Essa ação não pode ser desfeita.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
@@ -894,10 +894,10 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                         <AlertDialogAction
                           className="bg-zinc-600 text-white hover:bg-zinc-700"
                           onClick={() =>
-                            moveToFinal('DESCARTADO', 'Descartado')
+                            moveToFinal('EXCLUIDA', 'Excluída')
                           }
                         >
-                          Confirmar Descarte
+                          Confirmar Exclusão
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>

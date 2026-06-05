@@ -9,7 +9,7 @@ import {
   IntakeNote,
   IntakeService,
 } from '@/types';
-import { resolveNoteFinalizedAt } from '@/services/domain/intakeNotes';
+import { isBillableNoteStatus, resolveNoteFinalizedAt } from '@/services/domain/intakeNotes';
 import { normalizeNoteNumber } from '@/lib/noteNumbers';
 
 export type ClosingPeriodType = 'mensal' | 'quinzenal' | 'semanal' | 'personalizado';
@@ -296,7 +296,7 @@ export function getFinalizedNotesForClosing(source: ClosingSource, filters: Clos
   const { start, end } = getClosingDateRange(filters);
 
   return source.notes.filter((note) => {
-    if (note.status !== 'FINALIZADO') {
+    if (!isBillableNoteStatus(note.status)) {
       return false;
     }
 

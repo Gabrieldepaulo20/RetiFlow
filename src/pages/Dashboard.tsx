@@ -38,10 +38,10 @@ import { SectionEmptyState, SectionErrorState } from '@/components/ui/section-st
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const ACTIVE_STATUSES = new Set<NoteStatus>([
-  'ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'PRONTO', 'ENTREGUE',
+  'ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'AGUARDANDO_COMPRA', 'PRONTA',
 ]);
 
-const REVENUE_RECOGNIZED_STATUSES = new Set<NoteStatus>(['FINALIZADO']);
+const REVENUE_RECOGNIZED_STATUSES = new Set<NoteStatus>(['ENTREGUE', 'RECUSADO', 'SEM_CONSERTO']);
 const PAID_PAYABLE_STATUSES = new Set(['PAGO', 'PARCIAL']);
 const PROFIT_START_DATE = startOfDay(new Date(2026, 5, 1));
 
@@ -60,12 +60,10 @@ const BAR_COLORS: Partial<Record<NoteStatus, string>> = {
   APROVADO: 'hsl(var(--primary))',
   EM_EXECUCAO: 'hsl(var(--accent))',
   AGUARDANDO_COMPRA: '#eab308',
-  PRONTO: 'hsl(var(--success))',
+  PRONTA: 'hsl(var(--success))',
   ENTREGUE: 'hsl(var(--secondary))',
-  FINALIZADO: '#6b7280',
-  CANCELADO: 'hsl(var(--destructive))',
-  DESCARTADO: '#a1a1aa',
-  SEM_CONSERTO: '#fda4af',
+  RECUSADO: '#fb7185',
+  SEM_CONSERTO: '#a1a1aa',
 };
 
 function fmtBRL(value: number) {
@@ -277,6 +275,25 @@ export default function Dashboard() {
 
   const monthGrowth = pct(currentMonthRevenue, prevMonthRevenue);
 
+  // ── Recebido (caixa) e A receber ─────────────────────────────────────────
+  const currentMonthReceived = useMemo(
+    () => notes
+      .filter(n => n.paymentStatus === 'PAGO' && n.paidAt)
+      .filter(n => {
+        const t = new Date(n.paidAt as string).getTime();
+        return t >= startCurrent && t <= endCurrent;
+      })
+      .reduce((s, n) => s + n.totalAmount, 0),
+    [notes, startCurrent, endCurrent],
+  );
+
+  const totalAReceber = useMemo(
+    () => revenueRecognizedNotes
+      .filter(n => n.paymentStatus !== 'PAGO')
+      .reduce((s, n) => s + n.totalAmount, 0),
+    [revenueRecognizedNotes],
+  );
+
   // ── Ticket médio ────────────────────────────────────────────────────────
   const ticketMedio = revenueRecognizedNotes.length > 0
     ? totalRevenue / revenueRecognizedNotes.length
@@ -296,7 +313,7 @@ export default function Dashboard() {
     [notes],
   );
 
-  const successBaseCount = closedNotes.filter(n => n.status !== 'FINALIZADO').length + revenueRecognizedNotes.length;
+  const successBaseCount = closedNotes.filter(n => !REVENUE_RECOGNIZED_STATUSES.has(n.status)).length + revenueRecognizedNotes.length;
   const successRate = successBaseCount > 0
     ? Math.round((revenueRecognizedNotes.length / successBaseCount) * 100)
     : 0;
@@ -391,7 +408,7 @@ export default function Dashboard() {
       iconClass: 'text-emerald-600 bg-emerald-50',
       subClass: 'text-muted-foreground',
       tooltip: 'O.S. finalizadas. Essa é a etapa que representa serviço concluído e pagamento reconhecido no Dashboard.',
-      href: '/notas-entrada?status=FINALIZADO',
+      href: '/notas-entrada?status=ENTREGUE',
     },
     {
       label: 'Valor finalizado',
@@ -401,7 +418,7 @@ export default function Dashboard() {
       iconClass: 'text-primary bg-primary/10',
       subClass: 'text-muted-foreground',
       tooltip: 'Soma do valor total das O.S. com status Finalizado desde a abertura do sistema.',
-      href: '/notas-entrada?status=FINALIZADO',
+      href: '/notas-entrada?status=ENTREGUE',
     },
     {
       label: 'Tempo médio',
@@ -415,7 +432,7 @@ export default function Dashboard() {
         : 'text-sky-600 bg-sky-50',
       subClass: 'text-muted-foreground',
       tooltip: 'Média de dias entre a abertura e a finalização da O.S. Datas finalizadas antes da abertura são tratadas como 0 dia para nunca exibir tempo negativo.',
-      href: '/notas-entrada?status=FINALIZADO',
+      href: '/notas-entrada?status=ENTREGUE',
     },
   ];
 
@@ -431,7 +448,7 @@ export default function Dashboard() {
       subClass: monthGrowth === null ? 'text-muted-foreground' : monthGrowth >= 0 ? 'text-emerald-600 font-medium' : 'text-red-500 font-medium',
       trend: monthGrowth,
       tooltip: 'Receita gerada pelas O.S. finalizadas no mês atual. Comparação percentual em relação ao mês anterior.',
-      href: '/notas-entrada?status=FINALIZADO',
+      href: '/notas-entrada?status=ENTREGUE',
     },
     {
       label: 'Ticket médio',
@@ -442,7 +459,7 @@ export default function Dashboard() {
       subClass: 'text-muted-foreground',
       trend: null,
       tooltip: 'Valor médio por O.S. finalizada. Calculado dividindo o valor finalizado pelo número de O.S. finalizadas.',
-      href: '/notas-entrada?status=FINALIZADO',
+      href: '/notas-entrada?status=ENTREGUE',
     },
     {
       label: 'Clientes cadastrados',
@@ -465,6 +482,42 @@ export default function Dashboard() {
       trend: null,
       tooltip: 'O.S. que dependem de compra para avançar. Este número vem dos status reais das ordens de serviço.',
       href: '/kanban',
+    },
+  ];
+
+  const kpisRow3: KpiCard[] = [
+    {
+      label: 'Faturado no mês',
+      value: `R$ ${fmtBRL(currentMonthRevenue)}`,
+      sub: 'Competência: O.S. entregues/recusadas no mês',
+      icon: TrendingUp,
+      iconClass: 'text-violet-600 bg-violet-50',
+      subClass: 'text-muted-foreground',
+      trend: null,
+      tooltip: 'Receita por competência: valor das O.S. que se tornaram faturáveis (Entregue, Recusada, Sem Conserto) no mês.',
+      href: '/notas-entrada?status=ENTREGUE',
+    },
+    {
+      label: 'Recebido no mês',
+      value: `R$ ${fmtBRL(currentMonthReceived)}`,
+      sub: 'Caixa: pagamentos recebidos no mês',
+      icon: DollarSign,
+      iconClass: 'text-emerald-600 bg-emerald-50',
+      subClass: 'text-emerald-600 font-medium',
+      trend: null,
+      tooltip: 'Regime de caixa: soma das O.S. marcadas como pagas, pela data do recebimento dentro do mês.',
+      href: '/notas-entrada',
+    },
+    {
+      label: 'A receber',
+      value: `R$ ${fmtBRL(totalAReceber)}`,
+      sub: 'O.S. faturáveis ainda não pagas',
+      icon: Receipt,
+      iconClass: 'text-amber-600 bg-amber-50',
+      subClass: totalAReceber > 0 ? 'text-amber-600 font-medium' : 'text-muted-foreground',
+      trend: null,
+      tooltip: 'Total das O.S. já faturáveis (Entregue, Recusada, Sem Conserto) cujo recebimento ainda está pendente.',
+      href: '/notas-entrada',
     },
   ];
 
@@ -926,7 +979,7 @@ export default function Dashboard() {
 
             <button
               type="button"
-              onClick={() => navigate('/notas-entrada?status=FINALIZADO')}
+              onClick={() => navigate('/notas-entrada?status=ENTREGUE')}
               className="rounded-2xl border border-border/70 bg-background p-4 text-left transition hover:border-emerald-300 hover:bg-emerald-50/60"
             >
               <div className="flex items-start justify-between gap-3">
@@ -1020,7 +1073,7 @@ export default function Dashboard() {
 
       {/* KPI rows */}
       <TooltipProvider delayDuration={400}>
-        {[kpisRow1, kpisRow2].map((row, rowIdx) => (
+        {[kpisRow1, kpisRow2, kpisRow3].map((row, rowIdx) => (
           <div key={rowIdx} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {row.map((kpi, i) => (
               <motion.div

@@ -1,4 +1,4 @@
-import { FINAL_STATUSES, IntakeNote, NoteStatus } from '@/types';
+import { BILLABLE_STATUSES, FINAL_STATUSES, IntakeNote, NoteStatus, PaymentMethod } from '@/types';
 
 interface StatusTransitionInput {
   nextStatus: NoteStatus;
@@ -6,12 +6,18 @@ interface StatusTransitionInput {
   changedAt?: string;
 }
 
+/** Estágio faturável = gera receita por competência (ENTREGUE/RECUSADO/SEM_CONSERTO). */
+export function isBillableNoteStatus(status: NoteStatus): boolean {
+  return BILLABLE_STATUSES.has(status);
+}
+
+/** Data de competência: quando a nota se tornou faturável. */
 export function resolveNoteFinalizedAt(note: IntakeNote): string | null {
   if (note.finalizedAt) {
     return note.finalizedAt;
   }
 
-  if (note.status !== 'FINALIZADO') {
+  if (!isBillableNoteStatus(note.status)) {
     return null;
   }
 
@@ -23,16 +29,16 @@ export function applyNoteStatusTransition({
   previousNote,
   changedAt = new Date().toISOString(),
 }: StatusTransitionInput): IntakeNote {
-  const isTransitioningToFinalized = nextStatus === 'FINALIZADO';
-  const isLeavingFinalized = previousNote.status === 'FINALIZADO' && nextStatus !== 'FINALIZADO';
+  const isTransitioningToBillable = isBillableNoteStatus(nextStatus);
+  const isLeavingBillable = isBillableNoteStatus(previousNote.status) && !isBillableNoteStatus(nextStatus);
 
   return {
     ...previousNote,
     status: nextStatus,
     updatedAt: changedAt,
-    finalizedAt: isTransitioningToFinalized
+    finalizedAt: isTransitioningToBillable
       ? previousNote.finalizedAt ?? changedAt
-      : isLeavingFinalized
+      : isLeavingBillable
         ? undefined
         : previousNote.finalizedAt,
   };
@@ -40,4 +46,33 @@ export function applyNoteStatusTransition({
 
 export function isTerminalNoteStatus(status: NoteStatus) {
   return FINAL_STATUSES.has(status);
+}
+
+export function isNotePaid(note: IntakeNote): boolean {
+  return note.paymentStatus === 'PAGO';
+}
+
+/** Registra o recebimento do cliente (eixo financeiro, separado do fluxo). */
+export function applyNotePayment(
+  note: IntakeNote,
+  { paidWith, paidAt = new Date().toISOString() }: { paidWith?: PaymentMethod; paidAt?: string },
+): IntakeNote {
+  return {
+    ...note,
+    paymentStatus: 'PAGO',
+    paidAt,
+    paidWith,
+    updatedAt: paidAt,
+  };
+}
+
+/** Estorna o recebimento — volta a nota para pendente. */
+export function revertNotePayment(note: IntakeNote, changedAt = new Date().toISOString()): IntakeNote {
+  return {
+    ...note,
+    paymentStatus: 'PENDENTE',
+    paidAt: undefined,
+    paidWith: undefined,
+    updatedAt: changedAt,
+  };
 }

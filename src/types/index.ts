@@ -27,7 +27,10 @@ export type Permission =
 
 export type NoteType = 'SERVICO' | 'COMPRA';
 
-export type NoteStatus = 'ABERTO' | 'EM_ANALISE' | 'ORCAMENTO' | 'APROVADO' | 'EM_EXECUCAO' | 'AGUARDANDO_COMPRA' | 'PRONTO' | 'ENTREGUE' | 'FINALIZADO' | 'CANCELADO' | 'DESCARTADO' | 'SEM_CONSERTO';
+export type NoteStatus = 'ABERTO' | 'EM_ANALISE' | 'ORCAMENTO' | 'APROVADO' | 'EM_EXECUCAO' | 'AGUARDANDO_COMPRA' | 'PRONTA' | 'ENTREGUE' | 'RECUSADO' | 'SEM_CONSERTO' | 'EXCLUIDA';
+
+/** Eixo financeiro da nota — independente do status de fluxo. */
+export type NotePaymentStatus = 'PENDENTE' | 'PAGO';
 
 export type DocType = 'CPF' | 'CNPJ';
 export type AttachmentType = 'PHOTO' | 'PDF' | 'XML' | 'OTHER';
@@ -112,12 +115,20 @@ export interface IntakeNote {
   complaint: string;
   observations: string;
   responsavel?: string;
+  /** Contato responsável pela nota (ex.: funcionário da empresa cliente). */
+  contatoNome?: string;
+  contatoTelefone?: string;
   totalServices: number;
   totalProducts: number;
   totalAmount: number;
   pdfUrl?: string;
   pdfFormat?: PdfFormat;
+  /** Data de competência (quando a nota se tornou faturável: ENTREGUE/RECUSADO/SEM_CONSERTO). */
   finalizedAt?: string;
+  /** Eixo financeiro — recebimento do cliente, separado do status de fluxo. */
+  paymentStatus: NotePaymentStatus;
+  paidAt?: string;
+  paidWith?: PaymentMethod;
   updatedAt: string;
   deadline?: string;
 }
@@ -163,46 +174,49 @@ export interface ActivityLog {
 export type RoleModuleConfig = Record<UserRole, Partial<Record<AppModuleKey, boolean>>>;
 export type UserModuleOverrides = Record<string, Partial<Record<AppModuleKey, boolean>>>;
 
-/** Fluxo principal (colunas do Kanban na ordem) */
+/** Fluxo principal (colunas do Kanban na ordem). EXCLUIDA fica fora do board. */
 export const NOTE_STATUS_ORDER: NoteStatus[] = [
-  'ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'AGUARDANDO_COMPRA', 'PRONTO', 'ENTREGUE', 'FINALIZADO',
-  'CANCELADO', 'DESCARTADO', 'SEM_CONSERTO'
+  'ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'AGUARDANDO_COMPRA', 'PRONTA', 'ENTREGUE',
+  'RECUSADO', 'SEM_CONSERTO'
 ];
 
-/** Estágios finais — não permitem transição de saída */
+/** Estágios finais — não permitem transição de fluxo de saída */
 export const FINAL_STATUSES: ReadonlySet<NoteStatus> = new Set([
-  'FINALIZADO', 'CANCELADO', 'DESCARTADO', 'SEM_CONSERTO'
+  'ENTREGUE', 'RECUSADO', 'SEM_CONSERTO', 'EXCLUIDA'
 ]);
 
-/** Transições permitidas a partir de cada estágio */
+/** Estágios faturáveis — geram receita (competência). */
+export const BILLABLE_STATUSES: ReadonlySet<NoteStatus> = new Set([
+  'ENTREGUE', 'RECUSADO', 'SEM_CONSERTO'
+]);
+
+/** Transições de fluxo permitidas. EXCLUIDA é ação administrativa à parte (não listada aqui). */
 export const ALLOWED_TRANSITIONS: Record<NoteStatus, NoteStatus[]> = {
-  ABERTO:            ['EM_ANALISE', 'DESCARTADO'],
-  EM_ANALISE:        ['ORCAMENTO', 'DESCARTADO'],
-  ORCAMENTO:         ['APROVADO', 'CANCELADO', 'DESCARTADO', 'AGUARDANDO_COMPRA'],
-  APROVADO:          ['EM_EXECUCAO', 'DESCARTADO', 'AGUARDANDO_COMPRA'],
-  EM_EXECUCAO:       ['PRONTO', 'SEM_CONSERTO', 'DESCARTADO', 'AGUARDANDO_COMPRA'],
+  ABERTO:            ['EM_ANALISE'],
+  EM_ANALISE:        ['ORCAMENTO'],
+  ORCAMENTO:         ['APROVADO', 'RECUSADO', 'AGUARDANDO_COMPRA'],
+  APROVADO:          ['EM_EXECUCAO', 'AGUARDANDO_COMPRA'],
+  EM_EXECUCAO:       ['PRONTA', 'SEM_CONSERTO', 'AGUARDANDO_COMPRA'],
   AGUARDANDO_COMPRA: [],
-  PRONTO:            ['ENTREGUE', 'DESCARTADO'],
-  ENTREGUE:          ['FINALIZADO', 'DESCARTADO'],
-  FINALIZADO:        [],
-  CANCELADO:         [],
-  DESCARTADO:        [],
+  PRONTA:            ['ENTREGUE'],
+  ENTREGUE:          [],
+  RECUSADO:          [],
   SEM_CONSERTO:      [],
+  EXCLUIDA:          [],
 };
 
 export const STATUS_LABELS: Record<NoteStatus, string> = {
-  ABERTO: 'Aberto',
+  ABERTO: 'Aberta',
   EM_ANALISE: 'Em Análise',
   ORCAMENTO: 'Orçamento',
   APROVADO: 'Aprovado',
   EM_EXECUCAO: 'Em Execução',
   AGUARDANDO_COMPRA: 'Aguardando Compra',
-  PRONTO: 'Pronto',
+  PRONTA: 'Pronta',
   ENTREGUE: 'Entregue',
-  FINALIZADO: 'Finalizado',
-  CANCELADO: 'Cancelado',
-  DESCARTADO: 'Descartado',
+  RECUSADO: 'Recusada',
   SEM_CONSERTO: 'Sem Conserto',
+  EXCLUIDA: 'Excluída',
 };
 
 export const STATUS_COLORS: Record<NoteStatus, string> = {
@@ -212,12 +226,51 @@ export const STATUS_COLORS: Record<NoteStatus, string> = {
   APROVADO: 'bg-primary text-primary-foreground',
   EM_EXECUCAO: 'bg-accent text-accent-foreground',
   AGUARDANDO_COMPRA: 'bg-yellow-100 text-yellow-800',
-  PRONTO: 'bg-success text-success-foreground',
+  PRONTA: 'bg-success text-success-foreground',
   ENTREGUE: 'bg-secondary text-secondary-foreground',
-  FINALIZADO: 'bg-muted text-muted-foreground',
-  CANCELADO: 'bg-destructive text-destructive-foreground',
-  DESCARTADO: 'bg-zinc-200 text-zinc-700',
-  SEM_CONSERTO: 'bg-rose-100 text-rose-800',
+  RECUSADO: 'bg-rose-100 text-rose-800',
+  SEM_CONSERTO: 'bg-zinc-200 text-zinc-700',
+  EXCLUIDA: 'bg-destructive text-destructive-foreground',
+};
+
+/** Descrição interna (glossário em Configurações). */
+export const STATUS_DESCRIPTIONS: Record<NoteStatus, string> = {
+  ABERTO: 'Peça recebida e cadastrada no sistema.',
+  EM_ANALISE: 'Peça em banho químico / diagnóstico antes do orçamento.',
+  ORCAMENTO: 'Orçamento preenchido e enviado ao cliente para aprovação.',
+  APROVADO: 'Cliente aprovou o orçamento; na fila para execução.',
+  EM_EXECUCAO: 'Serviço em andamento na bancada.',
+  AGUARDANDO_COMPRA: 'Pausada aguardando compra de peça de terceiro.',
+  PRONTA: 'Serviço concluído; peça pronta para retirada.',
+  ENTREGUE: 'Peça entregue ao cliente.',
+  RECUSADO: 'Cliente desistiu do serviço; cobra-se o banho químico.',
+  SEM_CONSERTO: 'Peça sem conserto viável; cobra-se o diagnóstico.',
+  EXCLUIDA: 'Nota anulada (engano/duplicata) com justificativa registrada.',
+};
+
+/** Rótulo que o cliente vê (base do chatbot). EXCLUIDA não é exposta. */
+export const STATUS_CUSTOMER_LABELS: Record<NoteStatus, string> = {
+  ABERTO: 'Recebemos sua peça',
+  EM_ANALISE: 'Avaliando a peça',
+  ORCAMENTO: 'Orçamento enviado — aguardando sua aprovação',
+  APROVADO: 'Em execução',
+  EM_EXECUCAO: 'Em execução',
+  AGUARDANDO_COMPRA: 'Em execução',
+  PRONTA: 'Pronta para retirada',
+  ENTREGUE: 'Retirada / Finalizada',
+  RECUSADO: 'Recusada',
+  SEM_CONSERTO: 'Sem conserto',
+  EXCLUIDA: '',
+};
+
+export const PAYMENT_STATUS_LABELS: Record<NotePaymentStatus, string> = {
+  PENDENTE: 'A receber',
+  PAGO: 'Recebido',
+};
+
+export const PAYMENT_STATUS_COLORS: Record<NotePaymentStatus, string> = {
+  PENDENTE: 'bg-amber-100 text-amber-800',
+  PAGO: 'bg-success text-success-foreground',
 };
 
 export const NOTE_TYPE_LABELS: Record<NoteType, string> = {

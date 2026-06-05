@@ -64,6 +64,7 @@ describe('Note edit flow', () => {
       updatedAt: '2026-03-21T10:00:00.000Z',
       createdByUserId: 'user-1',
       status: 'EM_ANALISE' as const,
+      paymentStatus: 'PENDENTE' as const,
       type: 'SERVICO' as const,
       engineType: 'Cabeçote',
       vehicleModel: 'Gol 1.0',

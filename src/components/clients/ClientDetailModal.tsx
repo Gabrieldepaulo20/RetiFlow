@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { STATUS_COLORS, STATUS_LABELS, FINAL_STATUSES } from '@/types';
+import { STATUS_COLORS, STATUS_LABELS, FINAL_STATUSES, BILLABLE_STATUSES } from '@/types';
 import {
   Mail, MapPin, Phone, Pencil, Check, X,
   FileText, Paperclip, ExternalLink, User, Building,
@@ -50,7 +50,7 @@ export default function ClientDetailModal({ clientId, onClose, onEdit }: ClientD
   const totalRevenue = useMemo(
     () =>
       clientNotes
-        .filter((n) => n.status === 'FINALIZADO')
+        .filter((n) => BILLABLE_STATUSES.has(n.status))
         .reduce((s, n) => s + n.totalAmount, 0),
     [clientNotes],
   );

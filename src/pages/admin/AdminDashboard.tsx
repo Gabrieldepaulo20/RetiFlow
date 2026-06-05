@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useData } from '@/contexts/DataContext';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { STATUS_LABELS, NoteStatus } from '@/types';
+import { STATUS_LABELS, NoteStatus, FINAL_STATUSES, BILLABLE_STATUSES } from '@/types';
 import { Users, UserCheck, UserX, Activity, TrendingUp, FileText, BarChart3 } from 'lucide-react';
 import { Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { motion, useReducedMotion } from 'framer-motion';
@@ -22,8 +22,8 @@ export default function AdminDashboard() {
   const activeClients = clients.filter(c => c.isActive).length;
   const inactiveClients = clients.filter(c => !c.isActive).length;
   const totalNotes = notes.length;
-  const openNotes = notes.filter(n => !['FINALIZADO', 'CANCELADO', 'DESCARTADO', 'SEM_CONSERTO', 'AGUARDANDO_COMPRA'].includes(n.status)).length;
-  const revenue = notes.filter(n => n.status === 'FINALIZADO').reduce((s, n) => s + n.totalAmount, 0);
+  const openNotes = notes.filter(n => !FINAL_STATUSES.has(n.status) && n.status !== 'AGUARDANDO_COMPRA').length;
+  const revenue = notes.filter(n => BILLABLE_STATUSES.has(n.status)).reduce((s, n) => s + n.totalAmount, 0);
 
   const statusData = useMemo(() => {
     const counts: Record<string, number> = {};

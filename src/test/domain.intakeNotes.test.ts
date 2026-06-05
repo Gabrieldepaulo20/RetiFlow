@@ -12,6 +12,7 @@ function buildNote(overrides: Partial<IntakeNote> = {}): IntakeNote {
     updatedAt: '2026-01-02T00:00:00.000Z',
     createdByUserId: 'user-1',
     status: 'ABERTO',
+    paymentStatus: 'PENDENTE',
     type: 'SERVICO',
     engineType: 'Cabeçote',
     vehicleModel: 'Gol',
@@ -26,18 +27,18 @@ function buildNote(overrides: Partial<IntakeNote> = {}): IntakeNote {
 
 describe('resolveNoteFinalizedAt', () => {
   it('returns finalizedAt when present', () => {
-    const note = buildNote({ status: 'FINALIZADO', finalizedAt: '2026-02-10T12:00:00.000Z' });
+    const note = buildNote({ status: 'ENTREGUE', finalizedAt: '2026-02-10T12:00:00.000Z' });
     expect(resolveNoteFinalizedAt(note)).toBe('2026-02-10T12:00:00.000Z');
   });
 
-  it('returns null for non-finalized notes without finalizedAt', () => {
+  it('returns null for non-billable notes without finalizedAt', () => {
     const note = buildNote({ status: 'EM_EXECUCAO' });
     expect(resolveNoteFinalizedAt(note)).toBeNull();
   });
 
-  it('falls back to updatedAt for legacy FINALIZADO notes missing finalizedAt', () => {
+  it('falls back to updatedAt for billable notes missing finalizedAt', () => {
     const note = buildNote({
-      status: 'FINALIZADO',
+      status: 'ENTREGUE',
       finalizedAt: undefined,
       updatedAt: '2026-02-15T09:00:00.000Z',
     });
@@ -57,40 +58,40 @@ describe('applyNoteStatusTransition', () => {
     expect(result.updatedAt).toBe('2026-03-01T08:00:00.000Z');
   });
 
-  it('sets finalizedAt when transitioning to FINALIZADO', () => {
-    const note = buildNote({ status: 'ENTREGUE', finalizedAt: undefined });
+  it('sets finalizedAt when transitioning to a billable status (ENTREGUE)', () => {
+    const note = buildNote({ status: 'PRONTA', finalizedAt: undefined });
     const result = applyNoteStatusTransition({
-      nextStatus: 'FINALIZADO',
+      nextStatus: 'ENTREGUE',
       previousNote: note,
       changedAt: '2026-03-05T10:00:00.000Z',
     });
     expect(result.finalizedAt).toBe('2026-03-05T10:00:00.000Z');
   });
 
-  it('preserves existing finalizedAt if already set when transitioning to FINALIZADO', () => {
+  it('preserves existing finalizedAt when transitioning to a billable status', () => {
     const note = buildNote({
-      status: 'ENTREGUE',
+      status: 'PRONTA',
       finalizedAt: '2026-03-01T00:00:00.000Z',
     });
     const result = applyNoteStatusTransition({
-      nextStatus: 'FINALIZADO',
+      nextStatus: 'ENTREGUE',
       previousNote: note,
       changedAt: '2026-03-10T00:00:00.000Z',
     });
     expect(result.finalizedAt).toBe('2026-03-01T00:00:00.000Z');
   });
 
-  it('clears finalizedAt when leaving FINALIZADO status (admin rollback)', () => {
-    const note = buildNote({ status: 'FINALIZADO', finalizedAt: '2026-02-20T00:00:00.000Z' });
+  it('clears finalizedAt when leaving a billable status (admin rollback)', () => {
+    const note = buildNote({ status: 'ENTREGUE', finalizedAt: '2026-02-20T00:00:00.000Z' });
     const result = applyNoteStatusTransition({
-      nextStatus: 'ENTREGUE',
+      nextStatus: 'EM_EXECUCAO',
       previousNote: note,
       changedAt: '2026-03-01T00:00:00.000Z',
     });
     expect(result.finalizedAt).toBeUndefined();
   });
 
-  it('does not touch finalizedAt for transitions not involving FINALIZADO', () => {
+  it('does not touch finalizedAt for transitions between non-billable statuses', () => {
     const note = buildNote({ status: 'APROVADO', finalizedAt: undefined });
     const result = applyNoteStatusTransition({
       nextStatus: 'EM_EXECUCAO',
@@ -101,8 +102,8 @@ describe('applyNoteStatusTransition', () => {
 });
 
 describe('isTerminalNoteStatus', () => {
-  const terminal: NoteStatus[] = ['FINALIZADO', 'CANCELADO', 'DESCARTADO', 'SEM_CONSERTO'];
-  const nonTerminal: NoteStatus[] = ['ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'AGUARDANDO_COMPRA', 'PRONTO', 'ENTREGUE'];
+  const terminal: NoteStatus[] = ['ENTREGUE', 'RECUSADO', 'SEM_CONSERTO', 'EXCLUIDA'];
+  const nonTerminal: NoteStatus[] = ['ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'AGUARDANDO_COMPRA', 'PRONTA'];
 
   terminal.forEach((status) => {
     it(`${status} is terminal`, () => {
@@ -120,10 +121,10 @@ describe('isTerminalNoteStatus', () => {
 describe('FINAL_STATUSES', () => {
   it('contains exactly the 4 terminal statuses', () => {
     expect(FINAL_STATUSES.size).toBe(4);
-    expect(FINAL_STATUSES.has('FINALIZADO')).toBe(true);
-    expect(FINAL_STATUSES.has('CANCELADO')).toBe(true);
-    expect(FINAL_STATUSES.has('DESCARTADO')).toBe(true);
+    expect(FINAL_STATUSES.has('ENTREGUE')).toBe(true);
+    expect(FINAL_STATUSES.has('RECUSADO')).toBe(true);
     expect(FINAL_STATUSES.has('SEM_CONSERTO')).toBe(true);
+    expect(FINAL_STATUSES.has('EXCLUIDA')).toBe(true);
   });
 
   it('terminal statuses have no outgoing transitions', () => {
@@ -138,8 +139,8 @@ describe('ALLOWED_TRANSITIONS state machine', () => {
     expect(ALLOWED_TRANSITIONS.ABERTO).toContain('EM_ANALISE');
   });
 
-  it('ORCAMENTO can be cancelled', () => {
-    expect(ALLOWED_TRANSITIONS.ORCAMENTO).toContain('CANCELADO');
+  it('ORCAMENTO can be refused (RECUSADO)', () => {
+    expect(ALLOWED_TRANSITIONS.ORCAMENTO).toContain('RECUSADO');
   });
 
   it('EM_EXECUCAO can be marked SEM_CONSERTO', () => {
@@ -150,12 +151,12 @@ describe('ALLOWED_TRANSITIONS state machine', () => {
     expect(ALLOWED_TRANSITIONS.AGUARDANDO_COMPRA).toHaveLength(0);
   });
 
-  it('ENTREGUE leads to FINALIZADO', () => {
-    expect(ALLOWED_TRANSITIONS.ENTREGUE).toContain('FINALIZADO');
+  it('PRONTA leads to ENTREGUE', () => {
+    expect(ALLOWED_TRANSITIONS.PRONTA).toContain('ENTREGUE');
   });
 
   it('every non-final status has at least one forward transition', () => {
-    const nonFinal: NoteStatus[] = ['ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'PRONTO', 'ENTREGUE'];
+    const nonFinal: NoteStatus[] = ['ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'PRONTA'];
     for (const status of nonFinal) {
       expect(ALLOWED_TRANSITIONS[status].length).toBeGreaterThan(0);
     }

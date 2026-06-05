@@ -93,6 +93,21 @@ Quando a mudança tocar integração real:
 - Não aumentar `chunkSizeWarningLimit` só para esconder alerta.
 - Se um chunk crescer, primeiro investigue imports estáticos e componentes pesados.
 
+## Modelo De Status E Pagamento Das Notas (reforma 2026-06)
+
+- `NoteStatus` agora tem 11 valores. **Removidos:** FINALIZADO e PRONTO. **Renomeado:** PRONTO→PRONTA.
+  **Novos:** RECUSADO (cliente desistiu, fatura o banho químico) e EXCLUIDA (anulação por engano,
+  soft-delete — substitui CANCELADO/DESCARTADO). Faturável = `BILLABLE_STATUSES` (ENTREGUE, RECUSADO,
+  SEM_CONSERTO).
+- A nota tem um eixo financeiro separado: `paymentStatus` (PENDENTE/PAGO) + `paidAt` + `paidWith`, e
+  `contatoNome`/`contatoTelefone`. Recebimento via `registrarRecebimentoNota` no DataContext.
+- **PENDÊNCIA DE BACKEND (não aplicada):** o banco real ainda usa os status antigos e não tem as
+  colunas novas. O frontend já tolera isso — `supabaseToIntakeNote` mapeia status legados e os campos
+  de pagamento são lidos defensivamente. A migration (colunas em `Notas_de_Servico`, status
+  RECUSADO/EXCLUIDA em `Status_Notas`, remap dos antigos, RPC `registrar_recebimento_nota`) está
+  preparada em `supabase/migrations/` mas **só deve ser aplicada com aprovação explícita** (remapeia
+  dados; ter rollback). Salário continua em Contas a Pagar; não há Contas a Receber.
+
 ## Nunca Fazer Sem Autorização
 
 - Rodar comandos destrutivos de git, como `git reset --hard` ou checkout descartando mudanças.

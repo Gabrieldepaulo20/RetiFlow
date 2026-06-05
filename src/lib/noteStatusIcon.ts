@@ -1,6 +1,5 @@
 import {
   Ban,
-  CheckCheck,
   CircleDot,
   ClipboardCheck,
   Inbox,
@@ -9,6 +8,7 @@ import {
   ShoppingCart,
   ThumbsDown,
   ThumbsUp,
+  Trash2,
   Truck,
   Wrench,
   type LucideIcon,
@@ -26,12 +26,11 @@ const NOTE_STATUS_ICONS: Record<NoteStatus, LucideIcon> = {
   APROVADO: ThumbsUp,
   EM_EXECUCAO: Wrench,
   AGUARDANDO_COMPRA: ShoppingCart,
-  PRONTO: PackageCheck,
+  PRONTA: PackageCheck,
   ENTREGUE: Truck,
-  FINALIZADO: CheckCheck,
-  CANCELADO: Ban,
-  DESCARTADO: ThumbsDown,
-  SEM_CONSERTO: ThumbsDown,
+  RECUSADO: ThumbsDown,
+  SEM_CONSERTO: Ban,
+  EXCLUIDA: Trash2,
 };
 
 export function getNoteStatusIcon(status: NoteStatus): LucideIcon {
