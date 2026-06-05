@@ -101,12 +101,17 @@ Quando a mudança tocar integração real:
   SEM_CONSERTO).
 - A nota tem um eixo financeiro separado: `paymentStatus` (PENDENTE/PAGO) + `paidAt` + `paidWith`, e
   `contatoNome`/`contatoTelefone`. Recebimento via `registrarRecebimentoNota` no DataContext.
-- **PENDÊNCIA DE BACKEND (não aplicada):** o banco real ainda usa os status antigos e não tem as
-  colunas novas. O frontend já tolera isso — `supabaseToIntakeNote` mapeia status legados e os campos
-  de pagamento são lidos defensivamente. A migration (colunas em `Notas_de_Servico`, status
-  RECUSADO/EXCLUIDA em `Status_Notas`, remap dos antigos, RPC `registrar_recebimento_nota`) está
-  preparada em `supabase/migrations/` mas **só deve ser aplicada com aprovação explícita** (remapeia
-  dados; ter rollback). Salário continua em Contas a Pagar; não há Contas a Receber.
+- **BACKEND APLICADO (2026-06-05):** migrations `20260605141905` e `20260605142033`. Colunas novas em
+  `Notas_de_Servico` (payment_status, pago_em, pago_com, contato_nome, contato_telefone, origem);
+  status `Recusada`(27)/`Excluída`(28) inseridos; `Aberto→Aberta`, `Pronto→Pronta` renomeados (ids
+  preservados). `update_nota_servico` agora grava `fk_status` (lacuna antiga) + pagamento + contato;
+  `get_notas_servico` retorna os campos novos. **Legado:** 760 notas `Finalizado`(fk_status=20) foram
+  marcadas `PAGO` + `origem='LEGADO'` (lidas como ENTREGUE via alias do adapter). Rollback documentado
+  no .sql.
+- **Follow-ups de backend ainda pendentes:** variante `get_notas_servico_contexto_suporte` e
+  `get_nota_servico_detalhes` (+ variante suporte) não retornam os campos de pagamento/contato;
+  `nova_nota` não persiste contato na criação (só via edição). Salário continua em Contas a Pagar; não
+  há Contas a Receber.
 
 ## Nunca Fazer Sem Autorização
 
