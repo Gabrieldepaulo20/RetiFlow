@@ -126,11 +126,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const realUser = session?.user ?? null;
     if (!supportSession) return;
     if (IS_REAL_AUTH && isAuthLoading && !realUser) return;
-    const expired = new Date(supportSession.expiresAt).getTime() <= Date.now();
+    // Sessão de suporte não expira por tempo — só encerra no "Sair", troca de
+    // usuário real ou perda de permissão de Mega Master.
     const actorMismatch = supportSession.actorUser.id !== realUser?.id;
     const requesterCannotImpersonate = !isSuperAdmin(realUser);
 
-    if (!realUser || expired || actorMismatch || requesterCannotImpersonate) {
+    if (!realUser || actorMismatch || requesterCannotImpersonate) {
       setSupportSession(null);
       writeStoredSupportSession(null);
     }
