@@ -72,6 +72,8 @@ export async function getNotasServico(params?: {
   p_busca?: string;
   p_limite?: number;
   p_offset?: number;
+  p_data_inicio?: string;
+  p_data_fim?: string;
 }) {
   const env = await callRPC<NotaServico[]>('get_notas_servico', params);
   return { dados: env.dados ?? [], total: env.total ?? 0 };

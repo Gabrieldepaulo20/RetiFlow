@@ -89,6 +89,37 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
     const noteId = createdNote.id_nota as string;
     createdNoteIds.add(noteId);
 
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const futureStart = new Date();
+    futureStart.setDate(futureStart.getDate() + 8);
+    const futureEnd = new Date();
+    futureEnd.setDate(futureEnd.getDate() + 9);
+
+    const filteredToday = await callRpc(client, 'get_notas_servico', {
+      p_busca: `${TEST_PREFIX} OS-${suffix}`,
+      p_data_inicio: yesterday.toISOString().slice(0, 10),
+      p_data_fim: tomorrow.toISOString().slice(0, 10),
+      p_limite: 5,
+    });
+    expect(filteredToday.status).toBe(200);
+    expect(filteredToday.total).toBeGreaterThanOrEqual(1);
+    expect(filteredToday.dados).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id_notas_servico: noteId }),
+    ]));
+
+    const filteredFuture = await callRpc(client, 'get_notas_servico', {
+      p_busca: `${TEST_PREFIX} OS-${suffix}`,
+      p_data_inicio: futureStart.toISOString().slice(0, 10),
+      p_data_fim: futureEnd.toISOString().slice(0, 10),
+      p_limite: 5,
+    });
+    expect(filteredFuture.status).toBe(200);
+    expect(filteredFuture.total).toBe(0);
+    expect(filteredFuture.dados).toEqual([]);
+
     const details = await callRpc(client, 'get_nota_servico_detalhes', {
       p_id_nota_servico: noteId,
     });

@@ -25,7 +25,7 @@ import NoteFormModal from '@/components/notes/NoteFormModal';
 import { noteMatchesNumericQuery } from '@/lib/noteNumbers';
 import { cn } from '@/lib/utils';
 import { buildWhatsAppUrl, openExternalUrl } from '@/lib/browserShare';
-import { format } from 'date-fns';
+import { format, startOfMonth, subDays } from 'date-fns';
 import { downloadCsv, toCsv, type CsvRow } from '@/lib/csv';
 import {
   getNotaPDFSignedUrl,
@@ -45,6 +45,7 @@ import { createPdfPreviewWindow, openPdfInBrowser } from '@/lib/printPdf';
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
 const NOTES_PAGE_SIZE = 50;
+type NoteDatePreset = 'all' | 'today' | '7d' | '30d' | 'month' | 'custom';
 const ACTIVE_NOTE_STATUSES = new Set<NoteStatus>([
   'ABERTO',
   'EM_ANALISE',
@@ -66,6 +67,12 @@ function initStatusFilters(searchParams: URLSearchParams): Set<string> {
   return new Set(raw.split(',').filter(Boolean));
 }
 
+function parseDateFilterInput(value: string) {
+  if (!value) return null;
+  const parsed = new Date(`${value}T00:00:00`);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
+}
+
 export default function IntakeNotes() {
   const { notes, clients, getServicesForNote, getProductsForNote } = useData();
   const queryClient = useQueryClient();
@@ -76,8 +83,9 @@ export default function IntakeNotes() {
   const debouncedSearch = useDebounce(search, 250);
   const [statusFilters, setStatusFilters] = useState<Set<string>>(() => initStatusFilters(urlParams));
   const [clientFilter, setClientFilter] = useState<string>('all');
-  const [monthFilter, setMonthFilter] = useState<string>('all');
-  const [yearFilter, setYearFilter] = useState<string>('all');
+  const [datePreset, setDatePreset] = useState<NoteDatePreset>('all');
+  const [customStartDate, setCustomStartDate] = useState(() => format(subDays(new Date(), 29), 'yyyy-MM-dd'));
+  const [customEndDate, setCustomEndDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [previewNoteId, setPreviewNoteId] = useState<string | null>(null);
   const [detailNoteId, setDetailNoteId] = useState<string | null>(null);
   const [newNoteOpen, setNewNoteOpen] = useState(false);
@@ -112,25 +120,62 @@ export default function IntakeNotes() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearch, statusFilters, clientFilter, monthFilter, yearFilter]);
+  }, [debouncedSearch, statusFilters, clientFilter, datePreset, customStartDate, customEndDate]);
 
   const allStatuses: Array<{ key: NoteStatus; label: string }> = NOTE_STATUS_ORDER.map(s => ({
     key: s,
     label: STATUS_LABELS[s],
   }));
-  const monthOptions = [
-    { value: '01', label: 'Janeiro' },
-    { value: '02', label: 'Fevereiro' },
-    { value: '03', label: 'Março' },
-    { value: '04', label: 'Abril' },
-    { value: '05', label: 'Maio' },
-    { value: '06', label: 'Junho' },
-    { value: '07', label: 'Julho' },
-    { value: '08', label: 'Agosto' },
-    { value: '09', label: 'Setembro' },
-    { value: '10', label: 'Outubro' },
-    { value: '11', label: 'Novembro' },
-    { value: '12', label: 'Dezembro' },
+  const dateRange = useMemo(() => {
+    const today = new Date();
+    const build = (start: Date, end: Date, label: string) => ({
+      start,
+      end,
+      startInput: format(start, 'yyyy-MM-dd'),
+      endInput: format(end, 'yyyy-MM-dd'),
+      label,
+    });
+
+    if (datePreset === 'today') {
+      return build(today, today, 'Hoje');
+    }
+
+    if (datePreset === '7d') {
+      return build(subDays(today, 6), today, 'Últimos 7 dias');
+    }
+
+    if (datePreset === '30d') {
+      return build(subDays(today, 29), today, 'Últimos 30 dias');
+    }
+
+    if (datePreset === 'month') {
+      return build(startOfMonth(today), today, `Este mês até ${format(today, 'dd/MM')}`);
+    }
+
+    if (datePreset === 'custom') {
+      const parsedStart = parseDateFilterInput(customStartDate) ?? subDays(today, 29);
+      const parsedEnd = parseDateFilterInput(customEndDate) ?? today;
+      const start = parsedStart.getTime() <= parsedEnd.getTime() ? parsedStart : parsedEnd;
+      const end = parsedStart.getTime() <= parsedEnd.getTime() ? parsedEnd : parsedStart;
+      return build(start, end, `${format(start, 'dd/MM/yyyy')} até ${format(end, 'dd/MM/yyyy')}`);
+    }
+
+    return {
+      start: null,
+      end: null,
+      startInput: undefined,
+      endInput: undefined,
+      label: 'Todo o período',
+    };
+  }, [customEndDate, customStartDate, datePreset]);
+
+  const datePresetOptions: Array<{ value: NoteDatePreset; label: string }> = [
+    { value: 'all', label: 'Todo período' },
+    { value: 'today', label: 'Hoje' },
+    { value: '7d', label: '7 dias' },
+    { value: '30d', label: '30 dias' },
+    { value: 'month', label: 'Este mês' },
+    { value: 'custom', label: 'Personalizado' },
   ];
 
   const statusCounts = useMemo(() => {
@@ -143,12 +188,6 @@ export default function IntakeNotes() {
     () => clients.filter((client) => client.isActive).sort((a, b) => a.name.localeCompare(b.name)),
     [clients],
   );
-
-  const availableYears = useMemo(() => {
-    return Array.from(
-      new Set(notes.map((note) => new Date(note.createdAt).getFullYear().toString())),
-    ).sort((a, b) => Number(b) - Number(a));
-  }, [notes]);
 
   const selectedStatus = statusFilters.size === 1
     ? ([...statusFilters][0] as NoteStatus)
@@ -169,6 +208,8 @@ export default function IntakeNotes() {
       clientFilter,
       selectedStatus,
       selectedStatusId,
+      dateRange.startInput,
+      dateRange.endInput,
     ],
     queryFn: async () => {
       const { dados, total } = await getNotasServico({
@@ -177,6 +218,8 @@ export default function IntakeNotes() {
         p_busca: debouncedSearch || undefined,
         p_fk_clientes: clientFilter !== 'all' ? clientFilter : undefined,
         p_fk_status: selectedStatusId,
+        p_data_inicio: dateRange.startInput,
+        p_data_fim: dateRange.endInput,
       });
 
       return {
@@ -203,12 +246,14 @@ export default function IntakeNotes() {
       if (effectiveStatusFilters.size > 0 && !effectiveStatusFilters.has(n.status)) return false;
       if (!IS_REAL_AUTH && clientFilter !== 'all' && n.clientId !== clientFilter) return false;
 
-      const noteDate = new Date(n.createdAt);
-      const noteMonth = `${noteDate.getMonth() + 1}`.padStart(2, '0');
-      const noteYear = noteDate.getFullYear().toString();
-
-      if (monthFilter !== 'all' && noteMonth !== monthFilter) return false;
-      if (yearFilter !== 'all' && noteYear !== yearFilter) return false;
+      if (dateRange.start && dateRange.end) {
+        const noteDate = new Date(n.createdAt);
+        const start = new Date(dateRange.start);
+        const end = new Date(dateRange.end);
+        start.setHours(0, 0, 0, 0);
+        end.setHours(23, 59, 59, 999);
+        if (noteDate.getTime() < start.getTime() || noteDate.getTime() > end.getTime()) return false;
+      }
 
       if (debouncedSearch) {
         const q = debouncedSearch.toLowerCase();
@@ -217,7 +262,7 @@ export default function IntakeNotes() {
       }
       return true;
     }).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [sourceNotes, debouncedSearch, effectiveStatusFilters, clientFilter, monthFilter, yearFilter, clients]);
+  }, [sourceNotes, debouncedSearch, effectiveStatusFilters, clientFilter, dateRange, clients]);
 
   const paginatedNotes = useMemo(() => {
     if (IS_REAL_AUTH) return filtered;
@@ -230,7 +275,6 @@ export default function IntakeNotes() {
     : filtered.length;
   const totalPages = Math.max(1, Math.ceil(totalForPagination / NOTES_PAGE_SIZE));
   const isLoadingNotesPage = IS_REAL_AUTH && serverNotesQuery.isFetching;
-  const hasLocalDateFilter = IS_REAL_AUTH && (monthFilter !== 'all' || yearFilter !== 'all');
   const hasUnsupportedMultiStatusFilter = IS_REAL_AUTH && statusFilters.size > 1;
   const listedTotalAmount = useMemo(
     () => filtered.reduce((sum, note) => sum + note.totalAmount, 0),
@@ -515,7 +559,7 @@ export default function IntakeNotes() {
                 Página {currentPage} de {totalPages}
               </Badge>
             </div>
-            <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(260px,0.9fr)_repeat(4,minmax(0,0.72fr))] xl:items-center">
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(260px,0.9fr)_repeat(3,minmax(0,0.72fr))] xl:items-center">
               <div className="relative min-w-0">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
@@ -541,29 +585,14 @@ export default function IntakeNotes() {
                   </SelectContent>
                 </Select>
 
-                <Select value={monthFilter} onValueChange={setMonthFilter}>
+                <Select value={datePreset} onValueChange={(value) => setDatePreset(value as NoteDatePreset)}>
                   <SelectTrigger className="h-11 rounded-xl border-border/70 bg-background shadow-sm">
-                    <SelectValue placeholder="Mês" />
+                    <SelectValue placeholder="Período" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Todos os meses</SelectItem>
-                    {monthOptions.map((month) => (
-                      <SelectItem key={month.value} value={month.value}>
-                        {month.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select value={yearFilter} onValueChange={setYearFilter}>
-                  <SelectTrigger className="h-11 rounded-xl border-border/70 bg-background shadow-sm">
-                    <SelectValue placeholder="Ano" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos os anos</SelectItem>
-                    {availableYears.map((year) => (
-                      <SelectItem key={year} value={year}>
-                        {year}
+                    {datePresetOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -644,6 +673,33 @@ export default function IntakeNotes() {
               </div>
             </div>
 
+            {datePreset === 'custom' && (
+              <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-primary/15 bg-primary/5 p-3">
+                <CalendarDays className="h-4 w-4 text-primary" />
+                <span className="text-xs font-semibold text-primary">Período da entrada</span>
+                <label className="sr-only" htmlFor="notas-start-date">Data inicial</label>
+                <Input
+                  id="notas-start-date"
+                  type="date"
+                  value={customStartDate}
+                  onChange={(event) => setCustomStartDate(event.target.value)}
+                  className="h-9 w-[160px] rounded-xl bg-background text-sm"
+                />
+                <span className="text-xs text-muted-foreground">até</span>
+                <label className="sr-only" htmlFor="notas-end-date">Data final</label>
+                <Input
+                  id="notas-end-date"
+                  type="date"
+                  value={customEndDate}
+                  onChange={(event) => setCustomEndDate(event.target.value)}
+                  className="h-9 w-[160px] rounded-xl bg-background text-sm"
+                />
+                <Badge variant="outline" className="rounded-full bg-background text-[11px]">
+                  {dateRange.label}
+                </Badge>
+              </div>
+            )}
+
             {/* Active filter badges */}
             <div className="flex items-center gap-2 flex-wrap min-h-5">
               {IS_REAL_AUTH && (
@@ -654,17 +710,12 @@ export default function IntakeNotes() {
               {IS_REAL_AUTH && isLoadingNotesPage && (
                 <span className="text-xs text-muted-foreground">Atualizando lista...</span>
               )}
-              {hasLocalDateFilter && (
-                <span className="text-xs text-amber-700">
-                  Mês/ano ainda filtram a página carregada; filtro completo no banco entra na próxima fase.
-                </span>
-              )}
               {hasUnsupportedMultiStatusFilter && (
                 <span className="text-xs text-amber-700">
                   Múltiplos status vindos da URL serão aplicados corretamente na RPC v2; selecione um status para filtrar agora.
                 </span>
               )}
-              {statusFilters.size === 0 && clientFilter === 'all' && monthFilter === 'all' && yearFilter === 'all' ? (
+              {statusFilters.size === 0 && clientFilter === 'all' && datePreset === 'all' ? (
                 <span className="text-xs text-muted-foreground">Sem filtros ativos</span>
               ) : (
                 <>
@@ -684,22 +735,16 @@ export default function IntakeNotes() {
                       {clients.find((client) => client.id === clientFilter)?.name ?? 'Cliente'}
                     </Badge>
                   )}
-                  {monthFilter !== 'all' && (
+                  {datePreset !== 'all' && (
                     <Badge variant="secondary" className="gap-1.5 px-2.5 py-1 rounded-full text-xs">
-                      {monthOptions.find((month) => month.value === monthFilter)?.label ?? `Mês ${monthFilter}`}
-                    </Badge>
-                  )}
-                  {yearFilter !== 'all' && (
-                    <Badge variant="secondary" className="gap-1.5 px-2.5 py-1 rounded-full text-xs">
-                      Ano {yearFilter}
+                      {dateRange.label}
                     </Badge>
                   )}
                   <button
                     onClick={() => {
                       setStatusFilters(new Set());
                       setClientFilter('all');
-                      setMonthFilter('all');
-                      setYearFilter('all');
+                      setDatePreset('all');
                     }}
                     className="text-xs text-primary font-medium hover:underline"
                   >

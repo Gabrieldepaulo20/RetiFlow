@@ -375,3 +375,38 @@ Plano aprovado para executar em fases:
   - `npm test -- --run`: passou, 42 arquivos e 323 testes.
   - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks/import dinamico.
   - `npm run test:integration`: passou, 16 arquivos e 53 testes.
+
+## Filtros De O.S., Dashboard Finalizado E CPF/CNPJ - 2026-06-05
+
+- Pedido: melhorar Notas de Entrada com filtro real por data, ajustar Dashboard para contabilizar valores de O.S. apenas quando `Finalizada`, impedir tempo medio negativo e permitir filtrar clientes por CPF/CNPJ.
+- Notas de Entrada:
+  - filtros de mes/ano foram substituidos por periodo com atalhos `Todo periodo`, `Hoje`, `7 dias`, `30 dias`, `Este mes` e `Personalizado`;
+  - periodo personalizado usa data inicial/final;
+  - filtro agora vai para o banco por `p_data_inicio` e `p_data_fim`, evitando limitar resultados somente a pagina carregada.
+- Banco/RPC:
+  - migrations locais criadas:
+    - `supabase/migrations/20260605024650_notas_servico_date_range_filters.sql`;
+    - `supabase/migrations/20260605025649_drop_old_notas_servico_overloads.sql`;
+  - migrations aplicadas no projeto `dqeoxxokvvcpssajycgq`:
+    - `notas_servico_date_range_filters`;
+    - `drop_old_notas_servico_overloads`;
+  - `get_notas_servico` e `get_notas_servico_contexto_suporte` ficaram com assinatura unica incluindo `p_data_inicio date` e `p_data_fim date`;
+  - overloads antigos foram removidos para evitar ambiguidade no PostgREST.
+- Dashboard:
+  - receita/faturamento, lucro, ticket medio e grafico financeiro passam a usar somente O.S. com status `FINALIZADO`;
+  - card de volume de O.S. lancadas nao mostra mais valor financeiro, para nao sugerir faturamento antes da finalizacao;
+  - tempo medio de O.S. nunca fica negativo; datas inconsistentes sao normalizadas para 0 dia e sinalizadas no subtitulo.
+- Clientes:
+  - adicionado filtro por tipo de documento `CPF` ou `CNPJ`;
+  - busca por documento normaliza numeros, permitindo pesquisar com ou sem pontuacao;
+  - tela mostra contadores de clientes filtrados, empresas com CNPJ e pessoas com CPF.
+- Validacao remota:
+  - dry-run SQL com `begin/rollback` passou antes de aplicar a primeira migration;
+  - catalogo remoto confirmou que restaram apenas as assinaturas novas das duas RPCs de O.S.;
+  - limpeza pos-integracao removeu 3 usuarios internos de teste e confirmou 0 usuarios internos suspeitos restantes.
+- Validacao final executada:
+  - `npx tsc --noEmit`: passou.
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh.
+  - `npm test -- --run`: passou, 42 arquivos e 323 testes.
+  - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks/import dinamico.
+  - `npm run test:integration`: passou, 16 arquivos e 53 testes.

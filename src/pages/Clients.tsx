@@ -46,6 +46,7 @@ export default function Clients() {
   const { toast } = useToast();
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [filterDocType, setFilterDocType] = useState<'all' | 'CPF' | 'CNPJ'>('all');
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [editingClientId, setEditingClientId] = useState<string | null>(null);
   const [newClientOpen, setNewClientOpen] = useState(false);
@@ -54,13 +55,30 @@ export default function Clients() {
     return clients.filter(c => {
       if (filterStatus === 'active' && !c.isActive) return false;
       if (filterStatus === 'inactive' && c.isActive) return false;
+      if (filterDocType !== 'all' && c.docType !== filterDocType) return false;
       if (search) {
         const q = search.toLowerCase();
-        return c.name.toLowerCase().includes(q) || c.docNumber.includes(q) || c.city.toLowerCase().includes(q);
+        const normalizedQuery = q.replace(/\D/g, '');
+        const normalizedDocument = c.docNumber.replace(/\D/g, '');
+        return c.name.toLowerCase().includes(q)
+          || c.docNumber.includes(q)
+          || (normalizedQuery.length > 0 && normalizedDocument.includes(normalizedQuery))
+          || c.city.toLowerCase().includes(q);
       }
       return true;
     });
-  }, [clients, search, filterStatus]);
+  }, [clients, search, filterStatus, filterDocType]);
+
+  const filteredDocCounts = useMemo(() => {
+    return filtered.reduce(
+      (acc, client) => {
+        if (client.docType === 'CNPJ') acc.cnpj += 1;
+        if (client.docType === 'CPF') acc.cpf += 1;
+        return acc;
+      },
+      { cpf: 0, cnpj: 0 },
+    );
+  }, [filtered]);
 
   const lastNote = (clientId: string) => {
     const cn = notes.filter(n => n.clientId === clientId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -113,6 +131,26 @@ export default function Clients() {
                 <SelectItem value="inactive">Inativos</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={filterDocType} onValueChange={(value) => setFilterDocType(value as 'all' | 'CPF' | 'CNPJ')}>
+              <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">CPF e CNPJ</SelectItem>
+                <SelectItem value="CPF">Somente CPF</SelectItem>
+                <SelectItem value="CNPJ">Somente CNPJ</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="mb-4 flex flex-wrap gap-2">
+            <Badge variant="outline" className="rounded-full bg-background">
+              {filtered.length} cliente{filtered.length !== 1 ? 's' : ''} na lista
+            </Badge>
+            <Badge variant="secondary" className="rounded-full">
+              {filteredDocCounts.cnpj} empresa{filteredDocCounts.cnpj !== 1 ? 's' : ''} (CNPJ)
+            </Badge>
+            <Badge variant="secondary" className="rounded-full">
+              {filteredDocCounts.cpf} pessoa{filteredDocCounts.cpf !== 1 ? 's' : ''} (CPF)
+            </Badge>
           </div>
 
           <div className="grid gap-3 xl:hidden">
@@ -193,7 +231,7 @@ export default function Clients() {
                 {filtered.map(c => (
                   <TableRow key={c.id}>
                     <TableCell className="font-medium truncate">{c.name}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground truncate">{c.docNumber}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground truncate">{c.docType}: {c.docNumber}</TableCell>
                     <TableCell className="text-sm truncate">{c.phone}</TableCell>
                     <TableCell className="text-sm truncate">{c.city}/{c.state}</TableCell>
                     <TableCell className="text-sm text-primary truncate">{lastNote(c.id) || '—'}</TableCell>

@@ -41,7 +41,7 @@ const ACTIVE_STATUSES = new Set<NoteStatus>([
   'ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'PRONTO', 'ENTREGUE',
 ]);
 
-const REVENUE_RECOGNIZED_STATUSES = new Set<NoteStatus>(['ENTREGUE', 'FINALIZADO']);
+const REVENUE_RECOGNIZED_STATUSES = new Set<NoteStatus>(['FINALIZADO']);
 const PAID_PAYABLE_STATUSES = new Set(['PAGO', 'PARCIAL']);
 const PROFIT_START_DATE = startOfDay(new Date(2026, 5, 1));
 
@@ -216,24 +216,31 @@ export default function Dashboard() {
     [notes],
   );
 
-  const allNotesTotalAmount = useMemo(
-    () => notes.reduce((sum, note) => sum + note.totalAmount, 0),
-    [notes],
-  );
-
   const totalRevenue = useMemo(
     () => revenueRecognizedNotes.reduce((s, n) => s + n.totalAmount, 0),
     [revenueRecognizedNotes],
   );
 
-  const avgDays = useMemo(() => {
-    const fin = revenueRecognizedNotes.filter(n => getRevenueDate(n));
-    if (!fin.length) return null;
-    const total = fin.reduce((sum, n) => {
-      return sum + differenceInDays(new Date(getRevenueDate(n)), new Date(n.createdAt));
-    }, 0);
-    return (total / fin.length).toFixed(1);
+  const avgDaysMetric = useMemo(() => {
+    const finalized = revenueRecognizedNotes
+      .map((note) => {
+        const createdAt = new Date(note.createdAt);
+        const finalizedAt = new Date(getRevenueDate(note));
+        if (!Number.isFinite(createdAt.getTime()) || !Number.isFinite(finalizedAt.getTime())) {
+          return null;
+        }
+        const days = differenceInDays(finalizedAt, createdAt);
+        return { days, normalizedDays: Math.max(0, days) };
+      })
+      .filter((item): item is { days: number; normalizedDays: number } => item !== null);
+
+    if (!finalized.length) return { value: null as string | null, adjustedCount: 0 };
+
+    const adjustedCount = finalized.filter((item) => item.days < 0).length;
+    const total = finalized.reduce((sum, item) => sum + item.normalizedDays, 0);
+    return { value: (total / finalized.length).toFixed(1), adjustedCount };
   }, [revenueRecognizedNotes]);
+  const avgDays = avgDaysMetric.value;
 
   const overdueNotes = useMemo(() => {
     const threshold = Date.now() - 7 * 86_400_000;
@@ -377,36 +384,38 @@ export default function Dashboard() {
       href: `/notas-entrada?status=${ACTIVE_STATUSES_PARAM}`,
     },
     {
-      label: 'Entregues',
+      label: 'Finalizadas',
       value: revenueRecognizedNotes.length,
       sub: `Taxa de sucesso: ${successRate}%`,
       icon: CheckCircle2,
       iconClass: 'text-emerald-600 bg-emerald-50',
       subClass: 'text-muted-foreground',
-      tooltip: 'O.S. entregues ou fechadas com sucesso. A taxa compara entregues/finalizadas contra canceladas, descartadas e sem conserto.',
-      href: '/notas-entrada?status=ENTREGUE,FINALIZADO',
+      tooltip: 'O.S. finalizadas. Essa é a etapa que representa serviço concluído e pagamento reconhecido no Dashboard.',
+      href: '/notas-entrada?status=FINALIZADO',
     },
     {
-      label: 'Valor entregue',
+      label: 'Valor finalizado',
       value: `R$ ${fmtBRL(totalRevenue)}`,
-      sub: 'O.S. entregues/fechadas',
+      sub: 'Somente O.S. finalizadas',
       icon: DollarSign,
       iconClass: 'text-primary bg-primary/10',
       subClass: 'text-muted-foreground',
-      tooltip: 'Soma do valor total das O.S. com status Entregue ou Finalizado desde a abertura do sistema.',
-      href: '/notas-entrada?status=ENTREGUE,FINALIZADO',
+      tooltip: 'Soma do valor total das O.S. com status Finalizado desde a abertura do sistema.',
+      href: '/notas-entrada?status=FINALIZADO',
     },
     {
       label: 'Tempo médio',
       value: avgDays ? `${avgDays} dias` : '—',
-      sub: 'Da abertura à entrega',
+      sub: avgDaysMetric.adjustedCount > 0
+        ? `${avgDaysMetric.adjustedCount} data${avgDaysMetric.adjustedCount !== 1 ? 's' : ''} corrigida${avgDaysMetric.adjustedCount !== 1 ? 's' : ''}`
+        : 'Da abertura à finalização',
       icon: avgDays && parseFloat(avgDays) > 10 ? AlertCircle : Timer,
       iconClass: avgDays && parseFloat(avgDays) > 10
         ? 'text-amber-600 bg-amber-50'
         : 'text-sky-600 bg-sky-50',
       subClass: 'text-muted-foreground',
-      tooltip: 'Média de dias entre a abertura e a entrega/fechamento da O.S.',
-      href: '/notas-entrada?status=ENTREGUE,FINALIZADO',
+      tooltip: 'Média de dias entre a abertura e a finalização da O.S. Datas finalizadas antes da abertura são tratadas como 0 dia para nunca exibir tempo negativo.',
+      href: '/notas-entrada?status=FINALIZADO',
     },
   ];
 
@@ -421,19 +430,19 @@ export default function Dashboard() {
       iconClass: 'text-violet-600 bg-violet-50',
       subClass: monthGrowth === null ? 'text-muted-foreground' : monthGrowth >= 0 ? 'text-emerald-600 font-medium' : 'text-red-500 font-medium',
       trend: monthGrowth,
-      tooltip: 'Receita gerada pelas O.S. entregues ou fechadas no mês atual. Comparação percentual em relação ao mês anterior.',
-      href: '/notas-entrada?status=ENTREGUE,FINALIZADO',
+      tooltip: 'Receita gerada pelas O.S. finalizadas no mês atual. Comparação percentual em relação ao mês anterior.',
+      href: '/notas-entrada?status=FINALIZADO',
     },
     {
       label: 'Ticket médio',
       value: ticketMedio > 0 ? `R$ ${fmtBRL(ticketMedio)}` : '—',
-      sub: `Base: ${revenueRecognizedNotes.length} O.S. entregues`,
+      sub: `Base: ${revenueRecognizedNotes.length} O.S. finalizadas`,
       icon: Receipt,
       iconClass: 'text-orange-600 bg-orange-50',
       subClass: 'text-muted-foreground',
       trend: null,
-      tooltip: 'Valor médio por O.S. entregue ou fechada. Calculado dividindo o valor entregue pelo número de O.S. entregues/fechadas.',
-      href: '/notas-entrada?status=ENTREGUE,FINALIZADO',
+      tooltip: 'Valor médio por O.S. finalizada. Calculado dividindo o valor finalizado pelo número de O.S. finalizadas.',
+      href: '/notas-entrada?status=FINALIZADO',
     },
     {
       label: 'Clientes cadastrados',
@@ -470,11 +479,6 @@ export default function Dashboard() {
     [isInSelectedPeriod, notes],
   );
 
-  const periodAllNotesAmount = useMemo(
-    () => periodNotes.reduce((sum, note) => sum + note.totalAmount, 0),
-    [periodNotes],
-  );
-
   const periodDeliveredNotes = useMemo(
     () => revenueRecognizedNotes.filter((note) => isInSelectedPeriod(getRevenueDate(note))),
     [isInSelectedPeriod, revenueRecognizedNotes],
@@ -486,8 +490,8 @@ export default function Dashboard() {
   );
 
   const periodProfitNotes = useMemo(
-    () => notes.filter((note) => isInProfitPeriod(note.createdAt)),
-    [isInProfitPeriod, notes],
+    () => revenueRecognizedNotes.filter((note) => isInProfitPeriod(getRevenueDate(note))),
+    [isInProfitPeriod, revenueRecognizedNotes],
   );
 
   const periodProfitNotesAmount = useMemo(
@@ -533,8 +537,8 @@ export default function Dashboard() {
       eachDayOfInterval({ start: selectedPeriod.start, end: selectedPeriod.end }).forEach(ensure);
     }
 
-    periodNotes.forEach((note) => {
-      const row = ensure(new Date(note.createdAt));
+    periodDeliveredNotes.forEach((note) => {
+      const row = ensure(new Date(getRevenueDate(note)));
       row.entrada += note.totalAmount;
     });
     periodPaidPayables.forEach((payable) => {
@@ -545,7 +549,7 @@ export default function Dashboard() {
     return Array.from(rows.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([, row]) => ({ ...row, lucro: row.entrada - row.saida }));
-  }, [periodNotes, periodPaidPayables, selectedPeriod.end, selectedPeriod.start]);
+  }, [periodDeliveredNotes, periodPaidPayables, selectedPeriod.end, selectedPeriod.start]);
 
   const hasPeriodFinancialData = periodFinancialData.some((item) => item.entrada > 0 || item.saida > 0);
 
@@ -908,26 +912,26 @@ export default function Dashboard() {
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-medium text-muted-foreground">Valor de todas O.S.</p>
-                  <p className="mt-2 text-2xl font-display font-bold leading-none">R$ {fmtBRL(periodAllNotesAmount)}</p>
+                  <p className="text-xs font-medium text-muted-foreground">O.S. lançadas</p>
+                  <p className="mt-2 text-2xl font-display font-bold leading-none">{periodNotes.length}</p>
                 </div>
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-700">
                   <FileText className="h-4 w-4" />
                 </div>
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
-                {periodNotes.length} O.S. no período · total geral R$ {fmtBRL(allNotesTotalAmount)}
+                Volume do período · não entra no faturamento até finalizar
               </p>
             </button>
 
             <button
               type="button"
-              onClick={() => navigate('/notas-entrada?status=ENTREGUE,FINALIZADO')}
+              onClick={() => navigate('/notas-entrada?status=FINALIZADO')}
               className="rounded-2xl border border-border/70 bg-background p-4 text-left transition hover:border-emerald-300 hover:bg-emerald-50/60"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-medium text-muted-foreground">Valor entregue/fechado</p>
+                  <p className="text-xs font-medium text-muted-foreground">Valor finalizado</p>
                   <p className="mt-2 text-2xl font-display font-bold leading-none text-emerald-700">R$ {fmtBRL(periodDeliveredAmount)}</p>
                 </div>
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
@@ -935,7 +939,7 @@ export default function Dashboard() {
                 </div>
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
-                {periodDeliveredNotes.length} O.S. entregues · geral R$ {fmtBRL(totalRevenue)}
+                {periodDeliveredNotes.length} O.S. finalizada{periodDeliveredNotes.length !== 1 ? 's' : ''} · geral R$ {fmtBRL(totalRevenue)}
               </p>
             </button>
 
@@ -995,7 +999,7 @@ export default function Dashboard() {
                   <RechartsTooltip
                     formatter={(value: number, name: string) => [
                       `R$ ${value.toLocaleString('pt-BR')}`,
-                      name === 'entrada' ? 'O.S. lançadas' : name === 'saida' ? 'Contas pagas' : 'Lucro',
+                      name === 'entrada' ? 'O.S. finalizadas' : name === 'saida' ? 'Contas pagas' : 'Lucro',
                     ]}
                     contentStyle={{ fontSize: 12 }}
                   />
@@ -1006,7 +1010,7 @@ export default function Dashboard() {
             ) : (
               <SectionEmptyState
                 title="Sem movimentação no período"
-                description="Escolha outro intervalo para ver entradas, contas pagas e lucro."
+                description="Escolha outro intervalo para ver O.S. finalizadas, contas pagas e lucro."
                 className="min-h-[220px] border-0 bg-transparent px-2"
               />
             )}
