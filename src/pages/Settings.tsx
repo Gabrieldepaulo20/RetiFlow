@@ -105,7 +105,7 @@ const SETTINGS_TABS = new Set([
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 
 export default function SettingsPage() {
-  const { user } = useAuth();
+  const { user, refreshProfile } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -318,6 +318,9 @@ export default function SettingsPage() {
         ) ?? previous,
       );
       await queryClient.invalidateQueries({ queryKey: ['auth', 'system-users'] });
+      if (selectedModuleUser.id === user?.id) {
+        await refreshProfile({ keepCurrentSessionOnTransientError: true });
+      }
       toast({
         title: nextModules[moduleKey] ? 'Módulo ativado' : 'Módulo desativado',
         description: `${MODULE_DEFS.find((module) => module.key === moduleKey)?.label} atualizado para ${selectedModuleUser.name}.`,

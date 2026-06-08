@@ -40,7 +40,12 @@ export function canUserAccessModule(user: SystemUser | null, moduleKey: AppModul
 
   if (user.role === 'ADMIN') {
     if (IS_REAL_AUTH && isSuperAdmin(user)) {
-      // Mega Master autorizado mantém acesso amplo para suporte/administração.
+      // Mega Master nunca perde o painel Admin, mas módulos operacionais
+      // explicitamente desligados no Supabase devem sumir do portal operacional.
+      if (moduleKey === 'admin') return true;
+      if (user.moduleAccess && typeof user.moduleAccess[moduleKey] === 'boolean') {
+        return user.moduleAccess[moduleKey] === true;
+      }
       return DEFAULT_ROLE_MODULE_CONFIG.ADMIN[moduleKey] === true;
     }
 

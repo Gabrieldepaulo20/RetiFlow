@@ -491,8 +491,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const can = useCallback((permission: Permission) => hasPermission(user, permission), [user]);
 
   const canAccessModule = useCallback((moduleKey: Parameters<typeof getModulePermission>[0]) => {
-    return canUserAccessModule(user, moduleKey);
-  }, [user]);
+    return canUserAccessModule(operationalUser, moduleKey);
+  }, [operationalUser]);
 
   const value = useMemo<AuthContextType>(
     () => ({

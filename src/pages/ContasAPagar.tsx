@@ -598,7 +598,7 @@ export default function ContasAPagar() {
             {filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-4 py-24 text-center"><Wallet className="h-10 w-10 text-muted-foreground" /><div className="max-w-sm"><h3 className="text-base font-semibold">Nenhuma conta encontrada</h3><p className="text-sm text-muted-foreground">Ajuste os filtros ou cadastre a primeira conta.</p></div><Button variant="outline" onClick={() => { setStatusFilter('all'); setPeriodFilter('all'); setOriginFilter('all'); setCategoryFilter('all'); setSearchRaw(''); }}>Limpar filtros</Button></div>
             ) : (
-              <div className="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid items-start gap-4 p-4 md:grid-cols-2 xl:grid-cols-3">
                 {filtered.map((payable, index) => {
                   const urgency = getDueDateUrgencyLevel(payable);
                   const displayStatus = getPayableDisplayStatus(payable);
@@ -643,7 +643,7 @@ export default function ContasAPagar() {
                       transition={{ delay: Math.min(index, 8) * 0.03, duration: 0.22 }}
                       whileHover={{ y: -2 }}
                       className={cn(
-                        'group relative flex overflow-hidden rounded-2xl border bg-card shadow-sm transition-shadow hover:shadow-md',
+                        'group relative flex h-fit overflow-hidden rounded-2xl border bg-card shadow-sm transition-shadow hover:shadow-md',
                         overdue && 'border-destructive/40',
                         isCancelled && 'opacity-70',
                       )}
@@ -654,7 +654,7 @@ export default function ContasAPagar() {
                           <SupplierAvatar name={payable.supplierName} categoryIcon={category?.icon} size={44} />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
+                              <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-1.5">
                                   {payable.isUrgent ? <AlertCircle className="h-3.5 w-3.5 shrink-0 text-destructive" aria-label="Urgente" /> : null}
                                   <p className="truncate text-sm font-semibold text-foreground leading-tight">{payable.title}</p>
@@ -663,7 +663,7 @@ export default function ContasAPagar() {
                                   <p className="mt-0.5 truncate text-xs text-muted-foreground">{payable.supplierName}</p>
                                 ) : null}
                               </div>
-                              <p className={cn('text-xl font-display font-bold tabular-nums tracking-tight whitespace-nowrap', valueColor)}>
+                              <p className={cn('max-w-[48%] truncate text-right text-lg font-display font-bold tabular-nums tracking-tight sm:text-xl', valueColor)}>
                                 {fmtBRL(payable.finalAmount)}
                               </p>
                             </div>
@@ -715,13 +715,13 @@ export default function ContasAPagar() {
                           <Button
                             variant="outline"
                             size="sm"
-                            className="min-w-[9rem] flex-1"
+                            className="min-w-0 flex-1 basis-32"
                             onClick={() => updateRouteModal('details', payable.id)}
                           >
                             Ver detalhes
                           </Button>
                           {primaryAction ? (
-                            <Button size="sm" className="min-w-[10rem] flex-1" onClick={primaryAction.onClick}>
+                            <Button size="sm" className="min-w-0 flex-1 basis-36" onClick={primaryAction.onClick}>
                               {primaryAction.label}
                             </Button>
                           ) : null}
