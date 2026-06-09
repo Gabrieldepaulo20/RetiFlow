@@ -65,6 +65,7 @@ function getSupportRpc(name: string, supportContext: SupportContext | null) {
     get_notas_servico: 'get_notas_servico_contexto_suporte',
     get_contas_pagar: 'get_contas_pagar_contexto_suporte',
     get_nota_servico_detalhes: 'get_nota_servico_detalhes_contexto_suporte',
+    get_servicos_resumo: 'get_servicos_resumo_contexto_suporte',
   };
 
   return {
@@ -128,25 +129,21 @@ Deno.serve(async (request) => {
     ]);
 
     const notas = Array.isArray(notasEnvelope.dados) ? notasEnvelope.dados : [];
-    const servicos: Array<Record<string, unknown>> = [];
 
-    await Promise.all(notas.map(async (nota) => {
-      const noteId = typeof nota.id_notas_servico === 'string' ? nota.id_notas_servico : '';
-      if (!noteId) return;
-
-      const detalhesRpc = getSupportRpc('get_nota_servico_detalhes', supportContext);
-      try {
-        const detalhes = await callRpc<{
-          status?: number;
-          itens_servico?: Array<Record<string, unknown>>;
-        }>(userClient, detalhesRpc.name, { p_id_nota_servico: noteId, ...detalhesRpc.params });
-
-        if (detalhes.status !== 200 || !Array.isArray(detalhes.itens_servico)) return;
-        detalhes.itens_servico.forEach((item) => servicos.push({ ...item, note_id: noteId }));
-      } catch {
-        // Um detalhe quebrado não deve derrubar o dashboard inteiro.
-      }
-    }));
+    // Agrega os itens de serviço numa única RPC (antes era N+1: uma chamada de
+    // get_nota_servico_detalhes por nota — gargalo grave no dashboard/suporte).
+    const servicosRpc = getSupportRpc('get_servicos_resumo', supportContext);
+    let servicos: Array<Record<string, unknown>> = [];
+    try {
+      const servicosEnvelope = await callRpc<{ dados?: Array<Record<string, unknown>> }>(
+        userClient,
+        servicosRpc.name,
+        { p_limite: limit, ...servicosRpc.params },
+      );
+      servicos = Array.isArray(servicosEnvelope.dados) ? servicosEnvelope.dados : [];
+    } catch {
+      // Falha ao agregar serviços não deve derrubar o dashboard inteiro.
+    }
 
     return jsonResponse({
       status: 200,

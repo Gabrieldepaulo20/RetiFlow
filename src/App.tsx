@@ -57,7 +57,19 @@ const AdminUsers = lazy(loadAdminUsersPage);
 const AccessDenied = lazy(loadAccessDeniedPage);
 const NotFound = lazy(loadNotFoundPage);
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Evita refetch redundante a cada mount/troca de tela/foco de janela —
+      // reduz a sensação de "carregando/validando toda hora". Telas que precisam
+      // de dados sempre frescos podem sobrescrever staleTime localmente.
+      staleTime: 30_000,
+      gcTime: 5 * 60_000,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
 
 function PageFallback() {
   return (
