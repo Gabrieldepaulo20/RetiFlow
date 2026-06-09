@@ -404,6 +404,26 @@ Plano aprovado para executar em fases:
   - `Sem filtros ativos` permanece sozinho quando não houver filtro aplicado.
 - Alteração apenas de frontend; sem mudança de banco, RPC, Storage ou Edge Function.
 
+## Limpeza De Usuarios Tenant/Integracao - 2026-06-09
+
+- Pedido: apagar usuarios de tenant/teste criados e que estavam poluindo o sistema.
+- Diagnostico seguro identificou somente usuarios nos padroes de teste conhecidos:
+  - 7 usuarios temporarios `tenant-isolation-...@retifica.test` sem `auth_id`;
+  - 1 usuario fixo `integration.test@retifica.com` com `auth_id`.
+- Conferencia de dependencias antes da exclusao:
+  - cada usuario tinha apenas 1 registro em `RetificaPremium.Modulos`;
+  - 0 contas a pagar, anexos, historicos, configuracoes, sessoes de suporte, Gmail, chamados e logs vinculados.
+- Execucao real:
+  - 8 registros removidos de `RetificaPremium.Usuarios`;
+  - 8 registros removidos de `RetificaPremium.Modulos`;
+  - 1 usuario removido do Supabase Auth (`integration.test@retifica.com`).
+- Validacao pos-limpeza:
+  - 0 usuarios restantes em `RetificaPremium.Usuarios` para `tenant-isolation-...@retifica.test` e `integration.test@retifica.com`;
+  - 0 modulos restantes para esses usuarios;
+  - 0 usuarios restantes no Supabase Auth nesses padroes.
+- Observacao:
+  - `npm run test:integration` nao foi rodado depois desta limpeza operacional porque os testes de integracao recriam esses usuarios quando executados.
+
 ## Filtros De O.S., Dashboard Finalizado E CPF/CNPJ - 2026-06-05
 
 - Pedido: melhorar Notas de Entrada com filtro real por data, ajustar Dashboard para contabilizar valores de O.S. apenas quando `Finalizada`, impedir tempo medio negativo e permitir filtrar clientes por CPF/CNPJ.
