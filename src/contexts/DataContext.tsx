@@ -232,6 +232,20 @@ interface DataCtx {
 
 const Ctx = createContext<DataCtx | null>(null);
 
+/**
+ * Fatia de Contas a Pagar exposta num contexto próprio. Componentes que só
+ * mexem com payables (ex.: ContasAPagar) leem daqui e NÃO re-renderizam quando
+ * notas/clientes/dataVersion mudam — reduz re-render em massa do contexto único.
+ * Migração incremental: useData() segue intacto para os demais consumidores.
+ */
+type PayablesData = Pick<DataCtx,
+  | 'payables' | 'payableCategories' | 'payableSuppliers' | 'payableAttachments' | 'payableHistory'
+  | 'addPayable' | 'updatePayable' | 'getPayable' | 'addPayableAttachment' | 'addPayableHistoryEntry'
+  | 'getAttachmentsForPayable' | 'getHistoryForPayable' | 'getInstallmentSiblings'
+  | 'emailSuggestions' | 'refreshEmailSuggestions' | 'acceptEmailSuggestion' | 'dismissEmailSuggestion'
+>;
+const PayablesCtx = createContext<PayablesData | null>(null);
+
 const uid = () => generateId();
 
 export function DataProvider({ children }: { children: ReactNode }) {
@@ -1167,9 +1181,51 @@ export function DataProvider({ children }: { children: ReactNode }) {
     dismissEmailSuggestion,
   ]);
 
+  // Valor escopado só de payables — deps SEM notas/clientes/dataVersion, então
+  // permanece estável (não re-renderiza ContasAPagar) quando esses outros mudam.
+  const payablesValue = useMemo<PayablesData>(() => ({
+    payables,
+    payableCategories,
+    payableSuppliers,
+    payableAttachments,
+    payableHistory,
+    addPayable,
+    updatePayable,
+    getPayable,
+    addPayableAttachment,
+    addPayableHistoryEntry,
+    getAttachmentsForPayable,
+    getHistoryForPayable,
+    getInstallmentSiblings,
+    emailSuggestions,
+    refreshEmailSuggestions,
+    acceptEmailSuggestion,
+    dismissEmailSuggestion,
+  }), [
+    payables,
+    payableCategories,
+    payableSuppliers,
+    payableAttachments,
+    payableHistory,
+    addPayable,
+    updatePayable,
+    getPayable,
+    addPayableAttachment,
+    addPayableHistoryEntry,
+    getAttachmentsForPayable,
+    getHistoryForPayable,
+    getInstallmentSiblings,
+    emailSuggestions,
+    refreshEmailSuggestions,
+    acceptEmailSuggestion,
+    dismissEmailSuggestion,
+  ]);
+
   return (
     <Ctx.Provider value={value}>
-      {children}
+      <PayablesCtx.Provider value={payablesValue}>
+        {children}
+      </PayablesCtx.Provider>
     </Ctx.Provider>
   );
 }
@@ -1179,6 +1235,16 @@ export function useData() {
   const ctx = useContext(Ctx);
   if (!ctx) {
     throw new Error('useData must be within DataProvider');
+  }
+
+  return ctx;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function usePayablesData() {
+  const ctx = useContext(PayablesCtx);
+  if (!ctx) {
+    throw new Error('usePayablesData must be within DataProvider');
   }
 
   return ctx;

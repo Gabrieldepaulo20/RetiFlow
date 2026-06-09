@@ -7,7 +7,7 @@ import { AlertCircle, AlertTriangle, CalendarCheck, CalendarClock, CheckCircle2,
 import { getCategoryIcon } from '@/lib/payableCategoryIcon';
 import { SupplierAvatar } from '@/components/payables/SupplierAvatar';
 import { useAuth } from '@/contexts/AuthContext';
-import { useData } from '@/contexts/DataContext';
+import { usePayablesData } from '@/contexts/DataContext';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent } from '@/components/ui/card';
@@ -74,7 +74,7 @@ function DueDateLabel({ payable }: { payable: AccountPayable }) {
 type PageView = 'contas' | 'sugestoes';
 
 export default function ContasAPagar() {
-  const { payables, payableCategories, updatePayable, addPayable, addPayableHistoryEntry, emailSuggestions } = useData();
+  const { payables, payableCategories, updatePayable, addPayable, addPayableHistoryEntry, emailSuggestions } = usePayablesData();
   const { user, isSupportImpersonating } = useAuth();
   // Sugestões em modo suporte: a leitura é escopada à empresa via
   // get_sugestoes_email_contexto_suporte e as ações usam RPCs de escrita
