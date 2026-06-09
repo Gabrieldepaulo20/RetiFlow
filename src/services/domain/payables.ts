@@ -22,6 +22,54 @@ export const PAYABLE_FIELD_LIMITS = {
   paymentNotes: 300,
 } as const;
 
+const GENERIC_PAYABLE_TITLES = new Set([
+  'boleto',
+  'cobranca',
+  'cobrança',
+  'conta',
+  'duplicata',
+  'fatura',
+  'nota',
+  'nota fiscal',
+  'pagamento',
+  'recibo',
+]);
+
+function normalizeTitleKey(value?: string | null) {
+  return normalizeDedupName(value).replace(/[^\p{L}\p{N}\s]/gu, '').trim();
+}
+
+export function isGenericPayableTitle(value?: string | null): boolean {
+  const key = normalizeTitleKey(value);
+  return !key || GENERIC_PAYABLE_TITLES.has(key);
+}
+
+export function buildMeaningfulPayableTitle(input: {
+  title?: string | null;
+  supplierName?: string | null;
+  docNumber?: string | null;
+  dueDate?: string | null;
+  recurrenceIndex?: number | null;
+  totalInstallments?: number | null;
+}) {
+  const title = (input.title ?? '').replace(/\s+/g, ' ').trim();
+  if (!isGenericPayableTitle(title)) return title;
+
+  const supplier = (input.supplierName ?? '').replace(/\s+/g, ' ').trim();
+  const parts = [title || 'Conta'];
+  if (supplier) parts.push(supplier);
+
+  if (input.recurrenceIndex && input.totalInstallments) {
+    parts.push(`${input.recurrenceIndex}/${input.totalInstallments}`);
+  } else if (input.docNumber) {
+    parts.push(input.docNumber.replace(/\s+/g, ' ').trim());
+  } else if (input.dueDate) {
+    parts.push(format(parseISO(input.dueDate), 'MM/yyyy'));
+  }
+
+  return parts.filter(Boolean).join(' · ').slice(0, PAYABLE_FIELD_LIMITS.title);
+}
+
 // ─── Categorias padrão ───────────────────────────────────────────────────────
 // IDs estáveis para seed — não alterar sem migrar os registros existentes.
 

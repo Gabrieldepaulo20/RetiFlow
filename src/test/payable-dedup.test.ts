@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generatePayableDuplicateKey, findPayableForSuggestion } from '@/services/domain/payables';
+import { buildMeaningfulPayableTitle, generatePayableDuplicateKey, findPayableForSuggestion, isGenericPayableTitle } from '@/services/domain/payables';
 import type { AccountPayable } from '@/types';
 
 function payable(overrides: Partial<AccountPayable>): AccountPayable {
@@ -53,5 +53,22 @@ describe('payable dedup (chave por nome normalizado)', () => {
   it('conta cancelada/excluída não bloqueia duplicata', () => {
     const cancelled = [payable({ status: 'CANCELADO', supplierName: 'Sabesp', originalAmount: 231.7, dueDate: '2026-05-15' })];
     expect(findPayableForSuggestion({ suggestedSupplierName: 'Sabesp', suggestedAmount: 231.7, suggestedDueDate: '2026-05-15' }, cancelled)).toBeNull();
+  });
+
+  it('detecta título genérico e monta descrição útil para evitar "Duplicata" solta', () => {
+    expect(isGenericPayableTitle('  duplicata ')).toBe(true);
+    expect(buildMeaningfulPayableTitle({
+      title: 'Duplicata',
+      supplierName: 'Auto Peças Silva',
+      dueDate: '2026-06-10',
+    })).toBe('Duplicata · Auto Peças Silva · 06/2026');
+  });
+
+  it('preserva título financeiro já descritivo', () => {
+    expect(buildMeaningfulPayableTitle({
+      title: 'Salário João Maio',
+      supplierName: 'João',
+      dueDate: '2026-06-05',
+    })).toBe('Salário João Maio');
   });
 });

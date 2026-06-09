@@ -227,6 +227,45 @@ function buildTitle(subject: string, senderName: string) {
   return (subject.replace(/\s+/g, ' ').trim() || `Conta de ${senderName || 'fornecedor'}`).slice(0, 120);
 }
 
+const genericPayableTitles = new Set([
+  'boleto',
+  'cobranca',
+  'cobrança',
+  'conta',
+  'duplicata',
+  'fatura',
+  'nota',
+  'nota fiscal',
+  'pagamento',
+  'recibo',
+]);
+
+function normalizeTitleKey(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildMeaningfulTitle(input: {
+  title: string;
+  supplierName: string;
+  dueDate?: string | null;
+  paymentDate?: string | null;
+}) {
+  const title = input.title.replace(/\s+/g, ' ').trim();
+  if (title && !genericPayableTitles.has(normalizeTitleKey(title))) return title.slice(0, 120);
+
+  const parts = [title || 'Conta'];
+  if (input.supplierName) parts.push(input.supplierName);
+  const referenceDate = input.dueDate ?? input.paymentDate;
+  if (referenceDate) parts.push(referenceDate.slice(0, 7).split('-').reverse().join('/'));
+  return parts.filter(Boolean).join(' · ').slice(0, 120);
+}
+
 type GmailPayload = {
   filename?: string;
   mimeType?: string;
@@ -464,6 +503,7 @@ function normalizeAnalysis(raw: unknown, subject: string, senderName: string): P
   const senderRisk = normalizeSenderRisk(root.senderRisk);
   const paymentDate = normalizeIsoDate(root.paymentDate);
   const dueDate = normalizeIsoDate(root.dueDate) ?? (suggestedStatus === 'PAGO' ? paymentDate : null);
+  const supplierName = String(root.supplierName ?? (senderName || 'Fornecedor não identificado')).replace(/\s+/g, ' ').trim().slice(0, 120);
 
   return {
     isPayable: Boolean(root.isPayable),
@@ -472,11 +512,16 @@ function normalizeAnalysis(raw: unknown, subject: string, senderName: string): P
     senderVerdict: String(root.senderVerdict ?? '').replace(/\s+/g, ' ').trim().slice(0, 180),
     verificationSignals: normalizeStringList(root.verificationSignals),
     fraudSignals: normalizeStringList(root.fraudSignals),
-    title: String(root.title ?? buildTitle(subject, senderName)).replace(/\s+/g, ' ').trim().slice(0, 120),
+    title: buildMeaningfulTitle({
+      title: String(root.title ?? buildTitle(subject, senderName)),
+      supplierName,
+      dueDate,
+      paymentDate,
+    }),
     amount: typeof amount === 'number' && Number.isFinite(amount) && amount > 0 ? Number(amount.toFixed(2)) : null,
     dueDate: dueDate ? `${dueDate.slice(0, 10)}T00:00:00` : null,
     paymentDate: paymentDate ? `${paymentDate.slice(0, 10)}T00:00:00` : null,
-    supplierName: String(root.supplierName ?? (senderName || 'Fornecedor não identificado')).replace(/\s+/g, ' ').trim().slice(0, 120),
+    supplierName,
     paymentMethod: normalizePaymentMethod(root.paymentMethod),
     confidence: Math.max(0, Math.min(100, Number(root.confidence ?? 0))),
     reason: String(root.reason ?? '').replace(/\s+/g, ' ').trim().slice(0, 240),
@@ -571,6 +616,8 @@ async function analyzePayableEmail(params: {
     '- Para suggestedStatus=PAGO, paymentDate deve ser a data do pagamento quando existir. Se o e-mail disser apenas que está pago sem data clara, use paymentDate=null.',
     '- suggestedStatus=AGENDADO quando disser que o pagamento está agendado para uma data futura, sem confirmação de liquidação.',
     '- suggestedStatus=PENDENTE para boleto/fatura/cobrança ainda a pagar.',
+    '- Salário, holerite, pró-labore, folha de pagamento ou recibo de funcionário também são contas a pagar; use supplierName como nome do funcionário ou "Folha de Pagamento" e trate recorrência como mensal no raciocínio.',
+    '- Se o e-mail mencionar "parcela X/Y", "parcela X de Y" ou "prestação X de Y", deixe isso claro no title ou reason para não confundir parcela real com duplicidade.',
     '- Promoções, propagandas, newsletter, venda de maquininha, desconto, campanha de marketing e avisos sem cobrança real devem ser isPayable=false.',
     '- Nunca invente valor ou vencimento. Se não estiver claro, use null.',
     '- Se houver PDF/imagem anexa, priorize o conteúdo do anexo sobre o texto do e-mail.',
@@ -579,6 +626,7 @@ async function analyzePayableEmail(params: {
     '- Se houver duas interpretações possíveis para uma data numérica, prefira o padrão brasileiro e uma data coerente com o recebimento do e-mail.',
     '- Para criar sugestão útil, valor e vencimento precisam estar claros no e-mail.',
     '- Use title simples para o usuário final, como "Boleto Viação Sertanezina" ou "Fatura Nubank Empresas".',
+    '- Nunca use title genérico sozinho como "Duplicata", "Boleto" ou "Fatura"; acrescente fornecedor, competência, vencimento ou parcela.',
     '- confidence de 0 a 100 representa segurança REAL da sugestão, incluindo legitimidade do remetente. 90+ só com cobrança clara e remetente/autenticação/beneficiário coerentes; 70-89 plausível; 55-69 precisa revisão; abaixo de 55 não deve virar sugestão.',
     '- verificationSignals deve listar provas curtas de legitimidade. fraudSignals deve listar alertas curtos, se existirem.',
   ].join('\n');

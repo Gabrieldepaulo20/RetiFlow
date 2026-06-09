@@ -62,6 +62,7 @@ import {
   type SugestaoEmail,
 } from '@/api/supabase/sugestoes-email';
 import { dashboardResumoToDomainData, getDashboardResumo } from '@/api/supabase/dashboard';
+import { buildMeaningfulPayableTitle } from '@/services/domain/payables';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -961,9 +962,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (!suggestion) return null;
     const now = new Date().toISOString();
     const localId = uid();
+    const title = buildMeaningfulPayableTitle({
+      title: suggestion.suggestedTitle,
+      supplierName: suggestion.suggestedSupplierName,
+      dueDate: suggestion.suggestedDueDate,
+    });
     const newPayable: AccountPayable = {
       id: localId,
-      title: suggestion.suggestedTitle,
+      title,
       supplierName: suggestion.suggestedSupplierName,
       categoryId: suggestion.suggestedCategoryId,
       dueDate: suggestion.suggestedDueDate,
@@ -983,6 +989,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     };
     if (IS_REAL_AUTH) {
       const dbId = await aceitarSugestaoEmail(id);
+      if (title !== suggestion.suggestedTitle) {
+        await updateContaPagar(dbId, { p_titulo: title });
+      }
       const refreshed = await getContasPagar({ p_limite: 5000 });
       setPayables(refreshed.dados.map(supabaseToAccountPayable));
       setEmailSuggestions((prev) => prev.map((s) => s.id === id ? { ...s, status: 'ACCEPTED' } : s));

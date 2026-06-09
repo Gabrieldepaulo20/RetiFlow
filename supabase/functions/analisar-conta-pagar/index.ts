@@ -185,6 +185,53 @@ function normalizeNumber(value: unknown) {
   return Number.isFinite(number) && number > 0 ? Number(number.toFixed(2)) : 0;
 }
 
+const genericPayableTitles = new Set([
+  'boleto',
+  'cobranca',
+  'cobrança',
+  'conta',
+  'duplicata',
+  'fatura',
+  'nota',
+  'nota fiscal',
+  'pagamento',
+  'recibo',
+]);
+
+function normalizeTitleKey(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildMeaningfulTitle(input: {
+  title: string;
+  supplierName: string;
+  dueDate: string;
+  docNumber?: string;
+  recurrenceIndex?: number;
+  totalInstallments?: number;
+}) {
+  const title = input.title.replace(/\s+/g, ' ').trim();
+  if (title && !genericPayableTitles.has(normalizeTitleKey(title))) return title.slice(0, 120);
+
+  const parts = [title || 'Conta'];
+  if (input.supplierName) parts.push(input.supplierName);
+  if (input.recurrenceIndex && input.totalInstallments) {
+    parts.push(`${input.recurrenceIndex}/${input.totalInstallments}`);
+  } else if (input.docNumber) {
+    parts.push(input.docNumber);
+  } else if (input.dueDate) {
+    parts.push(input.dueDate.slice(0, 7).split('-').reverse().join('/'));
+  }
+
+  return parts.filter(Boolean).join(' · ').slice(0, 120);
+}
+
 function sanitizeAnalysis(raw: unknown, validCategoryIds: Set<string>, fallbackCategoryId: string): AnalysisResult {
   const root = isRecord(raw) ? raw : {};
   const draft = isRecord(root.draft) ? root.draft : {};
@@ -194,13 +241,28 @@ function sanitizeAnalysis(raw: unknown, validCategoryIds: Set<string>, fallbackC
   const rawCategoryId = typeof draft.categoryId === 'string' ? draft.categoryId : '';
   const categoryId = validCategoryIds.has(rawCategoryId) ? rawCategoryId : fallbackCategoryId;
   const originalAmount = normalizeNumber(draft.originalAmount);
+  const supplierName = String(draft.supplierName ?? 'Fornecedor não identificado').slice(0, 120);
+  const dueDate = normalizeDate(draft.dueDate);
+  const recurrenceIndex = typeof draft.recurrenceIndex === 'number' && draft.recurrenceIndex > 0
+    ? draft.recurrenceIndex
+    : undefined;
+  const totalInstallments = typeof draft.totalInstallments === 'number' && draft.totalInstallments > 1
+    ? draft.totalInstallments
+    : undefined;
 
   return {
     draft: {
-      title: String(draft.title ?? 'Conta importada com IA').slice(0, 120),
-      supplierName: String(draft.supplierName ?? 'Fornecedor não identificado').slice(0, 120),
+      title: buildMeaningfulTitle({
+        title: String(draft.title ?? 'Conta importada com IA'),
+        supplierName,
+        dueDate,
+        docNumber: typeof draft.docNumber === 'string' ? draft.docNumber.slice(0, 60) : undefined,
+        recurrenceIndex,
+        totalInstallments,
+      }),
+      supplierName,
       categoryId,
-      dueDate: normalizeDate(draft.dueDate),
+      dueDate,
       issueDate: typeof draft.issueDate === 'string' ? normalizeDate(draft.issueDate) : undefined,
       originalAmount,
       paymentMethod: ['PIX', 'BOLETO', 'TRANSFERENCIA', 'CARTAO_CREDITO', 'CARTAO_DEBITO', 'DINHEIRO', 'CHEQUE', 'DEBITO_AUTOMATICO'].includes(paymentMethod)
@@ -215,12 +277,8 @@ function sanitizeAnalysis(raw: unknown, validCategoryIds: Set<string>, fallbackC
       suggestedStatus: ['PAGO', 'PENDENTE', 'AGENDADO', 'INCERTO'].includes(suggestedStatus)
         ? suggestedStatus as SuggestedStatus
         : 'INCERTO',
-      recurrenceIndex: typeof draft.recurrenceIndex === 'number' && draft.recurrenceIndex > 0
-        ? draft.recurrenceIndex
-        : undefined,
-      totalInstallments: typeof draft.totalInstallments === 'number' && draft.totalInstallments > 1
-        ? draft.totalInstallments
-        : undefined,
+      recurrenceIndex,
+      totalInstallments,
     },
     fields: Array.isArray(root.fields) ? root.fields.slice(0, 12).map((field: unknown) => {
       const item = isRecord(field) ? field : {};
@@ -379,11 +437,13 @@ Deno.serve(async (request) => {
         '',
         '3. FORNECEDOR — identificação:',
         '   - supplierName: nome da empresa emitente (ex: "SABESP", "Enel SP", "Prefeitura de São Paulo").',
+        '   - Para salário/folha/recibo de funcionário, supplierName deve ser o nome do funcionário ou "Folha de Pagamento" se o nome não estiver claro.',
         '   - Se o CNPJ do fornecedor estiver visível, inclua em observations no formato "CNPJ: XX.XXX.XXX/XXXX-XX".',
         '   - Se o fornecedor estiver na lista de fornecedores conhecidos, use o nome exatamente como está na lista.',
         '',
         '4. RECORRÊNCIA — inferir pelo tipo de documento:',
         '   - Água, energia elétrica, gás, internet, telefone, aluguel, condomínio → recurrence: "MENSAL".',
+        '   - Salário, pró-labore, folha de pagamento, holerite ou recibo de funcionário → recurrence: "MENSAL".',
         '   - IPTU, IPVA → recurrence: "ANUAL".',
         '   - Plano de saúde mensal → recurrence: "MENSAL".',
         '   - Compra única, nota fiscal de produto, boleto avulso → recurrence: "NENHUMA".',
@@ -391,6 +451,8 @@ Deno.serve(async (request) => {
         '5. PARCELAMENTO — detectar automaticamente:',
         '   - Se o documento mencionar "parcela X de Y", "X/Y", "prestação X de Y", extraia:',
         '     recurrenceIndex: X (número da parcela atual), totalInstallments: Y (total de parcelas).',
+        '   - Duas cobranças parecidas só devem ser tratadas como parcelas quando houver indicação explícita de parcela, prestação, mensalidade ou competência diferente.',
+        '   - Nunca use title genérico sozinho como "Duplicata", "Boleto" ou "Fatura"; acrescente fornecedor, documento, competência ou parcela.',
         '   - Caso contrário: recurrenceIndex: null, totalInstallments: null.',
         '',
         '6. URGÊNCIA:',

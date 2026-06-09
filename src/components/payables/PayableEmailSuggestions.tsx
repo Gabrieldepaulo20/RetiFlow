@@ -662,18 +662,26 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
 
   async function acceptSuggestionNow(suggestion: EmailSuggestion) {
     setPaidSuggestionToConfirm(null);
-    const payable = await acceptEmailSuggestion(suggestion.id);
-    if (!payable) return;
-    addPayableHistoryEntry(buildPayableHistoryDescription({
-      payableId: payable.id,
-      action: 'CREATED',
-      userId: user?.id ?? 'user-2',
-    }));
-    toast({
-      title: suggestion.suggestedStatus === 'PAGO' ? 'Conta paga adicionada' : 'Conta criada a partir do e-mail',
-      description: `"${payable.title}" já está na listagem.`,
-    });
-    onCreated?.(payable.id);
+    try {
+      const payable = await acceptEmailSuggestion(suggestion.id);
+      if (!payable) return;
+      addPayableHistoryEntry(buildPayableHistoryDescription({
+        payableId: payable.id,
+        action: 'CREATED',
+        userId: user?.id ?? 'user-2',
+      }));
+      toast({
+        title: suggestion.suggestedStatus === 'PAGO' ? 'Conta paga adicionada' : 'Conta criada a partir do e-mail',
+        description: `"${payable.title}" já está na listagem.`,
+      });
+      onCreated?.(payable.id);
+    } catch (error) {
+      toast({
+        title: 'Não foi possível criar a conta',
+        description: error instanceof Error ? error.message : 'Tente novamente em instantes.',
+        variant: 'destructive',
+      });
+    }
   }
 
   async function handleAccept(suggestion: EmailSuggestion) {
@@ -687,32 +695,30 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
   async function handleMarkPaid(suggestion: EmailSuggestion) {
     // Cobrança vencida que o usuário confirma já ter sido paga: cria a conta e
     // registra o pagamento total na data de hoje, em um passo.
-    const payable = await acceptEmailSuggestion(suggestion.id);
-    if (!payable) return;
     try {
+      const payable = await acceptEmailSuggestion(suggestion.id);
+      if (!payable) return;
       await updatePayable(payable.id, {
         status: 'PAGO',
         paidAmount: payable.finalAmount,
         paidAt: new Date().toISOString(),
         paidWith: payable.paymentMethod,
       });
+      addPayableHistoryEntry(buildPayableHistoryDescription({
+        payableId: payable.id,
+        action: 'PAID',
+        userId: user?.id ?? 'user-2',
+        extra: { paidAmount: payable.finalAmount },
+      }));
+      toast({ title: 'Conta criada e marcada como paga', description: `"${payable.title}" já entrou como quitada.` });
+      onCreated?.(payable.id);
     } catch (error) {
       toast({
-        title: 'Conta criada, mas falhou ao marcar como paga',
-        description: error instanceof Error ? error.message : 'Registre o pagamento manualmente.',
+        title: 'Não foi possível criar como paga',
+        description: error instanceof Error ? error.message : 'Tente novamente. Nenhuma sugestão deve ser considerada quitada sem confirmação.',
         variant: 'destructive',
       });
-      onCreated?.(payable.id);
-      return;
     }
-    addPayableHistoryEntry(buildPayableHistoryDescription({
-      payableId: payable.id,
-      action: 'PAID',
-      userId: user?.id ?? 'user-2',
-      extra: { paidAmount: payable.finalAmount },
-    }));
-    toast({ title: 'Conta criada e marcada como paga', description: `"${payable.title}" já entrou como quitada.` });
-    onCreated?.(payable.id);
   }
 
   async function handleDismiss(suggestion: EmailSuggestion) {

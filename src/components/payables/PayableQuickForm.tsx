@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Switch } from '@/components/ui/switch';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -21,6 +22,7 @@ import {
   RecurrenceType,
 } from '@/types';
 import {
+  buildMeaningfulPayableTitle,
   buildPayableHistoryDescription,
   calculatePayableFinalAmount,
   findPayableDuplicate,
@@ -125,6 +127,8 @@ export default function PayableQuickForm({
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [attachment, setAttachment] = useState<File | null>(null);
+  const [duplicateToConfirm, setDuplicateToConfirm] = useState<AccountPayable | null>(null);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<FormValues>({
     title: initialValues?.title ?? '',
     categoryId: initialValues?.categoryId ?? payableCategories[0]?.id ?? 'paycat-1',
@@ -163,14 +167,13 @@ export default function PayableQuickForm({
     setAttachment(event.target.files?.[0] ?? null);
   }
 
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault();
+  async function savePayable(options: { allowDuplicate?: boolean } = {}) {
+    if (saving) return;
 
-    const title = toTitleCasePtBr(form.title);
     const supplierName = toTitleCasePtBr(form.supplierName);
     const amountResult = parsePositiveNumber(form.amount, { allowZero: false, fieldLabel: 'valor' });
 
-    if (!title || !form.categoryId || !supplierName || !form.dueDate || amountResult.error) {
+    if (!form.title.trim() || !form.categoryId || !supplierName || !form.dueDate || amountResult.error) {
       toast({
         title: 'Preencha os campos obrigatórios',
         description: amountResult.error ?? 'Descrição, categoria, fornecedor, valor e vencimento são essenciais para cadastrar a conta.',
@@ -180,32 +183,6 @@ export default function PayableQuickForm({
     }
 
     const originalAmount = amountResult.value ?? 0;
-
-    const matchedSupplier = payableSuppliers.find(
-      (supplier) => supplier.name.toLowerCase() === supplierName.toLowerCase(),
-    );
-
-    const duplicate = findPayableDuplicate(
-      {
-        supplierId: matchedSupplier?.id,
-        supplierName,
-        docNumber: form.docNumber.trim() || undefined,
-        originalAmount,
-        dueDate: form.dueDate,
-      },
-      payables,
-    );
-
-    if (duplicate) {
-      toast({
-        title: 'Conta possivelmente duplicada',
-        description: `Já existe um lançamento parecido: ${duplicate.title}.`,
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    const isPaid = form.initialStatus === 'PAGO';
     const totalInstallmentsResult = form.isInstallment
       ? parsePositiveNumber(form.totalInstallments, { allowZero: false, integer: true, fieldLabel: 'total de parcelas' })
       : { value: undefined, error: null };
@@ -234,96 +211,144 @@ export default function PayableQuickForm({
       return;
     }
 
-    const recurrence = form.isInstallment && form.recurrence === 'NENHUMA' ? 'MENSAL' : form.recurrence;
-
-    const payable = await addPayable({
-      title,
-      supplierId: matchedSupplier?.id,
+    const title = toTitleCasePtBr(buildMeaningfulPayableTitle({
+      title: form.title,
       supplierName,
-      categoryId: form.categoryId,
-      docNumber: normalizeWhitespace(form.docNumber) || undefined,
+      docNumber: form.docNumber,
       dueDate: form.dueDate,
-      issueDate: new Date().toISOString().slice(0, 10),
-      originalAmount,
-      finalAmount: resolvedAmount,
-      status: isPaid ? 'PAGO' : 'PENDENTE',
-      paymentMethod: form.paymentMethod,
-      paidWith: isPaid ? form.paymentMethod : undefined,
-      paidAmount: isPaid ? Math.max(paidAmountValue, resolvedAmount) : undefined,
-      paidAt: isPaid ? form.paidAt : undefined,
-      recurrence,
       recurrenceIndex,
       totalInstallments,
-      observations: normalizeWhitespace(form.observations) || undefined,
-      isUrgent: form.isUrgent,
-      entrySource,
-      paymentExecutionStatus: 'MANUAL',
-      createdByUserId: user?.id ?? 'user-2',
-    });
+    }));
 
-    addPayableHistoryEntry(
-      buildPayableHistoryDescription({
-        payableId: payable.id,
-        action: 'CREATED',
-        userId: user?.id ?? 'user-2',
-      }),
+    const matchedSupplier = payableSuppliers.find(
+      (supplier) => supplier.name.toLowerCase() === supplierName.toLowerCase(),
     );
 
-    if (attachment) {
-      const type = inferAttachmentType(attachment);
-      let url = `local-upload://${attachment.name}`;
-      let attachmentSaved = true;
+    const duplicate = findPayableDuplicate(
+      {
+        supplierId: matchedSupplier?.id,
+        supplierName,
+        docNumber: form.docNumber.trim() || undefined,
+        originalAmount,
+        dueDate: form.dueDate,
+      },
+      payables,
+    );
 
-      if (IS_REAL_AUTH) {
-        try {
-          url = await uploadAnexoContaPagar({ contaPagarId: payable.id, file: attachment });
-          await insertAnexoContaPagar({
-            p_fk_contas_pagar: payable.id,
-            p_tipo: type,
-            p_nome_arquivo: attachment.name,
-            p_url: url,
+    if (duplicate && !options.allowDuplicate) {
+      setDuplicateToConfirm(duplicate);
+      return;
+    }
+
+    const isPaid = form.initialStatus === 'PAGO';
+    const recurrence = form.isInstallment && form.recurrence === 'NENHUMA' ? 'MENSAL' : form.recurrence;
+
+    setSaving(true);
+    try {
+      const payable = await addPayable({
+        title,
+        supplierId: matchedSupplier?.id,
+        supplierName,
+        categoryId: form.categoryId,
+        docNumber: normalizeWhitespace(form.docNumber) || undefined,
+        dueDate: form.dueDate,
+        issueDate: new Date().toISOString().slice(0, 10),
+        originalAmount,
+        finalAmount: resolvedAmount,
+        status: isPaid ? 'PAGO' : 'PENDENTE',
+        paymentMethod: form.paymentMethod,
+        paidWith: isPaid ? form.paymentMethod : undefined,
+        paidAmount: isPaid ? Math.max(paidAmountValue, resolvedAmount) : undefined,
+        paidAt: isPaid ? form.paidAt : undefined,
+        recurrence,
+        recurrenceIndex,
+        totalInstallments,
+        observations: normalizeWhitespace(form.observations) || undefined,
+        isUrgent: form.isUrgent,
+        entrySource,
+        paymentExecutionStatus: 'MANUAL',
+        createdByUserId: user?.id ?? 'user-2',
+      });
+
+      addPayableHistoryEntry(
+        buildPayableHistoryDescription({
+          payableId: payable.id,
+          action: 'CREATED',
+          userId: user?.id ?? 'user-2',
+        }),
+      );
+
+      if (attachment) {
+        const type = inferAttachmentType(attachment);
+        let url = `local-upload://${attachment.name}`;
+        let attachmentSaved = true;
+
+        if (IS_REAL_AUTH) {
+          try {
+            url = await uploadAnexoContaPagar({ contaPagarId: payable.id, file: attachment });
+            await insertAnexoContaPagar({
+              p_fk_contas_pagar: payable.id,
+              p_tipo: type,
+              p_nome_arquivo: attachment.name,
+              p_url: url,
+            });
+          } catch {
+            attachmentSaved = false;
+          }
+        }
+
+        if (attachmentSaved) {
+          addPayableAttachment({
+            payableId: payable.id,
+            type,
+            filename: attachment.name,
+            url,
+            createdByUserId: user?.id ?? 'user-2',
           });
-        } catch {
-          attachmentSaved = false;
+          addPayableHistoryEntry(
+            buildPayableHistoryDescription({
+              payableId: payable.id,
+              action: 'ATTACHMENT_ADDED',
+              userId: user?.id ?? 'user-2',
+              extra: { filename: attachment.name },
+            }),
+          );
+        } else {
+          toast({
+            title: 'Conta criada sem anexo',
+            description: 'O arquivo não foi salvo no Storage. Tente anexar novamente nos detalhes da conta.',
+            variant: 'destructive',
+          });
         }
       }
 
-      if (attachmentSaved) {
-        addPayableAttachment({
-          payableId: payable.id,
-          type,
-          filename: attachment.name,
-          url,
-          createdByUserId: user?.id ?? 'user-2',
-        });
-        addPayableHistoryEntry(
-          buildPayableHistoryDescription({
-            payableId: payable.id,
-            action: 'ATTACHMENT_ADDED',
-            userId: user?.id ?? 'user-2',
-            extra: { filename: attachment.name },
-          }),
-        );
-      } else {
-        toast({
-          title: 'Conta criada sem anexo',
-          description: 'O arquivo não foi salvo no Storage. Tente anexar novamente nos detalhes da conta.',
-          variant: 'destructive',
-        });
-      }
+      toast({
+        title: isPaid ? 'Conta registrada como paga' : 'Conta cadastrada com sucesso',
+        description: isPaid
+          ? 'O lançamento entrou no histórico e já impacta as despesas pagas do período.'
+          : 'A conta já aparece na listagem de contas a pagar para acompanhamento.',
+      });
+
+      setDuplicateToConfirm(null);
+      onSaved?.(payable);
+    } catch (error) {
+      toast({
+        title: 'Não foi possível salvar a conta',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSaving(false);
     }
+  }
 
-    toast({
-      title: isPaid ? 'Conta registrada como paga' : 'Conta cadastrada com sucesso',
-      description: isPaid
-        ? 'O lançamento entrou no histórico e já impacta as despesas pagas do período.'
-        : 'A conta já aparece na listagem de contas a pagar para acompanhamento.',
-    });
-
-    onSaved?.(payable);
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    void savePayable();
   }
 
   return (
+    <>
     <form onSubmit={handleSubmit} className="space-y-5">
       <div className={compact ? 'grid gap-4 md:grid-cols-2' : 'grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]'}>
         <div className="space-y-4">
@@ -334,7 +359,7 @@ export default function PayableQuickForm({
                 value={form.title}
                 onChange={(event) => setField('title', event.target.value.slice(0, PAYABLE_FIELD_LIMITS.title))}
                 onBlur={() => setField('title', toTitleCasePtBr(form.title))}
-                placeholder="Ex.: Boleto peças abril, reforma do barracão, notinha do mercado"
+                placeholder="Ex.: Salário João Maio, boleto peças abril, reforma do barracão"
                 maxLength={PAYABLE_FIELD_LIMITS.title}
               />
             </div>
@@ -542,6 +567,7 @@ export default function PayableQuickForm({
             </div>
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li>• Compatível com parcelas e recorrência desde o cadastro.</li>
+              <li>• Salários entram como Mão de Obra, com recorrência mensal e comprovante anexado.</li>
               <li>• Estrutura pronta para anexar documentos e comprovantes.</li>
               <li>• Pensado para futura integração com pagamento via API bancária.</li>
             </ul>
@@ -557,11 +583,28 @@ export default function PayableQuickForm({
 
       <div className="flex flex-wrap items-center justify-end gap-3 border-t border-border/60 pt-4">
         <Button type="button" variant="outline" onClick={onCancel}>Cancelar</Button>
-        <Button type="submit">
-          <Save className="mr-2 h-4 w-4" />
+        <Button type="submit" disabled={saving}>
+          <Save className={saving ? 'mr-2 h-4 w-4 animate-pulse' : 'mr-2 h-4 w-4'} />
           {submitLabel}
         </Button>
       </div>
     </form>
+    <AlertDialog open={duplicateToConfirm !== null} onOpenChange={(open) => { if (!open) setDuplicateToConfirm(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Esta conta parece duplicada</AlertDialogTitle>
+          <AlertDialogDescription>
+            Já existe um lançamento parecido: <strong>{duplicateToConfirm?.title}</strong>. Se for a mesma conta, não cadastre de novo. Se for uma parcela diferente ou uma cobrança realmente separada, você pode confirmar mesmo assim.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Revisar dados</AlertDialogCancel>
+          <AlertDialogAction onClick={() => void savePayable({ allowDuplicate: true })}>
+            Inserir mesmo assim
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }
