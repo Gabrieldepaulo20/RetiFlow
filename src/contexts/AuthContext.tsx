@@ -367,6 +367,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
     }
 
+    if (IS_REAL_AUTH && portal === 'admin' && !isSuperAdmin(response.session.user)) {
+      return {
+        success: false,
+        redirect: '/admin/login',
+        error: 'Acesso administrativo restrito ao Mega Master autorizado.',
+      };
+    }
+
     if (IS_REAL_AUTH && await isMfaChallengeRequired()) {
       pendingMfaSessionRef.current = { session: response.session, portal };
       return {

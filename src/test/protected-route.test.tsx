@@ -41,6 +41,15 @@ const adminUser: User = {
   createdAt: '2026-01-01T00:00:00.000Z',
 };
 
+const megaMasterUser: User = {
+  id: 'user-mega-master',
+  name: 'Gabriel William',
+  email: 'gabrielwilliam208@gmail.com',
+  role: 'ADMIN',
+  isActive: true,
+  createdAt: '2026-01-01T00:00:00.000Z',
+};
+
 function renderProtectedRoute(options?: { allowedRoles?: UserRole[] }) {
   return render(
     <MemoryRouter
@@ -237,12 +246,39 @@ describe('ProtectedRoute', () => {
     expect(screen.queryByText('access-denied')).not.toBeInTheDocument();
   });
 
-  it('renders admin content for authenticated admin user after server access revalidation', async () => {
+  it('blocks real admin users who are not the configured Mega Master', async () => {
     const refreshProfile = vi.fn().mockResolvedValue(true);
     mockedUseAuth.mockReturnValue({
       ...authBase,
       authMode: 'real',
       user: adminUser,
+      session: null,
+      isAuthLoading: false,
+      profileError: null,
+      isAuthenticated: true,
+      login: vi.fn(),
+      logout: vi.fn(),
+      retryAuth: vi.fn(),
+      refreshProfile,
+      can: vi.fn(),
+      canAccessModule: vi.fn(() => true),
+      isAdmin: true,
+    });
+
+    renderAdminRoute();
+
+    expect(screen.getByText('Verificando acesso')).toBeInTheDocument();
+    await waitFor(() => expect(refreshProfile).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('dashboard-page')).toBeInTheDocument();
+    expect(screen.queryByText('admin-page')).not.toBeInTheDocument();
+  });
+
+  it('renders admin content for the configured Mega Master after server access revalidation', async () => {
+    const refreshProfile = vi.fn().mockResolvedValue(true);
+    mockedUseAuth.mockReturnValue({
+      ...authBase,
+      authMode: 'real',
+      user: megaMasterUser,
       session: null,
       isAuthLoading: false,
       profileError: null,

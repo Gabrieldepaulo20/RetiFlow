@@ -181,8 +181,8 @@ export default function AdminClients() {
   const activeCount = systemUsers.filter((user) => user.isActive).length;
   const inactiveCount = systemUsers.filter((user) => !user.isActive).length;
   const isSuperAdmin = checkIsSuperAdmin(currentUser);
-  const canUseSensitiveAdminActions = !IS_REAL_AUTH || (currentUser?.role === 'ADMIN' && currentUser.isActive);
   const isCurrentUserMegaMaster = isSuperAdmin;
+  const canUseSensitiveAdminActions = !IS_REAL_AUTH || isCurrentUserMegaMaster;
   const isMegaMasterUser = (targetUser: SystemUser) => isConfiguredSuperAdminEmail(targetUser.email);
   const { data: userPresence = [] } = useQuery({
     queryKey: ['admin', 'user-presence'],

@@ -283,10 +283,11 @@ function formatEmailAddress(email: string, displayName?: string) {
   return safeName ? `"${safeName}" <${email}>` : email;
 }
 
-function getPasswordSetupRedirectTo() {
+function getPasswordSetupRedirectTo(request?: Request) {
   const candidate = Deno.env.get('AUTH_REDIRECT_TO')?.trim()
     || Deno.env.get('APP_BASE_URL')?.trim()
     || Deno.env.get('APP_ORIGIN')?.trim()
+    || request?.headers.get('Origin')?.trim()
     || '';
 
   if (!candidate) return undefined;
@@ -302,6 +303,15 @@ function getPasswordSetupRedirectTo() {
   } catch {
     return candidate;
   }
+}
+
+function requireMegaMaster(
+  requester: { requesterIsMegaMaster: boolean },
+  request: Request,
+  message = 'Ação restrita ao Mega Master autorizado.',
+) {
+  if (requester.requesterIsMegaMaster) return null;
+  return jsonResponse({ error: message }, 403, request);
 }
 
 async function sha256Hex(value: string) {
@@ -691,13 +701,18 @@ async function ensureAuthInvite(
     email: string;
     name: string;
     requesterEmail: string;
+    request: Request;
   },
 ) {
   const { email, name, requesterEmail } = params;
   const existing = await findAuthUserByEmail(serviceClient, email);
-  if (existing) return { userId: existing.id, emailSent: false };
+  const existingConfirmedAt = existing
+    ? (existing as { email_confirmed_at?: string | null; confirmed_at?: string | null }).email_confirmed_at
+      ?? (existing as { confirmed_at?: string | null }).confirmed_at
+    : null;
+  if (existing && existingConfirmedAt) return { userId: existing.id, emailSent: false };
 
-  const redirectTo = getPasswordSetupRedirectTo();
+  const redirectTo = getPasswordSetupRedirectTo(params.request);
   const { data, error } = await serviceClient.auth.admin.generateLink({
     type: 'invite',
     email,
@@ -719,7 +734,7 @@ async function ensureAuthInvite(
   });
 
   return {
-    userId: data.user.id,
+    userId: existing?.id ?? data.user.id,
     emailSent: true,
   };
 }
@@ -730,6 +745,7 @@ async function resendAuthInvite(
     email: string;
     name: string;
     requesterEmail: string;
+    request: Request;
   },
 ) {
   const existing = await findAuthUserByEmail(serviceClient, params.email);
@@ -737,7 +753,7 @@ async function resendAuthInvite(
     throw new Error('Este usuário já aceitou o convite. Use reset de senha caso ele tenha perdido o acesso.');
   }
 
-  const redirectTo = getPasswordSetupRedirectTo();
+  const redirectTo = getPasswordSetupRedirectTo(params.request);
   const { data, error } = await serviceClient.auth.admin.generateLink({
     type: 'invite',
     email: params.email,
@@ -1364,6 +1380,9 @@ Deno.serve(async (request) => {
     }
 
     if (payload.action === 'create_user' || payload.action === 'create_admin') {
+      const forbidden = requireMegaMaster(requester, request, 'Somente o Mega Master pode convidar ou criar usuários.');
+      if (forbidden) return forbidden;
+
       const email = assertEmail(payload.email);
       const name = assertString(payload.name, 'name', 120);
       const phone = typeof payload.phone === 'string' ? payload.phone.trim().slice(0, 30) : '';
@@ -1388,6 +1407,7 @@ Deno.serve(async (request) => {
         email,
         name,
         requesterEmail: requester.requesterEmail,
+        request,
       });
       const internalUserId = await upsertInternalUser(requester.serviceClient, {
         authUserId: auth.userId,
@@ -1412,6 +1432,9 @@ Deno.serve(async (request) => {
     }
 
     if (payload.action === 'resend_invite') {
+      const forbidden = requireMegaMaster(requester, request, 'Somente o Mega Master pode reenviar convites.');
+      if (forbidden) return forbidden;
+
       const userId = assertUserId(payload.userId);
       const targetUser = await getInternalResetUser(requester.serviceClient, userId);
       const email = assertEmail(targetUser.email);
@@ -1425,6 +1448,7 @@ Deno.serve(async (request) => {
         email,
         name,
         requesterEmail: requester.requesterEmail,
+        request,
       });
 
       await upsertInternalUser(requester.serviceClient, {
@@ -1444,6 +1468,9 @@ Deno.serve(async (request) => {
     }
 
     if (payload.action === 'reset_password') {
+      const forbidden = requireMegaMaster(requester, request, 'Somente o Mega Master pode resetar senhas de usuários.');
+      if (forbidden) return forbidden;
+
       const userId = assertUserId(payload.userId);
       const targetUser = await getInternalResetUser(requester.serviceClient, userId);
       const email = assertEmail(targetUser.email);
@@ -1453,7 +1480,7 @@ Deno.serve(async (request) => {
       }
 
       const confirmationEmail = optionalEmail(payload.confirmationEmail);
-      const redirectTo = getPasswordSetupRedirectTo();
+      const redirectTo = getPasswordSetupRedirectTo(request);
 
       const { data, error } = await requester.serviceClient.auth.admin.generateLink({
         type: 'recovery',
@@ -1502,6 +1529,9 @@ Deno.serve(async (request) => {
     }
 
     if (payload.action === 'set_modules') {
+      const forbidden = requireMegaMaster(requester, request, 'Somente o Mega Master pode alterar módulos de usuários.');
+      if (forbidden) return forbidden;
+
       const userId = assertUserId(payload.userId);
       const modules = normalizeModules(payload.modules);
       const targetUser = await getInternalModuleUser(requester.serviceClient, userId);
@@ -1523,11 +1553,10 @@ Deno.serve(async (request) => {
     }
 
     if (payload.action === 'promote_to_admin') {
-      const userId = assertUserId(payload.userId);
+      const forbidden = requireMegaMaster(requester, request, 'Somente o Mega Master pode transformar usuários em Master/Admin.');
+      if (forbidden) return forbidden;
 
-      if (!requester.requesterIsMegaMaster) {
-        return jsonResponse({ error: 'Somente o Mega Master pode transformar um usuário em Master/Admin.' }, 403, request);
-      }
+      const userId = assertUserId(payload.userId);
 
       const targetUser = await getInternalModuleUser(requester.serviceClient, userId);
       if (isMegaMasterEmail(targetUser.email, requester.superAdminEmails)) {
@@ -1544,6 +1573,9 @@ Deno.serve(async (request) => {
     }
 
     if (payload.action === 'start_support_impersonation') {
+      const forbidden = requireMegaMaster(requester, request, 'Somente o Mega Master pode iniciar modo suporte.');
+      if (forbidden) return forbidden;
+
       const targetUserId = assertUserId(payload.targetUserId);
       const reason = assertReason(payload.reason);
       const supportSession = await startSupportImpersonation(requester, targetUserId, reason);
@@ -1554,15 +1586,17 @@ Deno.serve(async (request) => {
     }
 
     if (payload.action === 'end_support_impersonation') {
+      const forbidden = requireMegaMaster(requester, request, 'Somente o Mega Master pode encerrar modo suporte.');
+      if (forbidden) return forbidden;
+
       const sessionId = assertSessionId(payload.sessionId);
       await endSupportImpersonation(requester, sessionId);
       return jsonResponse({ mensagem: 'Modo suporte encerrado.' }, 200, request);
     }
 
     if (payload.action === 'get_user_presence') {
-      if (!requester.requesterIsMegaMaster) {
-        return jsonResponse({ error: 'Somente o Mega Master autorizado pode ver presença em tempo real.' }, 403, request);
-      }
+      const forbidden = requireMegaMaster(requester, request, 'Somente o Mega Master autorizado pode ver presença em tempo real.');
+      if (forbidden) return forbidden;
 
       const userPresence = await getUserPresence(requester.serviceClient);
       return jsonResponse({
@@ -1572,12 +1606,11 @@ Deno.serve(async (request) => {
     }
 
     if (payload.action === 'analyze_delete_user' || payload.action === 'delete_user') {
+      const forbidden = requireMegaMaster(requester, request, 'Somente o Mega Master autorizado pode excluir usuários em cascata.');
+      if (forbidden) return forbidden;
+
       const userId = assertUserId(payload.userId);
       const confirmEmail = assertEmail(payload.confirmEmail);
-
-      if (!requester.requesterIsMegaMaster) {
-        return jsonResponse({ error: 'Somente o Mega Master autorizado pode excluir usuários em cascata.' }, 403, request);
-      }
 
       const targetUser = await getInternalDeleteUser(requester.serviceClient, userId);
       const targetEmail = assertEmail(targetUser.email);
@@ -1619,6 +1652,9 @@ Deno.serve(async (request) => {
     }
 
     if (payload.action === 'deactivate_user' || payload.action === 'reactivate_user') {
+      const forbidden = requireMegaMaster(requester, request, 'Somente o Mega Master pode ativar ou inativar usuários.');
+      if (forbidden) return forbidden;
+
       const userId = assertUserId(payload.userId);
       const targetUser = await getInternalModuleUser(requester.serviceClient, userId);
 

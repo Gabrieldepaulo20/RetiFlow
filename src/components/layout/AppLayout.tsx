@@ -28,6 +28,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { preloadRouteModule, preloadRouteModules } from '@/routes/routeModules';
 import { getInitials } from '@/lib/avatarInitials';
+import { isSuperAdmin } from '@/services/auth/superAdmin';
 import {
   LayoutDashboard, Users, FileText, KanbanSquare, Calendar, Settings, Wallet,
   Menu, Search, Bell, LogOut, ChevronLeft, ChevronRight, MoreHorizontal, Wrench, ChevronDown, MessageSquarePlus,
@@ -68,7 +69,8 @@ export default function AppLayout() {
 
   const isActive = (path: string) => location.pathname.startsWith(path);
   const initials = getInitials(user?.name);
-  const isAdminOperationalPortal = user?.role === 'ADMIN' && !isSupportImpersonating;
+  const canReturnToAdmin = isSuperAdmin(user);
+  const isAdminOperationalPortal = canReturnToAdmin && !isSupportImpersonating;
 
   const supportUnreadCount = supportTickets.filter((ticket) => ticket.resposta && !ticket.lida_em).length;
 
@@ -281,7 +283,7 @@ export default function AppLayout() {
                 </DropdownMenuItem>
               </>
             ) : null}
-            {!isSupportImpersonating && !isAdminOperationalPortal && canAccessModule('admin') && user?.role === 'ADMIN' ? (
+            {!isSupportImpersonating && !isAdminOperationalPortal && canAccessModule('admin') && canReturnToAdmin ? (
               <DropdownMenuItem onClick={() => navigate('/admin/usuarios')}>
                 <Users className="w-4 h-4 mr-2" /> Acessos de funcionários
               </DropdownMenuItem>

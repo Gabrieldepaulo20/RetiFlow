@@ -5,6 +5,7 @@ import { AppModuleKey, UserRole } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { LoadingScreen } from '@/components/ui/loading-screen';
 import { Button } from '@/components/ui/button';
+import { isSuperAdmin } from '@/services/auth/superAdmin';
 
 interface ProtectedRouteProps {
   moduleKey?: AppModuleKey;
@@ -87,6 +88,10 @@ export default function ProtectedRoute({ moduleKey, allowedRoles, redirectTo }: 
   }
 
   if (allowedRoles && user && !allowedRoles.includes(user.role)) {
+    return <Navigate to={redirectTo ?? '/acesso-negado'} replace state={{ from: location.pathname, moduleKey }} />;
+  }
+
+  if (authMode === 'real' && moduleKey === 'admin' && !isSuperAdmin(user)) {
     return <Navigate to={redirectTo ?? '/acesso-negado'} replace state={{ from: location.pathname, moduleKey }} />;
   }
 

@@ -175,9 +175,9 @@ describe.skipIf(!envStatus.configured)('Admin escalation hardening — payload a
       action: 'set_modules',
       userId: targetUserId,
       modules: { admin: true, dashboard: true },
-    }, [400]);
+    }, [403]);
 
-    expect(error).toMatch(/módulo admin/i);
+    expect(error).toMatch(/mega master|alterar módulos/i);
 
     const service = createServiceClient();
     const { data, error: moduleError } = await service
