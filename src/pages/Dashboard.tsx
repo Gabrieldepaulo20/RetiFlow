@@ -6,8 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { STATUS_LABELS, NoteStatus, FINAL_STATUSES } from '@/types';
 import {
-  FileText, DollarSign, TrendingUp, AlertCircle,
-  CheckCircle2, Timer, Users, Receipt,
+  FileText, DollarSign, TrendingUp,
+  CheckCircle2, Receipt,
   ArrowUpRight, ArrowDownRight, Minus,
   Info, Landmark, PiggyBank,
   CalendarDays, Filter,
@@ -45,10 +45,6 @@ import {
 import { SectionEmptyState, SectionErrorState } from '@/components/ui/section-state';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-const ACTIVE_STATUSES = new Set<NoteStatus>([
-  'ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'AGUARDANDO_COMPRA', 'PRONTA',
-]);
 
 const REVENUE_RECOGNIZED_STATUSES = DASHBOARD_REVENUE_STATUSES;
 
@@ -106,11 +102,8 @@ function InlineInfo({ label }: { label: string }) {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-// Active statuses joined for URL param
-const ACTIVE_STATUSES_PARAM = 'ABERTO,EM_ANALISE,ORCAMENTO,APROVADO,EM_EXECUCAO,AGUARDANDO_COMPRA,PRONTO,ENTREGUE';
-
 export default function Dashboard() {
-  const { notes, clients, payables } = useData();
+  const { notes, payables } = useData();
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
   const [rangePreset, setRangePreset] = useState<DashboardRangePreset>('30d');
@@ -219,11 +212,6 @@ export default function Dashboard() {
   }, [selectedAccountingRange.endTime, selectedAccountingRange.startTime]);
 
   // ── Core metrics ────────────────────────────────────────────────────────
-  const openCount = useMemo(
-    () => notes.filter(n => ACTIVE_STATUSES.has(n.status)).length,
-    [notes],
-  );
-
   const revenueRecognizedNotes = useMemo(
     () => notes.filter(n => (
       REVENUE_RECOGNIZED_STATUSES.has(n.status)
@@ -236,34 +224,6 @@ export default function Dashboard() {
     () => revenueRecognizedNotes.reduce((s, n) => s + n.totalAmount, 0),
     [revenueRecognizedNotes],
   );
-
-  const avgDaysMetric = useMemo(() => {
-    const finalized = revenueRecognizedNotes
-      .map((note) => {
-        const createdAt = new Date(note.createdAt);
-        const finalizedAt = new Date(getDashboardRevenueDate(note));
-        if (!Number.isFinite(createdAt.getTime()) || !Number.isFinite(finalizedAt.getTime())) {
-          return null;
-        }
-        const days = differenceInDays(finalizedAt, createdAt);
-        return { days, normalizedDays: Math.max(0, days) };
-      })
-      .filter((item): item is { days: number; normalizedDays: number } => item !== null);
-
-    if (!finalized.length) return { value: null as string | null, adjustedCount: 0 };
-
-    const adjustedCount = finalized.filter((item) => item.days < 0).length;
-    const total = finalized.reduce((sum, item) => sum + item.normalizedDays, 0);
-    return { value: (total / finalized.length).toFixed(1), adjustedCount };
-  }, [revenueRecognizedNotes]);
-  const avgDays = avgDaysMetric.value;
-
-  const overdueNotes = useMemo(() => {
-    const threshold = Date.now() - 7 * 86_400_000;
-    return notes.filter(
-      n => ACTIVE_STATUSES.has(n.status) && new Date(n.updatedAt).getTime() < threshold,
-    );
-  }, [notes]);
 
   // ── Monthly revenue ──────────────────────────────────────────────────────
   const currentMonthRevenue = useMemo(
@@ -291,25 +251,6 @@ export default function Dashboard() {
   // ── Ticket médio ────────────────────────────────────────────────────────
   const ticketMedio = revenueRecognizedNotes.length > 0
     ? totalRevenue / revenueRecognizedNotes.length
-    : 0;
-
-  // ── Clientes ativos ─────────────────────────────────────────────────────
-  const activeClientsCount = useMemo(
-    () => clients.filter(c => c.isActive).length,
-    [clients],
-  );
-
-  const inactiveClientsCount = clients.length - activeClientsCount;
-
-  // ── Taxa de conclusão ────────────────────────────────────────────────────
-  const closedNotes = useMemo(
-    () => notes.filter(n => FINAL_STATUSES.has(n.status)),
-    [notes],
-  );
-
-  const successBaseCount = closedNotes.filter(n => !REVENUE_RECOGNIZED_STATUSES.has(n.status)).length + revenueRecognizedNotes.length;
-  const successRate = successBaseCount > 0
-    ? Math.round((revenueRecognizedNotes.length / successBaseCount) * 100)
     : 0;
 
   // ── Status distribution ──────────────────────────────────────────────────
@@ -366,27 +307,7 @@ export default function Dashboard() {
     trend?: number | null;
   };
 
-  const kpisRow1: KpiCard[] = [
-    {
-      label: 'Em andamento',
-      value: openCount,
-      sub: overdueNotes.length > 0 ? `${overdueNotes.length} paradas +7 dias` : 'Todas em dia',
-      icon: FileText,
-      iconClass: 'text-primary bg-primary/10',
-      subClass: overdueNotes.length > 0 ? 'text-amber-600 font-medium' : 'text-muted-foreground',
-      tooltip: 'Total de O.S. em estágios ativos: Aberto, Em análise, Orçamento, Aprovado, Em execução, Aguardando compra, Pronto e Entregue.',
-      href: `/notas-entrada?status=${ACTIVE_STATUSES_PARAM}`,
-    },
-    {
-      label: 'Finalizadas',
-      value: revenueRecognizedNotes.length,
-      sub: `Taxa de sucesso: ${successRate}%`,
-      icon: CheckCircle2,
-      iconClass: 'text-emerald-600 bg-emerald-50',
-      subClass: 'text-muted-foreground',
-      tooltip: `O.S. finalizadas com data de finalização a partir de ${DASHBOARD_ACCOUNTING_START_LABEL}. Essa é a etapa que representa serviço concluído e pagamento reconhecido no Dashboard.`,
-      href: '/notas-entrada?status=FINALIZADO',
-    },
+  const summaryKpis: KpiCard[] = [
     {
       label: 'Valor finalizado',
       value: `R$ ${fmtBRL(totalRevenue)}`,
@@ -397,23 +318,6 @@ export default function Dashboard() {
       tooltip: `Soma do valor total das O.S. com status Finalizado e data de finalização a partir de ${DASHBOARD_ACCOUNTING_START_LABEL}.`,
       href: '/notas-entrada?status=FINALIZADO',
     },
-    {
-      label: 'Tempo médio',
-      value: avgDays ? `${avgDays} dias` : '—',
-      sub: avgDaysMetric.adjustedCount > 0
-        ? `${avgDaysMetric.adjustedCount} data${avgDaysMetric.adjustedCount !== 1 ? 's' : ''} corrigida${avgDaysMetric.adjustedCount !== 1 ? 's' : ''}`
-        : 'Da abertura à finalização',
-      icon: avgDays && parseFloat(avgDays) > 10 ? AlertCircle : Timer,
-      iconClass: avgDays && parseFloat(avgDays) > 10
-        ? 'text-amber-600 bg-amber-50'
-        : 'text-sky-600 bg-sky-50',
-      subClass: 'text-muted-foreground',
-      tooltip: `Média de dias entre a abertura e a finalização das O.S. finalizadas a partir de ${DASHBOARD_ACCOUNTING_START_LABEL}. Datas finalizadas antes da abertura são tratadas como 0 dia para nunca exibir tempo negativo.`,
-      href: '/notas-entrada?status=FINALIZADO',
-    },
-  ];
-
-  const kpisRow2: KpiCard[] = [
     {
       label: 'Faturamento do mês',
       value: `R$ ${fmtBRL(currentMonthRevenue)}`,
@@ -437,17 +341,6 @@ export default function Dashboard() {
       trend: null,
       tooltip: `Valor médio por O.S. finalizada desde ${DASHBOARD_ACCOUNTING_START_LABEL}. Cálculo: valor finalizado dividido pelo número de O.S. finalizadas nesse marco contábil.`,
       href: '/notas-entrada?status=FINALIZADO',
-    },
-    {
-      label: 'Clientes cadastrados',
-      value: clients.length,
-      sub: `${activeClientsCount} ativos${inactiveClientsCount > 0 ? ` · ${inactiveClientsCount} inativos` : ''}`,
-      icon: Users,
-      iconClass: 'text-teal-600 bg-teal-50',
-      subClass: 'text-muted-foreground',
-      trend: null,
-      tooltip: 'Clientes cadastrados na operação visível para o login atual. Em modo Mega Master/suporte, este número não representa empresas SaaS administradas, e sim clientes da operação selecionada.',
-      href: '/clientes',
     },
   ];
 
@@ -765,57 +658,55 @@ export default function Dashboard() {
 
       {/* KPI rows */}
       <TooltipProvider delayDuration={400}>
-        {[kpisRow1, kpisRow2].map((row, rowIdx) => (
-          <div key={rowIdx} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {row.map((kpi, i) => (
-              <motion.div
-                key={kpi.label}
-                {...revealProps((rowIdx * 0.24) + i * 0.06)}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {summaryKpis.map((kpi, i) => (
+            <motion.div
+              key={kpi.label}
+              {...revealProps(i * 0.06)}
+            >
+              <Card
+                className="overflow-hidden cursor-pointer transition-all duration-150 hover:shadow-md hover:-translate-y-px hover:border-border/70 group"
+                onClick={() => navigate(kpi.href)}
               >
-                <Card
-                  className="overflow-hidden cursor-pointer transition-all duration-150 hover:shadow-md hover:-translate-y-px hover:border-border/70 group"
-                  onClick={() => navigate(kpi.href)}
-                >
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-2 mb-3">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-xs font-medium text-muted-foreground truncate">{kpi.label}</span>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              onClick={(e) => e.stopPropagation()}
-                              className="shrink-0 text-muted-foreground/30 hover:text-muted-foreground/70 transition-colors"
-                            >
-                              <Info className="w-3 h-3" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" className="max-w-[220px] text-xs leading-relaxed">
-                            {kpi.tooltip}
-                          </TooltipContent>
-                        </Tooltip>
-                      </div>
-                      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${kpi.iconClass}`}>
-                        <kpi.icon className="h-4 w-4" />
-                      </div>
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between gap-2 mb-3">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-xs font-medium text-muted-foreground truncate">{kpi.label}</span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={(e) => e.stopPropagation()}
+                            className="shrink-0 text-muted-foreground/30 hover:text-muted-foreground/70 transition-colors"
+                          >
+                            <Info className="w-3 h-3" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-[220px] text-xs leading-relaxed">
+                          {kpi.tooltip}
+                        </TooltipContent>
+                      </Tooltip>
                     </div>
-                    <div className="text-2xl font-bold font-display leading-none mb-1 group-hover:text-primary transition-colors">{kpi.value}</div>
-                    <div className="flex items-center gap-1">
-                      {'trend' in kpi && kpi.trend !== null && kpi.trend !== undefined && (
-                        kpi.trend > 0
-                          ? <ArrowUpRight className="w-3 h-3 text-emerald-600 shrink-0" />
-                          : kpi.trend < 0
-                            ? <ArrowDownRight className="w-3 h-3 text-red-500 shrink-0" />
-                            : <Minus className="w-3 h-3 text-muted-foreground shrink-0" />
-                      )}
-                      <p className={`text-xs leading-tight ${kpi.subClass}`}>{kpi.sub}</p>
+                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${kpi.iconClass}`}>
+                      <kpi.icon className="h-4 w-4" />
                     </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
-        ))}
+                  </div>
+                  <div className="text-2xl font-bold font-display leading-none mb-1 group-hover:text-primary transition-colors">{kpi.value}</div>
+                  <div className="flex items-center gap-1">
+                    {'trend' in kpi && kpi.trend !== null && kpi.trend !== undefined && (
+                      kpi.trend > 0
+                        ? <ArrowUpRight className="w-3 h-3 text-emerald-600 shrink-0" />
+                        : kpi.trend < 0
+                          ? <ArrowDownRight className="w-3 h-3 text-red-500 shrink-0" />
+                          : <Minus className="w-3 h-3 text-muted-foreground shrink-0" />
+                    )}
+                    <p className={`text-xs leading-tight ${kpi.subClass}`}>{kpi.sub}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ))}
+        </div>
       </TooltipProvider>
 
       {/* Charts row 1: status bar + area chart */}

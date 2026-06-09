@@ -376,6 +376,21 @@ Plano aprovado para executar em fases:
   - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks/import dinamico.
   - `npm run test:integration`: passou, 16 arquivos e 53 testes.
 
+## Dashboard Mais Enxuto - 2026-06-09
+
+- Pedido: remover do Dashboard os cards operacionais que estavam poluindo a leitura da cliente.
+- `src/pages/Dashboard.tsx`:
+  - removidos os cards `Em andamento`, `Finalizadas`, `Clientes cadastrados` e `Tempo médio`;
+  - mantidos somente os KPIs financeiros resumidos `Valor finalizado`, `Faturamento do mês` e `Ticket médio`;
+  - removidos cálculos locais que alimentavam apenas os cards excluídos, incluindo andamento, atraso operacional, taxa de sucesso, clientes ativos/inativos e tempo médio.
+- Alteração apenas de frontend; sem mudança de banco, RPC, Storage ou Edge Function.
+- Validação executada:
+  - `npx tsc --noEmit`: passou.
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh.
+  - `npm test -- --run`: passou, 46 arquivos e 339 testes.
+  - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks/import dinâmico.
+  - Browser local abriu em `/login`; checagem visual autenticada do dashboard não foi feita por falta de sessão local ativa.
+
 ## Filtros De O.S., Dashboard Finalizado E CPF/CNPJ - 2026-06-05
 
 - Pedido: melhorar Notas de Entrada com filtro real por data, ajustar Dashboard para contabilizar valores de O.S. apenas quando `Finalizada`, impedir tempo medio negativo e permitir filtrar clientes por CPF/CNPJ.
