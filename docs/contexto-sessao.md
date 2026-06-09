@@ -376,20 +376,24 @@ Plano aprovado para executar em fases:
   - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks/import dinamico.
   - `npm run test:integration`: passou, 16 arquivos e 53 testes.
 
-## Dashboard Mais Enxuto - 2026-06-09
+## Dashboard Financeiro Mais Útil - 2026-06-09
 
-- Pedido: remover do Dashboard os cards operacionais que estavam poluindo a leitura da cliente.
+- Pedido: remover cards operacionais e deixar o topo do Dashboard com os números financeiros realmente úteis para a cliente.
 - `src/pages/Dashboard.tsx`:
   - removidos os cards `Em andamento`, `Finalizadas`, `Clientes cadastrados` e `Tempo médio`;
-  - mantidos somente os KPIs financeiros resumidos `Valor finalizado`, `Faturamento do mês` e `Ticket médio`;
-  - removidos cálculos locais que alimentavam apenas os cards excluídos, incluindo andamento, atraso operacional, taxa de sucesso, clientes ativos/inativos e tempo médio.
+  - removida a linha duplicada de KPIs `Valor finalizado`, `Faturamento do mês` e `Ticket médio`;
+  - painel `Resultado financeiro` agora mostra: `Entradas previstas`, `Faturamento real`, `Contas lançadas`, `Contas pagas`, `Falta pagar` e `Lucro do período`;
+  - `Entradas previstas` soma o valor potencial das O.S. lançadas no período, excluindo O.S. `EXCLUIDA`;
+  - `Faturamento real` continua usando apenas O.S. reconhecidas na regra contábil do Dashboard;
+  - `Contas lançadas` usa competência financeira/vencimento da conta; `Contas pagas` usa data real de pagamento; `Falta pagar` calcula o saldo aberto das contas lançadas no período;
+  - `Lucro do período` permanece `Faturamento real - Contas pagas`.
 - Alteração apenas de frontend; sem mudança de banco, RPC, Storage ou Edge Function.
 - Validação executada:
   - `npx tsc --noEmit`: passou.
   - `npm run lint`: passou com 8 warnings antigos de Fast Refresh.
   - `npm test -- --run`: passou, 46 arquivos e 339 testes.
   - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks/import dinâmico.
-  - Browser local abriu em `/login`; checagem visual autenticada do dashboard não foi feita por falta de sessão local ativa.
+  - Observação: uma rodada intermediária de testes acusou `endOfMonth is not defined`; import corrigido e testes reexecutados com sucesso.
 
 ## Filtros De O.S., Dashboard Finalizado E CPF/CNPJ - 2026-06-05
 

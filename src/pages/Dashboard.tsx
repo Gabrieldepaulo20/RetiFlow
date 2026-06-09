@@ -6,30 +6,18 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { STATUS_LABELS, NoteStatus, FINAL_STATUSES } from '@/types';
 import {
-  FileText, DollarSign, TrendingUp,
-  CheckCircle2, Receipt,
-  ArrowUpRight, ArrowDownRight, Minus,
+  FileText, TrendingUp,
+  CheckCircle2,
   Info, Landmark, PiggyBank,
   CalendarDays, Filter,
-  type LucideIcon,
+  Receipt,
 } from 'lucide-react';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer,
   CartesianGrid, Cell,
   AreaChart, Area,
 } from 'recharts';
-import { motion } from 'framer-motion';
-import { useReducedMotion } from 'framer-motion';
-import {
-  format, subMonths, startOfMonth, endOfMonth,
-  differenceInDays, subDays, startOfDay, endOfDay, eachDayOfInterval,
-} from 'date-fns';
+import { format, subMonths, startOfMonth, endOfMonth, differenceInDays, subDays, startOfDay, endOfDay, eachDayOfInterval } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import {
@@ -77,11 +65,6 @@ function fmtBRLFull(value: number) {
   return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function pct(a: number, b: number) {
-  if (b === 0) return null;
-  return ((a - b) / b) * 100;
-}
-
 function parseDateInput(value: string, fallback: Date) {
   if (!value) return fallback;
   const parsed = new Date(`${value}T00:00:00`);
@@ -105,16 +88,11 @@ function InlineInfo({ label }: { label: string }) {
 export default function Dashboard() {
   const { notes, payables } = useData();
   const navigate = useNavigate();
-  const prefersReducedMotion = useReducedMotion();
   const [rangePreset, setRangePreset] = useState<DashboardRangePreset>('30d');
   const [customStartDate, setCustomStartDate] = useState(() => format(subDays(new Date(), 29), 'yyyy-MM-dd'));
   const [customEndDate, setCustomEndDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
 
   const now = useMemo(() => new Date(), []);
-  const startCurrent = startOfMonth(now).getTime();
-  const endCurrent = endOfMonth(now).getTime();
-  const startPrev = startOfMonth(subMonths(now, 1)).getTime();
-  const endPrev = endOfMonth(subMonths(now, 1)).getTime();
   const availableFinancialYears = useMemo(() => {
     const years = new Set<number>();
     notes.forEach((note) => {
@@ -225,34 +203,6 @@ export default function Dashboard() {
     [revenueRecognizedNotes],
   );
 
-  // ── Monthly revenue ──────────────────────────────────────────────────────
-  const currentMonthRevenue = useMemo(
-    () => revenueRecognizedNotes
-      .filter(n => {
-        const t = new Date(getDashboardRevenueDate(n)).getTime();
-        return t >= startCurrent && t <= endCurrent;
-      })
-      .reduce((s, n) => s + n.totalAmount, 0),
-    [revenueRecognizedNotes, startCurrent, endCurrent],
-  );
-
-  const prevMonthRevenue = useMemo(
-    () => revenueRecognizedNotes
-      .filter(n => {
-        const t = new Date(getDashboardRevenueDate(n)).getTime();
-        return t >= startPrev && t <= endPrev;
-      })
-      .reduce((s, n) => s + n.totalAmount, 0),
-    [revenueRecognizedNotes, startPrev, endPrev],
-  );
-
-  const monthGrowth = pct(currentMonthRevenue, prevMonthRevenue);
-
-  // ── Ticket médio ────────────────────────────────────────────────────────
-  const ticketMedio = revenueRecognizedNotes.length > 0
-    ? totalRevenue / revenueRecognizedNotes.length
-    : 0;
-
   // ── Status distribution ──────────────────────────────────────────────────
   const statusData = useMemo(() => {
     const counts = new Map<NoteStatus, number>();
@@ -294,65 +244,19 @@ export default function Dashboard() {
     });
   }, [revenueRecognizedNotes, now]);
 
-  // ── KPI rows ─────────────────────────────────────────────────────────────
-  type KpiCard = {
-    label: string;
-    value: string | number;
-    sub: string;
-    icon: LucideIcon;
-    iconClass: string;
-    subClass: string;
-    tooltip: string;
-    href: string;
-    trend?: number | null;
-  };
-
-  const summaryKpis: KpiCard[] = [
-    {
-      label: 'Valor finalizado',
-      value: `R$ ${fmtBRL(totalRevenue)}`,
-      sub: 'Somente O.S. finalizadas',
-      icon: DollarSign,
-      iconClass: 'text-primary bg-primary/10',
-      subClass: 'text-muted-foreground',
-      tooltip: `Soma do valor total das O.S. com status Finalizado e data de finalização a partir de ${DASHBOARD_ACCOUNTING_START_LABEL}.`,
-      href: '/notas-entrada?status=FINALIZADO',
-    },
-    {
-      label: 'Faturamento do mês',
-      value: `R$ ${fmtBRL(currentMonthRevenue)}`,
-      sub: monthGrowth !== null
-        ? `${monthGrowth >= 0 ? '+' : ''}${monthGrowth.toFixed(1)}% vs mês anterior`
-        : 'Sem comparação',
-      icon: TrendingUp,
-      iconClass: 'text-violet-600 bg-violet-50',
-      subClass: monthGrowth === null ? 'text-muted-foreground' : monthGrowth >= 0 ? 'text-emerald-600 font-medium' : 'text-red-500 font-medium',
-      trend: monthGrowth,
-      tooltip: `Receita gerada pelas O.S. finalizadas no mês atual, considerando somente movimentos desde ${DASHBOARD_ACCOUNTING_START_LABEL}. Comparação percentual em relação ao mês anterior quando houver base válida.`,
-      href: '/notas-entrada?status=FINALIZADO',
-    },
-    {
-      label: 'Ticket médio',
-      value: ticketMedio > 0 ? `R$ ${fmtBRL(ticketMedio)}` : '—',
-      sub: `Base: ${revenueRecognizedNotes.length} O.S. finalizadas`,
-      icon: Receipt,
-      iconClass: 'text-orange-600 bg-orange-50',
-      subClass: 'text-muted-foreground',
-      trend: null,
-      tooltip: `Valor médio por O.S. finalizada desde ${DASHBOARD_ACCOUNTING_START_LABEL}. Cálculo: valor finalizado dividido pelo número de O.S. finalizadas nesse marco contábil.`,
-      href: '/notas-entrada?status=FINALIZADO',
-    },
-  ];
-
-
   const activePayables = useMemo(
     () => payables.filter((payable) => payable.deletedAt == null),
     [payables],
   );
 
   const periodNotes = useMemo(
-    () => notes.filter((note) => isInSelectedPeriod(note.createdAt)),
+    () => notes.filter((note) => note.status !== 'EXCLUIDA' && isInSelectedPeriod(note.createdAt)),
     [isInSelectedPeriod, notes],
+  );
+
+  const periodPotentialAmount = useMemo(
+    () => periodNotes.reduce((sum, note) => sum + note.totalAmount, 0),
+    [periodNotes],
   );
 
   const periodDeliveredNotes = useMemo(
@@ -364,6 +268,30 @@ export default function Dashboard() {
     () => periodDeliveredNotes.reduce((sum, note) => sum + note.totalAmount, 0),
     [periodDeliveredNotes],
   );
+
+  const periodPayables = useMemo(
+    () => activePayables.filter((payable) => (
+      payable.status !== 'CANCELADO'
+      && isInSelectedPeriod(payable.competencyDate ?? payable.dueDate ?? payable.createdAt)
+    )),
+    [activePayables, isInSelectedPeriod],
+  );
+
+  const periodPayablesTotal = useMemo(
+    () => periodPayables.reduce((sum, payable) => sum + payable.finalAmount, 0),
+    [periodPayables],
+  );
+
+  const periodPayablesRemaining = useMemo(
+    () => periodPayables.reduce((sum, payable) => {
+      if (payable.status === 'PAGO' || payable.status === 'CANCELADO') return sum;
+      const paid = payable.paidAmount ?? 0;
+      return sum + Math.max(0, payable.finalAmount - paid);
+    }, 0),
+    [periodPayables],
+  );
+
+  const periodPayablesPaidPart = Math.max(0, periodPayablesTotal - periodPayablesRemaining);
 
   const periodPaidPayables = useMemo(
     () => getPaidPayablesInRange(activePayables, selectedAccountingRange),
@@ -441,14 +369,6 @@ export default function Dashboard() {
   );
 
   const yearlyResult = yearlyRevenue - yearlyExpenses;
-
-  const revealProps = (delay: number) => ({
-    initial: prefersReducedMotion ? false : { opacity: 0, y: 10 },
-    animate: { opacity: 1, y: 0 },
-    transition: prefersReducedMotion
-      ? { duration: 0 }
-      : { delay, duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] as const },
-  });
 
   const hasStatusData = statusData.length > 0;
   const hasRevenueHistory = monthlyData.some((item) => item.valor > 0);
@@ -534,7 +454,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
             <button
               type="button"
               onClick={() => navigate('/notas-entrada')}
@@ -543,17 +463,17 @@ export default function Dashboard() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                    O.S. lançadas
-                    <InlineInfo label={`Quantidade de O.S. criadas no período selecionado, considerando apenas datas a partir de ${DASHBOARD_ACCOUNTING_START_LABEL}. Não entra no faturamento até a O.S. ser finalizada.`} />
+                    Entradas previstas
+                    <InlineInfo label={`Valor potencial das O.S. lançadas no período, sem contar O.S. excluídas. É uma previsão: só vira faturamento quando a O.S. entra na regra contábil.`} />
                   </p>
-                  <p className="mt-2 text-2xl font-display font-bold leading-none">{periodNotes.length}</p>
+                  <p className="mt-2 text-2xl font-display font-bold leading-none">R$ {fmtBRL(periodPotentialAmount)}</p>
                 </div>
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-700">
                   <FileText className="h-4 w-4" />
                 </div>
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
-                Volume do período · base desde {DASHBOARD_ACCOUNTING_START_LABEL}
+                {periodNotes.length} O.S. lançada{periodNotes.length !== 1 ? 's' : ''} no período
               </p>
             </button>
 
@@ -565,8 +485,8 @@ export default function Dashboard() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                    Valor finalizado
-                    <InlineInfo label={`Soma das O.S. com status Finalizado e data de finalização a partir de ${DASHBOARD_ACCOUNTING_START_LABEL}. O.S. antigas não entram para não distorcer o histórico.`} />
+                    Faturamento real
+                    <InlineInfo label={`Entrada de fato: soma das O.S. que entraram na regra contábil do Dashboard, com data a partir de ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
                   </p>
                   <p className="mt-2 text-2xl font-display font-bold leading-none text-emerald-700">R$ {fmtBRL(periodDeliveredAmount)}</p>
                 </div>
@@ -582,13 +502,35 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={() => navigate('/contas-a-pagar')}
+              className="rounded-2xl border border-border/70 bg-background p-4 text-left transition hover:border-orange-200 hover:bg-orange-50/50"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    Contas lançadas
+                    <InlineInfo label="Total das contas cadastradas no Contas a Pagar para o período, usando competência financeira ou vencimento." />
+                  </p>
+                  <p className="mt-2 text-2xl font-display font-bold leading-none text-orange-700">R$ {fmtBRL(periodPayablesTotal)}</p>
+                </div>
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-50 text-orange-700">
+                  <Receipt className="h-4 w-4" />
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                {periodPayables.length} conta{periodPayables.length !== 1 ? 's' : ''} · pago R$ {fmtBRL(periodPayablesPaidPart)}
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigate('/contas-a-pagar')}
               className="rounded-2xl border border-border/70 bg-background p-4 text-left transition hover:border-red-200 hover:bg-red-50/50"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                     Contas pagas
-                    <InlineInfo label={`Soma das contas marcadas como pagas ou parciais, usando a data de pagamento dentro do período e nunca antes de ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
+                    <InlineInfo label={`Saída de caixa: soma das contas marcadas como pagas ou parciais, usando a data real do pagamento dentro do período e nunca antes de ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
                   </p>
                   <p className="mt-2 text-2xl font-display font-bold leading-none text-red-600">R$ {fmtBRL(periodPaidExpenses)}</p>
                 </div>
@@ -601,6 +543,28 @@ export default function Dashboard() {
               </p>
             </button>
 
+            <button
+              type="button"
+              onClick={() => navigate('/contas-a-pagar?status=pendente')}
+              className="rounded-2xl border border-border/70 bg-background p-4 text-left transition hover:border-amber-200 hover:bg-amber-50/50"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    Falta pagar
+                    <InlineInfo label="Saldo ainda aberto das contas lançadas no período. Contas parciais entram somente com o valor restante." />
+                  </p>
+                  <p className="mt-2 text-2xl font-display font-bold leading-none text-amber-700">R$ {fmtBRL(periodPayablesRemaining)}</p>
+                </div>
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
+                  <Landmark className="h-4 w-4" />
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                Dentro das contas lançadas no período
+              </p>
+            </button>
+
             <div className={cn(
               'rounded-2xl border p-4',
               periodProfit >= 0
@@ -610,8 +574,8 @@ export default function Dashboard() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                    Lucro contabilizado
-                    <InlineInfo label={`Cálculo: valor finalizado menos contas pagas no mesmo período. Ambos começam somente em ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
+                    Lucro do período
+                    <InlineInfo label={`Cálculo: faturamento real menos contas pagas no mesmo período. Ambos começam somente em ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
                   </p>
                   <p className={cn('mt-2 text-2xl font-display font-bold leading-none', periodProfit >= 0 ? 'text-primary' : 'text-red-700')}>
                     R$ {fmtBRLFull(periodProfit)}
@@ -622,7 +586,7 @@ export default function Dashboard() {
                 </div>
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
-                O.S. finalizadas menos contas pagas desde {DASHBOARD_ACCOUNTING_START_LABEL}{periodProfitMargin !== null ? ` · margem ${periodProfitMargin.toFixed(1)}%` : ''}
+                Faturamento real - contas pagas{periodProfitMargin !== null ? ` · margem ${periodProfitMargin.toFixed(1)}%` : ''}
               </p>
             </div>
           </div>
@@ -655,59 +619,6 @@ export default function Dashboard() {
           </div>
         </CardContent>
       </Card>
-
-      {/* KPI rows */}
-      <TooltipProvider delayDuration={400}>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {summaryKpis.map((kpi, i) => (
-            <motion.div
-              key={kpi.label}
-              {...revealProps(i * 0.06)}
-            >
-              <Card
-                className="overflow-hidden cursor-pointer transition-all duration-150 hover:shadow-md hover:-translate-y-px hover:border-border/70 group"
-                onClick={() => navigate(kpi.href)}
-              >
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between gap-2 mb-3">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="text-xs font-medium text-muted-foreground truncate">{kpi.label}</span>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            onClick={(e) => e.stopPropagation()}
-                            className="shrink-0 text-muted-foreground/30 hover:text-muted-foreground/70 transition-colors"
-                          >
-                            <Info className="w-3 h-3" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="top" className="max-w-[220px] text-xs leading-relaxed">
-                          {kpi.tooltip}
-                        </TooltipContent>
-                      </Tooltip>
-                    </div>
-                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${kpi.iconClass}`}>
-                      <kpi.icon className="h-4 w-4" />
-                    </div>
-                  </div>
-                  <div className="text-2xl font-bold font-display leading-none mb-1 group-hover:text-primary transition-colors">{kpi.value}</div>
-                  <div className="flex items-center gap-1">
-                    {'trend' in kpi && kpi.trend !== null && kpi.trend !== undefined && (
-                      kpi.trend > 0
-                        ? <ArrowUpRight className="w-3 h-3 text-emerald-600 shrink-0" />
-                        : kpi.trend < 0
-                          ? <ArrowDownRight className="w-3 h-3 text-red-500 shrink-0" />
-                          : <Minus className="w-3 h-3 text-muted-foreground shrink-0" />
-                    )}
-                    <p className={`text-xs leading-tight ${kpi.subClass}`}>{kpi.sub}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
-        </div>
-      </TooltipProvider>
 
       {/* Charts row 1: status bar + area chart */}
       <ErrorBoundary
