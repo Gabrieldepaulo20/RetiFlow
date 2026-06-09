@@ -571,7 +571,7 @@ export default function IntakeNotes() {
                 <p className="text-xs text-muted-foreground">Refine por cliente, período ou status sem sair da página.</p>
               </div>
               <Badge variant="outline" className="w-fit rounded-full bg-background text-[11px]">
-                Página {currentPage} de {totalPages}
+                Página {currentPage} de {totalPages} · {NOTES_PAGE_SIZE} por página
               </Badge>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -699,11 +699,6 @@ export default function IntakeNotes() {
 
             {/* Active filter badges */}
             <div className="flex items-center gap-2 flex-wrap min-h-5">
-              {IS_REAL_AUTH && (
-                <Badge variant="outline" className="rounded-full text-[11px]">
-                  Página {currentPage} de {totalPages} · {NOTES_PAGE_SIZE} por página
-                </Badge>
-              )}
               {IS_REAL_AUTH && isLoadingNotesPage && (
                 <span className="text-xs text-muted-foreground">Atualizando lista...</span>
               )}

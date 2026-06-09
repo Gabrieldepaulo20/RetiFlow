@@ -395,6 +395,15 @@ Plano aprovado para executar em fases:
   - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks/import dinâmico.
   - Observação: uma rodada intermediária de testes acusou `endOfMonth is not defined`; import corrigido e testes reexecutados com sucesso.
 
+## Notas De Entrada - Filtros Mais Limpos - 2026-06-09
+
+- Pedido: remover duplicidade visual de paginação dentro de `Filtros da lista`.
+- `src/pages/IntakeNotes.tsx`:
+  - badge superior passou a mostrar `Página X de Y · 50 por página`;
+  - badge duplicado da linha de filtros ativos foi removido;
+  - `Sem filtros ativos` permanece sozinho quando não houver filtro aplicado.
+- Alteração apenas de frontend; sem mudança de banco, RPC, Storage ou Edge Function.
+
 ## Filtros De O.S., Dashboard Finalizado E CPF/CNPJ - 2026-06-05
 
 - Pedido: melhorar Notas de Entrada com filtro real por data, ajustar Dashboard para contabilizar valores de O.S. apenas quando `Finalizada`, impedir tempo medio negativo e permitir filtrar clientes por CPF/CNPJ.
