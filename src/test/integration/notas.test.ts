@@ -10,6 +10,7 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
   const createdNoteIds = new Set<string>();
   const createdClientIds = new Set<string>();
   const createdVehicleIds = new Set<string>();
+  const createdClosingIds = new Set<string>();
   const serviceDescription = `${TEST_PREFIX} Linha somente descritiva`;
 
   beforeAll(async () => {
@@ -20,6 +21,20 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
   afterAll(async () => {
     const service = createServiceClient();
     const noteIds = [...createdNoteIds];
+    const closingIds = [...createdClosingIds];
+
+    if (noteIds.length > 0) {
+      await service
+        .schema('RetificaPremium')
+        .from('Notas_de_Servico')
+        .update({ fk_fechamentos: null })
+        .in('id_notas_servico', noteIds);
+    }
+
+    if (closingIds.length > 0) {
+      await service.schema('RetificaPremium').from('Fechamento_Logs').delete().in('fk_fechamentos', closingIds);
+      await service.schema('RetificaPremium').from('Fechamentos').delete().in('id_fechamentos', closingIds);
+    }
 
     if (noteIds.length > 0) {
       await service.schema('RetificaPremium').from('Rel_NotaS_Serv').delete().in('fk_notas_servico', noteIds);
@@ -166,6 +181,139 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
       preco_unitario: 0,
       subtotal_item: 0,
     }));
+
+    await client.auth.signOut();
+  });
+
+  it('vincula O.S. ao fechamento e bloqueia edição depois de gerar', async () => {
+    const { client, userId } = await signInAsTestUser();
+    const suffix = String(Date.now()).slice(-8);
+
+    const createdClient = await callRpc(client, 'salvar_cliente_completo', {
+      p_payload: {
+        nome: `${TEST_PREFIX} Cliente Fechamento ${suffix}`,
+        documento: `5${suffix.padStart(10, '0')}`,
+        tipo_documento: 'CPF',
+        status: true,
+      },
+    });
+    expect(createdClient.status).toBe(200);
+    const clientId = createdClient.id_cliente as string;
+    createdClientIds.add(clientId);
+
+    const createdNote = await callRpc(client, 'nova_nota', {
+      p_payload: {
+        tipo_nota: 'Serviço',
+        numero_nota: `${TEST_PREFIX} FECH-${suffix}`,
+        fk_clientes: clientId,
+        defeito: 'Teste de fechamento',
+        total_servicos: 120,
+        total_produtos: 0,
+        total: 120,
+        veiculo: {
+          modelo: 'Motor fechamento',
+          placa: null,
+          km: 0,
+          motor: 'Gasolina',
+        },
+        itens: [
+          {
+            descricao: `${TEST_PREFIX} Serviço fechamento ${suffix}`,
+            quantidade: 1,
+            valor: 120,
+            desconto: 0,
+          },
+        ],
+      },
+    });
+    expect(createdNote.status).toBe(200);
+    const noteId = createdNote.id_nota as string;
+    createdNoteIds.add(noteId);
+
+    const details = await callRpc(client, 'get_nota_servico_detalhes', {
+      p_id_nota_servico: noteId,
+    });
+    expect(details.status).toBe(200);
+    createdVehicleIds.add((details.cabecalho as { veiculo: { id: string } }).veiculo.id);
+
+    const statuses = await callRpc(client, 'get_status_notas', { p_tipo_nota: 'Serviço' });
+    const finalizado = (statuses.dados as Array<{ id_status_notas: number; nome: string }>).find((status) => status.nome === 'Finalizado');
+    expect(finalizado).toBeDefined();
+
+    const finalized = await callRpc(client, 'update_nota_servico', {
+      p_payload: {
+        id_notas_servico: noteId,
+        fk_status: finalizado!.id_status_notas,
+        total_servicos: 120,
+        total_produtos: 0,
+        total: 120,
+      },
+    });
+    expect(finalized.status).toBe(200);
+
+    const availableBefore = await callRpc(client, 'get_notas_servico', {
+      p_fk_clientes: clientId,
+      p_busca: `${TEST_PREFIX} FECH-${suffix}`,
+      p_apenas_sem_fechamento: true,
+      p_limite: 5,
+    });
+    expect(availableBefore.status).toBe(200);
+    expect(availableBefore.dados).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id_notas_servico: noteId }),
+    ]));
+
+    const fechamento = await callRpc(client, 'insert_fechamento', {
+      p_fk_clientes: clientId,
+      p_mes: 'Maio',
+      p_ano: 2026,
+      p_periodo: `${TEST_PREFIX} Maio 2026 ${suffix}`,
+      p_label: `${TEST_PREFIX} Fechamento ${suffix}`,
+      p_valor_total: 120,
+    });
+    expect(fechamento.status).toBe(200);
+    const closingId = fechamento.id_fechamentos as string;
+    createdClosingIds.add(closingId);
+
+    const { error: updateClosingError } = await client.schema('RetificaPremium').rpc('update_fechamento', {
+      p_id_fechamentos: closingId,
+      p_dados_json: {
+        gerado_em: new Date().toISOString(),
+        periodo: `${TEST_PREFIX} Maio 2026 ${suffix}`,
+        cliente: { id: clientId, nome: `${TEST_PREFIX} Cliente Fechamento ${suffix}` },
+        notas: [{
+          id: noteId,
+          os: `${TEST_PREFIX} FECH-${suffix}`,
+          veiculo: 'Motor fechamento',
+          placa: null,
+          itens: [],
+          total_original: 120,
+          desconto_nota: 0,
+          total_com_desconto: 120,
+        }],
+        total_original: 120,
+        total_com_desconto: 120,
+      },
+      p_pdf_url: `${userId}/integration-${closingId}.pdf`,
+    });
+    expect(updateClosingError).toBeNull();
+
+    const availableAfter = await callRpc(client, 'get_notas_servico', {
+      p_fk_clientes: clientId,
+      p_busca: `${TEST_PREFIX} FECH-${suffix}`,
+      p_apenas_sem_fechamento: true,
+      p_limite: 5,
+    });
+    expect(availableAfter.status).toBe(200);
+    expect(availableAfter.dados).toEqual([]);
+
+    const blockedUpdate = await callRpc(client, 'update_nota_servico', {
+      p_payload: {
+        id_notas_servico: noteId,
+        observacoes: 'Tentativa de alteração após fechamento',
+      },
+    });
+    expect(blockedUpdate.status).toBe(409);
+    expect(blockedUpdate.code).toBe('note_locked_by_closing');
 
     await client.auth.signOut();
   });

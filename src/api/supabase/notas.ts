@@ -18,6 +18,7 @@ export interface NotaServico {
   updated_at: string;
   pdf_url: string | null;
   finalizado_em: string | null;
+  fk_fechamentos?: string | null;
   cliente: { id: string; nome: string };
   veiculo: { id: string; modelo: string; placa: string | null; km: number; motor: string };
   status: { id: number; nome: string; index: number; tipo_status: string };
@@ -74,6 +75,7 @@ export async function getNotasServico(params?: {
   p_offset?: number;
   p_data_inicio?: string;
   p_data_fim?: string;
+  p_apenas_sem_fechamento?: boolean;
 }) {
   const env = await callRPC<NotaServico[]>('get_notas_servico', params);
   return { dados: env.dados ?? [], total: env.total ?? 0 };

@@ -71,6 +71,7 @@ interface ClosingDraft {
   year: string;
   periodLabel: string;
   notes: PreviewNote[];
+  includedNoteIds?: string[];
   discounts: Record<string, number>;
   createdAt: string;
   updatedAt: string;
@@ -99,9 +100,16 @@ const recalcItemSubtotal = (item: PreviewNote['itens'][number]) => {
 const recalcNoteTotal = (items: PreviewNote['itens']) =>
   items.reduce((sum, item) => sum + recalcItemSubtotal(item), 0);
 
-const computeDraftTotals = (draft: Pick<ClosingDraft, 'notes' | 'discounts'>) => {
-  const totalOriginal = draft.notes.reduce((sum, note) => sum + note.total, 0);
-  const totalComDesconto = draft.notes.reduce((sum, note) => {
+const getIncludedDraftNotes = (draft: Pick<ClosingDraft, 'notes' | 'includedNoteIds'>) => {
+  if (!draft.includedNoteIds) return draft.notes;
+  const included = new Set(draft.includedNoteIds);
+  return draft.notes.filter((note) => included.has(note.id));
+};
+
+const computeDraftTotals = (draft: Pick<ClosingDraft, 'notes' | 'discounts' | 'includedNoteIds'>) => {
+  const includedNotes = getIncludedDraftNotes(draft);
+  const totalOriginal = includedNotes.reduce((sum, note) => sum + note.total, 0);
+  const totalComDesconto = includedNotes.reduce((sum, note) => {
     const desconto = draft.discounts[note.id] ?? 0;
     return sum + note.total * (1 - desconto / 100);
   }, 0);
@@ -114,7 +122,7 @@ const buildDadosFromDraft = (draft: ClosingDraft): FechamentoDadosJson => {
     gerado_em: new Date().toISOString(),
     periodo: draft.periodLabel,
     cliente: { id: draft.clientId, nome: draft.clientName },
-    notas: draft.notes.map((note) => {
+    notas: getIncludedDraftNotes(draft).map((note) => {
       const desconto = draft.discounts[note.id] ?? 0;
       return {
         id: note.id,
@@ -221,6 +229,7 @@ export default function MonthlyClosing() {
   const [previewNotes, setPreviewNotes] = useState<PreviewNote[]>([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [descontos, setDescontos] = useState<Record<string, number>>({});
+  const [includedNoteIds, setIncludedNoteIds] = useState<string[]>([]);
   const [editingItems, setEditingItems] = useState<Record<string, boolean>>({});
 
   // Generation
@@ -284,7 +293,7 @@ export default function MonthlyClosing() {
 
         const periods = IS_REAL_AUTH
           ? normalizeAvailablePeriods(
-              (await getNotasServico({ p_fk_clientes: selClientId, p_limite: 500, p_offset: 0 })).dados
+              (await getNotasServico({ p_fk_clientes: selClientId, p_limite: 500, p_offset: 0, p_apenas_sem_fechamento: true })).dados
                 .filter((note) => note.finalizado_em || note.status.tipo_status === 'fechado')
                 .map((note) => note.finalizado_em ?? note.created_at),
             )
@@ -328,6 +337,7 @@ export default function MonthlyClosing() {
     setSelYear(draft.year);
     setPreviewNotes(draft.notes);
     setDescontos(draft.discounts);
+    setIncludedNoteIds(draft.includedNoteIds ?? draft.notes.map((note) => note.id));
     setEditingItems({});
   }, []);
 
@@ -501,7 +511,7 @@ export default function MonthlyClosing() {
     setLoadingPreview(true);
     try {
       const notasFiltradas = IS_REAL_AUTH
-        ? (await getNotasServico({ p_fk_clientes: selClientId, p_limite: 500, p_offset: 0 })).dados.filter((note) => {
+        ? (await getNotasServico({ p_fk_clientes: selClientId, p_limite: 500, p_offset: 0, p_apenas_sem_fechamento: true })).dados.filter((note) => {
             if (!(note.finalizado_em || note.status.tipo_status === 'fechado')) return false;
             const dt = new Date(note.finalizado_em ?? note.created_at);
             return dt >= inicio && dt <= fim;
@@ -563,6 +573,7 @@ export default function MonthlyClosing() {
 
       setPreviewNotes(resultado);
       setDescontos({});
+      setIncludedNoteIds(resultado.map((note) => note.id));
       setEditingItems({});
       const draftClient = clients.find((entry) => entry.id === selClientId);
       const periodLabel = `${MONTHS[mesNum - 1]} ${selYear}`;
@@ -575,6 +586,7 @@ export default function MonthlyClosing() {
         year: selYear,
         periodLabel,
         notes: resultado,
+        includedNoteIds: resultado.map((note) => note.id),
         discounts: {},
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -592,21 +604,24 @@ export default function MonthlyClosing() {
 
   /* ── Computed totals ── */
   const totals = useMemo(() => {
-    return previewNotes.map((n) => {
+    const included = new Set(includedNoteIds);
+    return previewNotes.filter((note) => included.has(note.id)).map((n) => {
       const disc = descontos[n.id] ?? 0;
       return { id: n.id, totalBruto: n.total, totalComDesconto: n.total * (1 - disc / 100) };
     });
-  }, [previewNotes, descontos]);
+  }, [previewNotes, descontos, includedNoteIds]);
 
   const grandTotal = useMemo(() => totals.reduce((a, b) => a + b.totalComDesconto, 0), [totals]);
   const grandTotalOriginal = useMemo(() => totals.reduce((a, n) => a + n.totalBruto, 0), [totals]);
+  const includedNotesCount = includedNoteIds.length;
   const modalPreviewDados = useMemo(
     () => generatedPreviewFechamento?.dados_json ?? (activeDraft ? buildDadosFromDraft({
       ...activeDraft,
       notes: previewNotes,
+      includedNoteIds,
       discounts: descontos,
     }) : null),
-    [activeDraft, generatedPreviewFechamento, previewNotes, descontos],
+    [activeDraft, generatedPreviewFechamento, previewNotes, includedNoteIds, descontos],
   );
   const modalPreviewTitle = generatedPreviewFechamento
     ? `Fechamento ${generatedPreviewFechamento.periodo}`
@@ -626,12 +641,13 @@ export default function MonthlyClosing() {
         ? {
             ...draft,
             notes: previewNotes,
+            includedNoteIds,
             discounts: descontos,
             updatedAt: new Date().toISOString(),
           }
         : draft
     )));
-  }, [draftModalOpen, activeDraftId, previewNotes, descontos]);
+  }, [draftModalOpen, activeDraftId, previewNotes, includedNoteIds, descontos]);
 
   useEffect(() => {
     if (!selYear || availablePeriods.length === 0) return;
@@ -666,10 +682,21 @@ export default function MonthlyClosing() {
     }));
   }, []);
 
+  const toggleNoteInClosing = useCallback((noteId: string, checked: boolean) => {
+    setIncludedNoteIds((current) => {
+      if (checked) return current.includes(noteId) ? current : [...current, noteId];
+      return current.filter((id) => id !== noteId);
+    });
+  }, []);
+
   /* ── Gerar fechamento ── */
   const generateDraft = useCallback(async (draft: ClosingDraft) => {
     setGenerating(true);
     try {
+      if (getIncludedDraftNotes(draft).length === 0) {
+        toast({ title: 'Selecione pelo menos uma O.S.', description: 'Marque as O.S. que devem entrar neste fechamento.', variant: 'destructive' });
+        return;
+      }
       const geradoEm = new Date().toISOString();
       const mesNum = parseInt(draft.month);
       const periodLabel = draft.periodLabel;
@@ -689,20 +716,20 @@ export default function MonthlyClosing() {
       });
 
       // 2. Save snapshot
+      const pdfUrl = await uploadFechamentoPDF(idFechamento, pdfBlob);
+      if (!pdfUrl) {
+        throw new Error('O fechamento foi montado, mas o PDF não conseguiu ser salvo no storage.');
+      }
+
+      // 3. Save immutable snapshot and link selected O.S. to this closing.
       await updateFechamento(idFechamento, {
         p_dados_json: {
           ...dados,
           gerado_em: geradoEm,
           notas: notasDados,
         },
+        p_pdf_url: pdfUrl,
       });
-
-      // 3. Upload PDF
-      const pdfUrl = await uploadFechamentoPDF(idFechamento, pdfBlob);
-      if (!pdfUrl) {
-        throw new Error('O fechamento foi montado, mas o PDF não conseguiu ser salvo no storage.');
-      }
-      await updateFechamento(idFechamento, { p_pdf_url: pdfUrl });
 
       // 4. Audit action
       try {
@@ -731,11 +758,12 @@ export default function MonthlyClosing() {
     const draftSnapshot: ClosingDraft = {
       ...activeDraft,
       notes: previewNotes,
+      includedNoteIds,
       discounts: descontos,
       updatedAt: new Date().toISOString(),
     };
     await generateDraft(draftSnapshot);
-  }, [activeDraft, previewNotes, descontos, generateDraft]);
+  }, [activeDraft, previewNotes, includedNoteIds, descontos, generateDraft]);
 
   /* ── Download PDF ── */
   const handleDownload = useCallback(async (fechamento: FechamentoListItem) => {
@@ -1060,15 +1088,30 @@ export default function MonthlyClosing() {
                   const disc = descontos[nota.id] ?? 0;
                   const totalComDesc = nota.total * (1 - disc / 100);
                   const editing = editingItems[nota.id] ?? true;
+                  const included = includedNoteIds.includes(nota.id);
                   return (
-                    <Card key={nota.id} className="overflow-hidden border-border/70">
+                    <Card key={nota.id} className={cn('overflow-hidden border-border/70 transition', !included && 'opacity-70')}>
                       <div className="bg-muted/40 border-b border-border/50 px-4 py-3 flex items-center justify-between gap-3">
-                        <div className="min-w-0">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <label className="mt-0.5 flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border bg-background transition hover:border-primary/50">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 accent-primary"
+                              checked={included}
+                              onChange={(event) => toggleNoteInClosing(nota.id, event.target.checked)}
+                              aria-label={`Incluir O.S. ${nota.os} no fechamento`}
+                            />
+                          </label>
+                          <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-semibold text-sm">{nota.os}</p>
                             <Badge variant="outline" className="text-[10px]">Editável</Badge>
+                            <Badge className={cn('text-[10px]', included ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>
+                              {included ? 'Entra no fechamento' : 'Fora deste fechamento'}
+                            </Badge>
                           </div>
                           <p className="text-xs text-muted-foreground truncate">{nota.veiculo}{nota.placa ? ` · ${nota.placa}` : ''}</p>
+                          </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <Button variant="outline" size="sm" className="h-8" onClick={() => setEditingItems((prev) => ({ ...prev, [nota.id]: !editing }))}>
@@ -1081,7 +1124,7 @@ export default function MonthlyClosing() {
                           </div>
                         </div>
                       </div>
-                      <CardContent className="p-0">
+                      <CardContent className={cn('p-0', !included && 'pointer-events-none')}>
                         <div className="divide-y divide-border/30">
                           <div className="hidden grid-cols-[minmax(180px,1fr)_76px_104px_104px_112px] gap-3 px-4 py-2 text-xs font-medium text-muted-foreground lg:grid">
                             <span>Descrição</span>
@@ -1154,7 +1197,7 @@ export default function MonthlyClosing() {
                   <div className="space-y-4 xl:sticky xl:top-4">
                     <div className="rounded-2xl border bg-background p-4 shadow-sm">
                       <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Resumo do rascunho</p>
-                      <p className="mt-2 text-sm text-muted-foreground">{previewNotes.length} O.S. · {activeDraft?.periodLabel ?? '—'}</p>
+                      <p className="mt-2 text-sm text-muted-foreground">{includedNotesCount} de {previewNotes.length} O.S. marcadas · {activeDraft?.periodLabel ?? '—'}</p>
                       <p className="mt-1 text-3xl font-bold text-primary">R$ {toMoney(grandTotal)}</p>
                       {grandTotalOriginal !== grandTotal && <p className="mt-1 text-xs text-muted-foreground">Bruto: R$ {toMoney(grandTotalOriginal)}</p>}
                     </div>
@@ -1165,7 +1208,7 @@ export default function MonthlyClosing() {
                     </div>
                     <Button
                       onClick={handleGerar}
-                      disabled={generating || !activeDraft}
+                      disabled={generating || !activeDraft || includedNotesCount === 0}
                       className="h-12 w-full bg-destructive text-sm font-semibold text-destructive-foreground hover:bg-destructive/90"
                       size="lg"
                     >
