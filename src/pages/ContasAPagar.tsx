@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { endOfMonth, format, parseISO, startOfMonth } from 'date-fns';
+import { addDays, endOfMonth, format, parseISO, startOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { motion } from 'framer-motion';
 import { AlertCircle, AlertTriangle, CalendarCheck, CalendarClock, CheckCircle2, Clock, Copy, FileText, MailOpen, MoreHorizontal, Pencil, PlusCircle, Repeat, Search, Sparkles, Trash2, Wallet, XCircle } from 'lucide-react';
@@ -182,6 +182,32 @@ export default function ContasAPagar() {
 
   const hasDueToday = dueToday.length > 0;
   const hasOverdue = overduePayables.length > 0;
+  const todayISO = format(now, 'yyyy-MM-dd');
+  const inSevenDaysISO = format(addDays(now, 7), 'yyyy-MM-dd');
+  const inThirtyDaysISO = format(addDays(now, 30), 'yyyy-MM-dd');
+  const paidThisMonthTotal = paidThisMonth.reduce((sum, payable) => sum + (payable.paidAmount ?? payable.finalAmount), 0);
+  const cashFlowSummary = useMemo(() => {
+    const pendingSorted = [...pendingLike].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+    const inRange = (payable: AccountPayable, endDate: string) => payable.dueDate >= todayISO && payable.dueDate <= endDate;
+    const nextSeven = pendingSorted.filter((payable) => inRange(payable, inSevenDaysISO));
+    const nextThirty = pendingSorted.filter((payable) => inRange(payable, inThirtyDaysISO));
+    const laborPayables = pendingSorted.filter((payable) => {
+      const category = categoryById.get(payable.categoryId);
+      const haystack = `${payable.title} ${payable.supplierName ?? ''} ${category?.name ?? ''}`.toLowerCase();
+      return haystack.includes('salário') || haystack.includes('salario') || haystack.includes('folha') || haystack.includes('funcion') || haystack.includes('mão de obra') || haystack.includes('mao de obra');
+    });
+
+    return {
+      nextSevenTotal: nextSeven.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0),
+      nextSevenCount: nextSeven.length,
+      nextThirtyTotal: nextThirty.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0),
+      nextThirtyCount: nextThirty.length,
+      overdueTotal: overduePayables.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0),
+      laborTotal: laborPayables.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0),
+      laborCount: laborPayables.length,
+      nextDue: pendingSorted.slice(0, 5),
+    };
+  }, [categoryById, inSevenDaysISO, inThirtyDaysISO, overduePayables, pendingLike, todayISO]);
   const summaryCards = [
     {
       label: 'Vence hoje',
@@ -206,7 +232,7 @@ export default function ContasAPagar() {
     },
     {
       label: 'Pago no mês',
-      value: fmtBRL(paidThisMonth.reduce((sum, payable) => sum + (payable.paidAmount ?? payable.finalAmount), 0)),
+      value: fmtBRL(paidThisMonthTotal),
       sub: format(now, "MMMM 'de' yyyy", { locale: ptBR }),
       Icon: CheckCircle2,
       tone: 'success',
@@ -574,6 +600,75 @@ export default function ContasAPagar() {
             );
           })}
         </div>
+
+        <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/[0.04] via-background to-background">
+          <CardContent className="grid gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold">Fluxo de caixa</p>
+                  <p className="text-xs text-muted-foreground">Saídas previstas, atrasos e folha para priorizar pagamentos sem surpresa.</p>
+                </div>
+                <Badge variant="outline" className="rounded-full">
+                  Base: contas pendentes, parciais e agendadas
+                </Badge>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-2xl border bg-background p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Próx. 7 dias</p>
+                  <p className="mt-2 text-xl font-bold tabular-nums">{fmtBRL(cashFlowSummary.nextSevenTotal)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{cashFlowSummary.nextSevenCount} vencimento{cashFlowSummary.nextSevenCount === 1 ? '' : 's'}</p>
+                </div>
+                <div className="rounded-2xl border bg-background p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Próx. 30 dias</p>
+                  <p className="mt-2 text-xl font-bold tabular-nums">{fmtBRL(cashFlowSummary.nextThirtyTotal)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{cashFlowSummary.nextThirtyCount} conta{cashFlowSummary.nextThirtyCount === 1 ? '' : 's'} no radar</p>
+                </div>
+                <div className="rounded-2xl border border-destructive/20 bg-red-50/60 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-destructive/80">Atrasadas</p>
+                  <p className="mt-2 text-xl font-bold tabular-nums text-destructive">{fmtBRL(cashFlowSummary.overdueTotal)}</p>
+                  <p className="mt-1 text-xs text-destructive/70">{overduePayables.length} pendência{overduePayables.length === 1 ? '' : 's'} crítica{overduePayables.length === 1 ? '' : 's'}</p>
+                </div>
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-800">Mão de obra</p>
+                  <p className="mt-2 text-xl font-bold tabular-nums text-emerald-950">{fmtBRL(cashFlowSummary.laborTotal)}</p>
+                  <p className="mt-1 text-xs text-emerald-800">{cashFlowSummary.laborCount} lançamento{cashFlowSummary.laborCount === 1 ? '' : 's'} identificado{cashFlowSummary.laborCount === 1 ? '' : 's'}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border bg-background p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold">Próximos vencimentos</p>
+                  <p className="text-xs text-muted-foreground">Ordem real de prioridade pela data.</p>
+                </div>
+                <CalendarClock className="h-4 w-4 text-primary" />
+              </div>
+              <div className="mt-3 space-y-2">
+                {cashFlowSummary.nextDue.length === 0 ? (
+                  <div className="rounded-xl border border-dashed p-4 text-center text-xs text-muted-foreground">
+                    Nenhuma conta pendente no momento.
+                  </div>
+                ) : cashFlowSummary.nextDue.map((payable) => (
+                  <button
+                    key={payable.id}
+                    type="button"
+                    className="flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left transition hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => updateRouteModal('details', payable.id)}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">{payable.title}</span>
+                      <span className="block text-xs text-muted-foreground">{format(parseISO(payable.dueDate), 'dd/MM/yyyy', { locale: ptBR })}</span>
+                    </span>
+                    <span className="shrink-0 text-sm font-bold tabular-nums">{fmtBRL(calculatePayableRemainingBalance(payable))}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardContent className="p-0">

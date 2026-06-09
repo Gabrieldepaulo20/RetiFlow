@@ -15,7 +15,7 @@ import {
 } from '@/services/domain/payables';
 import { buildImportedPayableAttachmentName } from '@/services/domain/payableAttachments';
 import { AccountPayable, PayableAttachmentFileType, PAYMENT_METHOD_LABELS, PaymentMethod, RecurrenceType } from '@/types';
-import { Camera, CheckCircle2, ChevronDown, FileScan, LoaderCircle, RotateCw, Trash2, Upload, XCircle } from 'lucide-react';
+import { AlertTriangle, Camera, CheckCircle2, ChevronDown, FileScan, LoaderCircle, RotateCw, Trash2, Upload, XCircle } from 'lucide-react';
 import { analisarContaPagarComIA, insertAnexoContaPagar, uploadAnexoContaPagar } from '@/api/supabase/contas-pagar';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
@@ -78,6 +78,7 @@ type ImportFileItem = {
   creating: boolean;
   createdPayableId?: string;
   createdPayable?: AccountPayable;
+  duplicatePayableId?: string;
 };
 
 function formatBytes(size: number) {
@@ -419,7 +420,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     return displayName;
   }
 
-  async function createPayableFromAnalysis(item: ImportFileItem, analysis: AnalysisResult) {
+  async function createPayableFromAnalysis(item: ImportFileItem, analysis: AnalysisResult, options: { allowDuplicate?: boolean } = {}) {
     const draft = normalizeDraftForCreate(analysis.draft);
     let payable = item.createdPayable ?? (item.createdPayableId ? payables.find((candidate) => candidate.id === item.createdPayableId) : undefined);
 
@@ -435,8 +436,16 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
         payables,
       );
 
-      if (duplicate) {
-        throw new Error(`Conta possivelmente duplicada: ${duplicate.title}.`);
+      if (duplicate && !options.allowDuplicate) {
+        updateItem(item.id, {
+          status: 'error',
+          progress: 0,
+          creating: false,
+          error: `Encontramos uma conta muito parecida: ${duplicate.title}. Revise antes de criar novamente.`,
+          duplicatePayableId: duplicate.id,
+          expanded: true,
+        });
+        throw new Error(`Encontramos uma conta muito parecida: ${duplicate.title}. Revise antes de criar novamente.`);
       }
 
       const finalAmount = calculatePayableFinalAmount(draft.originalAmount);
@@ -467,7 +476,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
         createdByUserId: user?.id ?? 'user-2',
       });
 
-      updateItem(item.id, { createdPayableId: payable.id, createdPayable: payable });
+      updateItem(item.id, { createdPayableId: payable.id, createdPayable: payable, duplicatePayableId: undefined });
     }
 
     try {
@@ -540,14 +549,14 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     }
   }
 
-  async function handleCreateItem(itemId: string) {
+  async function handleCreateItem(itemId: string, options: { allowDuplicate?: boolean } = {}) {
     const item = itemsRef.current.find((i) => i.id === itemId);
     if (!item || !item.analysis) return;
     updateItem(itemId, { creating: true });
     const mergedDraft = mergeDraftEdits(item);
     if (!mergedDraft) return;
     try {
-      const { payable: created } = await createPayableFromAnalysis(item, { ...item.analysis, draft: mergedDraft });
+      const { payable: created } = await createPayableFromAnalysis(item, { ...item.analysis, draft: mergedDraft }, options);
       toast({
         title: 'Conta criada',
         description: mergedDraft.title,
@@ -572,6 +581,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
       analysis: item.createdPayableId ? item.analysis : null,
       status: 'pending' as ImportFileStatus,
       error: undefined,
+      duplicatePayableId: undefined,
     };
     updateItem(itemId, freshItem);
     await processItems([freshItem], { closeOnSuccess: false });
@@ -606,7 +616,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
             isAnalyzing={isAnalyzing}
             payableCategories={payableCategories}
             onSelect={() => fileInputRef.current?.click()}
-            onCreateItem={(id) => void handleCreateItem(id)}
+            onCreateItem={(id, options) => void handleCreateItem(id, options)}
             onRetryItem={(id) => void handleRetryItem(id)}
             onEditDraft={(id, edits) => updateItem(id, { draftEdits: { ...items.find((i) => i.id === id)?.draftEdits, ...edits } })}
             onClear={clearItems}
@@ -631,7 +641,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
             payableCategories={payableCategories}
             cameraMode
             onSelect={() => cameraInputRef.current?.click()}
-            onCreateItem={(id) => void handleCreateItem(id)}
+            onCreateItem={(id, options) => void handleCreateItem(id, options)}
             onRetryItem={(id) => void handleRetryItem(id)}
             onEditDraft={(id, edits) => updateItem(id, { draftEdits: { ...items.find((i) => i.id === id)?.draftEdits, ...edits } })}
             onClear={clearItems}
@@ -650,7 +660,7 @@ type ImportBodyProps = {
   payableCategories: Array<{ id: string; name: string }>;
   cameraMode?: boolean;
   onSelect: () => void;
-  onCreateItem: (id: string) => void;
+  onCreateItem: (id: string, options?: { allowDuplicate?: boolean }) => void;
   onRetryItem: (id: string) => void;
   onEditDraft: (id: string, edits: ImportDraftEdits) => void;
   onClear: () => void;
@@ -763,7 +773,7 @@ type ImportFileCardProps = {
   payableCategories: Array<{ id: string; name: string }>;
   onRemove: (id: string) => void;
   onToggleExpanded: (id: string) => void;
-  onCreateItem: (id: string) => void;
+  onCreateItem: (id: string, options?: { allowDuplicate?: boolean }) => void;
   onRetryItem: (id: string) => void;
   onEditDraft: (id: string, edits: ImportDraftEdits) => void;
 };
@@ -855,22 +865,36 @@ function ImportFileCard({
       {item.expanded ? (
         <div className="border-t bg-muted/20 p-4 space-y-4">
           {item.error ? (
-            <Alert variant="destructive">
-              <XCircle className="h-4 w-4" />
-              <AlertTitle>Este arquivo precisa de revisão</AlertTitle>
+            <Alert variant={item.duplicatePayableId ? 'default' : 'destructive'}>
+              {item.duplicatePayableId ? <AlertTriangle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+              <AlertTitle>{item.duplicatePayableId ? 'Possível duplicidade encontrada' : 'Este arquivo precisa de revisão'}</AlertTitle>
               <AlertDescription className="space-y-3">
                 <p>{item.error}</p>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  className="gap-1.5"
-                  onClick={() => onRetryItem(item.id)}
-                  disabled={item.creating || item.status === 'analyzing'}
-                >
-                  <RotateCw className="h-3.5 w-3.5" />
-                  Tentar novamente
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="gap-1.5"
+                    onClick={() => onRetryItem(item.id)}
+                    disabled={item.creating || item.status === 'analyzing'}
+                  >
+                    <RotateCw className="h-3.5 w-3.5" />
+                    Tentar novamente
+                  </Button>
+                  {item.duplicatePayableId ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5"
+                      onClick={() => onCreateItem(item.id, { allowDuplicate: true })}
+                      disabled={item.creating || item.status === 'analyzing'}
+                    >
+                      Criar mesmo assim
+                    </Button>
+                  ) : null}
+                </div>
               </AlertDescription>
             </Alert>
           ) : null}
