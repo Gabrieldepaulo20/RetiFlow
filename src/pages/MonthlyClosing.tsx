@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useData } from '@/contexts/DataContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,6 +29,10 @@ import {
 } from '@/api/supabase/fechamentos';
 import { getNotasServico } from '@/api/supabase/notas';
 import { useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
+import {
+  filterFechamentosForClientScope,
+  getMonthlyClosingDraftsStorageKey,
+} from '@/services/domain/monthlyClosingIsolation';
 import type { IntakeNote } from '@/types';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
@@ -84,8 +89,6 @@ interface AvailableClosingPeriod {
   label: string;
   noteCount: number;
 }
-
-const DRAFTS_STORAGE_KEY = 'retiflow:monthly-closing-drafts:v1';
 
 const toMoney = (value: number) =>
   value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -202,6 +205,7 @@ function getDivergencias(fechamento: FechamentoListItem, notes: IntakeNote[]) {
 /* ── Main component ─────────────────────────────────────────────────────── */
 export default function MonthlyClosing() {
   const { notes, clients } = useData();
+  const { operationalUser } = useAuth();
   const { toast } = useToast();
   const { data: templateSettings } = useDocumentTemplateSettings();
 
@@ -211,6 +215,7 @@ export default function MonthlyClosing() {
   const [fechamentos, setFechamentos] = useState<FechamentoListItem[]>([]);
   const [loadingList, setLoadingList] = useState(false);
   const [drafts, setDrafts] = useState<ClosingDraft[]>([]);
+  const [draftsHydratedKey, setDraftsHydratedKey] = useState<string | null>(null);
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [draftModalOpen, setDraftModalOpen] = useState(false);
   const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false);
@@ -236,42 +241,95 @@ export default function MonthlyClosing() {
   const [generating, setGenerating] = useState(false);
   const [previewDados, setPreviewDados] = useState<FechamentoDadosJson | null>(null);
 
+  const currentScopeUserId = IS_REAL_AUTH ? operationalUser?.id ?? null : 'development';
+  const draftsStorageKey = useMemo(
+    () => getMonthlyClosingDraftsStorageKey(currentScopeUserId),
+    [currentScopeUserId],
+  );
+  const scopedClientIds = useMemo(
+    () => clients.map((client) => client.id).sort(),
+    [clients],
+  );
+  const scopedClientIdSet = useMemo(
+    () => new Set(scopedClientIds),
+    [scopedClientIds],
+  );
+
+  useEffect(() => {
+    setFechamentos([]);
+    setActiveDraftId(null);
+    setDraftModalOpen(false);
+    setTemplatePreviewOpen(false);
+    setReturnToDraftAfterPreview(false);
+    setGeneratedPreviewFechamento(null);
+    setStoredPdfPreviewUrl(null);
+    setStoredPdfPreviewTitle(null);
+    setSelClientId('');
+    setAvailablePeriods([]);
+    setPreviewNotes([]);
+    setDescontos({});
+    setIncludedNoteIds([]);
+    setEditingItems({});
+    setPreviewDados(null);
+  }, [currentScopeUserId]);
+
   /* ── Load fechamentos ── */
   const loadFechamentos = useCallback(async () => {
-    if (!IS_REAL_AUTH) return;
+    if (!IS_REAL_AUTH || !currentScopeUserId) {
+      setFechamentos([]);
+      return;
+    }
+    if (scopedClientIds.length === 0) {
+      setFechamentos([]);
+      return;
+    }
+
     setLoadingList(true);
     try {
       const { dados } = await getFechamentos({ p_limite: 100 });
-      setFechamentos(dados);
+      setFechamentos(filterFechamentosForClientScope(dados, scopedClientIds));
     } catch {
+      setFechamentos([]);
       toast({ title: 'Erro ao carregar fechamentos', variant: 'destructive' });
     } finally {
       setLoadingList(false);
     }
-  }, [toast]);
+  }, [currentScopeUserId, scopedClientIds, toast]);
 
   useEffect(() => { void loadFechamentos(); }, [loadFechamentos]);
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(DRAFTS_STORAGE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as ClosingDraft[];
-      if (Array.isArray(parsed)) {
-        setDrafts(parsed);
-      }
-    } catch {
-      // noop
+    setDraftsHydratedKey(null);
+    if (!draftsStorageKey) {
+      setDrafts([]);
+      return;
     }
-  }, []);
+
+    try {
+      const raw = window.localStorage.getItem(draftsStorageKey);
+      if (!raw) {
+        setDrafts([]);
+        setDraftsHydratedKey(draftsStorageKey);
+        return;
+      }
+      const parsed = JSON.parse(raw) as ClosingDraft[];
+      setDrafts(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setDrafts([]);
+    } finally {
+      setDraftsHydratedKey(draftsStorageKey);
+    }
+  }, [draftsStorageKey]);
 
   useEffect(() => {
+    if (!draftsStorageKey || draftsHydratedKey !== draftsStorageKey) return;
+
     try {
-      window.localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
+      window.localStorage.setItem(draftsStorageKey, JSON.stringify(drafts));
     } catch {
       // noop
     }
-  }, [drafts]);
+  }, [drafts, draftsHydratedKey, draftsStorageKey]);
 
   useEffect(() => {
     if (!selClientId) {
@@ -331,6 +389,15 @@ export default function MonthlyClosing() {
   }, [selClientId, notes, defaultMonth, defaultYear, selYear, toast]);
 
   const loadDraftIntoEditor = useCallback((draft: ClosingDraft) => {
+    if (!scopedClientIdSet.has(draft.clientId)) {
+      toast({
+        title: 'Rascunho fora do escopo atual',
+        description: 'Este rascunho pertence a outra conta ou cliente e foi bloqueado nesta sessão.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setActiveDraftId(draft.id);
     setSelClientId(draft.clientId);
     setSelMonth(draft.month);
@@ -339,7 +406,7 @@ export default function MonthlyClosing() {
     setDescontos(draft.discounts);
     setIncludedNoteIds(draft.includedNoteIds ?? draft.notes.map((note) => note.id));
     setEditingItems({});
-  }, []);
+  }, [scopedClientIdSet, toast]);
 
   const openDraft = useCallback((draft: ClosingDraft) => {
     loadDraftIntoEditor(draft);
@@ -501,6 +568,14 @@ export default function MonthlyClosing() {
   /* ── Build local draft ── */
   const handleBuildPreview = useCallback(async () => {
     if (!selClientId) { toast({ title: 'Selecione um cliente', variant: 'destructive' }); return; }
+    if (!scopedClientIdSet.has(selClientId)) {
+      toast({
+        title: 'Cliente fora do escopo atual',
+        description: 'Atualize a página e selecione um cliente pertencente à conta atual.',
+        variant: 'destructive',
+      });
+      return;
+    }
     if (!selMonth || !selYear) { toast({ title: 'Selecione um período válido', variant: 'destructive' }); return; }
 
     const mesNum = parseInt(selMonth);
@@ -600,7 +675,7 @@ export default function MonthlyClosing() {
     } finally {
       setLoadingPreview(false);
     }
-  }, [selClientId, selMonth, selYear, notes, toast, clients, openDraft]);
+  }, [selClientId, scopedClientIdSet, selMonth, selYear, notes, toast, clients, openDraft]);
 
   /* ── Computed totals ── */
   const totals = useMemo(() => {
@@ -693,6 +768,14 @@ export default function MonthlyClosing() {
   const generateDraft = useCallback(async (draft: ClosingDraft) => {
     setGenerating(true);
     try {
+      if (!scopedClientIdSet.has(draft.clientId)) {
+        toast({
+          title: 'Fechamento bloqueado',
+          description: 'Este rascunho não pertence à conta atual.',
+          variant: 'destructive',
+        });
+        return;
+      }
       if (getIncludedDraftNotes(draft).length === 0) {
         toast({ title: 'Selecione pelo menos uma O.S.', description: 'Marque as O.S. que devem entrar neste fechamento.', variant: 'destructive' });
         return;
@@ -751,7 +834,7 @@ export default function MonthlyClosing() {
     } finally {
       setGenerating(false);
     }
-  }, [toast, renderClosingPdfBlob, loadFechamentos, removeDraft, closeDraftModal]);
+  }, [scopedClientIdSet, toast, renderClosingPdfBlob, loadFechamentos, removeDraft, closeDraftModal]);
 
   const handleGerar = useCallback(async () => {
     if (!activeDraft) return;

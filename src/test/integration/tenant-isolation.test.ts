@@ -70,7 +70,7 @@ describe.skipIf(skipIntegration)('Tenant isolation — dados operacionais por us
     return client;
   }
 
-  it('não lista nem abre clientes, O.S. e contas pertencentes a outro usuário', async () => {
+  it('não lista nem abre clientes, O.S., contas e fechamentos pertencentes a outro usuário', async () => {
     const service = createServiceClient();
     const otherClient = await service
       .schema('RetificaPremium')
@@ -93,6 +93,13 @@ describe.skipIf(skipIntegration)('Tenant isolation — dados operacionais por us
       .from('Contas_Pagar')
       .select('id_contas_pagar, titulo')
       .neq('titulo', '')
+      .limit(1)
+      .maybeSingle();
+
+    const otherClosing = await service
+      .schema('RetificaPremium')
+      .from('Fechamentos')
+      .select('id_fechamentos, periodo')
       .limit(1)
       .maybeSingle();
 
@@ -144,6 +151,16 @@ describe.skipIf(skipIntegration)('Tenant isolation — dados operacionais por us
         p_id_contas_pagar: otherPayable.data.id_contas_pagar,
       });
       expect(details.status).toBe(404);
+    }
+
+    if (otherClosing.data) {
+      const list = await callRpc(client, 'get_fechamentos', {
+        p_limite: 100,
+      });
+      expect(list.status).toBe(200);
+      expect((list.dados as Array<{ id_fechamentos: string }>)).not.toContainEqual(
+        expect.objectContaining({ id_fechamentos: otherClosing.data.id_fechamentos }),
+      );
     }
 
     await client.auth.signOut();
