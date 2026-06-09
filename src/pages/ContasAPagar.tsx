@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { addDays, endOfMonth, format, parseISO, startOfMonth } from 'date-fns';
+import { endOfMonth, format, parseISO, startOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { motion } from 'framer-motion';
 import { AlertCircle, AlertTriangle, CalendarCheck, CalendarClock, CheckCircle2, Clock, Copy, FileText, MailOpen, MoreHorizontal, Pencil, PlusCircle, Repeat, Search, Sparkles, Trash2, Wallet, XCircle } from 'lucide-react';
@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { AccountPayable, PaymentMethod, PAYABLE_STATUS_COLORS, PAYABLE_STATUS_LABELS, PAYMENT_METHOD_LABELS, RECURRENCE_TYPE_LABELS } from '@/types';
 import { buildPayableHistoryDescription, calculatePayableFinalAmount, calculatePayableRemainingBalance, canCancelPayable, canEditPayable, canRegisterPayment, formatPayableDueDateLabel, getContextualQuestion, getDueDateUrgencyLevel, getPayableDisplayStatus, isPayableEditRestricted, isPayableOverdue, type ContextualActionKind } from '@/services/domain/payables';
+import { calculatePayablesCashFlowSummary } from '@/services/domain/payablesCashFlow';
 import { ContextualQuestionBanner } from '@/components/payables/ContextualQuestionBanner';
 import { getGmailOAuthFeedback } from '@/services/domain/gmailOAuth';
 import {
@@ -182,32 +183,11 @@ export default function ContasAPagar() {
 
   const hasDueToday = dueToday.length > 0;
   const hasOverdue = overduePayables.length > 0;
-  const todayISO = format(now, 'yyyy-MM-dd');
-  const inSevenDaysISO = format(addDays(now, 7), 'yyyy-MM-dd');
-  const inThirtyDaysISO = format(addDays(now, 30), 'yyyy-MM-dd');
   const paidThisMonthTotal = paidThisMonth.reduce((sum, payable) => sum + (payable.paidAmount ?? payable.finalAmount), 0);
-  const cashFlowSummary = useMemo(() => {
-    const pendingSorted = [...pendingLike].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-    const inRange = (payable: AccountPayable, endDate: string) => payable.dueDate >= todayISO && payable.dueDate <= endDate;
-    const nextSeven = pendingSorted.filter((payable) => inRange(payable, inSevenDaysISO));
-    const nextThirty = pendingSorted.filter((payable) => inRange(payable, inThirtyDaysISO));
-    const laborPayables = pendingSorted.filter((payable) => {
-      const category = categoryById.get(payable.categoryId);
-      const haystack = `${payable.title} ${payable.supplierName ?? ''} ${category?.name ?? ''}`.toLowerCase();
-      return haystack.includes('salário') || haystack.includes('salario') || haystack.includes('folha') || haystack.includes('funcion') || haystack.includes('mão de obra') || haystack.includes('mao de obra');
-    });
-
-    return {
-      nextSevenTotal: nextSeven.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0),
-      nextSevenCount: nextSeven.length,
-      nextThirtyTotal: nextThirty.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0),
-      nextThirtyCount: nextThirty.length,
-      overdueTotal: overduePayables.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0),
-      laborTotal: laborPayables.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0),
-      laborCount: laborPayables.length,
-      nextDue: pendingSorted.slice(0, 5),
-    };
-  }, [categoryById, inSevenDaysISO, inThirtyDaysISO, overduePayables, pendingLike, todayISO]);
+  const cashFlowSummary = useMemo(
+    () => calculatePayablesCashFlowSummary({ payables: activePayables, categories: payableCategories, now }),
+    [activePayables, now, payableCategories],
+  );
   const summaryCards = [
     {
       label: 'Vence hoje',
@@ -628,7 +608,7 @@ export default function ContasAPagar() {
                 <div className="rounded-2xl border border-destructive/20 bg-red-50/60 p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-destructive/80">Atrasadas</p>
                   <p className="mt-2 text-xl font-bold tabular-nums text-destructive">{fmtBRL(cashFlowSummary.overdueTotal)}</p>
-                  <p className="mt-1 text-xs text-destructive/70">{overduePayables.length} pendência{overduePayables.length === 1 ? '' : 's'} crítica{overduePayables.length === 1 ? '' : 's'}</p>
+                  <p className="mt-1 text-xs text-destructive/70">{cashFlowSummary.overdueCount} pendência{cashFlowSummary.overdueCount === 1 ? '' : 's'} crítica{cashFlowSummary.overdueCount === 1 ? '' : 's'}</p>
                 </div>
                 <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-800">Mão de obra</p>
