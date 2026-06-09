@@ -4,12 +4,12 @@ import { useNavigate } from 'react-router-dom';
 import { useData } from '@/contexts/DataContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { STATUS_LABELS, NoteStatus, FINAL_STATUSES, PAYABLE_STATUS_LABELS, PAYABLE_STATUS_COLORS, RECURRENCE_TYPE_LABELS } from '@/types';
+import { STATUS_LABELS, NoteStatus, FINAL_STATUSES } from '@/types';
 import {
   FileText, DollarSign, TrendingUp, AlertCircle,
   CheckCircle2, Timer, Users, Receipt,
-  ArrowUpRight, ArrowDownRight, Minus, AlertTriangle,
-  Wrench, Package, Info, Wallet, Landmark, PiggyBank, Layers3,
+  ArrowUpRight, ArrowDownRight, Minus,
+  Info, Landmark, PiggyBank,
   CalendarDays, Filter,
   type LucideIcon,
 } from 'lucide-react';
@@ -21,18 +21,17 @@ import {
 } from '@/components/ui/tooltip';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer,
-  LineChart, Line, CartesianGrid, Cell,
+  CartesianGrid, Cell,
   AreaChart, Area,
 } from 'recharts';
 import { motion } from 'framer-motion';
 import { useReducedMotion } from 'framer-motion';
 import {
   format, subMonths, startOfMonth, endOfMonth,
-  differenceInDays, parseISO, subDays, startOfDay, endOfDay, eachDayOfInterval,
+  differenceInDays, subDays, startOfDay, endOfDay, eachDayOfInterval,
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
-import { formatPayableRecurrenceLabel, isPayableOverdue } from '@/services/domain/payables';
 import {
   DASHBOARD_REVENUE_STATUSES,
   getDashboardRevenueDate,
@@ -98,11 +97,9 @@ function parseDateInput(value: string, fallback: Date) {
 const ACTIVE_STATUSES_PARAM = 'ABERTO,EM_ANALISE,ORCAMENTO,APROVADO,EM_EXECUCAO,AGUARDANDO_COMPRA,PRONTO,ENTREGUE';
 
 export default function Dashboard() {
-  const { notes, clients, services, payables, payableCategories } = useData();
+  const { notes, clients, payables } = useData();
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
-  const serviceMetricsLoading = false;
-  const serviceMetricsError = false;
   const [rangePreset, setRangePreset] = useState<DashboardRangePreset>('30d');
   const [customStartDate, setCustomStartDate] = useState(() => format(subDays(new Date(), 29), 'yyyy-MM-dd'));
   const [customEndDate, setCustomEndDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
@@ -244,11 +241,6 @@ export default function Dashboard() {
     );
   }, [notes]);
 
-  const awaitingPurchase = useMemo(
-    () => notes.filter(n => n.status === 'AGUARDANDO_COMPRA'),
-    [notes],
-  );
-
   // ── Monthly revenue ──────────────────────────────────────────────────────
   const currentMonthRevenue = useMemo(
     () => revenueRecognizedNotes
@@ -336,23 +328,6 @@ export default function Dashboard() {
       return { month: format(d, 'MMM', { locale: ptBR }), valor, count };
     });
   }, [revenueRecognizedNotes, now]);
-
-  // ── Top serviços ─────────────────────────────────────────────────────────
-  const servicesForMetrics = services;
-
-  const topServices = useMemo(() => {
-    const map = new Map<string, { count: number; revenue: number }>();
-    for (const s of servicesForMetrics) {
-      const key = s.name.trim();
-      if (!key) continue;
-      const prev = map.get(key) ?? { count: 0, revenue: 0 };
-      map.set(key, { count: prev.count + s.quantity, revenue: prev.revenue + s.subtotal });
-    }
-    return Array.from(map.entries())
-      .map(([name, data]) => ({ name, ...data }))
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 5);
-  }, [servicesForMetrics]);
 
   // ── KPI rows ─────────────────────────────────────────────────────────────
   type KpiCard = {
@@ -450,17 +425,6 @@ export default function Dashboard() {
       tooltip: 'Clientes cadastrados na operação visível para o login atual. Em modo Mega Master/suporte, este número não representa empresas SaaS administradas, e sim clientes da operação selecionada.',
       href: '/clientes',
     },
-    {
-      label: 'Aguardando compra',
-      value: awaitingPurchase.length,
-      sub: awaitingPurchase.length > 0 ? 'O.S. bloqueadas por peças/serviços' : 'Nenhuma O.S. bloqueada',
-      icon: Package,
-      iconClass: 'text-indigo-600 bg-indigo-50',
-      subClass: awaitingPurchase.length > 0 ? 'text-amber-600 font-medium' : 'text-muted-foreground',
-      trend: null,
-      tooltip: 'O.S. que dependem de compra para avançar. Este número vem dos status reais das ordens de serviço.',
-      href: '/kanban',
-    },
   ];
 
 
@@ -535,77 +499,6 @@ export default function Dashboard() {
 
   const hasPeriodFinancialData = periodFinancialData.some((item) => item.entrada > 0 || item.saida > 0);
 
-  const openFinancialPayables = useMemo(
-    () => activePayables.filter((payable) => payable.status !== 'PAGO' && payable.status !== 'CANCELADO'),
-    [activePayables],
-  );
-
-  const overdueFinancialPayables = useMemo(
-    () => openFinancialPayables.filter((payable) => isPayableOverdue(payable)),
-    [openFinancialPayables],
-  );
-
-  const todayStart = useMemo(() => {
-    const date = new Date(now);
-    date.setHours(0, 0, 0, 0);
-    return date.getTime();
-  }, [now]);
-
-  const next7DaysEnd = useMemo(() => {
-    const date = new Date(now);
-    date.setDate(date.getDate() + 7);
-    date.setHours(23, 59, 59, 999);
-    return date.getTime();
-  }, [now]);
-
-  const dueSoonPayables = useMemo(
-    () => openFinancialPayables
-      .filter((payable) => {
-        const dueTime = new Date(payable.dueDate).getTime();
-        return dueTime >= todayStart && dueTime <= next7DaysEnd;
-      })
-      .sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
-    [openFinancialPayables, next7DaysEnd, todayStart],
-  );
-
-  const urgentPayables = useMemo(
-    () => openFinancialPayables.filter((payable) => payable.isUrgent),
-    [openFinancialPayables],
-  );
-
-  const committedThisMonthPayables = useMemo(
-    () => activePayables.filter((payable) => {
-      const dueTime = new Date(payable.dueDate).getTime();
-      return dueTime >= startCurrent && dueTime <= endCurrent && payable.status !== 'CANCELADO';
-    }),
-    [activePayables, startCurrent, endCurrent],
-  );
-
-  const currentMonthExpenseCommitment = useMemo(
-    () => committedThisMonthPayables.reduce((sum, payable) => sum + payable.finalAmount, 0),
-    [committedThisMonthPayables],
-  );
-
-  const paidThisMonthPayables = useMemo(
-    () => getPaidPayablesInRange(activePayables, { startTime: startCurrent, endTime: endCurrent }),
-    [activePayables, startCurrent, endCurrent],
-  );
-
-  const currentMonthPaidExpenses = useMemo(
-    () => paidThisMonthPayables.reduce((sum, payable) => sum + getPayablePaidAmount(payable), 0),
-    [paidThisMonthPayables],
-  );
-
-  const prevMonthPaidExpenses = useMemo(
-    () => getPaidPayablesInRange(activePayables, { startTime: startPrev, endTime: endPrev })
-      .reduce((sum, payable) => sum + getPayablePaidAmount(payable), 0),
-    [activePayables, startPrev, endPrev],
-  );
-
-  const expenseGrowth = pct(currentMonthPaidExpenses, prevMonthPaidExpenses);
-
-  const operationalBalanceThisMonth = currentMonthRevenue - currentMonthPaidExpenses;
-
   // ── Resultado anual ──────────────────────────────────────────────────────
   const currentYear = now.getFullYear();
   const startYear = new Date(currentYear, 0, 1).getTime();
@@ -626,159 +519,6 @@ export default function Dashboard() {
 
   const yearlyResult = yearlyRevenue - yearlyExpenses;
 
-  const activeInstallments = useMemo(
-    () => openFinancialPayables.filter((payable) => (payable.totalInstallments ?? 0) > 1),
-    [openFinancialPayables],
-  );
-
-  const nextDuePayables = useMemo(
-    () => [...openFinancialPayables]
-      .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
-      .slice(0, 4),
-    [openFinancialPayables],
-  );
-
-  const expenseCategoryData = useMemo(() => {
-    const categoryTotals = new Map<string, number>();
-    committedThisMonthPayables.forEach((payable) => {
-      categoryTotals.set(payable.categoryId, (categoryTotals.get(payable.categoryId) ?? 0) + payable.finalAmount);
-    });
-    return Array.from(categoryTotals.entries())
-      .map(([categoryId, total]) => ({
-        name: payableCategories.find((category) => category.id === categoryId)?.name ?? 'Categoria',
-        total,
-      }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 5);
-  }, [committedThisMonthPayables, payableCategories]);
-
-  const financialMonthlyData = useMemo(() => {
-    return Array.from({ length: 6 }, (_, index) => {
-      const date = subMonths(now, 5 - index);
-      const start = startOfMonth(date).getTime();
-      const end = endOfMonth(date).getTime();
-      const revenue = revenueRecognizedNotes
-        .filter((note) => {
-          const time = new Date(getDashboardRevenueDate(note)).getTime();
-          return time >= start && time <= end;
-        })
-        .reduce((sum, note) => sum + note.totalAmount, 0);
-      const expenses = getPaidPayablesInRange(activePayables, { startTime: start, endTime: end })
-        .reduce((sum, payable) => sum + getPayablePaidAmount(payable), 0);
-      return {
-        month: format(date, 'MMM', { locale: ptBR }),
-        revenue,
-        expenses,
-        balance: revenue - expenses,
-      };
-    });
-  }, [activePayables, revenueRecognizedNotes, now]);
-
-  const financeKpis = [
-    {
-      label: 'Comprometido no mês',
-      value: `R$ ${fmtBRL(currentMonthExpenseCommitment)}`,
-      sub: `${committedThisMonthPayables.length} conta${committedThisMonthPayables.length !== 1 ? 's' : ''} com vencimento neste mês`,
-      icon: Wallet,
-      iconClass: 'text-amber-700 bg-amber-50',
-    },
-    {
-      label: 'Despesas pagas no mês',
-      value: `R$ ${fmtBRL(currentMonthPaidExpenses)}`,
-      sub: expenseGrowth === null
-        ? 'Sem comparação com mês anterior'
-        : `${expenseGrowth >= 0 ? '+' : ''}${expenseGrowth.toFixed(1)}% vs mês anterior`,
-      icon: Landmark,
-      iconClass: expenseGrowth !== null && expenseGrowth > 0 ? 'text-red-600 bg-red-50' : 'text-emerald-700 bg-emerald-50',
-    },
-    {
-      label: 'Saldo operacional',
-      value: `R$ ${fmtBRL(operationalBalanceThisMonth)}`,
-      sub: operationalBalanceThisMonth >= 0 ? 'Faturamento do mês menos despesas pagas' : 'Atenção: despesas superaram o faturamento do mês',
-      icon: PiggyBank,
-      iconClass: operationalBalanceThisMonth >= 0 ? 'text-primary bg-primary/10' : 'text-destructive bg-destructive/10',
-    },
-    {
-      label: 'Parcelas / recorrências',
-      value: activeInstallments.length,
-      sub: activeInstallments.length > 0 ? 'Contas seriadas em acompanhamento' : 'Sem parcelas ativas no momento',
-      icon: Layers3,
-      iconClass: 'text-sky-700 bg-sky-50',
-    },
-  ];
-
-  const actionCards = [
-    {
-      label: 'O.S. pendentes',
-      value: openCount,
-      sub: overdueNotes.length > 0 ? `${overdueNotes.length} paradas há +7 dias` : 'Fila sem atraso crítico',
-      icon: FileText,
-      iconClass: overdueNotes.length > 0 ? 'text-amber-700 bg-amber-50' : 'text-primary bg-primary/10',
-      href: `/notas-entrada?status=${ACTIVE_STATUSES_PARAM}`,
-    },
-    {
-      label: 'Contas vencidas',
-      value: overdueFinancialPayables.length,
-      sub: `R$ ${fmtBRL(overdueFinancialPayables.reduce((sum, payable) => sum + payable.finalAmount, 0))}`,
-      icon: AlertTriangle,
-      iconClass: overdueFinancialPayables.length > 0 ? 'text-destructive bg-destructive/10' : 'text-emerald-700 bg-emerald-50',
-      href: '/contas-a-pagar',
-    },
-    {
-      label: 'Vencem em 7 dias',
-      value: dueSoonPayables.length,
-      sub: `R$ ${fmtBRL(dueSoonPayables.reduce((sum, payable) => sum + payable.finalAmount, 0))}`,
-      icon: Wallet,
-      iconClass: 'text-amber-700 bg-amber-50',
-      href: '/contas-a-pagar',
-    },
-    {
-      label: 'Aguardando compra',
-      value: awaitingPurchase.length,
-      sub: awaitingPurchase.length > 0 ? 'Bloqueando avanço da produção' : 'Nenhum bloqueio por compra',
-      icon: Package,
-      iconClass: awaitingPurchase.length > 0 ? 'text-indigo-700 bg-indigo-50' : 'text-emerald-700 bg-emerald-50',
-      href: '/kanban',
-    },
-  ];
-
-  const financialAlerts = [
-    {
-      label: 'Vencidas',
-      count: overdueFinancialPayables.length,
-      amount: overdueFinancialPayables.reduce((sum, payable) => sum + payable.finalAmount, 0),
-      tone: overdueFinancialPayables.length > 0 ? 'text-destructive' : 'text-muted-foreground',
-    },
-    {
-      label: 'Vencem em 7 dias',
-      count: dueSoonPayables.length,
-      amount: dueSoonPayables.reduce((sum, payable) => sum + payable.finalAmount, 0),
-      tone: dueSoonPayables.length > 0 ? 'text-amber-700' : 'text-muted-foreground',
-    },
-    {
-      label: 'Marcadas como urgentes',
-      count: urgentPayables.length,
-      amount: urgentPayables.reduce((sum, payable) => sum + payable.finalAmount, 0),
-      tone: urgentPayables.length > 0 ? 'text-primary' : 'text-muted-foreground',
-    },
-  ];
-
-  const activeNotesSorted = useMemo(
-    () => [...notes]
-      .filter((note) => ACTIVE_STATUSES.has(note.status))
-      .sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()),
-    [notes],
-  );
-
-  const productionActionNotes = useMemo(() => {
-    const priority = new Map<string, typeof notes[number]>();
-    overdueNotes.forEach((note) => priority.set(note.id, note));
-    awaitingPurchase.forEach((note) => priority.set(note.id, note));
-    const prioritized = Array.from(priority.values())
-      .sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
-    return (prioritized.length > 0 ? prioritized : activeNotesSorted).slice(0, 6);
-  }, [activeNotesSorted, awaitingPurchase, overdueNotes]);
-
   const revealProps = (delay: number) => ({
     initial: prefersReducedMotion ? false : { opacity: 0, y: 10 },
     animate: { opacity: 1, y: 0 },
@@ -789,7 +529,6 @@ export default function Dashboard() {
 
   const hasStatusData = statusData.length > 0;
   const hasRevenueHistory = monthlyData.some((item) => item.valor > 0);
-  const hasFinancialHistory = financialMonthlyData.some((item) => item.revenue > 0 || item.expenses > 0);
 
   return (
     <div className="space-y-5">
@@ -1124,130 +863,6 @@ export default function Dashboard() {
 
       </ErrorBoundary>
 
-      {/* Analysis row: action summary + top services + monthly cash */}
-      <ErrorBoundary
-        fallback={(
-          <SectionErrorState
-            title="Falha ao montar os painéis de análise"
-            description="Os rankings e distribuições podem ser recarregados depois sem interromper a operação do dashboard."
-          />
-        )}
-      >
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        {/* Action summary */}
-        <Card className="lg:col-span-2">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-semibold">Prioridades para agir</CardTitle>
-              <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-2 px-4 pb-4 pt-0 sm:grid-cols-2">
-            {actionCards.map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                onClick={() => navigate(item.href)}
-                className="rounded-xl border border-border/60 bg-muted/20 p-3 text-left transition hover:border-border hover:bg-muted/40"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-muted-foreground">{item.label}</p>
-                    <p className="mt-1 text-2xl font-bold leading-none">{item.value}</p>
-                  </div>
-                  <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', item.iconClass)}>
-                    <item.icon className="h-4 w-4" />
-                  </div>
-                </div>
-                <p className="mt-2 min-h-[2rem] text-xs leading-tight text-muted-foreground">{item.sub}</p>
-              </button>
-            ))}
-          </CardContent>
-        </Card>
-
-        {/* Top serviços */}
-        <Card className="lg:col-span-2">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-semibold">Serviços mais realizados</CardTitle>
-              <Wrench className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0 px-4 pb-4">
-            {serviceMetricsLoading ? (
-              <p className="text-sm text-muted-foreground py-6 text-center">Carregando serviços reais das O.S...</p>
-            ) : serviceMetricsError ? (
-              <SectionErrorState
-                title="Não foi possível carregar o ranking"
-                description="Os demais indicadores continuam disponíveis. Recarregue o dashboard para tentar novamente."
-                className="border-0 bg-transparent py-5"
-              />
-            ) : topServices.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-6 text-center">Sem serviços registrados ainda</p>
-            ) : (
-              <div className="space-y-2.5">
-                {topServices.map((svc, i) => {
-                  const maxRevenue = topServices[0]?.revenue ?? 1;
-                  const share = maxRevenue > 0 ? (svc.revenue / maxRevenue) * 100 : 0;
-                  return (
-                    <div key={svc.name}>
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-[10px] font-bold text-muted-foreground/50 tabular-nums w-4 shrink-0">
-                            {i + 1}
-                          </span>
-                          <span className="text-[13px] font-medium truncate">{svc.name}</span>
-                        </div>
-                        <div className="text-right shrink-0 ml-2">
-                          <span className="text-[12px] font-bold tabular-nums">
-                            R$ {fmtBRL(svc.revenue)}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground ml-1">
-                            ×{svc.count}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="h-1 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-orange-400/70 rounded-full transition-all"
-                          style={{ width: `${share}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Monthly cash */}
-        <Card className="lg:col-span-1">
-          <CardHeader className="pb-0 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold">Caixa do mês</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 px-4 pb-4 pt-3">
-            <div>
-              <p className="text-xs text-muted-foreground">Entrou por O.S.</p>
-              <p className="mt-1 text-lg font-semibold text-success">R$ {fmtBRL(currentMonthRevenue)}</p>
-            </div>
-            <div className="border-t border-border/50 pt-3">
-              <p className="text-xs text-muted-foreground">Saiu pago</p>
-              <p className="mt-1 text-lg font-semibold text-destructive">R$ {fmtBRL(currentMonthPaidExpenses)}</p>
-            </div>
-            <div className="border-t border-border/50 pt-3">
-              <p className="text-xs text-muted-foreground">Saldo operacional</p>
-              <p className={cn('mt-1 text-lg font-semibold', operationalBalanceThisMonth >= 0 ? 'text-primary' : 'text-destructive')}>
-                R$ {fmtBRL(operationalBalanceThisMonth)}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-
-      </ErrorBoundary>
-
       {/* Resultado Anual */}
       <Card className="border-primary/20 bg-gradient-to-r from-primary/5 via-background to-background overflow-hidden">
         <CardContent className="p-5">
@@ -1282,346 +897,6 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* Finance row: contas a pagar */}
-      <ErrorBoundary
-        fallback={(
-          <SectionErrorState
-            title="Falha ao carregar o resumo financeiro"
-            description="Os indicadores de contas a pagar podem ser recarregados depois sem afetar o restante do app."
-          />
-        )}
-      >
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-        {financeKpis.map((kpi, i) => (
-          <motion.div
-            key={kpi.label}
-            {...revealProps(0.12 + i * 0.05)}
-          >
-            <Card
-              className="overflow-hidden cursor-pointer transition-all duration-150 hover:shadow-md hover:-translate-y-px hover:border-border/70"
-              onClick={() => navigate('/contas-a-pagar')}
-            >
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between gap-2 mb-3">
-                  <span className="text-xs font-medium text-muted-foreground truncate">{kpi.label}</span>
-                  <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${kpi.iconClass}`}>
-                    <kpi.icon className="h-4 w-4" />
-                  </div>
-                </div>
-                <div className="text-2xl font-bold font-display leading-none mb-1">{kpi.value}</div>
-                <p className="text-xs text-muted-foreground leading-tight">{kpi.sub}</p>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        <Card className="lg:col-span-3">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-semibold">Financeiro — Entradas x Saídas</CardTitle>
-              <Wallet className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0 px-2">
-            {hasFinancialHistory ? (
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={financialMonthlyData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
-                  <RechartsTooltip
-                    formatter={(v: number, name: string) => [
-                      `R$ ${v.toLocaleString('pt-BR')}`,
-                      name === 'revenue' ? 'Faturamento' : name === 'expenses' ? 'Despesas pagas' : 'Saldo',
-                    ]}
-                    contentStyle={{ fontSize: 12 }}
-                  />
-                  <Line type="monotone" dataKey="revenue" name="revenue" stroke="hsl(var(--primary))" strokeWidth={2.5} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="expenses" name="expenses" stroke="#ef4444" strokeWidth={2.5} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="balance" name="balance" stroke="#14b8a6" strokeWidth={2.5} dot={{ r: 3 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : (
-              <SectionEmptyState
-                title="Sem histórico financeiro suficiente"
-                description="Quando entradas e saídas começarem a ser registradas, este comparativo mensal aparece aqui."
-                className="min-h-[220px] border-0 bg-transparent px-2"
-              />
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="lg:col-span-2">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-semibold">Próximos vencimentos e parcelas</CardTitle>
-              <Layers3 className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0 px-4 pb-4 space-y-3">
-            <div className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/20 px-3 py-2">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Em atraso</p>
-                <p className="text-lg font-semibold text-destructive">{overdueFinancialPayables.length}</p>
-              </div>
-              <Badge variant="secondary">{`R$ ${fmtBRL(overdueFinancialPayables.reduce((sum, payable) => sum + payable.finalAmount, 0))}`}</Badge>
-            </div>
-
-            {nextDuePayables.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">Nenhuma conta em aberto no momento.</p>
-            ) : (
-              <div className="space-y-2.5">
-                {nextDuePayables.map((payable) => {
-                  const recurrenceLabel = formatPayableRecurrenceLabel(payable, RECURRENCE_TYPE_LABELS[payable.recurrence]);
-                  return (
-                    <button
-                      key={payable.id}
-                      type="button"
-                      onClick={() => navigate('/contas-a-pagar')}
-                      className="w-full rounded-2xl border border-border/60 px-3 py-3 text-left transition hover:border-border hover:bg-muted/20"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold truncate">{payable.title}</p>
-                          <p className="mt-1 text-xs text-muted-foreground truncate">{payable.supplierName ?? 'Fornecedor não informado'}</p>
-                        </div>
-                        <Badge className={cn('shrink-0', PAYABLE_STATUS_COLORS[payable.status === 'PENDENTE' && isPayableOverdue(payable) ? 'VENCIDO' : payable.status])}>
-                          {PAYABLE_STATUS_LABELS[payable.status === 'PENDENTE' && isPayableOverdue(payable) ? 'VENCIDO' : payable.status]}
-                        </Badge>
-                      </div>
-                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <span>{format(parseISO(payable.dueDate), 'dd/MM/yyyy')}</span>
-                        <span>•</span>
-                        <span>{`R$ ${fmtBRL(payable.finalAmount)}`}</span>
-                        {recurrenceLabel ? (
-                          <>
-                            <span>•</span>
-                            <span>{recurrenceLabel}</span>
-                          </>
-                        ) : null}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        <Card className="lg:col-span-2">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-semibold">Despesas por categoria no mês</CardTitle>
-              <Landmark className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0 px-4 pb-4">
-            {expenseCategoryData.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">Sem despesas lançadas para o período atual.</p>
-            ) : (
-              <div className="space-y-2.5">
-                {expenseCategoryData.map((item) => {
-                  const maxTotal = expenseCategoryData[0]?.total ?? 1;
-                  const share = maxTotal > 0 ? (item.total / maxTotal) * 100 : 0;
-                  return (
-                    <div key={item.name}>
-                      <div className="mb-1 flex items-center justify-between">
-                        <span className="text-[13px] font-medium truncate">{item.name}</span>
-                        <span className="text-[12px] font-bold tabular-nums">{`R$ ${fmtBRL(item.total)}`}</span>
-                      </div>
-                      <div className="h-1 bg-muted rounded-full overflow-hidden">
-                        <div className="h-full bg-primary/70 rounded-full" style={{ width: `${share}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="lg:col-span-3">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-semibold">Alertas financeiros</CardTitle>
-              <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0 px-4 pb-4">
-            <div className="grid gap-3 sm:grid-cols-3">
-              {financialAlerts.map((alert) => (
-                <button
-                  key={alert.label}
-                  type="button"
-                  onClick={() => navigate('/contas-a-pagar')}
-                  className="rounded-2xl border border-border/60 bg-muted/20 p-4 text-left transition hover:border-border hover:bg-muted/40"
-                >
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">{alert.label}</p>
-                  <p className={cn('mt-2 text-2xl font-bold leading-none', alert.tone)}>{alert.count}</p>
-                  <p className="mt-2 text-sm font-medium">R$ {fmtBRL(alert.amount)}</p>
-                </button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Bottom row: alerts + activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        {/* Alertas de produção */}
-        <Card className="lg:col-span-2">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-semibold">Alertas de Produção</CardTitle>
-              <AlertTriangle className="h-4 w-4 text-amber-500" />
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0 px-4 pb-4 space-y-3">
-            {/* Paradas +7 dias */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                  Paradas há +7 dias
-                </span>
-                <span className={cn(
-                  'text-[11px] font-bold px-1.5 py-0.5 rounded-md leading-none',
-                  overdueNotes.length > 0 ? 'bg-amber-50 text-amber-700' : 'bg-muted text-muted-foreground/50',
-                )}>
-                  {overdueNotes.length}
-                </span>
-              </div>
-              {overdueNotes.length === 0 ? (
-                <p className="text-[12px] text-muted-foreground">Nenhuma nota parada.</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {overdueNotes.slice(0, 3).map(n => {
-                    const daysAgo = differenceInDays(now, new Date(n.updatedAt));
-                    return (
-                      <div key={n.id} className="flex items-center justify-between rounded-lg bg-amber-50/60 px-2.5 py-1.5">
-                        <div className="min-w-0">
-                          <span className="text-[12px] font-bold text-amber-800">{n.number}</span>
-                          <span className="text-[11px] text-amber-700 ml-1.5 truncate">{STATUS_LABELS[n.status]}</span>
-                        </div>
-                        <span className="text-[11px] font-semibold text-amber-600 shrink-0 ml-2">{daysAgo}d</span>
-                      </div>
-                    );
-                  })}
-                  {overdueNotes.length > 3 && (
-                    <p className="text-[11px] text-muted-foreground px-0.5">+{overdueNotes.length - 3} outras</p>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Aguardando compra */}
-            <div className="pt-2 border-t border-border/40">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                  Aguardando compra
-                </span>
-                <span className={cn(
-                  'text-[11px] font-bold px-1.5 py-0.5 rounded-md leading-none',
-                  awaitingPurchase.length > 0 ? 'bg-yellow-50 text-yellow-700' : 'bg-muted text-muted-foreground/50',
-                )}>
-                  {awaitingPurchase.length}
-                </span>
-              </div>
-              {awaitingPurchase.length === 0 ? (
-                <p className="text-[12px] text-muted-foreground">Nenhuma nota bloqueada.</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {awaitingPurchase.slice(0, 3).map(n => {
-                    const client = clients.find(c => c.id === n.clientId);
-                    return (
-                      <div key={n.id} className="flex items-center justify-between rounded-lg bg-yellow-50/60 px-2.5 py-1.5">
-                        <div className="min-w-0 flex items-center gap-1.5">
-                          <Package className="w-3 h-3 text-yellow-600 shrink-0" />
-                          <span className="text-[12px] font-bold text-yellow-800">{n.number}</span>
-                          <span className="text-[11px] text-yellow-700 truncate">{client?.name}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {awaitingPurchase.length > 3 && (
-                    <p className="text-[11px] text-muted-foreground px-0.5">+{awaitingPurchase.length - 3} outras</p>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Fonte dos dados */}
-            <div className="pt-2 border-t border-border/40">
-              <div className="flex items-center justify-between mb-0.5">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                  Fonte dos indicadores
-                </span>
-                <span className="text-[12px] font-bold tabular-nums">Real</span>
-              </div>
-              <p className="text-[12px] text-muted-foreground">
-                O.S., clientes e financeiro vêm dos registros reais da operação.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Operational queue */}
-        <Card className="lg:col-span-3">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-semibold">O.S. que precisam de ação</CardTitle>
-              <FileText className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0 px-4 pb-4">
-            {productionActionNotes.length === 0 ? (
-              <div className="py-8 text-center text-sm text-muted-foreground">
-                Nenhuma O.S. pendente no momento.
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {productionActionNotes.map((note) => {
-                  const client = clients.find((item) => item.id === note.clientId);
-                  const daysSinceUpdate = differenceInDays(now, new Date(note.updatedAt));
-                  const isStale = overdueNotes.some((item) => item.id === note.id);
-                  const isBlocked = note.status === 'AGUARDANDO_COMPRA';
-                  return (
-                    <button
-                      key={note.id}
-                      type="button"
-                      onClick={() => navigate(`/notas-entrada?status=${note.status}`)}
-                      className="w-full rounded-2xl border border-border/60 px-3 py-3 text-left transition hover:border-border hover:bg-muted/20"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-semibold">{note.number}</span>
-                            <Badge variant="secondary">{STATUS_LABELS[note.status]}</Badge>
-                            {isStale ? <Badge className="bg-amber-50 text-amber-700 hover:bg-amber-50">+7 dias</Badge> : null}
-                            {isBlocked ? <Badge className="bg-indigo-50 text-indigo-700 hover:bg-indigo-50">Compra</Badge> : null}
-                          </div>
-                          <p className="mt-1 text-xs text-muted-foreground truncate">{client?.name ?? 'Cliente não encontrado'}</p>
-                        </div>
-                        <div className="text-right text-xs text-muted-foreground">
-                          <p>{daysSinceUpdate}d sem atualização</p>
-                          <p className="mt-1 font-semibold text-foreground">R$ {fmtBRL(note.totalAmount)}</p>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-                {productionActionNotes.length === activeNotesSorted.length && activeNotesSorted.length > 6 ? (
-                  <p className="px-1 text-xs text-muted-foreground">+{activeNotesSorted.length - 6} O.S. pendentes na fila</p>
-                ) : null}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-      </ErrorBoundary>
     </div>
   );
 }

@@ -100,8 +100,15 @@ describe('App routes', () => {
     renderAt('/dashboard');
 
     expect(await findDashboardHeading()).toBeInTheDocument();
-    expect(screen.getByText(/fonte dos indicadores/i)).toBeInTheDocument();
+    expect(screen.getByText(/resultado financeiro/i)).toBeInTheDocument();
     expect(screen.queryByText(/NFs este mês/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/serviços mais realizados/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/prioridades para agir/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/próximos vencimentos/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/despesas por categoria/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/alertas financeiros/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/alertas de produção/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/precisam de ação/i)).not.toBeInTheDocument();
   });
 
   it.each([
