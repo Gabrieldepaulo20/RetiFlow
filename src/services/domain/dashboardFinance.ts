@@ -2,6 +2,10 @@ import type { AccountPayable, IntakeNote, NoteStatus, PayableStatus } from '@/ty
 
 export const DASHBOARD_REVENUE_STATUSES = new Set<NoteStatus>(['FINALIZADO']);
 export const DASHBOARD_PAID_PAYABLE_STATUSES = new Set<PayableStatus>(['PAGO', 'PARCIAL']);
+// Marco real de operação do Retiflow: dados anteriores não têm base histórica completa para lucro/faturamento.
+export const DASHBOARD_ACCOUNTING_START_DATE = '2026-06-01';
+export const DASHBOARD_ACCOUNTING_START_LABEL = '01/06/2026';
+export const DASHBOARD_ACCOUNTING_START_TIME = new Date(`${DASHBOARD_ACCOUNTING_START_DATE}T00:00:00`).getTime();
 
 export type DashboardDateRange = {
   startTime: number;
@@ -18,12 +22,26 @@ function isDateInsideRange(value: string | null | undefined, range: DashboardDat
   return Number.isFinite(time) && time >= range.startTime && time <= range.endTime;
 }
 
+export function isDashboardAccountingDate(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) && time >= DASHBOARD_ACCOUNTING_START_TIME;
+}
+
+export function clampDashboardAccountingRange(range: DashboardDateRange): DashboardDateRange {
+  return {
+    startTime: Math.max(range.startTime, DASHBOARD_ACCOUNTING_START_TIME),
+    endTime: range.endTime,
+  };
+}
+
 export function getFinalizedRevenueNotesInRange<T extends Pick<IntakeNote, 'status' | 'finalizedAt' | 'updatedAt' | 'createdAt'>>(
   notes: T[],
   range: DashboardDateRange,
 ): T[] {
   return notes.filter((note) => (
     DASHBOARD_REVENUE_STATUSES.has(note.status)
+    && isDashboardAccountingDate(getDashboardRevenueDate(note))
     && isDateInsideRange(getDashboardRevenueDate(note), range)
   ));
 }
@@ -35,6 +53,7 @@ export function getPaidPayablesInRange<T extends Pick<AccountPayable, 'status' |
   return payables.filter((payable) => (
     payable.deletedAt == null
     && DASHBOARD_PAID_PAYABLE_STATUSES.has(payable.status)
+    && isDashboardAccountingDate(payable.paidAt)
     && isDateInsideRange(payable.paidAt, range)
   ));
 }

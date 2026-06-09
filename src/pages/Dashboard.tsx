@@ -33,11 +33,14 @@ import {
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import {
+  DASHBOARD_ACCOUNTING_START_LABEL,
   DASHBOARD_REVENUE_STATUSES,
+  clampDashboardAccountingRange,
   getDashboardRevenueDate,
   getFinalizedRevenueNotesInRange,
   getPaidPayablesInRange,
   getPayablePaidAmount,
+  isDashboardAccountingDate,
 } from '@/services/domain/dashboardFinance';
 import { SectionEmptyState, SectionErrorState } from '@/components/ui/section-state';
 
@@ -89,6 +92,18 @@ function parseDateInput(value: string, fallback: Date) {
   if (!value) return fallback;
   const parsed = new Date(`${value}T00:00:00`);
   return Number.isFinite(parsed.getTime()) ? parsed : fallback;
+}
+
+function InlineInfo({ label }: { label: string }) {
+  return (
+    <span
+      aria-label={label}
+      title={label}
+      className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground/45 transition-colors hover:text-muted-foreground"
+    >
+      <Info className="h-3.5 w-3.5" aria-hidden="true" />
+    </span>
+  );
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -191,11 +206,19 @@ export default function Dashboard() {
     () => ({ startTime: selectedPeriodStart, endTime: selectedPeriodEnd }),
     [selectedPeriodEnd, selectedPeriodStart],
   );
+  const selectedAccountingRange = useMemo(
+    () => clampDashboardAccountingRange(selectedRange),
+    [selectedRange],
+  );
+  const selectedAccountingStartDate = useMemo(
+    () => new Date(selectedAccountingRange.startTime),
+    [selectedAccountingRange.startTime],
+  );
   const isInSelectedPeriod = useCallback((value?: string | null) => {
     if (!value) return false;
     const time = new Date(value).getTime();
-    return Number.isFinite(time) && time >= selectedPeriodStart && time <= selectedPeriodEnd;
-  }, [selectedPeriodEnd, selectedPeriodStart]);
+    return Number.isFinite(time) && time >= selectedAccountingRange.startTime && time <= selectedAccountingRange.endTime;
+  }, [selectedAccountingRange.endTime, selectedAccountingRange.startTime]);
 
   // ── Core metrics ────────────────────────────────────────────────────────
   const openCount = useMemo(
@@ -204,7 +227,10 @@ export default function Dashboard() {
   );
 
   const revenueRecognizedNotes = useMemo(
-    () => notes.filter(n => REVENUE_RECOGNIZED_STATUSES.has(n.status)),
+    () => notes.filter(n => (
+      REVENUE_RECOGNIZED_STATUSES.has(n.status)
+      && isDashboardAccountingDate(getDashboardRevenueDate(n))
+    )),
     [notes],
   );
 
@@ -360,7 +386,7 @@ export default function Dashboard() {
       icon: CheckCircle2,
       iconClass: 'text-emerald-600 bg-emerald-50',
       subClass: 'text-muted-foreground',
-      tooltip: 'O.S. finalizadas. Essa é a etapa que representa serviço concluído e pagamento reconhecido no Dashboard.',
+      tooltip: `O.S. finalizadas com data de finalização a partir de ${DASHBOARD_ACCOUNTING_START_LABEL}. Essa é a etapa que representa serviço concluído e pagamento reconhecido no Dashboard.`,
       href: '/notas-entrada?status=FINALIZADO',
     },
     {
@@ -370,7 +396,7 @@ export default function Dashboard() {
       icon: DollarSign,
       iconClass: 'text-primary bg-primary/10',
       subClass: 'text-muted-foreground',
-      tooltip: 'Soma do valor total das O.S. com status Finalizado desde a abertura do sistema.',
+      tooltip: `Soma do valor total das O.S. com status Finalizado e data de finalização a partir de ${DASHBOARD_ACCOUNTING_START_LABEL}.`,
       href: '/notas-entrada?status=FINALIZADO',
     },
     {
@@ -384,7 +410,7 @@ export default function Dashboard() {
         ? 'text-amber-600 bg-amber-50'
         : 'text-sky-600 bg-sky-50',
       subClass: 'text-muted-foreground',
-      tooltip: 'Média de dias entre a abertura e a finalização da O.S. Datas finalizadas antes da abertura são tratadas como 0 dia para nunca exibir tempo negativo.',
+      tooltip: `Média de dias entre a abertura e a finalização das O.S. finalizadas a partir de ${DASHBOARD_ACCOUNTING_START_LABEL}. Datas finalizadas antes da abertura são tratadas como 0 dia para nunca exibir tempo negativo.`,
       href: '/notas-entrada?status=FINALIZADO',
     },
   ];
@@ -400,7 +426,7 @@ export default function Dashboard() {
       iconClass: 'text-violet-600 bg-violet-50',
       subClass: monthGrowth === null ? 'text-muted-foreground' : monthGrowth >= 0 ? 'text-emerald-600 font-medium' : 'text-red-500 font-medium',
       trend: monthGrowth,
-      tooltip: 'Receita gerada pelas O.S. finalizadas no mês atual. Comparação percentual em relação ao mês anterior.',
+      tooltip: `Receita gerada pelas O.S. finalizadas no mês atual, considerando somente movimentos desde ${DASHBOARD_ACCOUNTING_START_LABEL}. Comparação percentual em relação ao mês anterior quando houver base válida.`,
       href: '/notas-entrada?status=FINALIZADO',
     },
     {
@@ -411,7 +437,7 @@ export default function Dashboard() {
       iconClass: 'text-orange-600 bg-orange-50',
       subClass: 'text-muted-foreground',
       trend: null,
-      tooltip: 'Valor médio por O.S. finalizada. Calculado dividindo o valor finalizado pelo número de O.S. finalizadas.',
+      tooltip: `Valor médio por O.S. finalizada desde ${DASHBOARD_ACCOUNTING_START_LABEL}. Cálculo: valor finalizado dividido pelo número de O.S. finalizadas nesse marco contábil.`,
       href: '/notas-entrada?status=FINALIZADO',
     },
     {
@@ -439,8 +465,8 @@ export default function Dashboard() {
   );
 
   const periodDeliveredNotes = useMemo(
-    () => getFinalizedRevenueNotesInRange(revenueRecognizedNotes, selectedRange),
-    [revenueRecognizedNotes, selectedRange],
+    () => getFinalizedRevenueNotesInRange(revenueRecognizedNotes, selectedAccountingRange),
+    [revenueRecognizedNotes, selectedAccountingRange],
   );
 
   const periodDeliveredAmount = useMemo(
@@ -449,8 +475,8 @@ export default function Dashboard() {
   );
 
   const periodPaidPayables = useMemo(
-    () => getPaidPayablesInRange(activePayables, selectedRange),
-    [activePayables, selectedRange],
+    () => getPaidPayablesInRange(activePayables, selectedAccountingRange),
+    [activePayables, selectedAccountingRange],
   );
 
   const periodPaidExpenses = useMemo(
@@ -462,7 +488,13 @@ export default function Dashboard() {
   const periodProfitMargin = periodDeliveredAmount > 0 ? (periodProfit / periodDeliveredAmount) * 100 : null;
 
   const periodFinancialData = useMemo(() => {
-    const days = Math.max(0, differenceInDays(selectedPeriod.end, selectedPeriod.start));
+    if (selectedAccountingRange.startTime > selectedAccountingRange.endTime) {
+      return [];
+    }
+
+    const periodStart = selectedAccountingStartDate;
+    const periodEnd = selectedPeriod.end;
+    const days = Math.max(0, differenceInDays(periodEnd, periodStart));
     const groupByMonth = days > 70;
     const rows = new Map<string, { label: string; entrada: number; saida: number; lucro: number }>();
     const getKey = (date: Date) => groupByMonth ? format(date, 'yyyy-MM') : format(date, 'yyyy-MM-dd');
@@ -474,13 +506,13 @@ export default function Dashboard() {
     };
 
     if (groupByMonth) {
-      let cursor = startOfMonth(selectedPeriod.start);
-      while (cursor.getTime() <= selectedPeriod.end.getTime()) {
+      let cursor = startOfMonth(periodStart);
+      while (cursor.getTime() <= periodEnd.getTime()) {
         ensure(cursor);
         cursor = startOfMonth(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1));
       }
     } else {
-      eachDayOfInterval({ start: selectedPeriod.start, end: selectedPeriod.end }).forEach(ensure);
+      eachDayOfInterval({ start: periodStart, end: periodEnd }).forEach(ensure);
     }
 
     periodDeliveredNotes.forEach((note) => {
@@ -495,7 +527,7 @@ export default function Dashboard() {
     return Array.from(rows.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([, row]) => ({ ...row, lucro: row.entrada - row.saida }));
-  }, [periodDeliveredNotes, periodPaidPayables, selectedPeriod.end, selectedPeriod.start]);
+  }, [periodDeliveredNotes, periodPaidPayables, selectedAccountingRange.endTime, selectedAccountingRange.startTime, selectedAccountingStartDate, selectedPeriod.end]);
 
   const hasPeriodFinancialData = periodFinancialData.some((item) => item.entrada > 0 || item.saida > 0);
 
@@ -512,7 +544,7 @@ export default function Dashboard() {
   );
 
   const yearlyExpenses = useMemo(
-    () => getPaidPayablesInRange(activePayables, { startTime: startYear, endTime: endYear })
+    () => getPaidPayablesInRange(activePayables, clampDashboardAccountingRange({ startTime: startYear, endTime: endYear }))
       .reduce((s, p) => s + getPayablePaidAmount(p), 0),
     [activePayables, startYear, endYear],
   );
@@ -552,7 +584,9 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <h2 className="text-base font-semibold leading-tight">Resultado financeiro</h2>
-                  <p className="text-xs text-muted-foreground">Período: {selectedPeriod.label}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Período: {selectedPeriod.label} · base contábil desde {DASHBOARD_ACCOUNTING_START_LABEL}
+                  </p>
                 </div>
                 <Badge className={cn(
                   'ml-0 lg:ml-2',
@@ -617,7 +651,10 @@ export default function Dashboard() {
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-medium text-muted-foreground">O.S. lançadas</p>
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    O.S. lançadas
+                    <InlineInfo label={`Quantidade de O.S. criadas no período selecionado, considerando apenas datas a partir de ${DASHBOARD_ACCOUNTING_START_LABEL}. Não entra no faturamento até a O.S. ser finalizada.`} />
+                  </p>
                   <p className="mt-2 text-2xl font-display font-bold leading-none">{periodNotes.length}</p>
                 </div>
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-700">
@@ -625,7 +662,7 @@ export default function Dashboard() {
                 </div>
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
-                Volume do período · não entra no faturamento até finalizar
+                Volume do período · base desde {DASHBOARD_ACCOUNTING_START_LABEL}
               </p>
             </button>
 
@@ -636,7 +673,10 @@ export default function Dashboard() {
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-medium text-muted-foreground">Valor finalizado</p>
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    Valor finalizado
+                    <InlineInfo label={`Soma das O.S. com status Finalizado e data de finalização a partir de ${DASHBOARD_ACCOUNTING_START_LABEL}. O.S. antigas não entram para não distorcer o histórico.`} />
+                  </p>
                   <p className="mt-2 text-2xl font-display font-bold leading-none text-emerald-700">R$ {fmtBRL(periodDeliveredAmount)}</p>
                 </div>
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
@@ -644,7 +684,7 @@ export default function Dashboard() {
                 </div>
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
-                {periodDeliveredNotes.length} O.S. finalizada{periodDeliveredNotes.length !== 1 ? 's' : ''} · geral R$ {fmtBRL(totalRevenue)}
+                {periodDeliveredNotes.length} O.S. finalizada{periodDeliveredNotes.length !== 1 ? 's' : ''} · desde {DASHBOARD_ACCOUNTING_START_LABEL}: R$ {fmtBRL(totalRevenue)}
               </p>
             </button>
 
@@ -655,7 +695,10 @@ export default function Dashboard() {
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-medium text-muted-foreground">Contas pagas</p>
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    Contas pagas
+                    <InlineInfo label={`Soma das contas marcadas como pagas ou parciais, usando a data de pagamento dentro do período e nunca antes de ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
+                  </p>
                   <p className="mt-2 text-2xl font-display font-bold leading-none text-red-600">R$ {fmtBRL(periodPaidExpenses)}</p>
                 </div>
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-50 text-red-600">
@@ -663,7 +706,7 @@ export default function Dashboard() {
                 </div>
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
-                {periodPaidPayables.length} pagamento{periodPaidPayables.length !== 1 ? 's' : ''} com data de pagamento no período
+                {periodPaidPayables.length} pagamento{periodPaidPayables.length !== 1 ? 's' : ''} no período · desde {DASHBOARD_ACCOUNTING_START_LABEL}
               </p>
             </button>
 
@@ -675,7 +718,10 @@ export default function Dashboard() {
             )}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-medium text-muted-foreground">Lucro contabilizado</p>
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    Lucro contabilizado
+                    <InlineInfo label={`Cálculo: valor finalizado menos contas pagas no mesmo período. Ambos começam somente em ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
+                  </p>
                   <p className={cn('mt-2 text-2xl font-display font-bold leading-none', periodProfit >= 0 ? 'text-primary' : 'text-red-700')}>
                     R$ {fmtBRLFull(periodProfit)}
                   </p>
@@ -685,7 +731,7 @@ export default function Dashboard() {
                 </div>
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
-                {periodDeliveredNotes.length} O.S. finalizada{periodDeliveredNotes.length !== 1 ? 's' : ''} menos contas pagas no período{periodProfitMargin !== null ? ` · margem ${periodProfitMargin.toFixed(1)}%` : ''}
+                O.S. finalizadas menos contas pagas desde {DASHBOARD_ACCOUNTING_START_LABEL}{periodProfitMargin !== null ? ` · margem ${periodProfitMargin.toFixed(1)}%` : ''}
               </p>
             </div>
           </div>
@@ -711,7 +757,7 @@ export default function Dashboard() {
             ) : (
               <SectionEmptyState
                 title="Sem movimentação no período"
-                description="Escolha outro intervalo para ver O.S. finalizadas, contas pagas e lucro."
+                description={`Escolha outro intervalo a partir de ${DASHBOARD_ACCOUNTING_START_LABEL} para ver O.S. finalizadas, contas pagas e lucro.`}
                 className="min-h-[220px] border-0 bg-transparent px-2"
               />
             )}
