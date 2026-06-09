@@ -1,4 +1,4 @@
-import type { AppModuleKey, SystemUser } from '@/types';
+import type { AppModuleKey, SupportImpersonationSession, SystemUser } from '@/types';
 import { getModulePermission, hasPermission } from '@/services/auth/permissions';
 import { DEFAULT_ROLE_MODULE_CONFIG, isRoleModuleEnabled, isUserModuleEnabled } from '@/services/auth/moduleAccess';
 import { isSuperAdmin } from '@/services/auth/superAdmin';
@@ -80,6 +80,25 @@ export function canUserAccessModule(user: SystemUser | null, moduleKey: AppModul
   if (!isRoleModuleEnabled(user.role, moduleKey)) return false;
   if (!isUserModuleEnabled(user.id, moduleKey)) return false;
   return true;
+}
+
+export function canUserAccessModuleInContext(input: {
+  actorUser: SystemUser | null;
+  operationalUser: SystemUser | null;
+  supportSession?: SupportImpersonationSession | null;
+  moduleKey: AppModuleKey;
+}) {
+  if (input.supportSession && isSuperAdmin(input.actorUser)) {
+    if (input.moduleKey === 'admin') {
+      return canUserAccessModule(input.actorUser, 'admin');
+    }
+
+    // Em suporte, o Mega Master precisa conseguir abrir os módulos operacionais
+    // para diagnosticar cliente mesmo quando o perfil alvo está incompleto/restrito.
+    return OPERATIONAL_MODULES.includes(input.moduleKey);
+  }
+
+  return canUserAccessModule(input.operationalUser, input.moduleKey);
 }
 
 export function getDefaultRedirect(user: SystemUser, options: DefaultRedirectOptions = {}) {

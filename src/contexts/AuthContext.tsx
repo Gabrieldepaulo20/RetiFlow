@@ -13,7 +13,7 @@ import {
 import { loadSystemUsers } from '@/services/auth/systemUsers';
 import { supabase } from '@/lib/supabase';
 import { dbUserToSystemUser } from '@/services/auth/supabaseUserMapping';
-import { canUserAccessModule, getDefaultRedirect } from '@/services/auth/defaultRedirect';
+import { canUserAccessModuleInContext, getDefaultRedirect } from '@/services/auth/defaultRedirect';
 import { isSuperAdmin } from '@/services/auth/superAdmin';
 import {
   readStoredSupportSession,
@@ -499,8 +499,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const can = useCallback((permission: Permission) => hasPermission(user, permission), [user]);
 
   const canAccessModule = useCallback((moduleKey: Parameters<typeof getModulePermission>[0]) => {
-    return canUserAccessModule(operationalUser, moduleKey);
-  }, [operationalUser]);
+    return canUserAccessModuleInContext({
+      actorUser: realUser,
+      operationalUser,
+      supportSession,
+      moduleKey,
+    });
+  }, [operationalUser, realUser, supportSession]);
 
   const value = useMemo<AuthContextType>(
     () => ({
