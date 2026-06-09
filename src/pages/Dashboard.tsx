@@ -33,6 +33,13 @@ import {
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { formatPayableRecurrenceLabel, isPayableOverdue } from '@/services/domain/payables';
+import {
+  DASHBOARD_REVENUE_STATUSES,
+  getDashboardRevenueDate,
+  getFinalizedRevenueNotesInRange,
+  getPaidPayablesInRange,
+  getPayablePaidAmount,
+} from '@/services/domain/dashboardFinance';
 import { SectionEmptyState, SectionErrorState } from '@/components/ui/section-state';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -41,9 +48,7 @@ const ACTIVE_STATUSES = new Set<NoteStatus>([
   'ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'PRONTO', 'ENTREGUE',
 ]);
 
-const REVENUE_RECOGNIZED_STATUSES = new Set<NoteStatus>(['FINALIZADO']);
-const PAID_PAYABLE_STATUSES = new Set(['PAGO', 'PARCIAL']);
-const PROFIT_START_DATE = startOfDay(new Date(2026, 5, 1));
+const REVENUE_RECOGNIZED_STATUSES = DASHBOARD_REVENUE_STATUSES;
 
 type DashboardRangePreset = '30d' | '90d' | 'month' | `year-${number}` | 'custom';
 
@@ -87,10 +92,6 @@ function parseDateInput(value: string, fallback: Date) {
   return Number.isFinite(parsed.getTime()) ? parsed : fallback;
 }
 
-function getRevenueDate(note: { finalizedAt?: string; updatedAt: string; createdAt: string }) {
-  return note.finalizedAt ?? note.updatedAt ?? note.createdAt;
-}
-
 // ── Component ────────────────────────────────────────────────────────────────
 
 // Active statuses joined for URL param
@@ -117,7 +118,7 @@ export default function Dashboard() {
       const createdYear = new Date(note.createdAt).getFullYear();
       if (Number.isFinite(createdYear)) years.add(createdYear);
       if (REVENUE_RECOGNIZED_STATUSES.has(note.status)) {
-        const revenueYear = new Date(getRevenueDate(note)).getFullYear();
+        const revenueYear = new Date(getDashboardRevenueDate(note)).getFullYear();
         if (Number.isFinite(revenueYear)) years.add(revenueYear);
       }
     });
@@ -189,21 +190,15 @@ export default function Dashboard() {
 
   const selectedPeriodStart = selectedPeriod.start.getTime();
   const selectedPeriodEnd = selectedPeriod.end.getTime();
-  const profitPeriodStart = Math.max(selectedPeriodStart, PROFIT_START_DATE.getTime());
-  const profitEnabledForPeriod = selectedPeriodEnd >= PROFIT_START_DATE.getTime();
-  const profitWindowLabel = profitEnabledForPeriod
-    ? `${format(new Date(profitPeriodStart), 'dd/MM/yyyy')} até ${format(selectedPeriod.end, 'dd/MM/yyyy')}`
-    : 'a partir de 01/06/2026';
+  const selectedRange = useMemo(
+    () => ({ startTime: selectedPeriodStart, endTime: selectedPeriodEnd }),
+    [selectedPeriodEnd, selectedPeriodStart],
+  );
   const isInSelectedPeriod = useCallback((value?: string | null) => {
     if (!value) return false;
     const time = new Date(value).getTime();
     return Number.isFinite(time) && time >= selectedPeriodStart && time <= selectedPeriodEnd;
   }, [selectedPeriodEnd, selectedPeriodStart]);
-  const isInProfitPeriod = useCallback((value?: string | null) => {
-    if (!value || !profitEnabledForPeriod) return false;
-    const time = new Date(value).getTime();
-    return Number.isFinite(time) && time >= profitPeriodStart && time <= selectedPeriodEnd;
-  }, [profitEnabledForPeriod, profitPeriodStart, selectedPeriodEnd]);
 
   // ── Core metrics ────────────────────────────────────────────────────────
   const openCount = useMemo(
@@ -225,7 +220,7 @@ export default function Dashboard() {
     const finalized = revenueRecognizedNotes
       .map((note) => {
         const createdAt = new Date(note.createdAt);
-        const finalizedAt = new Date(getRevenueDate(note));
+        const finalizedAt = new Date(getDashboardRevenueDate(note));
         if (!Number.isFinite(createdAt.getTime()) || !Number.isFinite(finalizedAt.getTime())) {
           return null;
         }
@@ -258,7 +253,7 @@ export default function Dashboard() {
   const currentMonthRevenue = useMemo(
     () => revenueRecognizedNotes
       .filter(n => {
-        const t = new Date(getRevenueDate(n)).getTime();
+        const t = new Date(getDashboardRevenueDate(n)).getTime();
         return t >= startCurrent && t <= endCurrent;
       })
       .reduce((s, n) => s + n.totalAmount, 0),
@@ -268,7 +263,7 @@ export default function Dashboard() {
   const prevMonthRevenue = useMemo(
     () => revenueRecognizedNotes
       .filter(n => {
-        const t = new Date(getRevenueDate(n)).getTime();
+        const t = new Date(getDashboardRevenueDate(n)).getTime();
         return t >= startPrev && t <= endPrev;
       })
       .reduce((s, n) => s + n.totalAmount, 0),
@@ -329,13 +324,13 @@ export default function Dashboard() {
       const end = endOfMonth(d).getTime();
       const valor = revenueRecognizedNotes
         .filter(n => {
-          const t = new Date(getRevenueDate(n)).getTime();
+          const t = new Date(getDashboardRevenueDate(n)).getTime();
           return t >= start && t <= end;
         })
         .reduce((sum, n) => sum + n.totalAmount, 0);
       const count = revenueRecognizedNotes
         .filter(n => {
-          const t = new Date(getRevenueDate(n)).getTime();
+          const t = new Date(getDashboardRevenueDate(n)).getTime();
           return t >= start && t <= end;
         }).length;
       return { month: format(d, 'MMM', { locale: ptBR }), valor, count };
@@ -480,8 +475,8 @@ export default function Dashboard() {
   );
 
   const periodDeliveredNotes = useMemo(
-    () => revenueRecognizedNotes.filter((note) => isInSelectedPeriod(getRevenueDate(note))),
-    [isInSelectedPeriod, revenueRecognizedNotes],
+    () => getFinalizedRevenueNotesInRange(revenueRecognizedNotes, selectedRange),
+    [revenueRecognizedNotes, selectedRange],
   );
 
   const periodDeliveredAmount = useMemo(
@@ -489,31 +484,18 @@ export default function Dashboard() {
     [periodDeliveredNotes],
   );
 
-  const periodProfitNotes = useMemo(
-    () => revenueRecognizedNotes.filter((note) => isInProfitPeriod(getRevenueDate(note))),
-    [isInProfitPeriod, revenueRecognizedNotes],
-  );
-
-  const periodProfitNotesAmount = useMemo(
-    () => periodProfitNotes.reduce((sum, note) => sum + note.totalAmount, 0),
-    [periodProfitNotes],
-  );
-
   const periodPaidPayables = useMemo(
-    () => activePayables.filter((payable) => (
-      PAID_PAYABLE_STATUSES.has(payable.status)
-      && isInProfitPeriod(payable.paidAt ?? payable.updatedAt ?? payable.dueDate)
-    )),
-    [activePayables, isInProfitPeriod],
+    () => getPaidPayablesInRange(activePayables, selectedRange),
+    [activePayables, selectedRange],
   );
 
   const periodPaidExpenses = useMemo(
-    () => periodPaidPayables.reduce((sum, payable) => sum + (payable.paidAmount ?? payable.finalAmount), 0),
+    () => periodPaidPayables.reduce((sum, payable) => sum + getPayablePaidAmount(payable), 0),
     [periodPaidPayables],
   );
 
-  const periodProfit = periodProfitNotesAmount - periodPaidExpenses;
-  const periodProfitMargin = periodProfitNotesAmount > 0 ? (periodProfit / periodProfitNotesAmount) * 100 : null;
+  const periodProfit = periodDeliveredAmount - periodPaidExpenses;
+  const periodProfitMargin = periodDeliveredAmount > 0 ? (periodProfit / periodDeliveredAmount) * 100 : null;
 
   const periodFinancialData = useMemo(() => {
     const days = Math.max(0, differenceInDays(selectedPeriod.end, selectedPeriod.start));
@@ -538,12 +520,12 @@ export default function Dashboard() {
     }
 
     periodDeliveredNotes.forEach((note) => {
-      const row = ensure(new Date(getRevenueDate(note)));
+      const row = ensure(new Date(getDashboardRevenueDate(note)));
       row.entrada += note.totalAmount;
     });
     periodPaidPayables.forEach((payable) => {
-      const row = ensure(new Date(payable.paidAt ?? payable.updatedAt ?? payable.dueDate));
-      row.saida += payable.paidAmount ?? payable.finalAmount;
+      const row = ensure(new Date(payable.paidAt!));
+      row.saida += getPayablePaidAmount(payable);
     });
 
     return Array.from(rows.entries())
@@ -605,25 +587,18 @@ export default function Dashboard() {
   );
 
   const paidThisMonthPayables = useMemo(
-    () => activePayables.filter((payable) => {
-      if (!payable.paidAt) return false;
-      const paidTime = new Date(payable.paidAt).getTime();
-      return paidTime >= startCurrent && paidTime <= endCurrent;
-    }),
+    () => getPaidPayablesInRange(activePayables, { startTime: startCurrent, endTime: endCurrent }),
     [activePayables, startCurrent, endCurrent],
   );
 
   const currentMonthPaidExpenses = useMemo(
-    () => paidThisMonthPayables.reduce((sum, payable) => sum + (payable.paidAmount ?? payable.finalAmount), 0),
+    () => paidThisMonthPayables.reduce((sum, payable) => sum + getPayablePaidAmount(payable), 0),
     [paidThisMonthPayables],
   );
 
   const prevMonthPaidExpenses = useMemo(
-    () => activePayables.filter((payable) => {
-      if (!payable.paidAt) return false;
-      const paidTime = new Date(payable.paidAt).getTime();
-      return paidTime >= startPrev && paidTime <= endPrev;
-    }).reduce((sum, payable) => sum + (payable.paidAmount ?? payable.finalAmount), 0),
+    () => getPaidPayablesInRange(activePayables, { startTime: startPrev, endTime: endPrev })
+      .reduce((sum, payable) => sum + getPayablePaidAmount(payable), 0),
     [activePayables, startPrev, endPrev],
   );
 
@@ -638,16 +613,14 @@ export default function Dashboard() {
 
   const yearlyRevenue = useMemo(
     () => revenueRecognizedNotes
-      .filter(n => { const t = new Date(getRevenueDate(n)).getTime(); return t >= startYear && t <= endYear; })
+      .filter(n => { const t = new Date(getDashboardRevenueDate(n)).getTime(); return t >= startYear && t <= endYear; })
       .reduce((s, n) => s + n.totalAmount, 0),
     [revenueRecognizedNotes, startYear, endYear],
   );
 
   const yearlyExpenses = useMemo(
-    () => activePayables
-      .filter(p => p.paidAt)
-      .filter(p => { const t = new Date(p.paidAt!).getTime(); return t >= startYear && t <= endYear; })
-      .reduce((s, p) => s + (p.paidAmount ?? p.finalAmount), 0),
+    () => getPaidPayablesInRange(activePayables, { startTime: startYear, endTime: endYear })
+      .reduce((s, p) => s + getPayablePaidAmount(p), 0),
     [activePayables, startYear, endYear],
   );
 
@@ -686,17 +659,12 @@ export default function Dashboard() {
       const end = endOfMonth(date).getTime();
       const revenue = revenueRecognizedNotes
         .filter((note) => {
-          const time = new Date(getRevenueDate(note)).getTime();
+          const time = new Date(getDashboardRevenueDate(note)).getTime();
           return time >= start && time <= end;
         })
         .reduce((sum, note) => sum + note.totalAmount, 0);
-      const expenses = activePayables
-        .filter((payable) => payable.paidAt)
-        .filter((payable) => {
-          const time = new Date(payable.paidAt!).getTime();
-          return time >= start && time <= end;
-        })
-        .reduce((sum, payable) => sum + (payable.paidAmount ?? payable.finalAmount), 0);
+      const expenses = getPaidPayablesInRange(activePayables, { startTime: start, endTime: end })
+        .reduce((sum, payable) => sum + getPayablePaidAmount(payable), 0);
       return {
         month: format(date, 'MMM', { locale: ptBR }),
         revenue,
@@ -849,13 +817,11 @@ export default function Dashboard() {
                 </div>
                 <Badge className={cn(
                   'ml-0 lg:ml-2',
-                  !profitEnabledForPeriod
-                    ? 'bg-slate-100 text-slate-600 hover:bg-slate-100'
-                    : periodProfit >= 0
-                      ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-50'
-                      : 'bg-red-50 text-red-700 hover:bg-red-50',
+                  periodProfit >= 0
+                    ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-50'
+                    : 'bg-red-50 text-red-700 hover:bg-red-50',
                 )}>
-                  {!profitEnabledForPeriod ? 'Lucro inicia em jun/26' : periodProfit >= 0 ? 'Lucro positivo' : 'Lucro negativo'}
+                  {periodProfit >= 0 ? 'Lucro positivo' : 'Lucro negativo'}
                 </Badge>
               </div>
             </div>
@@ -958,33 +924,29 @@ export default function Dashboard() {
                 </div>
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
-                {periodPaidPayables.length} pagamento{periodPaidPayables.length !== 1 ? 's' : ''} no lucro · {profitWindowLabel}
+                {periodPaidPayables.length} pagamento{periodPaidPayables.length !== 1 ? 's' : ''} com data de pagamento no período
               </p>
             </button>
 
             <div className={cn(
               'rounded-2xl border p-4',
-              !profitEnabledForPeriod
-                ? 'border-slate-200 bg-slate-50'
-                : periodProfit >= 0
+              periodProfit >= 0
                 ? 'border-primary/25 bg-primary/5'
                 : 'border-red-200 bg-red-50/60',
             )}>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-medium text-muted-foreground">Lucro contabilizado</p>
-                  <p className={cn('mt-2 text-2xl font-display font-bold leading-none', !profitEnabledForPeriod ? 'text-muted-foreground' : periodProfit >= 0 ? 'text-primary' : 'text-red-700')}>
-                    {profitEnabledForPeriod ? `R$ ${fmtBRLFull(periodProfit)}` : '—'}
+                  <p className={cn('mt-2 text-2xl font-display font-bold leading-none', periodProfit >= 0 ? 'text-primary' : 'text-red-700')}>
+                    R$ {fmtBRLFull(periodProfit)}
                   </p>
                 </div>
-                <div className={cn('flex h-9 w-9 items-center justify-center rounded-xl', !profitEnabledForPeriod ? 'bg-slate-100 text-slate-500' : periodProfit >= 0 ? 'bg-primary/10 text-primary' : 'bg-red-100 text-red-700')}>
+                <div className={cn('flex h-9 w-9 items-center justify-center rounded-xl', periodProfit >= 0 ? 'bg-primary/10 text-primary' : 'bg-red-100 text-red-700')}>
                   <PiggyBank className="h-4 w-4" />
                 </div>
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
-                {profitEnabledForPeriod
-                  ? `${periodProfitNotes.length} O.S. desde ${format(new Date(profitPeriodStart), 'dd/MM/yyyy')} menos contas pagas${periodProfitMargin !== null ? ` · margem ${periodProfitMargin.toFixed(1)}%` : ''}`
-                  : 'Lucro passa a contar somente de 01/06/2026 em diante'}
+                {periodDeliveredNotes.length} O.S. finalizada{periodDeliveredNotes.length !== 1 ? 's' : ''} menos contas pagas no período{periodProfitMargin !== null ? ` · margem ${periodProfitMargin.toFixed(1)}%` : ''}
               </p>
             </div>
           </div>
