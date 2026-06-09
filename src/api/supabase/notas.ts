@@ -1,5 +1,5 @@
 import { callRPC } from './_base';
-import { NoteStatus, NoteType, IntakeNote, STATUS_LABELS } from '@/types';
+import { NoteStatus, NotePaymentStatus, NoteType, IntakeNote, PaymentMethod, STATUS_LABELS } from '@/types';
 import { readStoredSupportContext } from '@/services/auth/supportContext';
 
 const NOTAS_BUCKET = 'notas';
@@ -266,7 +266,28 @@ const NOME_TO_STATUS = Object.fromEntries(
   Object.entries(STATUS_LABELS).map(([k, v]) => [v, k as NoteStatus]),
 ) as Record<string, NoteStatus>;
 
+/** Rótulos legados (banco antigo / pré-reforma) → novos status. */
+const LEGACY_STATUS_ALIASES: Record<string, NoteStatus> = {
+  'Pronto': 'PRONTA',
+  'Finalizado': 'ENTREGUE',
+  'Cancelado': 'EXCLUIDA',
+  'Descartado': 'EXCLUIDA',
+  'Aberto': 'ABERTO',
+};
+
+function mapStatusNome(nome: string): NoteStatus {
+  return NOME_TO_STATUS[nome] ?? LEGACY_STATUS_ALIASES[nome] ?? 'ABERTO';
+}
+
 export function supabaseToIntakeNote(row: NotaServico): IntakeNote {
+  const extra = row as unknown as {
+    payment_status?: string;
+    pago_em?: string | null;
+    pago_com?: string | null;
+    contato_nome?: string | null;
+    contato_telefone?: string | null;
+  };
+  const paymentStatus: NotePaymentStatus = extra.payment_status === 'PAGO' ? 'PAGO' : 'PENDENTE';
   return {
     id:               row.id_notas_servico,
     number:           row.os,
@@ -275,7 +296,7 @@ export function supabaseToIntakeNote(row: NotaServico): IntakeNote {
     updatedAt:        row.updated_at,
     deadline:         row.prazo || undefined,
     createdByUserId:  '',
-    status:           NOME_TO_STATUS[row.status.nome] ?? 'ABERTO',
+    status:           mapStatusNome(row.status.nome),
     type:             'SERVICO' as NoteType,
     vehicleModel:     row.veiculo.modelo,
     plate:            row.veiculo.placa,
@@ -283,10 +304,15 @@ export function supabaseToIntakeNote(row: NotaServico): IntakeNote {
     engineType:       row.veiculo.motor || '',
     complaint:        row.defeito,
     observations:     row.observacoes ?? '',
+    contatoNome:      extra.contato_nome ?? undefined,
+    contatoTelefone:  extra.contato_telefone ?? undefined,
     totalServices:    row.total_servicos,
     totalProducts:    row.total_produtos,
     totalAmount:      row.total,
     finalizedAt:      row.finalizado_em ?? undefined,
+    paymentStatus,
+    paidAt:           extra.pago_em ?? undefined,
+    paidWith:         (extra.pago_com as PaymentMethod) ?? undefined,
     pdfUrl:           row.pdf_url ?? undefined,
   };
 }

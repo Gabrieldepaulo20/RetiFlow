@@ -1,6 +1,6 @@
 import type { AccountPayable, IntakeNote, NoteStatus, PayableStatus } from '@/types';
 
-export const DASHBOARD_REVENUE_STATUSES = new Set<NoteStatus>(['FINALIZADO']);
+export const DASHBOARD_REVENUE_STATUSES = new Set<NoteStatus>(['ENTREGUE', 'RECUSADO', 'SEM_CONSERTO']);
 export const DASHBOARD_PAID_PAYABLE_STATUSES = new Set<PayableStatus>(['PAGO', 'PARCIAL']);
 // Marco real de operação do Retiflow: dados anteriores não têm base histórica completa para lucro/faturamento.
 export const DASHBOARD_ACCOUNTING_START_DATE = '2026-06-01';

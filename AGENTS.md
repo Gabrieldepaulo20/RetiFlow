@@ -93,6 +93,26 @@ Quando a mudança tocar integração real:
 - Não aumentar `chunkSizeWarningLimit` só para esconder alerta.
 - Se um chunk crescer, primeiro investigue imports estáticos e componentes pesados.
 
+## Modelo De Status E Pagamento Das Notas (reforma 2026-06)
+
+- `NoteStatus` agora tem 11 valores. **Removidos:** FINALIZADO e PRONTO. **Renomeado:** PRONTO→PRONTA.
+  **Novos:** RECUSADO (cliente desistiu, fatura o banho químico) e EXCLUIDA (anulação por engano,
+  soft-delete — substitui CANCELADO/DESCARTADO). Faturável = `BILLABLE_STATUSES` (ENTREGUE, RECUSADO,
+  SEM_CONSERTO).
+- A nota tem um eixo financeiro separado: `paymentStatus` (PENDENTE/PAGO) + `paidAt` + `paidWith`, e
+  `contatoNome`/`contatoTelefone`. Recebimento via `registrarRecebimentoNota` no DataContext.
+- **BACKEND APLICADO (2026-06-05):** migrations `20260605141905` e `20260605142033`. Colunas novas em
+  `Notas_de_Servico` (payment_status, pago_em, pago_com, contato_nome, contato_telefone, origem);
+  status `Recusada`(27)/`Excluída`(28) inseridos; `Aberto→Aberta`, `Pronto→Pronta` renomeados (ids
+  preservados). `update_nota_servico` agora grava `fk_status` (lacuna antiga) + pagamento + contato;
+  `get_notas_servico` retorna os campos novos. **Legado:** 760 notas `Finalizado`(fk_status=20) foram
+  marcadas `PAGO` + `origem='LEGADO'` (lidas como ENTREGUE via alias do adapter). Rollback documentado
+  no .sql.
+- **Follow-ups de backend ainda pendentes:** variante `get_notas_servico_contexto_suporte` e
+  `get_nota_servico_detalhes` (+ variante suporte) não retornam os campos de pagamento/contato;
+  `nova_nota` não persiste contato na criação (só via edição). Salário continua em Contas a Pagar; não
+  há Contas a Receber.
+
 ## Nunca Fazer Sem Autorização
 
 - Rodar comandos destrutivos de git, como `git reset --hard` ou checkout descartando mudanças.

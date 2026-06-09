@@ -1,4 +1,4 @@
-import { SystemUser, Customer, IntakeNote, IntakeService, IntakeProduct, Attachment, ActivityLog, NoteStatus, PayableCategory, PayableSupplier, AccountPayable, PayableAttachment, PayableHistory, EmailSuggestion } from '@/types';
+import { SystemUser, Customer, IntakeNote, IntakeService, IntakeProduct, Attachment, ActivityLog, NoteStatus, BILLABLE_STATUSES, PayableCategory, PayableSupplier, AccountPayable, PayableAttachment, PayableHistory, EmailSuggestion } from '@/types';
 import { formatNoteNumber } from '@/lib/noteNumbers';
 import { DEFAULT_PAYABLE_CATEGORIES } from '@/services/domain/payables';
 
@@ -40,11 +40,11 @@ const statusDist: NoteStatus[] = [
   'ORCAMENTO','ORCAMENTO','ORCAMENTO',
   'APROVADO','APROVADO','APROVADO',
   'EM_EXECUCAO','EM_EXECUCAO','EM_EXECUCAO','EM_EXECUCAO','EM_EXECUCAO','EM_EXECUCAO','EM_EXECUCAO','EM_EXECUCAO',
-  'PRONTO','PRONTO','PRONTO',
+  'PRONTA','PRONTA','PRONTA',
   'ENTREGUE','ENTREGUE','ENTREGUE','ENTREGUE','ENTREGUE',
-  'FINALIZADO','FINALIZADO','FINALIZADO','FINALIZADO','FINALIZADO','FINALIZADO','FINALIZADO',
-  'CANCELADO','CANCELADO',
-  'DESCARTADO',
+  'ENTREGUE','ENTREGUE','ENTREGUE','ENTREGUE','ENTREGUE','ENTREGUE','ENTREGUE',
+  'RECUSADO','RECUSADO',
+  'EXCLUIDA',
   'SEM_CONSERTO',
 ];
 
@@ -67,9 +67,12 @@ export const notes: IntakeNote[] = statusDist.map((status, i) => {
   const svcAmt = Math.round(baseAmt * 0.7);
   const prdAmt = baseAmt - svcAmt;
   const day = Math.min(28, 1 + ((i * 3) % 28));
-  const month = status === 'FINALIZADO' && i < 34 ? 2 : status === 'ABERTO' ? 2 : 1;
+  const isBillable = BILLABLE_STATUSES.has(status);
+  const month = isBillable && i < 34 ? 2 : status === 'ABERTO' ? 2 : 1;
   const updatedAt = cd(Math.min(28, day + 2), month);
-  const finalizedAt = status === 'FINALIZADO' ? updatedAt : undefined;
+  const finalizedAt = isBillable ? updatedAt : undefined;
+  const isPaid = isBillable && i % 3 !== 0;
+  const paymentStatus = isPaid ? 'PAGO' as const : 'PENDENTE' as const;
   return {
     id: `n${i + 1}`,
     number: formatNoteNumber(i + 1),
@@ -90,6 +93,9 @@ export const notes: IntakeNote[] = statusDist.map((status, i) => {
     pdfUrl: i % 2 === 0 ? `/mock/pdf/${formatNoteNumber(i + 1)}.pdf` : undefined,
     pdfFormat: baseAmt > 1800 ? 'A4' as const : 'A5' as const,
     finalizedAt,
+    paymentStatus,
+    paidAt: isPaid ? updatedAt : undefined,
+    paidWith: isPaid ? ('PIX' as const) : undefined,
     updatedAt,
   };
 });

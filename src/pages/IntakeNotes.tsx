@@ -12,7 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { STATUS_LABELS, STATUS_COLORS, NoteStatus, NOTE_STATUS_ORDER, IntakeNote } from '@/types';
+import { STATUS_LABELS, STATUS_COLORS, NoteStatus, NOTE_STATUS_ORDER, BILLABLE_STATUSES, PAYMENT_STATUS_COLORS, PAYMENT_STATUS_LABELS, IntakeNote } from '@/types';
 import { getNoteStatusIcon } from '@/lib/noteStatusIcon';
 import {
   PlusCircle, Search, Share2, Download, Eye, FileText, ClipboardList,
@@ -53,7 +53,7 @@ const ACTIVE_NOTE_STATUSES = new Set<NoteStatus>([
   'APROVADO',
   'EM_EXECUCAO',
   'AGUARDANDO_COMPRA',
-  'PRONTO',
+  'PRONTA',
   'ENTREGUE',
 ]);
 
@@ -84,6 +84,7 @@ export default function IntakeNotes() {
   const [statusFilters, setStatusFilters] = useState<Set<string>>(() => initStatusFilters(urlParams));
   const [clientFilter, setClientFilter] = useState<string>('all');
   const [datePreset, setDatePreset] = useState<NoteDatePreset>('all');
+  const [paymentFilter, setPaymentFilter] = useState<'all' | 'PAGO' | 'PENDENTE'>('all');
   const [customStartDate, setCustomStartDate] = useState(() => format(subDays(new Date(), 29), 'yyyy-MM-dd'));
   const [customEndDate, setCustomEndDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [previewNoteId, setPreviewNoteId] = useState<string | null>(null);
@@ -120,7 +121,7 @@ export default function IntakeNotes() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearch, statusFilters, clientFilter, datePreset, customStartDate, customEndDate]);
+  }, [debouncedSearch, statusFilters, clientFilter, datePreset, paymentFilter, customStartDate, customEndDate]);
 
   const allStatuses: Array<{ key: NoteStatus; label: string }> = NOTE_STATUS_ORDER.map(s => ({
     key: s,
@@ -245,6 +246,9 @@ export default function IntakeNotes() {
     return sourceNotes.filter(n => {
       if (effectiveStatusFilters.size > 0 && !effectiveStatusFilters.has(n.status)) return false;
       if (!IS_REAL_AUTH && clientFilter !== 'all' && n.clientId !== clientFilter) return false;
+      if (paymentFilter !== 'all') {
+        if (!BILLABLE_STATUSES.has(n.status) || n.paymentStatus !== paymentFilter) return false;
+      }
 
       if (dateRange.start && dateRange.end) {
         const noteDate = new Date(n.createdAt);
@@ -262,7 +266,7 @@ export default function IntakeNotes() {
       }
       return true;
     }).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [sourceNotes, debouncedSearch, effectiveStatusFilters, clientFilter, dateRange, clients]);
+  }, [sourceNotes, debouncedSearch, effectiveStatusFilters, clientFilter, paymentFilter, dateRange, clients]);
 
   const paginatedNotes = useMemo(() => {
     if (IS_REAL_AUTH) return filtered;
@@ -274,6 +278,17 @@ export default function IntakeNotes() {
     ? serverTotal
     : filtered.length;
   const totalPages = Math.max(1, Math.ceil(totalForPagination / NOTES_PAGE_SIZE));
+  const activeFilterCount =
+    statusFilters.size +
+    (clientFilter !== 'all' ? 1 : 0) +
+    (datePreset !== 'all' ? 1 : 0) +
+    (paymentFilter !== 'all' ? 1 : 0);
+  const clearAllFilters = () => {
+    setStatusFilters(new Set());
+    setClientFilter('all');
+    setDatePreset('all');
+    setPaymentFilter('all');
+  };
   const isLoadingNotesPage = IS_REAL_AUTH && serverNotesQuery.isFetching;
   const hasUnsupportedMultiStatusFilter = IS_REAL_AUTH && statusFilters.size > 1;
   const listedTotalAmount = useMemo(
@@ -285,7 +300,7 @@ export default function IntakeNotes() {
     [filtered],
   );
   const pageFinishedCount = useMemo(
-    () => filtered.filter((note) => note.status === 'FINALIZADO').length,
+    () => filtered.filter((note) => BILLABLE_STATUSES.has(note.status)).length,
     [filtered],
   );
   const latestNoteDate = useMemo(() => {
@@ -559,8 +574,8 @@ export default function IntakeNotes() {
                 Página {currentPage} de {totalPages}
               </Badge>
             </div>
-            <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(260px,0.9fr)_repeat(3,minmax(0,0.72fr))] xl:items-center">
-              <div className="relative min-w-0">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="relative min-w-0 flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   placeholder="Buscar por O.S. ou cliente..."
@@ -570,78 +585,85 @@ export default function IntakeNotes() {
                 />
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2 xl:contents">
-                <Select value={clientFilter} onValueChange={setClientFilter}>
-                  <SelectTrigger className="h-11 rounded-xl border-border/70 bg-background shadow-sm">
-                    <SelectValue placeholder="Cliente" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos os clientes</SelectItem>
-                    {activeClients.map((client) => (
-                      <SelectItem key={client.id} value={client.id}>
-                        {client.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select value={datePreset} onValueChange={(value) => setDatePreset(value as NoteDatePreset)}>
-                  <SelectTrigger className="h-11 rounded-xl border-border/70 bg-background shadow-sm">
-                    <SelectValue placeholder="Período" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {datePresetOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        'h-11 w-full min-w-0 justify-between rounded-xl border-border/70 bg-background shadow-sm',
-                        statusFilters.size > 0 && 'border-primary/40 text-primary',
-                      )}
-                    >
-                      <span className="flex items-center gap-2 min-w-0">
-                        <SlidersHorizontal className="w-4 h-4 shrink-0" />
-                        <span className="truncate">
-                          {statusFilters.size === 0
-                            ? 'Filtrar por status'
-                            : statusFilters.size === 1
-                              ? allStatuses.find(s => statusFilters.has(s.key))?.label
-                              : `${statusFilters.size} status`}
-                        </span>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      'h-11 shrink-0 gap-2 rounded-xl border-border/70 bg-background shadow-sm',
+                      activeFilterCount > 0 && 'border-primary/40 text-primary',
+                    )}
+                  >
+                    <SlidersHorizontal className="w-4 h-4" />
+                    Filtros
+                    {activeFilterCount > 0 && (
+                      <span className="bg-primary/10 text-primary text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none tabular-nums">
+                        {activeFilterCount}
                       </span>
-                      {statusFilters.size > 0 && (
-                        <span className="bg-primary/10 text-primary text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none tabular-nums">
-                          {statusFilters.size}
-                        </span>
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent align="start" className="w-[260px] p-2">
-                    <div className="space-y-0.5">
-                      <div className="flex items-center justify-between px-2 py-1.5 mb-1">
-                        <div>
-                          <p className="text-xs font-semibold text-foreground">Status</p>
-                          <p className="text-[11px] text-muted-foreground">
-                            {IS_REAL_AUTH ? 'Selecione um status' : 'Selecione um ou mais'}
-                          </p>
-                        </div>
-                        {statusFilters.size > 0 && (
-                          <button
-                            onClick={() => setStatusFilters(new Set())}
-                            className="text-[11px] text-primary hover:underline font-medium"
-                          >
-                            Limpar
-                          </button>
-                        )}
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-[300px] space-y-3 p-3">
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold text-foreground">Cliente</p>
+                    <Select value={clientFilter} onValueChange={setClientFilter}>
+                      <SelectTrigger className="h-10 rounded-xl">
+                        <SelectValue placeholder="Cliente" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos os clientes</SelectItem>
+                        {activeClients.map((client) => (
+                          <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold text-foreground">Período</p>
+                    <Select value={datePreset} onValueChange={(value) => setDatePreset(value as NoteDatePreset)}>
+                      <SelectTrigger className="h-10 rounded-xl">
+                        <SelectValue placeholder="Período" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {datePresetOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {datePreset === 'custom' && (
+                      <div className="flex items-center gap-2 pt-1">
+                        <Input type="date" value={customStartDate} onChange={(e) => setCustomStartDate(e.target.value)} className="h-9 rounded-xl text-sm" />
+                        <span className="text-xs text-muted-foreground">até</span>
+                        <Input type="date" value={customEndDate} onChange={(e) => setCustomEndDate(e.target.value)} className="h-9 rounded-xl text-sm" />
                       </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold text-foreground">Pagamento</p>
+                    <Select value={paymentFilter} onValueChange={(v) => setPaymentFilter(v as 'all' | 'PAGO' | 'PENDENTE')}>
+                      <SelectTrigger className="h-10 rounded-xl">
+                        <SelectValue placeholder="Pagamento" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        <SelectItem value="PENDENTE">A receber</SelectItem>
+                        <SelectItem value="PAGO">Recebido</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-foreground">Status</p>
+                      {statusFilters.size > 0 && (
+                        <button onClick={() => setStatusFilters(new Set())} className="text-[11px] font-medium text-primary hover:underline">
+                          Limpar
+                        </button>
+                      )}
+                    </div>
+                    <div className="max-h-[200px] space-y-0.5 overflow-y-auto">
                       {allStatuses.map(status => {
                         const active = statusFilters.has(status.key);
                         return (
@@ -649,56 +671,31 @@ export default function IntakeNotes() {
                             key={status.key}
                             onClick={() => toggleStatusFilter(status.key)}
                             className={cn(
-                              'w-full flex items-center justify-between rounded-lg px-2.5 py-2 text-sm transition-colors',
-                              active ? 'bg-emerald-50 text-emerald-700' : 'hover:bg-muted text-foreground',
+                              'flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-sm transition-colors',
+                              active ? 'bg-emerald-50 text-emerald-700' : 'text-foreground hover:bg-muted',
                             )}
                           >
-                            <span className="flex items-center gap-2 min-w-0">
-                              {active && <Check className="w-3.5 h-3.5 shrink-0 text-emerald-600" />}
-                              {!active && <span className="w-3.5 h-3.5 shrink-0" />}
+                            <span className="flex min-w-0 items-center gap-2">
+                              {active ? <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" /> : <span className="h-3.5 w-3.5 shrink-0" />}
                               <span className="truncate">{status.label}</span>
                             </span>
-                            <span className={cn(
-                              'text-xs tabular-nums',
-                              active ? 'text-emerald-600 font-semibold' : 'text-muted-foreground',
-                            )}>
+                            <span className={cn('text-xs tabular-nums', active ? 'font-semibold text-emerald-600' : 'text-muted-foreground')}>
                               {statusCounts[status.key] || 0}
                             </span>
                           </button>
                         );
                       })}
                     </div>
-                  </PopoverContent>
-                </Popover>
-              </div>
-            </div>
+                  </div>
 
-            {datePreset === 'custom' && (
-              <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-primary/15 bg-primary/5 p-3">
-                <CalendarDays className="h-4 w-4 text-primary" />
-                <span className="text-xs font-semibold text-primary">Período da entrada</span>
-                <label className="sr-only" htmlFor="notas-start-date">Data inicial</label>
-                <Input
-                  id="notas-start-date"
-                  type="date"
-                  value={customStartDate}
-                  onChange={(event) => setCustomStartDate(event.target.value)}
-                  className="h-9 w-[160px] rounded-xl bg-background text-sm"
-                />
-                <span className="text-xs text-muted-foreground">até</span>
-                <label className="sr-only" htmlFor="notas-end-date">Data final</label>
-                <Input
-                  id="notas-end-date"
-                  type="date"
-                  value={customEndDate}
-                  onChange={(event) => setCustomEndDate(event.target.value)}
-                  className="h-9 w-[160px] rounded-xl bg-background text-sm"
-                />
-                <Badge variant="outline" className="rounded-full bg-background text-[11px]">
-                  {dateRange.label}
-                </Badge>
-              </div>
-            )}
+                  {activeFilterCount > 0 && (
+                    <Button variant="ghost" size="sm" className="w-full" onClick={clearAllFilters}>
+                      Limpar filtros
+                    </Button>
+                  )}
+                </PopoverContent>
+              </Popover>
+            </div>
 
             {/* Active filter badges */}
             <div className="flex items-center gap-2 flex-wrap min-h-5">
@@ -715,7 +712,7 @@ export default function IntakeNotes() {
                   Múltiplos status vindos da URL serão aplicados corretamente na RPC v2; selecione um status para filtrar agora.
                 </span>
               )}
-              {statusFilters.size === 0 && clientFilter === 'all' && datePreset === 'all' ? (
+              {activeFilterCount === 0 ? (
                 <span className="text-xs text-muted-foreground">Sem filtros ativos</span>
               ) : (
                 <>
@@ -731,21 +728,22 @@ export default function IntakeNotes() {
                     </Badge>
                   ))}
                   {clientFilter !== 'all' && (
-                    <Badge variant="secondary" className="gap-1.5 px-2.5 py-1 rounded-full text-xs">
+                    <Badge variant="secondary" className="gap-1.5 px-2.5 py-1 rounded-full text-xs cursor-pointer" onClick={() => setClientFilter('all')}>
                       {clients.find((client) => client.id === clientFilter)?.name ?? 'Cliente'}
                     </Badge>
                   )}
                   {datePreset !== 'all' && (
-                    <Badge variant="secondary" className="gap-1.5 px-2.5 py-1 rounded-full text-xs">
+                    <Badge variant="secondary" className="gap-1.5 px-2.5 py-1 rounded-full text-xs cursor-pointer" onClick={() => setDatePreset('all')}>
                       {dateRange.label}
                     </Badge>
                   )}
+                  {paymentFilter !== 'all' && (
+                    <Badge variant="secondary" className="gap-1.5 px-2.5 py-1 rounded-full text-xs cursor-pointer" onClick={() => setPaymentFilter('all')}>
+                      {paymentFilter === 'PAGO' ? 'Recebido' : 'A receber'}
+                    </Badge>
+                  )}
                   <button
-                    onClick={() => {
-                      setStatusFilters(new Set());
-                      setClientFilter('all');
-                      setDatePreset('all');
-                    }}
+                    onClick={clearAllFilters}
                     className="text-xs text-primary font-medium hover:underline"
                   >
                     Limpar tudo
@@ -985,20 +983,27 @@ export default function IntakeNotes() {
                         </span>
                       </TableCell>
                       <TableCell className="py-4 align-middle">
-                        {(() => {
-                          const StatusIcon = getNoteStatusIcon(n.status as NoteStatus);
-                          return (
-                            <Badge
-                              className={cn(
-                                STATUS_COLORS[n.status as NoteStatus],
-                                'gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-bold shadow-none',
-                              )}
-                            >
-                              <StatusIcon className="h-3.5 w-3.5 shrink-0" />
-                              {STATUS_LABELS[n.status as NoteStatus]}
+                        <div className="flex flex-col items-start gap-1.5">
+                          {(() => {
+                            const StatusIcon = getNoteStatusIcon(n.status as NoteStatus);
+                            return (
+                              <Badge
+                                className={cn(
+                                  STATUS_COLORS[n.status as NoteStatus],
+                                  'gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-bold shadow-none',
+                                )}
+                              >
+                                <StatusIcon className="h-3.5 w-3.5 shrink-0" />
+                                {STATUS_LABELS[n.status as NoteStatus]}
+                              </Badge>
+                            );
+                          })()}
+                          {BILLABLE_STATUSES.has(n.status) && (
+                            <Badge className={cn(PAYMENT_STATUS_COLORS[n.paymentStatus], 'rounded-full px-2.5 py-0.5 text-[11px] font-semibold shadow-none')}>
+                              {PAYMENT_STATUS_LABELS[n.paymentStatus]}
                             </Badge>
-                          );
-                        })()}
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="hidden py-4 text-right align-middle md:table-cell">
                         <div className="inline-flex items-center justify-end gap-2 rounded-xl bg-muted/35 px-3 py-2">

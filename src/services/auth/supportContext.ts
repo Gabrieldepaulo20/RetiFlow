@@ -16,14 +16,11 @@ export function readStoredSupportSession() {
     if (!raw) return null;
 
     const parsed = JSON.parse(raw) as SupportImpersonationSession;
-    if (!parsed?.id || !parsed?.actorUser?.id || !parsed?.targetUser?.id || !parsed.expiresAt) return null;
+    if (!parsed?.id || !parsed?.actorUser?.id || !parsed?.targetUser?.id) return null;
 
-    if (new Date(parsed.expiresAt).getTime() <= Date.now()) {
-      window.localStorage.removeItem(SUPPORT_SESSION_STORAGE_KEY);
-      window.sessionStorage.removeItem(SUPPORT_SESSION_STORAGE_KEY);
-      return null;
-    }
-
+    // A sessão de suporte só encerra quando o Mega Master clica em "Sair"
+    // (ou troca de usuário real / perde permissão). Não expira por tempo e
+    // persiste através de reloads.
     return parsed;
   } catch {
     window.localStorage.removeItem(SUPPORT_SESSION_STORAGE_KEY);

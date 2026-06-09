@@ -34,6 +34,7 @@ import {
   getMonthlyClosingDraftsStorageKey,
 } from '@/services/domain/monthlyClosingIsolation';
 import type { IntakeNote } from '@/types';
+import { isBillableNoteStatus } from '@/services/domain/intakeNotes';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
@@ -345,7 +346,7 @@ export default function MonthlyClosing() {
       try {
         const fallback = normalizeAvailablePeriods(
           notes
-            .filter((note) => note.clientId === selClientId && note.status === 'FINALIZADO' && (note.finalizedAt ?? note.updatedAt))
+            .filter((note) => note.clientId === selClientId && isBillableNoteStatus(note.status) && (note.finalizedAt ?? note.updatedAt))
             .map((note) => note.finalizedAt ?? note.updatedAt),
         );
 
@@ -599,7 +600,7 @@ export default function MonthlyClosing() {
             updatedAt: note.finalizado_em ?? note.created_at,
           }))
         : notes.filter((n) => {
-            if (n.status !== 'FINALIZADO') return false;
+            if (!isBillableNoteStatus(n.status)) return false;
             if (n.clientId !== selClientId) return false;
             const dt = new Date(n.finalizedAt ?? n.updatedAt);
             return dt >= inicio && dt <= fim;

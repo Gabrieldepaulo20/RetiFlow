@@ -107,14 +107,12 @@ const FLOW_STATUSES: NoteStatus[] = [
   "APROVADO",
   "EM_EXECUCAO",
   "AGUARDANDO_COMPRA",
-  "PRONTO",
+  "PRONTA",
   "ENTREGUE",
 ];
 
 const FINAL_STATUS_LIST: NoteStatus[] = [
-  "FINALIZADO",
-  "CANCELADO",
-  "DESCARTADO",
+  "RECUSADO",
   "SEM_CONSERTO",
 ];
 

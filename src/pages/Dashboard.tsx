@@ -47,7 +47,7 @@ import { SectionEmptyState, SectionErrorState } from '@/components/ui/section-st
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const ACTIVE_STATUSES = new Set<NoteStatus>([
-  'ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'PRONTO', 'ENTREGUE',
+  'ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'AGUARDANDO_COMPRA', 'PRONTA',
 ]);
 
 const REVENUE_RECOGNIZED_STATUSES = DASHBOARD_REVENUE_STATUSES;
@@ -67,12 +67,10 @@ const BAR_COLORS: Partial<Record<NoteStatus, string>> = {
   APROVADO: 'hsl(var(--primary))',
   EM_EXECUCAO: 'hsl(var(--accent))',
   AGUARDANDO_COMPRA: '#eab308',
-  PRONTO: 'hsl(var(--success))',
+  PRONTA: 'hsl(var(--success))',
   ENTREGUE: 'hsl(var(--secondary))',
-  FINALIZADO: '#6b7280',
-  CANCELADO: 'hsl(var(--destructive))',
-  DESCARTADO: '#a1a1aa',
-  SEM_CONSERTO: '#fda4af',
+  RECUSADO: '#fb7185',
+  SEM_CONSERTO: '#a1a1aa',
 };
 
 function fmtBRL(value: number) {
@@ -309,7 +307,7 @@ export default function Dashboard() {
     [notes],
   );
 
-  const successBaseCount = closedNotes.filter(n => n.status !== 'FINALIZADO').length + revenueRecognizedNotes.length;
+  const successBaseCount = closedNotes.filter(n => !REVENUE_RECOGNIZED_STATUSES.has(n.status)).length + revenueRecognizedNotes.length;
   const successRate = successBaseCount > 0
     ? Math.round((revenueRecognizedNotes.length / successBaseCount) * 100)
     : 0;

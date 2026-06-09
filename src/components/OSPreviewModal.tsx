@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { IntakeNote, IntakeProduct, IntakeService } from '@/types';
+import { IntakeNote, IntakeProduct, IntakeService, FINAL_STATUSES } from '@/types';
 import { Client } from '@/types';
 import { Download, Printer, Share2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -154,7 +154,7 @@ function buildPdfDados(
         id: 0,
         nome: note.status,
         index: 0,
-        tipo_status: note.status === 'FINALIZADO' ? 'fechado' : 'ativo',
+        tipo_status: FINAL_STATUSES.has(note.status) ? 'fechado' : 'ativo',
       },
     },
     itens_servico,

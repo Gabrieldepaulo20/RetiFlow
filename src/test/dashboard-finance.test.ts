@@ -25,7 +25,8 @@ function note(overrides: Partial<IntakeNote>): IntakeNote {
     clientId: 'client-1',
     createdAt: '2026-04-25T12:00:00.000Z',
     createdByUserId: 'user-1',
-    status: 'FINALIZADO',
+    status: 'ENTREGUE',
+    paymentStatus: 'PENDENTE',
     type: 'SERVICO',
     engineType: 'Motor',
     vehicleModel: 'Civic',
@@ -76,7 +77,7 @@ describe('dashboardFinance', () => {
     const notes = [
       note({ id: 'finalized-in-month', totalAmount: 100, finalizedAt: '2026-06-10T12:00:00.000Z' }),
       note({ id: 'created-in-month-but-finalized-later', totalAmount: 200, createdAt: '2026-06-10T12:00:00.000Z', finalizedAt: '2026-07-01T12:00:00.000Z' }),
-      note({ id: 'not-finalized', status: 'ENTREGUE', totalAmount: 300, finalizedAt: undefined, updatedAt: '2026-06-10T12:00:00.000Z' }),
+      note({ id: 'not-finalized', status: 'EM_EXECUCAO', totalAmount: 300, finalizedAt: undefined, updatedAt: '2026-06-10T12:00:00.000Z' }),
     ];
 
     const result = getFinalizedRevenueNotesInRange(notes, june2026);

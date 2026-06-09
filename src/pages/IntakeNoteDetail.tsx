@@ -10,9 +10,12 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { STATUS_LABELS, STATUS_COLORS, NOTE_STATUS_ORDER, FINAL_STATUSES, ALLOWED_TRANSITIONS, NoteStatus } from '@/types';
+import { STATUS_LABELS, STATUS_COLORS, NOTE_STATUS_ORDER, FINAL_STATUSES, ALLOWED_TRANSITIONS, NoteStatus, PaymentMethod, PAYMENT_STATUS_COLORS, PAYMENT_STATUS_LABELS, PAYMENT_METHOD_LABELS } from '@/types';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { ArrowLeft, Eye, Printer, Share2, ChevronRight, ChevronLeft, Paperclip, Ban, Trash2, XCircle, Link2 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { isBillableNoteStatus } from '@/services/domain/intakeNotes';
+import { ArrowLeft, Eye, Printer, Share2, ChevronRight, ChevronLeft, Paperclip, Ban, Trash2, XCircle, Link2, Wallet, RotateCcw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { buildWhatsAppUrl, openExternalUrl } from '@/lib/browserShare';
@@ -23,11 +26,11 @@ import { createPdfPreviewWindow, openPdfInBrowser } from '@/lib/printPdf';
 const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
 
 /** Estágios do fluxo principal (sem os finais alternativos) para a timeline */
-const MAIN_FLOW: NoteStatus[] = ['ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'AGUARDANDO_COMPRA', 'PRONTO', 'ENTREGUE', 'FINALIZADO'];
+const MAIN_FLOW: NoteStatus[] = ['ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'AGUARDANDO_COMPRA', 'PRONTA', 'ENTREGUE'];
 
 export default function IntakeNoteDetail() {
   const { id } = useParams();
-  const { getNote, getClient, getServicesForNote, getProductsForNote, getAttachmentsForNote, updateNoteStatus, updateNote, getChildNotes, notes } = useData();
+  const { getNote, getClient, getServicesForNote, getProductsForNote, getAttachmentsForNote, updateNoteStatus, updateNote, registrarRecebimentoNota, estornarRecebimentoNota, getChildNotes, notes } = useData();
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -35,6 +38,8 @@ export default function IntakeNoteDetail() {
   const [showPreview, setShowPreview] = useState(false);
   const [realDetalhes, setRealDetalhes] = useState<NotaServicoDetalhes | null>(null);
   const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
+  const [recebForma, setRecebForma] = useState<PaymentMethod>('PIX');
+  const [recebData, setRecebData] = useState(() => new Date().toISOString().slice(0, 10));
 
   useEffect(() => {
     if (!IS_REAL_AUTH || !id) return;
@@ -66,7 +71,7 @@ export default function IntakeNoteDetail() {
   const isAguardando = note.status === 'AGUARDANDO_COMPRA';
   const allowed = ALLOWED_TRANSITIONS[note.status];
   // Próximo estágio no fluxo principal (exclui finais alternativos e AGUARDANDO)
-  const nextMainStatus = allowed.find(s => !FINAL_STATUSES.has(s) || s === 'FINALIZADO');
+  const nextMainStatus = allowed.find(s => !FINAL_STATUSES.has(s) || s === 'ENTREGUE');
   const canAdvance = !isFinal && !isAguardando && nextMainStatus !== undefined;
 
   const mainFlowIdx = MAIN_FLOW.indexOf(note.status);
@@ -93,12 +98,13 @@ export default function IntakeNoteDetail() {
   };
 
   const handleWhatsAppShare = () => {
+    const saudacao = note.contatoNome || client?.name || 'cliente';
     const message = [
-      `Olá, ${client?.name ?? 'cliente'}!`,
+      `Olá, ${saudacao}!`,
       `Segue atualização da O.S. ${note.number}.`,
       note.pdfUrl ? 'O PDF da O.S. está disponível no sistema.' : null,
     ].filter(Boolean).join('\n');
-    const url = buildWhatsAppUrl(client?.phone, message);
+    const url = buildWhatsAppUrl(note.contatoTelefone || client?.phone, message);
 
     if (!url) {
       toast({
@@ -126,6 +132,9 @@ export default function IntakeNoteDetail() {
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="min-w-0 break-words text-xl font-display font-bold text-primary sm:text-2xl">{note.number}</h1>
             <Badge className={STATUS_COLORS[note.status]}>{STATUS_LABELS[note.status]}</Badge>
+            {isBillableNoteStatus(note.status) && (
+              <Badge className={PAYMENT_STATUS_COLORS[note.paymentStatus]}>{PAYMENT_STATUS_LABELS[note.paymentStatus]}</Badge>
+            )}
             <Badge className={cn(
               note.type === 'COMPRA' ? 'bg-amber-100 text-amber-700' : 'bg-blue-50 text-blue-600'
             )}>
@@ -201,28 +210,106 @@ export default function IntakeNoteDetail() {
           {canGoBack && <Button variant="ghost" size="sm" onClick={goBack}><ChevronLeft className="w-4 h-4" /> Voltar etapa</Button>}
           {canAdvance && <Button size="sm" onClick={advance}>Avançar <ChevronRight className="w-4 h-4 ml-1" /></Button>}
 
+          {/* Registrar recebimento - somente em nota faturável e pendente */}
+          {isBillableNoteStatus(note.status) && note.paymentStatus === 'PENDENTE' && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" className="gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700">
+                  <Wallet className="w-4 h-4" /> Registrar recebimento
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Registrar recebimento de {note.number}</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Confirme a forma e a data do recebimento de R$ {note.totalAmount.toLocaleString('pt-BR')}.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Forma de pagamento</label>
+                    <Select value={recebForma} onValueChange={(v) => setRecebForma(v as PaymentMethod)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {(Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethod[]).map((m) => (
+                          <SelectItem key={m} value={m}>{PAYMENT_METHOD_LABELS[m]}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Data do recebimento</label>
+                    <Input type="date" value={recebData} onChange={(e) => setRecebData(e.target.value)} />
+                  </div>
+                </div>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Voltar</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-emerald-600 text-white hover:bg-emerald-700"
+                    onClick={() => {
+                      registrarRecebimentoNota(note.id, { paidWith: recebForma, paidAt: new Date(`${recebData}T12:00:00`).toISOString() });
+                      toast({ title: `${note.number} recebida`, description: `Pagamento via ${PAYMENT_METHOD_LABELS[recebForma]} registrado.` });
+                    }}
+                  >
+                    Confirmar recebimento
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+
+          {/* Estornar recebimento - admin, nota paga */}
+          {isBillableNoteStatus(note.status) && note.paymentStatus === 'PAGO' && user?.role === 'ADMIN' && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1.5">
+                  <RotateCcw className="w-4 h-4" /> Estornar
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Estornar recebimento de {note.number}?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    A nota volta para "A receber". Use apenas para corrigir um lançamento.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Voltar</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => {
+                      estornarRecebimentoNota(note.id);
+                      toast({ title: `${note.number} estornada`, description: 'Recebimento revertido para pendente.' });
+                    }}
+                  >
+                    Confirmar estorno
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+
           {/* Cancelar - somente a partir de Orçamento */}
           {note.status === 'ORCAMENTO' && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" size="sm" className="gap-1.5">
-                  <Ban className="w-4 h-4" /> Cancelar O.S.
+                  <Ban className="w-4 h-4" /> Recusar O.S.
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Cancelar {note.number}?</AlertDialogTitle>
+                  <AlertDialogTitle>Recusar {note.number}?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    O cliente não aprovou o orçamento. A O.S. será movida para "Cancelado" (estágio final).
+                    O cliente não aprovou o orçamento. A O.S. será movida para "Recusada" (estágio final) e o banho químico será faturado.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Voltar</AlertDialogCancel>
                   <AlertDialogAction
                     className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    onClick={() => moveToFinal('CANCELADO', 'Cancelado')}
+                    onClick={() => moveToFinal('RECUSADO', 'Recusada')}
                   >
-                    Confirmar Cancelamento
+                    Confirmar Recusa
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -259,20 +346,20 @@ export default function IntakeNoteDetail() {
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" size="sm" className="gap-1.5 border-zinc-300 text-zinc-600 hover:bg-zinc-50">
-                  <Trash2 className="w-4 h-4" /> Descartar
+                  <Trash2 className="w-4 h-4" /> Excluir
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Descartar {note.number}?</AlertDialogTitle>
+                  <AlertDialogTitle>Excluir {note.number}?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    A O.S. será movida para "Descartado" por erro. Essa ação não pode ser desfeita.
+                    A O.S. será movida para "Excluída" (anulação por engano/duplicata). Essa ação não pode ser desfeita.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Voltar</AlertDialogCancel>
-                  <AlertDialogAction className="bg-zinc-600 text-white hover:bg-zinc-700" onClick={() => moveToFinal('DESCARTADO', 'Descartado')}>
-                    Confirmar Descarte
+                  <AlertDialogAction className="bg-zinc-600 text-white hover:bg-zinc-700" onClick={() => moveToFinal('EXCLUIDA', 'Excluída')}>
+                    Confirmar Exclusão
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>

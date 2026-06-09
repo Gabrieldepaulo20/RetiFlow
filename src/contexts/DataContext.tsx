@@ -24,7 +24,7 @@ import * as seed from '@/data/seed';
 import { debouncedSaveToStorage, loadStateFromStorage, type PersistedData } from '@/services/storage/dataPersistence';
 import { generateId } from '@/lib/generateId';
 import { formatNoteNumber, getNextNoteCounter, parseNoteNumberValue } from '@/lib/noteNumbers';
-import { applyNoteStatusTransition } from '@/services/domain/intakeNotes';
+import { applyNoteStatusTransition, applyNotePayment, revertNotePayment } from '@/services/domain/intakeNotes';
 import {
   getClientes,
   novoCliente,
@@ -181,6 +181,8 @@ interface DataCtx {
   updateNote: (id: string, d: Partial<IntakeNote>, itens?: NotaItemDB[]) => Promise<void>;
   getNote: (id: string) => IntakeNote | undefined;
   updateNoteStatus: (id: string, status: NoteStatus) => void;
+  registrarRecebimentoNota: (id: string, opts: { paidWith?: PaymentMethod; paidAt?: string }) => void;
+  estornarRecebimentoNota: (id: string) => void;
   createPurchaseNote: (parentNoteId: string) => Promise<IntakeNote>;
   getChildNotes: (parentNoteId: string) => IntakeNote[];
 
@@ -687,7 +689,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const parent = notes.find((candidate) => candidate.id === note.parentNoteId);
       if (parent && parent.status === 'AGUARDANDO_COMPRA' && parent.previousStatus) {
         addActivity(
-          `${parent.number} retomada automaticamente (compra ${status === 'FINALIZADO' ? 'finalizada' : 'encerrada'})`,
+          `${parent.number} retomada automaticamente (compra ${status === 'ENTREGUE' ? 'finalizada' : 'encerrada'})`,
           parent.id,
         );
       }
@@ -702,6 +704,44 @@ export function DataProvider({ children }: { children: ReactNode }) {
           toast({ title: 'Erro ao salvar status', description: 'Mudança revertida. Tente novamente.', variant: 'destructive' });
         });
       }
+    }
+  }, [addActivity, bumpDataVersion, notes]);
+
+  const registrarRecebimentoNota = useCallback((id: string, opts: { paidWith?: PaymentMethod; paidAt?: string }) => {
+    const paidAt = opts.paidAt ?? new Date().toISOString();
+    const previousNotes = notes;
+    const note = notes.find((candidate) => candidate.id === id);
+    if (!note) return;
+
+    setNotes((previous) => previous.map((n) => (n.id === id ? applyNotePayment(n, { paidWith: opts.paidWith, paidAt }) : n)));
+    bumpDataVersion();
+    addActivity(`${note.number} — recebimento registrado`, id);
+
+    if (IS_REAL_AUTH) {
+      updateNotaServicoDB({ id_notas_servico: id, payment_status: 'PAGO', pago_em: paidAt, pago_com: opts.paidWith }).catch(() => {
+        setNotes(previousNotes);
+        bumpDataVersion();
+        toast({ title: 'Erro ao registrar recebimento', description: 'Mudança revertida. Tente novamente.', variant: 'destructive' });
+      });
+    }
+  }, [addActivity, bumpDataVersion, notes]);
+
+  const estornarRecebimentoNota = useCallback((id: string) => {
+    const changedAt = new Date().toISOString();
+    const previousNotes = notes;
+    const note = notes.find((candidate) => candidate.id === id);
+    if (!note) return;
+
+    setNotes((previous) => previous.map((n) => (n.id === id ? revertNotePayment(n, changedAt) : n)));
+    bumpDataVersion();
+    addActivity(`${note.number} — recebimento estornado`, id);
+
+    if (IS_REAL_AUTH) {
+      updateNotaServicoDB({ id_notas_servico: id, payment_status: 'PENDENTE', pago_em: null, pago_com: null }).catch(() => {
+        setNotes(previousNotes);
+        bumpDataVersion();
+        toast({ title: 'Erro ao estornar recebimento', description: 'Mudança revertida. Tente novamente.', variant: 'destructive' });
+      });
     }
   }, [addActivity, bumpDataVersion, notes]);
 
@@ -729,6 +769,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return addNote({
       clientId: parentNote.clientId,
       status: 'ABERTO',
+      paymentStatus: 'PENDENTE',
       type: 'COMPRA',
       parentNoteId: parentId,
       engineType: parentNote.engineType,
@@ -1038,6 +1079,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     updateNote,
     getNote,
     updateNoteStatus,
+    registrarRecebimentoNota,
+    estornarRecebimentoNota,
     createPurchaseNote,
     getChildNotes,
     services,
@@ -1084,6 +1127,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     updateNote,
     getNote,
     updateNoteStatus,
+    registrarRecebimentoNota,
+    estornarRecebimentoNota,
     createPurchaseNote,
     getChildNotes,
     services,

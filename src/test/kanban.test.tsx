@@ -146,6 +146,7 @@ describe('Kanban', () => {
           createdAt: '2026-03-01T00:00:00.000Z',
           createdByUserId: 'user-1',
           status: 'EM_EXECUCAO',
+          paymentStatus: 'PENDENTE',
           type: 'SERVICO',
           engineType: 'Cabeçote',
           vehicleModel: 'Gol',

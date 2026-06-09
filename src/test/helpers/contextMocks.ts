@@ -49,6 +49,8 @@ export function makeDataCtx(overrides: Partial<DataCtx> = {}): DataCtx {
     updateNote: vi.fn(),
     getNote: vi.fn(),
     updateNoteStatus: vi.fn(),
+    registrarRecebimentoNota: vi.fn(),
+    estornarRecebimentoNota: vi.fn(),
     createPurchaseNote: vi.fn(),
     getChildNotes: vi.fn(() => []),
     services: [],

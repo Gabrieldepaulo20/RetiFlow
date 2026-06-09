@@ -184,7 +184,7 @@ export default function NoteFormCore({
   const { data: templateSettings } = useDocumentTemplateSettings();
 
   const isEditing = Boolean(editingNote);
-  const isLocked = editingNote?.status === 'FINALIZADO';
+  const isLocked = editingNote ? FINAL_STATUSES.has(editingNote.status) : false;
 
   /* ── Form state ── */
   const [noteType, setNoteType] = useState<NoteType>(
@@ -203,6 +203,8 @@ export default function NoteFormCore({
   const [complaint, setComplaint] = useState('');
   const [observations, setObservations] = useState('');
   const [responsavel, setResponsavel] = useState('');
+  const [contatoNome, setContatoNome] = useState('');
+  const [contatoTelefone, setContatoTelefone] = useState('');
   const [items, setItems] = useState<ServiceItem[]>([newItem()]);
   const [clientSearch, setClientSearch] = useState('');
   const [clientResultsOpen, setClientResultsOpen] = useState(false);
@@ -230,6 +232,8 @@ export default function NoteFormCore({
     setComplaint(editingNote.complaint);
     setObservations(editingNote.observations);
     setResponsavel(editingNote.responsavel || '');
+    setContatoNome(editingNote.contatoNome || '');
+    setContatoTelefone(editingNote.contatoTelefone || '');
 
     // Seed items from local state as immediate fallback (real mode overwrites below)
     const localItems =
@@ -575,6 +579,7 @@ export default function NoteFormCore({
     const payload = {
       clientId,
       status: editingNote?.status || ('ABERTO' as const),
+      paymentStatus: editingNote?.paymentStatus ?? ('PENDENTE' as const),
       type: noteType,
       parentNoteId: parentNoteId || undefined,
       engineType: toTitleCasePtBr(engineType) || 'Cabeçote',
@@ -584,6 +589,8 @@ export default function NoteFormCore({
       complaint: generatedComplaint || complaint.trim() || 'Serviços conforme descrição dos itens',
       observations: normalizeWhitespace(observations),
       responsavel: toTitleCasePtBr(responsavel) || undefined,
+      contatoNome: toTitleCasePtBr(contatoNome) || undefined,
+      contatoTelefone: contatoTelefone.trim() || undefined,
       createdByUserId: editingNote?.createdByUserId || user!.id,
       totalServices: noteType === 'SERVICO' ? totalAmount : 0,
       totalProducts: noteType === 'COMPRA' ? totalAmount : 0,
@@ -949,13 +956,21 @@ export default function NoteFormCore({
           </div>
         </div>
       )}
-      <div className="mt-4">
-        <Field label="Responsável / Contato">
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field label="Contato (nome)">
           <Input
-            value={responsavel}
-            onChange={(e) => setResponsavel(e.target.value)}
-            onBlur={() => setResponsavel(toTitleCasePtBr(responsavel))}
-            placeholder="Quem trouxe o veículo (funcionário, familiar...)"
+            value={contatoNome}
+            onChange={(e) => setContatoNome(e.target.value)}
+            onBlur={() => setContatoNome(toTitleCasePtBr(contatoNome))}
+            placeholder="Funcionário / responsável que trouxe a peça"
+          />
+        </Field>
+        <Field label="Telefone do contato">
+          <Input
+            value={contatoTelefone}
+            onChange={(e) => setContatoTelefone(e.target.value)}
+            placeholder="(00) 00000-0000"
+            inputMode="tel"
           />
         </Field>
       </div>

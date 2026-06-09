@@ -14,7 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAuth } from '@/contexts/AuthContext';
 import MfaSettingsCard from '@/components/auth/MfaSettingsCard';
 import { DEFAULT_ROLE_MODULE_CONFIG } from '@/services/auth/moduleAccess';
-import { Wrench, Building2, Users, Palette, Lock, Upload, Check, FileText, Eye, LayoutGrid, LayoutDashboard, KanbanSquare, Calendar, Settings as SettingsIcon, Info, Loader2, Search, Wallet, Shield, KeyRound, TrendingUp } from 'lucide-react';
+import { Wrench, Building2, Users, Palette, Lock, Upload, Check, FileText, Eye, LayoutGrid, LayoutDashboard, KanbanSquare, Calendar, Settings as SettingsIcon, Info, Loader2, Search, Wallet, Shield, KeyRound, TrendingUp, Workflow } from 'lucide-react';
+import StatusGlossarySection from '@/components/settings/StatusGlossarySection';
 import { useToast } from '@/hooks/use-toast';
 import { lookupCnpj, stripDigits } from '@/services/domain/customers';
 import { normalizeEmail, normalizeWhitespace, onlyDigits, toTitleCasePtBr } from '@/services/domain/textNormalization';
@@ -59,7 +60,7 @@ const DOC_ACCENT_PRESETS = [
 ];
 
 const mockClient: Client = { id: 'mock', name: 'Auto Peças Silva Ltda', docType: 'CNPJ', docNumber: '12.345.678/0001-90', phone: '(11) 3456-7890', email: 'contato@autopecassilva.com.br', address: 'Rua das Indústrias, 450', city: 'São Paulo', state: 'SP', notes: '', isActive: true, createdAt: '' };
-const mockNote: IntakeNote = { id: 'mock', number: 'OS-99', clientId: 'mock', createdAt: new Date().toISOString(), createdByUserId: '', status: 'EM_EXECUCAO', type: 'SERVICO', engineType: 'Cabeçote DOHC', vehicleModel: 'Civic 2.0 16v', plate: 'ABC-1234', complaint: '', observations: 'Cliente solicita urgência na entrega.', totalServices: 1200, totalProducts: 350, totalAmount: 1550, updatedAt: new Date().toISOString() };
+const mockNote: IntakeNote = { id: 'mock', number: 'OS-99', clientId: 'mock', createdAt: new Date().toISOString(), createdByUserId: '', status: 'EM_EXECUCAO', paymentStatus: 'PENDENTE', type: 'SERVICO', engineType: 'Cabeçote DOHC', vehicleModel: 'Civic 2.0 16v', plate: 'ABC-1234', complaint: '', observations: 'Cliente solicita urgência na entrega.', totalServices: 1200, totalProducts: 350, totalAmount: 1550, updatedAt: new Date().toISOString() };
 const mockServicesShort: IntakeService[] = [
   { id: 's1', noteId: 'mock', name: 'Retífica de cabeçote', description: '', price: 380, quantity: 1, subtotal: 380 },
   { id: 's2', noteId: 'mock', name: 'Plaqueamento de superfície', description: '', price: 220, quantity: 1, subtotal: 220 },
@@ -595,6 +596,7 @@ export default function SettingsPage() {
             <TabsTrigger value="aparencia" className="shrink-0 text-xs sm:text-sm"><Palette className="w-4 h-4 mr-1.5 hidden sm:inline" /> Aparência</TabsTrigger>
           )}
           <TabsTrigger value="modelos" className="shrink-0 text-xs sm:text-sm"><FileText className="w-4 h-4 mr-1.5 hidden sm:inline" /> Modelos</TabsTrigger>
+          <TabsTrigger value="status" className="shrink-0 text-xs sm:text-sm"><Workflow className="w-4 h-4 mr-1.5 hidden sm:inline" /> Status & Fluxo</TabsTrigger>
           <TabsTrigger value="seguranca" className="shrink-0 text-xs sm:text-sm"><Lock className="w-4 h-4 mr-1.5 hidden sm:inline" /> Segurança</TabsTrigger>
           <TabsTrigger value="usuarios" className="shrink-0 text-xs sm:text-sm"><Users className="w-4 h-4 mr-1.5 hidden sm:inline" /> Usuários</TabsTrigger>
         </TabsList>
@@ -1115,6 +1117,10 @@ export default function SettingsPage() {
         </TabsContent>
 
         {/* SEGURANÇA */}
+        <TabsContent value="status">
+          <StatusGlossarySection />
+        </TabsContent>
+
         <TabsContent value="seguranca">
           <div className="space-y-5">
           {isSuperAdmin && (
