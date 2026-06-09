@@ -450,7 +450,14 @@ export default function MarketingGrowth() {
     queryKey: ['marketing-growth', selectedPeriod, isAdmin ? selectedUserId : 'self'],
     queryFn: () => getMarketingResumo(selectedPeriod, isAdmin ? selectedUserId : null),
     enabled: !isAdmin || Boolean(selectedUserId),
-    staleTime: 1000 * 60 * 3,
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 15,
+    refetchOnWindowFocus: false,
+    placeholderData: (previous) => {
+      if (!previous) return undefined;
+      if (!isAdmin) return previous;
+      return previous.context?.targetUserId === selectedUserId ? previous : undefined;
+    },
     retry: false,
   });
 
