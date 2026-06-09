@@ -71,7 +71,14 @@ import { useAuth } from '@/contexts/AuthContext';
 function supabaseToAccountPayable(row: ContaPagar): AccountPayable {
   return {
     id: row.id_contas_pagar,
-    title: row.titulo,
+    title: buildMeaningfulPayableTitle({
+      title: row.titulo,
+      supplierName: row.nome_fornecedor ?? row.fornecedor?.nome,
+      docNumber: row.numero_documento,
+      dueDate: row.data_vencimento,
+      recurrenceIndex: row.indice_recorrencia,
+      totalInstallments: row.total_parcelas,
+    }),
     supplierId: row.fornecedor?.id,
     supplierName: row.nome_fornecedor ?? row.fornecedor?.nome ?? undefined,
     categoryId: row.categoria.id,
@@ -793,8 +800,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const addPayable = useCallback(async (data: Omit<AccountPayable, 'id' | 'createdAt' | 'updatedAt'>): Promise<AccountPayable> => {
     const now = new Date().toISOString();
     const competencyDate = data.competencyDate ?? `${data.dueDate.slice(0, 7)}-01`;
+    const title = buildMeaningfulPayableTitle({
+      title: data.title,
+      supplierName: data.supplierName,
+      docNumber: data.docNumber,
+      dueDate: data.dueDate,
+      recurrenceIndex: data.recurrenceIndex,
+      totalInstallments: data.totalInstallments,
+    });
     const newPayable: AccountPayable = {
       ...data,
+      title,
       competencyDate,
       entrySource: data.entrySource ?? 'MANUAL',
       paymentExecutionStatus: data.paymentExecutionStatus ?? 'MANUAL',

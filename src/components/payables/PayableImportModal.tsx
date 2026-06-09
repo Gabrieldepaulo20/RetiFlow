@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useData } from '@/contexts/DataContext';
 import {
+  buildMeaningfulPayableTitle,
   buildPayableHistoryDescription,
   calculatePayableFinalAmount,
   findPayableDuplicate,
@@ -304,7 +305,6 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
 
     return {
       ...draft,
-      title: draft.title.trim() || 'Conta importada com IA',
       supplierName: draft.supplierName.trim() || 'Fornecedor não identificado',
       categoryId,
       dueDate,
@@ -314,6 +314,14 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
       recurrence: normalizeRecurrence(draft.recurrence),
       recurrenceIndex: Number.isInteger(recurrenceIndex) && recurrenceIndex > 0 ? recurrenceIndex : undefined,
       totalInstallments: Number.isInteger(totalInstallments) && totalInstallments > 1 ? totalInstallments : undefined,
+      title: buildMeaningfulPayableTitle({
+        title: draft.title,
+        supplierName: draft.supplierName,
+        docNumber: draft.docNumber,
+        dueDate,
+        recurrenceIndex: Number.isInteger(recurrenceIndex) && recurrenceIndex > 0 ? recurrenceIndex : undefined,
+        totalInstallments: Number.isInteger(totalInstallments) && totalInstallments > 1 ? totalInstallments : undefined,
+      }),
       suggestedStatus: draft.suggestedStatus === 'PAGO' || draft.suggestedStatus === 'AGENDADO' || draft.suggestedStatus === 'PENDENTE'
         ? draft.suggestedStatus
         : 'PENDENTE',

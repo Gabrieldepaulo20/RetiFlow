@@ -61,7 +61,24 @@ describe('payable dedup (chave por nome normalizado)', () => {
       title: 'Duplicata',
       supplierName: 'Auto Peças Silva',
       dueDate: '2026-06-10',
-    })).toBe('Duplicata · Auto Peças Silva · 06/2026');
+    })).toBe('Auto Peças Silva · Venc. 06/2026');
+  });
+
+  it('remove títulos genéricos preservando documento ou parcela quando disponíveis', () => {
+    expect(buildMeaningfulPayableTitle({
+      title: 'Boleto',
+      supplierName: 'Distribuidora Centro',
+      docNumber: 'NF 12345',
+      dueDate: '2026-06-10',
+    })).toBe('Distribuidora Centro · Doc NF 12345');
+
+    expect(buildMeaningfulPayableTitle({
+      title: 'Fatura',
+      supplierName: 'Notebook Loja',
+      recurrenceIndex: 3,
+      totalInstallments: 10,
+      dueDate: '2026-06-10',
+    })).toBe('Notebook Loja · Parcela 3/10');
   });
 
   it('preserva título financeiro já descritivo', () => {

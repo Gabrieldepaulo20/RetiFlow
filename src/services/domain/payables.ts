@@ -56,15 +56,14 @@ export function buildMeaningfulPayableTitle(input: {
   if (!isGenericPayableTitle(title)) return title;
 
   const supplier = (input.supplierName ?? '').replace(/\s+/g, ' ').trim();
-  const parts = [title || 'Conta'];
-  if (supplier) parts.push(supplier);
+  const parts = [supplier || 'Conta Importada'];
 
   if (input.recurrenceIndex && input.totalInstallments) {
-    parts.push(`${input.recurrenceIndex}/${input.totalInstallments}`);
+    parts.push(`Parcela ${input.recurrenceIndex}/${input.totalInstallments}`);
   } else if (input.docNumber) {
-    parts.push(input.docNumber.replace(/\s+/g, ' ').trim());
+    parts.push(`Doc ${input.docNumber.replace(/\s+/g, ' ').trim()}`);
   } else if (input.dueDate) {
-    parts.push(format(parseISO(input.dueDate), 'MM/yyyy'));
+    parts.push(`Venc. ${format(parseISO(input.dueDate), 'MM/yyyy')}`);
   }
 
   return parts.filter(Boolean).join(' · ').slice(0, PAYABLE_FIELD_LIMITS.title);

@@ -219,14 +219,13 @@ function buildMeaningfulTitle(input: {
   const title = input.title.replace(/\s+/g, ' ').trim();
   if (title && !genericPayableTitles.has(normalizeTitleKey(title))) return title.slice(0, 120);
 
-  const parts = [title || 'Conta'];
-  if (input.supplierName) parts.push(input.supplierName);
+  const parts = [input.supplierName || 'Conta Importada'];
   if (input.recurrenceIndex && input.totalInstallments) {
-    parts.push(`${input.recurrenceIndex}/${input.totalInstallments}`);
+    parts.push(`Parcela ${input.recurrenceIndex}/${input.totalInstallments}`);
   } else if (input.docNumber) {
-    parts.push(input.docNumber);
+    parts.push(`Doc ${input.docNumber}`);
   } else if (input.dueDate) {
-    parts.push(input.dueDate.slice(0, 7).split('-').reverse().join('/'));
+    parts.push(`Venc. ${input.dueDate.slice(0, 7).split('-').reverse().join('/')}`);
   }
 
   return parts.filter(Boolean).join(' · ').slice(0, 120);
@@ -452,7 +451,9 @@ Deno.serve(async (request) => {
         '   - Se o documento mencionar "parcela X de Y", "X/Y", "prestação X de Y", extraia:',
         '     recurrenceIndex: X (número da parcela atual), totalInstallments: Y (total de parcelas).',
         '   - Duas cobranças parecidas só devem ser tratadas como parcelas quando houver indicação explícita de parcela, prestação, mensalidade ou competência diferente.',
-        '   - Nunca use title genérico sozinho como "Duplicata", "Boleto" ou "Fatura"; acrescente fornecedor, documento, competência ou parcela.',
+        '   - Nunca use title genérico como "Duplicata", "Boleto", "Fatura", "Pagamento" ou "Conta".',
+        '   - O title deve começar pelo fornecedor/funcionário ou pelo tipo específico da despesa.',
+        '   - Exemplos bons: "Auto Peças Silva · Doc 12345", "João Silva · Salário 05/2026", "Enel SP · Venc. 06/2026", "Fornecedor XPTO · Parcela 2/10".',
         '   - Caso contrário: recurrenceIndex: null, totalInstallments: null.',
         '',
         '6. URGÊNCIA:',

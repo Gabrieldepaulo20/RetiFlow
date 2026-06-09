@@ -14,6 +14,7 @@ import type {
   PaymentMethod,
   RecurrenceType,
 } from '@/types';
+import { buildMeaningfulPayableTitle } from '@/services/domain/payables';
 
 export interface DashboardServicoResumoItem extends NotaServicoDetalhesItem {
   note_id: string;
@@ -68,7 +69,14 @@ export async function getDashboardResumo(params?: { p_limite?: number }) {
 function dashboardContaToPayable(row: ContaPagar): AccountPayable {
   return {
     id: row.id_contas_pagar,
-    title: row.titulo,
+    title: buildMeaningfulPayableTitle({
+      title: row.titulo,
+      supplierName: row.nome_fornecedor ?? row.fornecedor?.nome,
+      docNumber: row.numero_documento,
+      dueDate: row.data_vencimento,
+      recurrenceIndex: row.indice_recorrencia,
+      totalInstallments: row.total_parcelas,
+    }),
     supplierId: row.fornecedor?.id,
     supplierName: row.nome_fornecedor ?? row.fornecedor?.nome ?? undefined,
     categoryId: row.categoria.id,
