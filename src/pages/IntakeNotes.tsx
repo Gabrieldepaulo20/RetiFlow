@@ -771,7 +771,145 @@ export default function IntakeNotes() {
                 : `${paginatedNotes.length} de ${filtered.length} O.S.`}
             </Badge>
           </div>
-          <div className="overflow-x-auto">
+          <div className="space-y-3 p-3 md:hidden">
+            {paginatedNotes.map(n => {
+              const client = clients.find(c => c.id === n.clientId);
+              const StatusIcon = getNoteStatusIcon(n.status as NoteStatus);
+
+              return (
+                <article
+                  key={n.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setDetailNoteId(n.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setDetailNoteId(n.id);
+                    }
+                  }}
+                  className="rounded-2xl border border-border/70 bg-card p-3 shadow-sm transition-colors active:bg-muted/50"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-lg font-bold leading-none text-primary">{n.number}</span>
+                        <span
+                          className={cn(
+                            'inline-flex rounded-md border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide',
+                            n.type === 'COMPRA'
+                              ? 'border-amber-200/60 bg-amber-50 text-amber-600'
+                              : 'border-blue-200/60 bg-blue-50 text-blue-600',
+                          )}
+                        >
+                          {n.type === 'COMPRA' ? 'COMPRA' : 'SERVIÇO'}
+                        </span>
+                      </div>
+                      <p className="mt-2 truncate text-sm font-semibold text-foreground">
+                        {client?.name ?? 'Cliente não encontrado'}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        {n.vehicleModel ? (
+                          <span className="inline-flex min-w-0 items-center gap-1">
+                            <CarFront className="h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate">{n.vehicleModel}</span>
+                          </span>
+                        ) : null}
+                        {n.plate ? <span className="font-medium">{n.plate}</span> : null}
+                        {n.km ? (
+                          <span className="inline-flex items-center gap-1">
+                            <Gauge className="h-3.5 w-3.5" />
+                            {n.km.toLocaleString('pt-BR')} km
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild onClick={(event) => event.stopPropagation()}>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-10 w-10 shrink-0 rounded-xl hover:bg-muted"
+                          aria-label={`Mais ações para ${n.number}`}
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-52">
+                        <DropdownMenuItem onClick={() => setDetailNoteId(n.id)}>
+                          <Eye className="mr-2 h-4 w-4" /> Ver detalhes
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setEditingNote(n)}>
+                          <Pencil className="mr-2 h-4 w-4" /> Editar nota
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => void handleOpenPreview(n)}>
+                          <FileText className="mr-2 h-4 w-4" /> Preview do documento
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          disabled={resolvingPdfNoteId === n.id}
+                          onClick={() => void handleDownloadNotePDF(n)}
+                        >
+                          <Download className="mr-2 h-4 w-4" /> Baixar nota
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            const url = buildWhatsAppUrl(
+                              client?.phone,
+                              [
+                                `Olá, ${client?.name ?? 'cliente'}!`,
+                                `Segue atualização da O.S. ${n.number}.`,
+                                n.pdfUrl ? 'O PDF da O.S. está disponível no sistema.' : null,
+                              ].filter(Boolean).join('\n'),
+                            );
+
+                            if (!url) {
+                              toast({
+                                title: 'Telefone não informado',
+                                description: 'Cadastre um telefone/WhatsApp no cliente antes de compartilhar.',
+                                variant: 'destructive',
+                              });
+                              return;
+                            }
+
+                            openExternalUrl(url);
+                          }}
+                        >
+                          <Share2 className="mr-2 h-4 w-4" /> Compartilhar
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
+                    <Badge className={cn(STATUS_COLORS[n.status as NoteStatus], 'gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-bold shadow-none')}>
+                      <StatusIcon className="h-3.5 w-3.5 shrink-0" />
+                      {STATUS_LABELS[n.status as NoteStatus]}
+                    </Badge>
+                    <div className="text-right">
+                      <p className="text-[11px] text-muted-foreground">Total</p>
+                      <p className="font-bold tabular-nums text-foreground">{formatCurrency(n.totalAmount)}</p>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+
+            {paginatedNotes.length === 0 && (
+              <div className="flex flex-col items-center gap-3 py-12 text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/60">
+                  <FileText className="h-6 w-6 text-muted-foreground/50" />
+                </div>
+                <p className="font-medium text-muted-foreground">Nenhuma O.S. encontrada</p>
+                <Button variant="outline" size="sm" onClick={() => setNewNoteOpen(true)}>
+                  <PlusCircle className="mr-1.5 h-3.5 w-3.5" /> Criar nova O.S.
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <div className="hidden overflow-x-auto md:block">
             <Table>
               <TableHeader>
                 <TableRow className="border-b border-border/70 bg-card hover:bg-card">

@@ -45,12 +45,12 @@ export default function PayableModalShell({
   if (isMobile) {
     return (
       <Drawer open={open} onOpenChange={onOpenChange} shouldScaleBackground>
-        <DrawerContent className={cn('flex max-h-[92vh] flex-col rounded-t-[24px] p-0', className, mobileClassName)}>
+        <DrawerContent className={cn('flex max-h-[94dvh] flex-col rounded-t-[26px] p-0', className, mobileClassName)}>
           <DrawerHeader className="border-b border-border/60 px-5 pb-4 pt-2 text-left">
             <DrawerTitle className="font-display text-lg font-bold tracking-tight">{title}</DrawerTitle>
             {description ? <DrawerDescription>{description}</DrawerDescription> : null}
           </DrawerHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4">{children}</div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-4 sm:px-5">{children}</div>
         </DrawerContent>
       </Drawer>
     );
@@ -58,7 +58,7 @@ export default function PayableModalShell({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn('flex max-h-[92vh] flex-col overflow-hidden p-0 sm:max-w-4xl', className, desktopClassName)}>
+      <DialogContent className={cn('flex max-h-[92dvh] flex-col overflow-hidden p-0 sm:max-w-4xl', className, desktopClassName)}>
         <DialogHeader className="border-b border-border/60 px-6 py-5 text-left">
           <DialogTitle className="font-display text-lg font-bold tracking-tight">{title}</DialogTitle>
           {description ? <DialogDescription>{description}</DialogDescription> : null}

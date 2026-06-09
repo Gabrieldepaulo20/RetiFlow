@@ -501,7 +501,7 @@ export default function ContasAPagar() {
               <p className="mt-0.5 text-sm text-muted-foreground">Boletos, notas e despesas — entrada manual rápida ou importação assistida por IA.</p>
             </div>
           </div>
-          <div className="flex flex-col items-stretch gap-3 sm:items-end">
+          <div className="flex w-full flex-col items-stretch gap-3 sm:w-auto sm:items-end">
             <Tabs value={effectiveView} onValueChange={(value) => updatePageView(value as PageView)}>
               <TabsList className={cn('grid h-10 rounded-xl', suggestionsEnabled ? 'grid-cols-2' : 'grid-cols-1')}>
                 <TabsTrigger value="contas" className="gap-2">
@@ -522,7 +522,7 @@ export default function ContasAPagar() {
               </TabsList>
             </Tabs>
             {effectiveView === 'contas' ? (
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
               <Button variant="outline" onClick={() => updateRouteModal('import')}><Sparkles className="mr-2 h-4 w-4" />Importar com IA</Button>
               <Button onClick={() => updateRouteModal('new')} className="shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30"><PlusCircle className="mr-2 h-4 w-4" />Nova Conta</Button>
             </div>
@@ -587,7 +587,7 @@ export default function ContasAPagar() {
                   <TabsTrigger value="cancelado" className="hidden sm:flex">Canceladas</TabsTrigger>
                 </TabsList>
               </Tabs>
-              <div className="grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_180px_180px_180px]">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.2fr)_180px_180px_180px]">
                 <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={searchRaw} onChange={(event) => setSearchRaw(event.target.value)} placeholder="Buscar por título, fornecedor ou documento..." className="pl-9" /></div>
                 <Select value={categoryFilter} onValueChange={setCategoryFilter}><SelectTrigger><SelectValue placeholder="Categoria" /></SelectTrigger><SelectContent><SelectItem value="all">Todas as categorias</SelectItem>{payableCategories.filter((category) => category.isActive).map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select>
                 <Select value={originFilter} onValueChange={(value) => setOriginFilter(value as OriginFilter)}><SelectTrigger><SelectValue placeholder="Origem" /></SelectTrigger><SelectContent><SelectItem value="all">Todas as origens</SelectItem><SelectItem value="MANUAL">Cadastro manual</SelectItem><SelectItem value="IA_IMPORT">Importadas por IA</SelectItem><SelectItem value="CAMERA_CAPTURE">Captura por câmera</SelectItem><SelectItem value="AUTO_SERIES">Geradas em série</SelectItem><SelectItem value="recurring">Recorrentes</SelectItem><SelectItem value="installment">Parceladas</SelectItem></SelectContent></Select>

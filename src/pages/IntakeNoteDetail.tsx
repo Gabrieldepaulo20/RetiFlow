@@ -119,11 +119,12 @@ export default function IntakeNoteDetail() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3 flex-wrap">
-        <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="rounded-xl"><ArrowLeft className="w-5 h-5" /></Button>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-display font-bold text-primary">{note.number}</h1>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+        <div className="flex min-w-0 items-start gap-3">
+        <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="shrink-0 rounded-xl"><ArrowLeft className="w-5 h-5" /></Button>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="min-w-0 break-words text-xl font-display font-bold text-primary sm:text-2xl">{note.number}</h1>
             <Badge className={STATUS_COLORS[note.status]}>{STATUS_LABELS[note.status]}</Badge>
             <Badge className={cn(
               note.type === 'COMPRA' ? 'bg-amber-100 text-amber-700' : 'bg-blue-50 text-blue-600'
@@ -131,9 +132,10 @@ export default function IntakeNoteDetail() {
               {note.type === 'COMPRA' ? 'Compra' : 'Serviço'}
             </Badge>
           </div>
-          <p className="text-sm text-muted-foreground">{client?.name} · {note.vehicleModel} · R$ {note.totalAmount.toLocaleString('pt-BR')}</p>
+          <p className="mt-1 break-words text-sm text-muted-foreground">{client?.name} · {note.vehicleModel} · R$ {note.totalAmount.toLocaleString('pt-BR')}</p>
         </div>
-        <div className="flex gap-2 flex-wrap">
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap lg:ml-auto lg:justify-end">
           <Button variant="outline" size="sm" onClick={() => setShowPreview(true)} className="gap-1.5">
             <Eye className="w-4 h-4" /> Visualizar O.S.
           </Button>
@@ -352,7 +354,7 @@ export default function IntakeNoteDetail() {
       </Card>
 
       <Tabs defaultValue="itens">
-        <TabsList>
+        <TabsList className="w-full justify-start overflow-x-auto sm:w-auto">
           <TabsTrigger value="itens">Itens</TabsTrigger>
           <TabsTrigger value="anexos">Anexos ({atts.length})</TabsTrigger>
         </TabsList>
@@ -361,6 +363,22 @@ export default function IntakeNoteDetail() {
             <Card className="border-0 shadow-sm">
               <CardHeader><CardTitle className="text-base">Serviços</CardTitle></CardHeader>
               <CardContent>
+                <div className="grid gap-3 md:hidden">
+                  {svcs.map((s) => (
+                    <div key={s.id} className="rounded-2xl border border-border/70 bg-background p-4 shadow-sm">
+                      <p className="font-semibold leading-tight">{s.name}</p>
+                      {s.description && s.description !== s.name ? (
+                        <p className="mt-1 text-xs text-muted-foreground">{s.description}</p>
+                      ) : null}
+                      <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+                        <div><p className="text-xs text-muted-foreground">Qtd</p><p className="font-medium">{s.quantity}</p></div>
+                        <div><p className="text-xs text-muted-foreground">Preço</p><p className="font-medium">R$ {s.price.toFixed(2)}</p></div>
+                        <div className="text-right"><p className="text-xs text-muted-foreground">Subtotal</p><p className="font-semibold">R$ {s.subtotal.toFixed(2)}</p></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="hidden overflow-x-auto md:block">
                 <Table>
                   <TableHeader><TableRow><TableHead>Serviço</TableHead><TableHead className="w-[80px]">Qtd</TableHead><TableHead className="w-[100px] text-right">Preço</TableHead><TableHead className="w-[100px] text-right">Subtotal</TableHead></TableRow></TableHeader>
                   <TableBody>
@@ -369,12 +387,28 @@ export default function IntakeNoteDetail() {
                     ))}
                   </TableBody>
                 </Table>
+                </div>
               </CardContent>
             </Card>
             <Card className="border-0 shadow-sm">
               <CardHeader><CardTitle className="text-base">Produtos / Peças</CardTitle></CardHeader>
               <CardContent>
                 {prds.length > 0 ? (
+                  <>
+                  <div className="grid gap-3 md:hidden">
+                    {prds.map((p) => (
+                      <div key={p.id} className="rounded-2xl border border-border/70 bg-background p-4 shadow-sm">
+                        <p className="font-semibold leading-tight">{p.name}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">SKU: {p.sku || '—'}</p>
+                        <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+                          <div><p className="text-xs text-muted-foreground">Qtd</p><p className="font-medium">{p.quantity}</p></div>
+                          <div><p className="text-xs text-muted-foreground">Preço</p><p className="font-medium">R$ {p.unitPrice.toFixed(2)}</p></div>
+                          <div className="text-right"><p className="text-xs text-muted-foreground">Subtotal</p><p className="font-semibold">R$ {p.subtotal.toFixed(2)}</p></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="hidden overflow-x-auto md:block">
                   <Table>
                     <TableHeader><TableRow><TableHead>Produto</TableHead><TableHead>SKU</TableHead><TableHead className="w-[80px]">Qtd</TableHead><TableHead className="w-[100px] text-right">Preço</TableHead><TableHead className="w-[100px] text-right">Subtotal</TableHead></TableRow></TableHeader>
                     <TableBody>
@@ -383,12 +417,14 @@ export default function IntakeNoteDetail() {
                       ))}
                     </TableBody>
                   </Table>
+                  </div>
+                  </>
                 ) : <p className="text-center py-4 text-muted-foreground text-sm">Nenhum produto.</p>}
               </CardContent>
             </Card>
             <Card className="border-0 shadow-sm">
-              <CardContent className="p-4 flex items-center justify-between">
-                <div className="grid grid-cols-3 gap-6">
+              <CardContent className="p-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div><p className="text-xs text-muted-foreground">Serviços</p><p className="font-bold">R$ {note.totalServices.toLocaleString('pt-BR')}</p></div>
                   <div><p className="text-xs text-muted-foreground">Produtos</p><p className="font-bold">R$ {note.totalProducts.toLocaleString('pt-BR')}</p></div>
                   <div><p className="text-xs text-muted-foreground">Total</p><p className="font-bold text-lg text-primary">R$ {note.totalAmount.toLocaleString('pt-BR')}</p></div>

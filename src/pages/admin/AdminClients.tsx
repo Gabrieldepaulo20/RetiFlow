@@ -777,7 +777,7 @@ export default function AdminClients() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-display font-bold text-foreground">Usuários do Sistema</h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -785,7 +785,7 @@ export default function AdminClients() {
           </p>
         </div>
         {canUseSensitiveAdminActions ? (
-          <Button onClick={() => setShowCreateDialog(true)} className="gap-2 rounded-xl h-11 px-5 shadow-lg shadow-primary/20">
+          <Button onClick={() => setShowCreateDialog(true)} className="h-11 w-full gap-2 rounded-xl px-5 shadow-lg shadow-primary/20 sm:w-auto">
             <UserPlus className="w-4 h-4" /> Novo Usuário
           </Button>
         ) : null}
@@ -801,7 +801,7 @@ export default function AdminClients() {
         </Alert>
       ) : null}
 
-      <div className={cn('grid gap-4', isCurrentUserMegaMaster ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-3')}>
+      <div className={cn('grid grid-cols-1 gap-4 sm:grid-cols-2', isCurrentUserMegaMaster ? 'xl:grid-cols-4' : 'lg:grid-cols-3')}>
         {[
           { label: 'Total', value: systemUsers.length, color: 'text-foreground' },
           { label: 'Ativos', value: activeCount, color: 'text-success' },
@@ -817,7 +817,7 @@ export default function AdminClients() {
         ))}
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3">
+      <div className="flex flex-col gap-3 lg:flex-row">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
@@ -827,7 +827,7 @@ export default function AdminClients() {
             className="pl-10 h-11 rounded-xl"
           />
         </div>
-        <div className="flex gap-2">
+        <div className="grid grid-cols-3 gap-2 lg:flex">
           {(['all', 'active', 'inactive'] as const).map((filter) => (
             <Button
               key={filter}
@@ -862,7 +862,7 @@ export default function AdminClients() {
             >
               <Card className={cn('transition-all duration-200 hover:shadow-md', !user.isActive && 'opacity-60')}>
                 <CardContent className="p-0">
-                  <div className="flex items-center gap-4 p-4">
+                  <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:gap-4">
                     <div
                       className={cn(
                         'w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0',
@@ -872,8 +872,8 @@ export default function AdminClients() {
                       {user.name.split(' ').map((word) => word[0]).join('').slice(0, 2)}
                     </div>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
                         <p className="font-semibold text-foreground truncate">{user.name}</p>
                         <Badge
                           variant={user.isActive && !isInvitePending ? 'default' : 'secondary'}
@@ -912,7 +912,7 @@ export default function AdminClients() {
                       </Badge>
                     </div>
 
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
                       {canUseSensitiveAdminActions ? (
                         <>
                           <Tooltip>
@@ -1079,23 +1079,23 @@ export default function AdminClients() {
                         className="overflow-hidden border-t bg-muted/20"
                       >
                         <div className="px-4 py-4">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
-                            <div className="flex items-center gap-2 text-muted-foreground">
-                              <Mail className="w-4 h-4" /> {user.email}
+                          <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                            <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+                              <Mail className="h-4 w-4 shrink-0" /> <span className="break-all">{user.email}</span>
                             </div>
-                            <div className="flex items-center gap-2 text-muted-foreground">
-                              <Phone className="w-4 h-4" /> {user.phone || 'Não informado'}
+                            <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+                              <Phone className="h-4 w-4 shrink-0" /> <span className="break-words">{user.phone || 'Não informado'}</span>
                             </div>
-                            <div className="flex items-center gap-2 text-muted-foreground">
-                              <Shield className="w-4 h-4" /> Criado em: {new Date(user.createdAt).toLocaleDateString('pt-BR')}
+                            <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+                              <Shield className="h-4 w-4 shrink-0" /> <span>Criado em: {new Date(user.createdAt).toLocaleDateString('pt-BR')}</span>
                             </div>
                             {isCurrentUserMegaMaster ? (
                               <>
-                                <div className="flex items-center gap-2 text-muted-foreground">
-                                  <Clock className="w-4 h-4" /> Último acesso: {formatPresenceDate(presence?.lastSeenAt ?? user.lastLogin)}
+                                <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+                                  <Clock className="h-4 w-4 shrink-0" /> <span>Último acesso: {formatPresenceDate(presence?.lastSeenAt ?? user.lastLogin)}</span>
                                 </div>
-                                <div className="flex items-center gap-2 text-muted-foreground">
-                                  <Activity className="w-4 h-4" /> Rota atual: {presence?.isOnline && presence.currentRoute ? presence.currentRoute : 'Não disponível'}
+                                <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+                                  <Activity className="h-4 w-4 shrink-0" /> <span className="truncate">Rota atual: {presence?.isOnline && presence.currentRoute ? presence.currentRoute : 'Não disponível'}</span>
                                 </div>
                               </>
                             ) : null}

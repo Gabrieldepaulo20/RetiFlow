@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getInitials } from '@/lib/avatarInitials';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetClose, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import {
   LayoutDashboard, Users, Settings, Menu, LogOut, ChevronLeft, ChevronRight, Wrench, Shield, ArrowLeft,
@@ -128,7 +128,7 @@ export default function AdminLayout() {
               <SheetTrigger asChild>
                 <Button variant="ghost" size="icon"><Menu className="w-5 h-5" /></Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-60 p-0 bg-sidebar border-sidebar-border">
+              <SheetContent side="left" className="w-[min(86vw,18rem)] p-0 bg-sidebar border-sidebar-border">
                 <NavContent onNav={() => {}} />
               </SheetContent>
             </Sheet>
@@ -163,10 +163,62 @@ export default function AdminLayout() {
           </DropdownMenu>
         </header>
 
-        <main className={cn('flex-1 p-4 md:p-6', isMobile && 'pb-20')}>
+        <main className={cn('flex-1 min-w-0 overflow-x-hidden p-3 sm:p-4 md:p-6', isMobile && 'pb-[calc(5.25rem+env(safe-area-inset-bottom))]')}>
           <Outlet />
         </main>
       </div>
+
+      {isMobile && (
+        <nav
+          aria-label="Navegação admin mobile"
+          className="fixed inset-x-0 bottom-0 z-50 border-t border-border/70 bg-card/95 px-2 pb-[calc(0.45rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-16px_40px_rgba(15,23,42,0.12)] backdrop-blur-xl"
+        >
+          <div className="mx-auto grid max-w-sm grid-cols-4 items-center gap-1">
+            {adminNav.map((item) => {
+              const active = isActive(item.path);
+              return (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  className={cn(
+                    'flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-2xl px-2 py-1 text-center transition-colors active:scale-[0.98]',
+                    active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted/70',
+                  )}
+                >
+                  <item.icon className="h-5 w-5" />
+                  <span className="max-w-full truncate text-[10px] font-semibold leading-none">{item.label}</span>
+                </Link>
+              );
+            })}
+            <Sheet>
+              <SheetTrigger asChild>
+                <button className="flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-2xl px-2 py-1 text-muted-foreground transition-colors hover:bg-muted/70 active:scale-[0.98]">
+                  <Menu className="h-5 w-5" />
+                  <span className="text-[10px] font-semibold leading-none">Conta</span>
+                </button>
+              </SheetTrigger>
+              <SheetContent side="bottom" className="rounded-t-[28px] p-0">
+                <div className="border-b border-border/60 px-5 pb-3 pt-5">
+                  <p className="text-sm font-semibold">{user.name}</p>
+                  <p className="text-xs text-muted-foreground">{user.email}</p>
+                </div>
+                <div className="grid gap-2 p-4">
+                  <SheetClose asChild>
+                    <Button variant="outline" className="justify-start" onClick={() => navigate('/dashboard')}>
+                      <Wrench className="mr-2 h-4 w-4" /> Área Operacional
+                    </Button>
+                  </SheetClose>
+                  <SheetClose asChild>
+                    <Button variant="destructive" className="justify-start" onClick={() => { logout(); navigate('/login'); }}>
+                      <LogOut className="mr-2 h-4 w-4" /> Sair
+                    </Button>
+                  </SheetClose>
+                </div>
+              </SheetContent>
+            </Sheet>
+          </div>
+        </nav>
+      )}
     </div>
   );
 }

@@ -118,13 +118,13 @@ export default function Clients() {
 
       <Card>
         <CardContent className="p-4">
-          <div className="flex gap-3 mb-4 flex-wrap">
-            <div className="relative flex-1 min-w-[200px]">
+          <div className="mb-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_150px_180px]">
+            <div className="relative min-w-0">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input placeholder="Buscar por nome, documento, cidade..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
             </div>
             <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos</SelectItem>
                 <SelectItem value="active">Ativos</SelectItem>
@@ -132,7 +132,7 @@ export default function Clients() {
               </SelectContent>
             </Select>
             <Select value={filterDocType} onValueChange={(value) => setFilterDocType(value as 'all' | 'CPF' | 'CNPJ')}>
-              <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">CPF e CNPJ</SelectItem>
                 <SelectItem value="CPF">Somente CPF</SelectItem>

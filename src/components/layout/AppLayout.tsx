@@ -22,7 +22,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetClose, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
@@ -44,8 +44,6 @@ const navItems = [
   { label: 'Crescimento', icon: TrendingUp, path: '/crescimento', moduleKey: 'marketing' },
   { label: 'Configurações', icon: Settings, path: '/configuracoes', moduleKey: 'settings' },
 ] as const;
-
-const mobileNav = navItems.slice(0, 4);
 
 export default function AppLayout() {
   const { user, isSupportImpersonating, endSupportImpersonation, logout, canAccessModule } = useAuth();
@@ -311,8 +309,9 @@ export default function AppLayout() {
     </div>
   );
 
-  const visibleMobileNav = mobileNav.filter(isModuleVisible);
-  const visibleMoreNav = navItems.slice(4).filter(isModuleVisible);
+  const visibleNavItems = navItems.filter(isModuleVisible);
+  const visibleMobileNav = visibleNavItems.slice(0, 4);
+  const visibleMoreNav = visibleNavItems.slice(4);
   const visibleNavPaths = useMemo(
     () =>
       navItems
@@ -498,7 +497,7 @@ export default function AppLayout() {
           </div>
         </header>
 
-        <main className={cn('flex-1 p-4 md:p-6', isMobile && 'pb-20')}>
+        <main className={cn('flex-1 min-w-0 overflow-x-hidden p-3 sm:p-4 md:p-6', isMobile && 'pb-[calc(5.25rem+env(safe-area-inset-bottom))]')}>
           <AnimatePresence initial={false}>
             <AnimatedPage key={location.pathname}>
               <Outlet />
@@ -509,7 +508,11 @@ export default function AppLayout() {
 
       {/* Mobile bottom nav */}
       {isMobile && (
-        <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t flex items-center justify-around z-50 px-2">
+        <nav
+          aria-label="Navegação principal mobile"
+          className="fixed inset-x-0 bottom-0 z-50 border-t border-border/70 bg-card/95 px-2 pb-[calc(0.45rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-16px_40px_rgba(15,23,42,0.12)] backdrop-blur-xl"
+        >
+          <div className="mx-auto grid max-w-md grid-cols-5 items-center gap-1">
           {visibleMobileNav.map(item => {
             const active = isActive(item.path);
             return (
@@ -518,44 +521,56 @@ export default function AppLayout() {
                 to={item.path}
                 onMouseEnter={() => void preloadRouteModule(item.path)}
                 onFocus={() => void preloadRouteModule(item.path)}
-                className={cn('flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg', active ? 'text-primary' : 'text-muted-foreground')}
+                className={cn(
+                  'flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-2xl px-2 py-1 text-center transition-colors active:scale-[0.98]',
+                  active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted/70',
+                )}
               >
                 <item.icon className="w-5 h-5" />
-                <span className="text-[10px] font-medium">{item.label.split(' ')[0]}</span>
+                <span className="max-w-full truncate text-[10px] font-semibold leading-none">{item.label.split(' ')[0]}</span>
               </Link>
             );
           })}
           {visibleMoreNav.length > 0 && (
             <Sheet>
               <SheetTrigger asChild>
-                <button className="flex flex-col items-center gap-0.5 px-3 py-1 text-muted-foreground">
+                <button className="flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-2xl px-2 py-1 text-muted-foreground transition-colors hover:bg-muted/70 active:scale-[0.98]">
                   <MoreHorizontal className="w-5 h-5" />
-                  <span className="text-[10px] font-medium">Mais</span>
+                  <span className="text-[10px] font-semibold leading-none">Mais</span>
                 </button>
               </SheetTrigger>
-              <SheetContent side="bottom" className="rounded-t-2xl">
-                <div className="grid grid-cols-3 gap-4 py-4">
+              <SheetContent side="bottom" className="max-h-[82dvh] rounded-t-[28px] border-border/70 p-0">
+                <div className="border-b border-border/60 px-5 pb-3 pt-5">
+                  <p className="text-sm font-semibold text-foreground">Todos os módulos</p>
+                  <p className="text-xs text-muted-foreground">Acesse rapidamente qualquer área habilitada.</p>
+                </div>
+                <div className="grid grid-cols-2 gap-2 overflow-y-auto px-4 py-4 sm:grid-cols-3">
                   {visibleMoreNav.map(item => (
+                    <SheetClose key={item.path} asChild>
                     <Link
-                      key={item.path}
                       to={item.path}
                       onMouseEnter={() => void preloadRouteModule(item.path)}
                       onFocus={() => void preloadRouteModule(item.path)}
-                      className="flex flex-col items-center gap-2 p-3 rounded-lg hover:bg-muted"
+                      className={cn(
+                        'flex min-h-[86px] flex-col items-center justify-center gap-2 rounded-2xl border border-border/60 bg-background p-3 text-center shadow-sm transition-colors hover:bg-muted',
+                        isActive(item.path) && 'border-primary/40 bg-primary/10 text-primary',
+                      )}
                     >
                       <item.icon className="w-6 h-6 text-primary" />
-                      <span className="text-xs font-medium text-center">{item.label}</span>
+                      <span className="text-xs font-semibold leading-tight">{item.label}</span>
                     </Link>
+                    </SheetClose>
                   ))}
                 </div>
               </SheetContent>
             </Sheet>
           )}
+          </div>
         </nav>
       )}
 
       <Dialog open={supportOpen} onOpenChange={setSupportOpen}>
-        <DialogContent className="max-w-lg p-0 gap-0 overflow-hidden">
+        <DialogContent className="max-h-[92dvh] max-w-lg gap-0 overflow-hidden p-0">
           <DialogHeader className="px-5 pt-5 pb-4 border-b border-border/40">
             <DialogTitle className="text-[16px] font-semibold">Suporte / Chamados</DialogTitle>
             <DialogDescription className="text-[13px] text-muted-foreground">

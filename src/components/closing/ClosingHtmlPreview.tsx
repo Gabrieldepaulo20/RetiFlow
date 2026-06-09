@@ -85,7 +85,8 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95' }: Props) {
                   </p>
                 </div>
 
-                <div className="overflow-hidden">
+                <div className="overflow-x-auto">
+                  <div className="min-w-[620px]">
                   <div className="grid grid-cols-[minmax(0,1fr)_56px_88px_72px_92px] bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase text-slate-500">
                     <span>Descrição</span>
                     <span className="text-center">Qtd</span>
@@ -111,6 +112,7 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95' }: Props) {
                       </div>
                     );
                   })}
+                  </div>
                 </div>
 
                 {isLastChunk ? (
