@@ -25,7 +25,7 @@ import {
   buildMeaningfulPayableTitle,
   buildPayableHistoryDescription,
   calculatePayableFinalAmount,
-  findPayableDuplicate,
+  classifyPayableMatch,
   PAYABLE_FIELD_LIMITS,
 } from '@/services/domain/payables';
 import {
@@ -224,20 +224,32 @@ export default function PayableQuickForm({
       (supplier) => supplier.name.toLowerCase() === supplierName.toLowerCase(),
     );
 
-    const duplicate = findPayableDuplicate(
+    // Classifica em vez de bloquear por igualdade exata: só pede confirmação em
+    // duplicidade provável. Parcela/recorrência/casos a revisar passam direto
+    // (parcelas legítimas não são tratadas como duplicata).
+    const match = classifyPayableMatch(
       {
         supplierId: matchedSupplier?.id,
         supplierName,
         docNumber: form.docNumber.trim() || undefined,
         originalAmount,
         dueDate: form.dueDate,
+        recurrence: form.recurrence,
+        recurrenceIndex,
+        totalInstallments,
       },
       payables,
     );
 
-    if (duplicate && !options.allowDuplicate) {
-      setDuplicateToConfirm(duplicate);
+    if (match.kind === 'duplicidade_provavel' && match.match && !options.allowDuplicate) {
+      setDuplicateToConfirm(match.match);
       return;
+    }
+    if (match.kind === 'revisar' && match.match) {
+      toast({
+        title: 'Lançamento parecido encontrado',
+        description: `${match.reasons.join(' · ')}. Confira se não é a mesma conta antes de salvar.`,
+      });
     }
 
     const isPaid = form.initialStatus === 'PAGO';
