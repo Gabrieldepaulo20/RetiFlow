@@ -384,6 +384,138 @@ export function findPayableForSuggestion(
   );
 }
 
+// ─── Classificação inteligente de duplicidade ───────────────────────────────
+//
+// Em vez de bloquear por igualdade exata (que confunde parcelas com duplicatas),
+// compara a conta candidata com as existentes por vários sinais e classifica:
+//   - duplicidade_provavel: muito provavelmente o mesmo lançamento
+//   - possivel_parcela:     parcela legítima da mesma série (NÃO bloquear)
+//   - possivel_recorrencia: conta recorrente de outro mês (NÃO bloquear)
+//   - revisar:              casamento parcial/ambíguo → revisão manual
+//   - novo:                 sem casamento relevante
+export type PayableMatchKind =
+  | 'duplicidade_provavel'
+  | 'possivel_parcela'
+  | 'possivel_recorrencia'
+  | 'revisar'
+  | 'novo';
+
+export interface PayableMatchResult {
+  kind: PayableMatchKind;
+  match: AccountPayable | null;
+  /** Similaridade do melhor casamento (0..1). */
+  score: number;
+  /** Sinais que explicam a decisão (mostráveis ao usuário). */
+  reasons: string[];
+}
+
+export type PayableMatchCandidate = Pick<
+  AccountPayable,
+  'supplierId' | 'supplierName' | 'docNumber' | 'originalAmount' | 'dueDate'
+> &
+  Partial<Pick<AccountPayable, 'competencyDate' | 'recurrence' | 'recurrenceIndex' | 'totalInstallments' | 'recurrenceParentId'>>;
+
+function payableSupplierKey(p: { supplierName?: string | null; supplierId?: string }): string {
+  return normalizeDedupName(p.supplierName) || (p.supplierId ?? '');
+}
+
+function payableMonthKey(value?: string | null): string {
+  return value ? value.split('T')[0].slice(0, 7) : '';
+}
+
+function payableDayKey(value?: string | null): string {
+  return value ? value.split('T')[0] : '';
+}
+
+function payableDocKey(value?: string | null): string {
+  return (value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/** É recorrência periódica (mensal/quinzenal/etc), não parcelamento fechado. */
+function isRecurringPayable(p: { recurrence?: AccountPayable['recurrence'] }): boolean {
+  return p.recurrence != null && p.recurrence !== 'NENHUMA';
+}
+
+/**
+ * Classifica a conta candidata contra as existentes. Não bloqueia nada — apenas
+ * informa o tipo de relação para a UI decidir (criar, revisar, vincular).
+ */
+export function classifyPayableMatch(
+  candidate: PayableMatchCandidate,
+  existing: AccountPayable[],
+  excludeId?: string,
+): PayableMatchResult {
+  const supplierKey = payableSupplierKey(candidate);
+  const empty: PayableMatchResult = { kind: 'novo', match: null, score: 0, reasons: [] };
+  if (!supplierKey) return empty;
+
+  const candAmount = candidate.originalAmount;
+  const candDay = payableDayKey(candidate.dueDate);
+  const candMonth = payableMonthKey(candidate.competencyDate ?? candidate.dueDate);
+  const candDoc = payableDocKey(candidate.docNumber);
+
+  let best: PayableMatchResult = empty;
+
+  for (const p of existing) {
+    if (p.id === excludeId) continue;
+    if (p.deletedAt != null) continue;
+    if (p.status === 'CANCELADO') continue;
+    if (payableSupplierKey(p) !== supplierKey) continue;
+
+    const reasons: string[] = ['Mesmo fornecedor/favorecido'];
+    const sameAmount = Math.abs(p.originalAmount - candAmount) <= 0.01;
+    const sameDay = candDay !== '' && payableDayKey(p.dueDate) === candDay;
+    const sameDoc = candDoc !== '' && payableDocKey(p.docNumber) === candDoc;
+    const sameMonth = candMonth !== '' && payableMonthKey(p.competencyDate ?? p.dueDate) === candMonth;
+
+    // Sinais de série de parcelas: mesmo totalInstallments com índice diferente,
+    // ou mesmo pai de recorrência com índice diferente.
+    const sameSeries =
+      (candidate.recurrenceParentId != null && p.recurrenceParentId === candidate.recurrenceParentId) ||
+      (!!candidate.totalInstallments && candidate.totalInstallments > 1 && p.totalInstallments === candidate.totalInstallments);
+    const differentIndex =
+      candidate.recurrenceIndex != null && p.recurrenceIndex != null && p.recurrenceIndex !== candidate.recurrenceIndex;
+
+    let kind: PayableMatchKind;
+    let score: number;
+
+    if (sameSeries && (differentIndex || !sameDay)) {
+      kind = 'possivel_parcela';
+      score = 0.6;
+      reasons.push('Parcela diferente da mesma série');
+    } else if (sameAmount && sameDay && (sameDoc || candDoc === '')) {
+      kind = 'duplicidade_provavel';
+      score = 0.65 + (sameDoc ? 0.25 : 0.1) + 0.1; // fornecedor+valor+data (+doc)
+      reasons.push('Mesmo valor', 'Mesmo vencimento');
+      if (sameDoc) reasons.push('Mesmo documento');
+    } else if (sameAmount && !sameDay && (isRecurringPayable(candidate) || isRecurringPayable(p)) && !sameMonth) {
+      kind = 'possivel_recorrencia';
+      score = 0.55;
+      reasons.push('Mesmo valor', 'Conta recorrente de outro mês');
+    } else if (sameDoc) {
+      kind = 'duplicidade_provavel';
+      score = 0.8;
+      reasons.push('Mesmo documento');
+    } else if (sameAmount && (sameDay || sameMonth)) {
+      kind = 'revisar';
+      score = 0.5;
+      reasons.push('Mesmo valor', sameDay ? 'Mesmo vencimento' : 'Mesma competência', 'Documento diferente — confira');
+    } else if (sameAmount) {
+      kind = 'revisar';
+      score = 0.4;
+      reasons.push('Mesmo valor, vencimento diferente — pode ser parcela/recorrência');
+    } else {
+      continue; // mesmo fornecedor mas sem outros sinais → não é casamento relevante
+    }
+
+    if (score > best.score) {
+      best = { kind, match: p, score: Math.min(1, score), reasons };
+    }
+  }
+
+  return best;
+}
+
 /**
  * Dias em atraso de uma sugestão de e-mail ainda não marcada como paga.
  * Uma cobrança que já venceu provavelmente já foi paga — usado para oferecer
