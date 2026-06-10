@@ -566,7 +566,7 @@ export default function IntakeNotes() {
 
         {/* Search + Filters */}
         <Card className="overflow-hidden border-border/70 shadow-sm">
-          <CardContent className="space-y-4 p-4 sm:p-5">
+          <CardContent className="space-y-3 p-3 sm:space-y-4 sm:p-5">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="text-sm font-semibold text-foreground">Filtros da lista</p>
@@ -576,14 +576,14 @@ export default function IntakeNotes() {
                 Página {currentPage} de {totalPages} · {NOTES_PAGE_SIZE} por página
               </Badge>
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:flex sm:items-center">
               <div className="relative min-w-0 flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
-                  placeholder="Buscar por O.S. ou cliente..."
+                  placeholder="Buscar O.S. ou cliente"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  className="h-11 rounded-xl border-border/70 bg-background pl-10 shadow-sm transition-colors focus:bg-background"
+                  className="h-10 rounded-xl border-border/70 bg-background pl-9 text-sm shadow-sm transition-colors focus:bg-background sm:h-11 sm:pl-10"
                 />
               </div>
 
@@ -592,12 +592,13 @@ export default function IntakeNotes() {
                   <Button
                     variant="outline"
                     className={cn(
-                      'h-11 shrink-0 gap-2 rounded-xl border-border/70 bg-background shadow-sm',
+                      'h-10 w-10 shrink-0 gap-2 rounded-xl border-border/70 bg-background px-0 shadow-sm sm:h-11 sm:w-auto sm:px-4',
                       activeFilterCount > 0 && 'border-primary/40 text-primary',
                     )}
+                    aria-label="Abrir filtros"
                   >
                     <SlidersHorizontal className="w-4 h-4" />
-                    Filtros
+                    <span className="hidden sm:inline">Filtros</span>
                     {activeFilterCount > 0 && (
                       <span className="bg-primary/10 text-primary text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none tabular-nums">
                         {activeFilterCount}
@@ -783,7 +784,7 @@ export default function IntakeNotes() {
                       setDetailNoteId(n.id);
                     }
                   }}
-                  className="rounded-xl border border-border/70 bg-card p-3 shadow-sm transition-colors active:bg-muted/50 sm:rounded-2xl sm:p-4"
+                  className="rounded-xl border border-border/70 bg-card p-2.5 shadow-sm transition-colors active:bg-muted/50 sm:rounded-2xl sm:p-4"
                 >
                   <div className="flex min-w-0 items-start justify-between gap-2 sm:gap-3">
                     <div className="min-w-0 flex-1">
@@ -880,7 +881,7 @@ export default function IntakeNotes() {
                     </DropdownMenu>
                   </div>
 
-                  <div className="mt-2.5 flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2.5 sm:mt-3 sm:pt-3">
+                  <div className="mt-2 flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2 sm:mt-3 sm:pt-3">
                     <Badge className={cn(STATUS_COLORS[n.status as NoteStatus], 'gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold shadow-none sm:px-3 sm:py-1.5 sm:text-[12px]')}>
                       <StatusIcon className="h-3.5 w-3.5 shrink-0" />
                       {STATUS_LABELS[n.status as NoteStatus]}

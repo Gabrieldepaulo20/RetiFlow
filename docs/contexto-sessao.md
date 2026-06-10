@@ -597,6 +597,37 @@ Plano aprovado para executar em fases:
   - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks/import dinâmico.
   - `npm run test:integration`: não executado porque a alteração foi apenas de frontend, sem tocar banco, RPC, Storage ou Edge Function.
 
+## Notas De Entrada E Kanban Mobile - 2026-06-10
+
+- Pedido: refinar a experiência em celular depois dos ajustes anteriores:
+  - em Notas de Entrada, reduzir um pouco a barra de busca, o botão de filtros e a altura dos cards;
+  - em Kanban, corrigir dificuldade de deslizar horizontalmente no celular e simplificar filtros mobile.
+- Notas de Entrada:
+  - busca e filtros agora ficam na mesma linha em mobile, com input mais baixo e botão de filtro compacto por ícone;
+  - placeholder da busca encurtado para `Buscar O.S. ou cliente`;
+  - cards mobile de O.S. receberam padding e espaçamento de rodapé menores, ficando mais próximos de uma lista densa/tabela visual.
+- Kanban:
+  - filtros mobile foram reduzidos para `Todos`, `30d`, `Mais`, seletor compacto de ano e botão `Colunas` por ícone;
+  - `60 dias` e `90 dias` continuam acessíveis no mobile dentro de `Mais`;
+  - em tablet/desktop os filtros completos continuam visíveis;
+  - seletor de ano no mobile virou dropdown compacto;
+  - botões de rolagem por seta ficam ocultos no mobile, onde o gesto de dedo deve comandar o quadro;
+  - container do quadro ganhou handler de toque para swipe horizontal quando o movimento do dedo é mais lateral que vertical;
+  - clique no card é suprimido logo após um swipe lateral para evitar abrir a O.S. por acidente;
+  - altura útil do quadro no mobile aumentou levemente com a barra de filtros menor.
+- Validação visual local em mock:
+  - viewport 393x851: busca de Notas de Entrada com 295px e filtro com 40px; cards medidos com 145px de altura;
+  - viewport 393x851: Kanban com controles cabendo até ~290px de largura, board com `scrollWidth` 2920 e `touch-action: pan-y`;
+  - viewport 768x1024: Kanban quebra filtros completos em duas linhas sem overflow horizontal;
+  - console do navegador sem erros.
+- Alteração apenas de frontend; sem mudança de banco, RPC, Storage ou Edge Function.
+- Validação final executada:
+  - `npx tsc --noEmit`: passou.
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh.
+  - `npm test -- --run`: passou, 50 arquivos e 370 testes.
+  - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks/import dinâmico.
+  - `npm run test:integration`: não executado porque a alteração foi apenas de frontend, sem tocar banco, RPC, Storage ou Edge Function.
+
 ## Notas De Entrada - Filtros Mais Limpos - 2026-06-09
 
 - Pedido: remover duplicidade visual de paginação dentro de `Filtros da lista`.

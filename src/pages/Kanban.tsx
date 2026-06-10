@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect, type TouchEvent as ReactTouchEvent } from "react";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { useSearchParams } from "react-router-dom";
 import { useOperationalData } from "@/contexts/DataContext";
@@ -39,6 +39,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 /* ─── Status color maps ─── */
 
@@ -98,6 +99,11 @@ const PERIOD_OPTIONS: { value: PeriodFilter; label: string }[] = [
   { value: "90", label: "90 dias" },
 ];
 
+const MOBILE_PERIOD_OPTIONS: { value: PeriodFilter; label: string }[] = [
+  { value: "all", label: "Todos" },
+  { value: "30", label: "30d" },
+];
+
 /* ─── Column visibility (localStorage) ─── */
 
 const STORAGE_KEY = "kanban.visibleColumns.v1";
@@ -144,6 +150,14 @@ export default function Kanban() {
   const { user } = useAuth();
   const { toast } = useToast();
   const boardScrollerRef = useRef<HTMLDivElement | null>(null);
+  const boardTouchRef = useRef<{
+    startX: number;
+    startY: number;
+    scrollLeft: number;
+    horizontal: boolean;
+    interactive: boolean;
+  } | null>(null);
+  const suppressCardClickRef = useRef(false);
   const [selectedNote, setSelectedNote] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
   const searchQuery = (searchParams.get("q") ?? "").trim().toLowerCase();
@@ -193,6 +207,59 @@ export default function Kanban() {
 
     const distance = Math.max(280, Math.floor(scroller.clientWidth * 0.75));
     scroller.scrollBy({ left: direction * distance, behavior: "smooth" });
+  }, []);
+
+  const isInteractiveTouchTarget = useCallback((target: EventTarget | null) => (
+    target instanceof HTMLElement &&
+    Boolean(target.closest("button,a,input,textarea,select,[role='button'],[data-kanban-drag-handle]"))
+  ), []);
+
+  const handleBoardTouchStart = useCallback((event: ReactTouchEvent<HTMLDivElement>) => {
+    const scroller = boardScrollerRef.current;
+    const touch = event.touches[0];
+    if (!scroller || !touch) {
+      boardTouchRef.current = null;
+      return;
+    }
+
+    boardTouchRef.current = {
+      startX: touch.clientX,
+      startY: touch.clientY,
+      scrollLeft: scroller.scrollLeft,
+      horizontal: false,
+      interactive: isInteractiveTouchTarget(event.target),
+    };
+  }, [isInteractiveTouchTarget]);
+
+  const handleBoardTouchMove = useCallback((event: ReactTouchEvent<HTMLDivElement>) => {
+    const scroller = boardScrollerRef.current;
+    const state = boardTouchRef.current;
+    const touch = event.touches[0];
+    if (!scroller || !state || !touch || state.interactive) return;
+
+    const deltaX = touch.clientX - state.startX;
+    const deltaY = touch.clientY - state.startY;
+    const absX = Math.abs(deltaX);
+    const absY = Math.abs(deltaY);
+
+    if (!state.horizontal && absX > 10 && absX > absY + 4) {
+      state.horizontal = true;
+    }
+
+    if (state.horizontal) {
+      if (event.cancelable) event.preventDefault();
+      scroller.scrollLeft = state.scrollLeft - deltaX;
+      suppressCardClickRef.current = true;
+    }
+  }, []);
+
+  const handleBoardTouchEnd = useCallback(() => {
+    boardTouchRef.current = null;
+    if (suppressCardClickRef.current) {
+      window.setTimeout(() => {
+        suppressCardClickRef.current = false;
+      }, 120);
+    }
   }, []);
 
   const handleBoardWheel = useCallback((event: WheelEvent) => {
@@ -373,9 +440,61 @@ export default function Kanban() {
         </div>
 
         {/* Filter bar */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible">
-          {/* Period toggles */}
-          <div className="flex shrink-0 items-center gap-1 rounded-lg bg-muted/60 p-1">
+        <div className="flex items-center gap-1.5 overflow-hidden pb-1 sm:flex-wrap sm:gap-2 sm:overflow-visible">
+          {/* Compact mobile period toggles */}
+          <div className="flex shrink-0 items-center gap-1 rounded-lg bg-muted/60 p-1 sm:hidden">
+            {MOBILE_PERIOD_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setPeriodFilter(opt.value)}
+                className={cn(
+                  "rounded-md px-2.5 py-1.5 text-[11px] font-medium leading-none transition-all duration-150",
+                  periodFilter === opt.value
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground",
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  className={cn(
+                    "rounded-md px-2.5 py-1.5 text-[11px] font-medium leading-none transition-all duration-150",
+                    (periodFilter === "60" || periodFilter === "90")
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  Mais
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-40 p-2">
+                <button
+                  onClick={() => setPeriodFilter("60")}
+                  className={cn(
+                    "w-full rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-muted",
+                    periodFilter === "60" && "bg-primary/10 text-primary",
+                  )}
+                >
+                  60 dias
+                </button>
+                <button
+                  onClick={() => setPeriodFilter("90")}
+                  className={cn(
+                    "w-full rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-muted",
+                    periodFilter === "90" && "bg-primary/10 text-primary",
+                  )}
+                >
+                  90 dias
+                </button>
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          {/* Desktop/tablet period toggles */}
+          <div className="hidden shrink-0 items-center gap-1 rounded-lg bg-muted/60 p-1 sm:flex">
             {PERIOD_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
@@ -392,7 +511,19 @@ export default function Kanban() {
             ))}
           </div>
 
-          <div className="flex shrink-0 items-center gap-1 rounded-lg bg-muted/60 p-1">
+          <Select value={yearFilter} onValueChange={setYearFilter}>
+            <SelectTrigger className="h-8 w-[78px] shrink-0 rounded-lg border-border/70 px-2 text-[11px] font-medium shadow-none sm:hidden">
+              <SelectValue placeholder="Ano" />
+            </SelectTrigger>
+            <SelectContent align="start">
+              <SelectItem value="all">Todos</SelectItem>
+              {availableYears.map((year) => (
+                <SelectItem key={year} value={year}>{year}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <div className="hidden shrink-0 items-center gap-1 rounded-lg bg-muted/60 p-1 sm:flex">
             <button
               onClick={() => setYearFilter("all")}
               className={cn(
@@ -427,12 +558,12 @@ export default function Kanban() {
                 variant="outline"
                 size="sm"
                 className={cn(
-                  "h-8 gap-1.5 text-[12px] font-medium shadow-none",
+                  "h-8 gap-1.5 px-2 text-[12px] font-medium shadow-none sm:px-3",
                   !allVisible && "border-primary/40 text-primary",
                 )}
               >
                 <SlidersHorizontal className="w-3.5 h-3.5" />
-                Colunas
+                <span className="hidden sm:inline">Colunas</span>
                 {!allVisible && (
                   <span className="ml-0.5 bg-primary/10 text-primary text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
                     {visibleStatuses.size}
@@ -489,7 +620,7 @@ export default function Kanban() {
             </PopoverContent>
           </Popover>
 
-          <div className="ml-auto flex shrink-0 items-center gap-1">
+          <div className="ml-auto hidden shrink-0 items-center gap-1 sm:flex">
             <Button
               type="button"
               variant="outline"
@@ -520,10 +651,14 @@ export default function Kanban() {
         <div
           ref={boardScrollerRef}
           data-testid="kanban-board-scroller"
-          className="-mx-3 min-h-0 flex-1 touch-pan-x overflow-x-auto overscroll-x-contain px-3 pb-3 scrollbar-thin sm:-mx-1 sm:px-1"
+          className="-mx-3 min-h-0 flex-1 touch-pan-y overflow-x-auto overscroll-x-contain px-3 pb-3 scrollbar-thin sm:-mx-1 sm:px-1"
           style={{ WebkitOverflowScrolling: "touch" }}
+          onTouchStart={handleBoardTouchStart}
+          onTouchMove={handleBoardTouchMove}
+          onTouchEnd={handleBoardTouchEnd}
+          onTouchCancel={handleBoardTouchEnd}
         >
-        <div className="flex h-[calc(100dvh-13.5rem)] min-h-[420px] gap-3 sm:h-[calc(100dvh-12.5rem)]">
+        <div className="flex h-[calc(100dvh-12.75rem)] min-h-[410px] gap-3 sm:h-[calc(100dvh-12.5rem)] sm:min-h-[420px]">
           {columns.map((col) => (
             <div key={col.status} className="flex h-full w-[min(82vw,280px)] flex-shrink-0 flex-col sm:w-[286px]">
               {/* Column header */}
@@ -588,7 +723,14 @@ export default function Kanban() {
                             <div
                               ref={provided.innerRef}
                               {...provided.draggableProps}
-                              onClick={() => setSelectedNote(note.id)}
+                              onClick={(event) => {
+                                if (suppressCardClickRef.current) {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  return;
+                                }
+                                setSelectedNote(note.id);
+                              }}
                               className={cn(
                                 "group bg-card rounded-xl border border-t-2 border-border/50 transition-all duration-150",
                                 CARD_ACCENT_BORDER[note.status],
@@ -602,6 +744,7 @@ export default function Kanban() {
                                 <div className="flex items-center gap-1.5">
                                   <div
                                     {...provided.dragHandleProps}
+                                    data-kanban-drag-handle
                                     aria-label="Arrastar nota"
                                     onClick={(e) => e.stopPropagation()}
                                     className="opacity-50 transition-opacity -ml-0.5 shrink-0 touch-none cursor-grab active:cursor-grabbing rounded p-0.5 -m-0.5 sm:opacity-0 sm:group-hover:opacity-50 sm:active:opacity-100"
