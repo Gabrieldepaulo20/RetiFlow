@@ -200,10 +200,40 @@ describe('Supabase RPC base wrapper', () => {
       targetUser: { id: '22222222-2222-4222-8222-222222222222', email: 'patricia@example.com', name: 'Patricia' },
     }));
 
-    await expect(callRPC('novo_cliente', { p_payload: { nome: 'Cliente' } })).rejects.toThrow(
+    // Fechamentos não têm variante de suporte e devem continuar bloqueados
+    await expect(callRPC('insert_fechamento', { p_payload: {} })).rejects.toThrow(
       'Ações de escrita em modo suporte estão bloqueadas',
     );
     expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it('uses audited support-context RPCs for nota and client writes', async () => {
+    window.sessionStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify({
+      id: '11111111-1111-4111-8111-111111111111',
+      reason: 'editar nota',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      actorUser: { id: 'actor-id', email: 'gabrielwilliam208@gmail.com', name: 'Gabriel' },
+      targetUser: { id: '22222222-2222-4222-8222-222222222222', email: 'patricia@example.com', name: 'Patricia' },
+    }));
+    mocks.rpc.mockResolvedValue({
+      data: { status: 200, mensagem: 'ok' },
+      error: null,
+    });
+
+    await callRPC('update_nota_servico', { p_payload: { id_notas_servico: 'abc' } });
+    expect(mocks.rpc).toHaveBeenCalledWith('update_nota_servico_contexto_suporte', {
+      p_payload: { id_notas_servico: 'abc' },
+      p_contexto_usuario_id: '22222222-2222-4222-8222-222222222222',
+      p_sessao_suporte: '11111111-1111-4111-8111-111111111111',
+    });
+
+    mocks.rpc.mockClear();
+    await callRPC('novo_cliente', { p_payload: { nome: 'Patricia' } });
+    expect(mocks.rpc).toHaveBeenCalledWith('salvar_cliente_completo_contexto_suporte', {
+      p_payload: { nome: 'Patricia' },
+      p_contexto_usuario_id: '22222222-2222-4222-8222-222222222222',
+      p_sessao_suporte: '11111111-1111-4111-8111-111111111111',
+    });
   });
 
   it('extractDados returns data and rejects absent data explicitly', () => {

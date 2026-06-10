@@ -12,6 +12,7 @@ export interface RPCEnvelope<T = unknown> {
 }
 
 const SUPPORT_CONTEXT_RPC_MAP: Record<string, string> = {
+  // Leituras
   get_clientes: 'get_clientes_contexto_suporte',
   get_cliente_detalhes: 'get_cliente_detalhes_contexto_suporte',
   get_notas_servico: 'get_notas_servico_contexto_suporte',
@@ -22,6 +23,7 @@ const SUPPORT_CONTEXT_RPC_MAP: Record<string, string> = {
   get_fechamentos: 'get_fechamentos_contexto_suporte',
   get_sugestoes_email: 'get_sugestoes_email_contexto_suporte',
   get_gmail_connection_status: 'get_gmail_connection_status_contexto_suporte',
+  // Escritas — Contas a Pagar
   aceitar_sugestao_email: 'aceitar_sugestao_email_contexto_suporte',
   cancelar_conta_pagar: 'cancelar_conta_pagar_contexto_suporte',
   excluir_conta_pagar: 'excluir_conta_pagar_contexto_suporte',
@@ -37,30 +39,35 @@ const SUPPORT_CONTEXT_RPC_MAP: Record<string, string> = {
   update_categoria_conta_pagar: 'update_categoria_conta_pagar_contexto_suporte',
   update_conta_pagar: 'update_conta_pagar_contexto_suporte',
   update_fornecedor: 'update_fornecedor_contexto_suporte',
+  // Escritas — Notas de Serviço
+  nova_nota: 'nova_nota_contexto_suporte',
+  update_nota_servico: 'update_nota_servico_contexto_suporte',
+  // Escritas — Clientes
+  novo_cliente: 'salvar_cliente_completo_contexto_suporte',
+  salvar_cliente_completo: 'salvar_cliente_completo_contexto_suporte',
+  update_cliente: 'update_cliente_contexto_suporte',
+  inativar_cliente: 'inativar_cliente_contexto_suporte',
+  reativar_cliente: 'reativar_cliente_contexto_suporte',
 };
 
 const SUPPORT_BLOCKED_WRITE_RPCS = new Set([
+  // Faturas e fechamentos — sem variante de suporte
   'cancelar_fatura',
-  'inativar_cliente',
   'insert_fatura',
   'insert_fechamento',
   'insert_sugestao_email',
-  'nova_nota',
-  'novo_cliente',
-  'reativar_cliente',
   'registrar_acao_fechamento',
+  'update_fatura',
+  'update_fechamento',
+  // Configurações de empresa/documentos — não se aplica ao tenant em suporte
   'ativar_tema_documento',
   'publicar_modelo_documento',
   'restaurar_modelo_documento_padrao',
   'salvar_rascunho_modelo_documento',
   'salvar_tema_documento',
-  'salvar_cliente_completo',
-  'update_cliente',
-  'update_fatura',
-  'update_fechamento',
-  'update_nota_pdf_url',
-  'update_nota_servico',
   'upsert_configuracao_empresa_cliente',
+  // PDF interno — não necessário em suporte
+  'update_nota_pdf_url',
 ]);
 
 function withSupportContext(rpcName: string, params: Record<string, unknown>) {
