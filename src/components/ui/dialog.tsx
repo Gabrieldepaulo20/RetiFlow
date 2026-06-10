@@ -22,6 +22,16 @@ function containsDialogDescription(children: React.ReactNode): boolean {
   });
 }
 
+function containsDialogTitle(children: React.ReactNode): boolean {
+  return React.Children.toArray(children).some((child) => {
+    if (!React.isValidElement(child)) return false;
+    if (typeof child.type !== "string" && "displayName" in child.type) {
+      if (child.type.displayName === DialogPrimitive.Title.displayName) return true;
+    }
+    return containsDialogTitle(child.props.children);
+  });
+}
+
 const DialogOverlay = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
@@ -41,12 +51,12 @@ const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
 >(({ className, children, ...props }, ref) => {
-  const fallbackDescriptionId = React.useId();
   const hasDescribedByProp = Object.prototype.hasOwnProperty.call(props, "aria-describedby");
   const hasDescription = containsDialogDescription(children);
+  const hasTitle = containsDialogTitle(children);
   const contentProps = hasDescribedByProp || hasDescription
     ? props
-    : { ...props, "aria-describedby": fallbackDescriptionId };
+    : { ...props, "aria-describedby": undefined };
 
   return (
     <DialogPortal>
@@ -59,10 +69,10 @@ const DialogContent = React.forwardRef<
         )}
         {...contentProps}
       >
-        {!hasDescribedByProp && !hasDescription ? (
-          <DialogPrimitive.Description id={fallbackDescriptionId} className="sr-only">
-            Janela de dialogo do Retiflow.
-          </DialogPrimitive.Description>
+        {!hasTitle ? (
+          <DialogPrimitive.Title className="sr-only">
+            Janela de dialogo
+          </DialogPrimitive.Title>
         ) : null}
         {children}
         <DialogPrimitive.Close className="absolute right-3 top-3 rounded-full p-1.5 opacity-70 ring-offset-background transition-opacity data-[state=open]:bg-accent data-[state=open]:text-muted-foreground hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none sm:right-4 sm:top-4">

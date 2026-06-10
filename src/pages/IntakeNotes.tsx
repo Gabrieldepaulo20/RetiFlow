@@ -505,29 +505,29 @@ export default function IntakeNotes() {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-5">
         {/* Header */}
-        <section className="rounded-[1.35rem] border border-border/70 bg-card p-4 shadow-sm sm:p-5">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div className="flex items-start gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10 text-primary shadow-sm">
+        <section className="rounded-2xl border border-border/70 bg-card p-3 shadow-sm sm:p-4 lg:p-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="flex items-start gap-3 sm:gap-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-primary/15 bg-primary/10 text-primary shadow-sm sm:h-12 sm:w-12 sm:rounded-2xl">
                 <ClipboardList className="h-5 w-5" />
               </div>
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary/80">Controle de O.S.</p>
-                <h1 className="mt-1 text-2xl font-display font-bold tracking-tight text-foreground sm:text-3xl">
+                <h1 className="mt-1 text-xl font-display font-bold tracking-tight text-foreground sm:text-2xl lg:text-3xl">
                   Notas de Entrada
                 </h1>
-                <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                <p className="mt-1 hidden max-w-2xl text-sm leading-relaxed text-muted-foreground sm:block">
                   Acompanhe entrada, status, veículo, valor e documentos de cada ordem de serviço.
                 </p>
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="h-11 gap-2 rounded-xl border-border/70 bg-background px-4 font-semibold shadow-sm">
+                  <Button variant="outline" className="h-10 gap-2 rounded-xl border-border/70 bg-background px-3 font-semibold shadow-sm sm:h-11 sm:px-4">
                     <Download className="h-4 w-4" /> Exportar
                   </Button>
                 </DropdownMenuTrigger>
@@ -538,7 +538,7 @@ export default function IntakeNotes() {
                 </DropdownMenuContent>
               </DropdownMenu>
               <Button
-                className="h-11 gap-2 rounded-xl px-4 font-semibold shadow-sm"
+                className="h-10 gap-2 rounded-xl px-3 font-semibold shadow-sm sm:h-11 sm:px-4"
                 onClick={() => setNewNoteOpen(true)}
               >
                 <PlusCircle className="h-4 w-4" /> Nova O.S.
@@ -546,19 +546,19 @@ export default function IntakeNotes() {
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
             {summaryCards.map((item) => (
-              <div key={item.label} className="rounded-2xl border border-border/60 bg-muted/20 p-3">
-                <div className="flex items-start justify-between gap-3">
+              <div key={item.label} className="rounded-xl border border-border/60 bg-muted/20 p-2.5 sm:rounded-2xl sm:p-3">
+                <div className="flex items-start justify-between gap-2 sm:gap-3">
                   <div className="min-w-0">
-                    <p className="text-xs font-medium text-muted-foreground">{item.label}</p>
-                    <p className="mt-1 truncate text-xl font-bold tracking-tight text-foreground">{item.value}</p>
+                    <p className="truncate text-[11px] font-medium text-muted-foreground sm:text-xs">{item.label}</p>
+                    <p className="mt-1 truncate text-base font-bold tracking-tight text-foreground sm:text-xl">{item.value}</p>
                   </div>
-                  <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-xl', item.tone)}>
+                  <div className={cn('hidden h-8 w-8 shrink-0 items-center justify-center rounded-xl sm:flex md:h-9 md:w-9', item.tone)}>
                     <item.icon className="h-4 w-4" />
                   </div>
                 </div>
-                <p className="mt-2 text-xs text-muted-foreground">{item.sub}</p>
+                <p className="mt-1.5 truncate text-[11px] text-muted-foreground sm:mt-2 sm:text-xs">{item.sub}</p>
               </div>
             ))}
           </div>
@@ -766,7 +766,7 @@ export default function IntakeNotes() {
                 : `${paginatedNotes.length} de ${filtered.length} O.S.`}
             </Badge>
           </div>
-          <div className="space-y-3 p-3 md:hidden">
+          <div className="space-y-2 p-2 sm:p-3 xl:hidden">
             {paginatedNotes.map(n => {
               const client = clients.find(c => c.id === n.clientId);
               const StatusIcon = getNoteStatusIcon(n.status as NoteStatus);
@@ -783,12 +783,12 @@ export default function IntakeNotes() {
                       setDetailNoteId(n.id);
                     }
                   }}
-                  className="rounded-2xl border border-border/70 bg-card p-3 shadow-sm transition-colors active:bg-muted/50"
+                  className="rounded-xl border border-border/70 bg-card p-3 shadow-sm transition-colors active:bg-muted/50 sm:rounded-2xl sm:p-4"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-lg font-bold leading-none text-primary">{n.number}</span>
+                  <div className="flex min-w-0 items-start justify-between gap-2 sm:gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
+                        <span className="truncate text-base font-bold leading-none text-primary sm:text-lg">{n.number}</span>
                         <span
                           className={cn(
                             'inline-flex rounded-md border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide',
@@ -799,11 +799,14 @@ export default function IntakeNotes() {
                         >
                           {n.type === 'COMPRA' ? 'COMPRA' : 'SERVIÇO'}
                         </span>
+                        <span className="hidden text-xs text-muted-foreground sm:inline">
+                          {format(new Date(n.createdAt), 'dd/MM/yyyy')}
+                        </span>
                       </div>
-                      <p className="mt-2 truncate text-sm font-semibold text-foreground">
+                      <p className="mt-1.5 truncate text-sm font-semibold text-foreground sm:text-[15px]">
                         {client?.name ?? 'Cliente não encontrado'}
                       </p>
-                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground sm:gap-x-3">
                         {n.vehicleModel ? (
                           <span className="inline-flex min-w-0 items-center gap-1">
                             <CarFront className="h-3.5 w-3.5 shrink-0" />
@@ -825,7 +828,7 @@ export default function IntakeNotes() {
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-10 w-10 shrink-0 rounded-xl hover:bg-muted"
+                          className="h-8 w-8 shrink-0 rounded-lg hover:bg-muted sm:h-10 sm:w-10 sm:rounded-xl"
                           aria-label={`Mais ações para ${n.number}`}
                         >
                           <MoreHorizontal className="h-4 w-4" />
@@ -877,14 +880,36 @@ export default function IntakeNotes() {
                     </DropdownMenu>
                   </div>
 
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
-                    <Badge className={cn(STATUS_COLORS[n.status as NoteStatus], 'gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-bold shadow-none')}>
+                  <div className="mt-2.5 flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2.5 sm:mt-3 sm:pt-3">
+                    <Badge className={cn(STATUS_COLORS[n.status as NoteStatus], 'gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold shadow-none sm:px-3 sm:py-1.5 sm:text-[12px]')}>
                       <StatusIcon className="h-3.5 w-3.5 shrink-0" />
                       {STATUS_LABELS[n.status as NoteStatus]}
                     </Badge>
+                    {BILLABLE_STATUSES.has(n.status) && (
+                      <Badge className={cn(PAYMENT_STATUS_COLORS[n.paymentStatus], 'rounded-full px-2 py-0.5 text-[10px] font-semibold shadow-none sm:hidden')}>
+                        {PAYMENT_STATUS_LABELS[n.paymentStatus]}
+                      </Badge>
+                    )}
                     <div className="text-right">
                       <p className="text-[11px] text-muted-foreground">Total</p>
                       <p className="font-bold tabular-nums text-foreground">{formatCurrency(n.totalAmount)}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 hidden grid-cols-3 gap-2 border-t border-border/50 pt-3 text-xs sm:grid">
+                    <div className="min-w-0 rounded-lg bg-muted/25 px-2.5 py-2">
+                      <p className="text-[10px] font-semibold uppercase text-muted-foreground">Motor</p>
+                      <p className="mt-0.5 truncate font-medium text-foreground">{n.engineType || '—'}</p>
+                    </div>
+                    <div className="min-w-0 rounded-lg bg-muted/25 px-2.5 py-2">
+                      <p className="text-[10px] font-semibold uppercase text-muted-foreground">Pagamento</p>
+                      <p className="mt-0.5 truncate font-medium text-foreground">
+                        {BILLABLE_STATUSES.has(n.status) ? PAYMENT_STATUS_LABELS[n.paymentStatus] : 'Não faturável'}
+                      </p>
+                    </div>
+                    <div className="min-w-0 rounded-lg bg-muted/25 px-2.5 py-2">
+                      <p className="text-[10px] font-semibold uppercase text-muted-foreground">Entrada</p>
+                      <p className="mt-0.5 truncate font-medium text-foreground">{format(new Date(n.createdAt), 'dd/MM/yyyy')}</p>
                     </div>
                   </div>
                 </article>
@@ -904,7 +929,7 @@ export default function IntakeNotes() {
             )}
           </div>
 
-          <div className="hidden overflow-x-auto md:block">
+          <div className="hidden overflow-x-auto xl:block">
             <Table>
               <TableHeader>
                 <TableRow className="border-b border-border/70 bg-card hover:bg-card">
