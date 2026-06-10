@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { lookupCnpj } from '@/services/domain/customers';
+import { lookupCnpj, sanitizeClientInput } from '@/services/domain/customers';
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -88,5 +88,32 @@ describe('lookupCnpj', () => {
     expect(result.tradeName).toBe('Oficina Premium');
     expect(result.email).toBe('contato@exemplo.com');
     expect(result.addressNumber).toBe('100');
+  });
+});
+
+describe('sanitizeClientInput', () => {
+  it('preserva caixa digitada em nomes e siglas de clientes', () => {
+    const result = sanitizeClientInput({
+      name: '  CCM   Retifica  Premium  ',
+      tradeName: '  CCM  ',
+      docType: 'CNPJ',
+      docNumber: '12.345.678/0001-95',
+      phone: '(16) 99999-0000',
+      email: ' CONTATO@EXEMPLO.COM ',
+      cep: '14177-612',
+      address: 'rua teste',
+      addressNumber: '100',
+      district: 'centro',
+      city: 'sertaozinho',
+      state: 'sp',
+      notes: '  cliente   prefere  sigla  ',
+      isActive: true,
+    });
+
+    expect(result.name).toBe('CCM Retifica Premium');
+    expect(result.tradeName).toBe('CCM');
+    expect(result.email).toBe('contato@exemplo.com');
+    expect(result.city).toBe('Sertaozinho');
+    expect(result.state).toBe('SP');
   });
 });

@@ -111,8 +111,8 @@ export function buildCustomerAddressLabel(client?: Partial<Client> | null) {
 export function sanitizeClientInput(client: Omit<Client, 'id' | 'createdAt'>): Omit<Client, 'id' | 'createdAt'> {
   return {
     ...client,
-    name: clamp(toTitleCasePtBr(client.name), CUSTOMER_FIELD_LIMITS.name),
-    tradeName: clamp(toTitleCasePtBr(client.tradeName || ''), CUSTOMER_FIELD_LIMITS.tradeName),
+    name: clamp(normalizeWhitespace(client.name), CUSTOMER_FIELD_LIMITS.name),
+    tradeName: clamp(normalizeWhitespace(client.tradeName || ''), CUSTOMER_FIELD_LIMITS.tradeName),
     docNumber: clamp(client.docNumber.trim(), CUSTOMER_FIELD_LIMITS.docNumber),
     phone: clamp(client.phone.trim(), CUSTOMER_FIELD_LIMITS.phone),
     email: clamp(normalizeEmail(client.email), CUSTOMER_FIELD_LIMITS.email),

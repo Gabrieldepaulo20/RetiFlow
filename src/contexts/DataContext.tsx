@@ -63,6 +63,7 @@ import {
 } from '@/api/supabase/sugestoes-email';
 import { dashboardResumoToDomainData, getDashboardResumo } from '@/api/supabase/dashboard';
 import { buildMeaningfulPayableTitle } from '@/services/domain/payables';
+import { sanitizeClientInput } from '@/services/domain/customers';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -571,6 +572,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const updateClient = useCallback(async (id: string, data: Partial<Client>): Promise<void> => {
     if (IS_REAL_AUTH) {
       const current = clientById.get(id);
+      if (!current) {
+        throw new Error('Cliente não encontrado na lista atual. Recarregue a página e tente novamente.');
+      }
       // Status-only RPC when isActive actually flipped
       if ('isActive' in data && current?.isActive !== data.isActive) {
         if (data.isActive) {
@@ -580,11 +584,39 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       }
       // Full upsert persists all fields including address and contacts
+      const expectedClient = sanitizeClientInput({ ...current, ...data });
       if (current) {
-        const merged = { ...current, ...data };
-        const payload = clientToNovoClientePayload(merged);
+        const payload = clientToNovoClientePayload(expectedClient);
         await salvarClienteCompleto({ ...payload, id_clientes: id });
       }
+
+      const refreshed = await getClientes({ p_limite: 5000 });
+      const nextClients = refreshed.dados.map(supabaseToClient);
+      const persisted = nextClients.find((client) => client.id === id);
+
+      if (!persisted) {
+        setCustomers(nextClients);
+        throw new Error('Cliente salvo, mas não voltou na consulta do servidor. Recarregue a página antes de continuar.');
+      }
+
+      if (data.name !== undefined && persisted.name !== expectedClient.name) {
+        setCustomers(nextClients);
+        throw new Error('O servidor confirmou a operação, mas não retornou o nome atualizado. A alteração não foi aplicada.');
+      }
+
+      if (data.tradeName !== undefined && (persisted.tradeName ?? '') !== (expectedClient.tradeName ?? '')) {
+        setCustomers(nextClients);
+        throw new Error('O servidor confirmou a operação, mas não retornou o nome fantasia atualizado. A alteração não foi aplicada.');
+      }
+
+      if (data.isActive !== undefined && persisted.isActive !== data.isActive) {
+        setCustomers(nextClients);
+        throw new Error('O servidor confirmou a operação, mas não retornou o status atualizado. A alteração não foi aplicada.');
+      }
+
+      setCustomers(nextClients);
+      bumpDataVersion();
+      return;
     }
     setCustomers((previous) => previous.map((client) => (client.id === id ? { ...client, ...data } : client)));
     bumpDataVersion();
