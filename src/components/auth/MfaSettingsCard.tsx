@@ -118,29 +118,34 @@ export default function MfaSettingsCard() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <ShieldCheck className="w-5 h-5" /> Autenticação em dois fatores
+      <CardHeader className="p-3.5 sm:p-6">
+        <CardTitle className="flex flex-wrap items-center gap-2 text-base sm:text-lg">
+          <ShieldCheck className="h-5 w-5" />
+          <span className="sm:hidden">Dois fatores</span>
+          <span className="hidden sm:inline">Autenticação em dois fatores</span>
           <Badge variant={factors.length > 0 ? 'default' : 'outline'}>
             {factors.length > 0 ? 'Ativo' : 'Recomendado'}
           </Badge>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-2.5 p-3.5 pt-0 sm:space-y-4 sm:p-6 sm:pt-0">
         {!IS_REAL_AUTH ? (
-          <Alert>
+          <Alert className="py-2.5 sm:py-3">
             <KeyRound className="h-4 w-4" />
-            <AlertTitle>MFA disponível somente no Auth real</AlertTitle>
-            <AlertDescription>
+            <AlertTitle className="text-sm">MFA somente no Auth real</AlertTitle>
+            <AlertDescription className="hidden text-xs sm:block sm:text-sm">
               Em desenvolvimento/mock esta área fica apenas informativa.
             </AlertDescription>
           </Alert>
         ) : null}
 
-        <Alert>
+        <Alert className="py-2.5 sm:py-3">
           <Smartphone className="h-4 w-4" />
-          <AlertTitle>Use Google Authenticator, Authy, 1Password ou Apple Senhas</AlertTitle>
-          <AlertDescription>
+          <AlertTitle className="text-sm">
+            <span className="sm:hidden">App autenticador</span>
+            <span className="hidden sm:inline">Use Google Authenticator, Authy, 1Password ou Apple Senhas</span>
+          </AlertTitle>
+          <AlertDescription className="hidden text-xs sm:block sm:text-sm">
             Quando a conta tiver MFA ativo, o login só termina depois do segundo fator. Sessões já abertas continuam usando refresh token seguro do Supabase.
           </AlertDescription>
         </Alert>
@@ -151,9 +156,9 @@ export default function MfaSettingsCard() {
             Carregando status do MFA...
           </div>
         ) : (
-          <div className="rounded-xl border bg-muted/20 p-4 text-sm">
+          <div className="rounded-lg border bg-muted/20 p-2.5 text-sm sm:rounded-xl sm:p-4">
             <p className="font-semibold text-foreground">Status atual</p>
-            <p className="mt-1 text-muted-foreground">
+            <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
               Nível da sessão: <span className="font-mono">{currentLevel}</span> · fatores verificados: {factors.length}
             </p>
           </div>
@@ -238,7 +243,7 @@ export default function MfaSettingsCard() {
           <Button
             type="button"
             variant={factors.length > 0 ? 'outline' : 'default'}
-            className="gap-2"
+            className="w-full gap-2 sm:w-auto"
             disabled={!IS_REAL_AUTH || saving}
             onClick={() => void handleStartEnrollment()}
           >

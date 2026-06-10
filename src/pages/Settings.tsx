@@ -211,9 +211,9 @@ export default function SettingsPage() {
   const targetUserId = selectedSettingsUser?.id ?? null;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="mx-auto max-w-6xl space-y-4 sm:space-y-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div>
+        <div className="text-center sm:text-left">
           <h1 className="text-2xl font-display font-bold">Configurações</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Empresa, documentos e controles administrativos do Retiflow.
@@ -256,7 +256,7 @@ export default function SettingsPage() {
       )}
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
-        <TabsList className="flex h-auto w-full flex-nowrap justify-start gap-1 overflow-x-auto">
+        <TabsList className="flex h-auto w-full flex-nowrap justify-start gap-1 overflow-x-auto pb-1">
           <TabsTrigger value="empresa" className="shrink-0 gap-1.5"><Building2 className="h-4 w-4" /> Dados da empresa</TabsTrigger>
           <TabsTrigger value="aparencia" className="shrink-0 gap-1.5"><Palette className="h-4 w-4" /> Aparência</TabsTrigger>
           <TabsTrigger value="modelos" className="shrink-0 gap-1.5"><FileText className="h-4 w-4" /> Modelos</TabsTrigger>
@@ -356,23 +356,23 @@ function ModulesPanel({
 }: ModulesPanelProps) {
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-lg">
+      <CardHeader className="p-4 sm:p-6">
+        <CardTitle className="flex flex-wrap items-center gap-2 text-base sm:text-lg">
           <LayoutGrid className="h-5 w-5" />
-          Controle de Módulos por Usuário
+          Controle de Módulos
           <Badge variant="outline">Supabase</Badge>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-5">
-        <Alert>
+      <CardContent className="space-y-4 p-3 pt-0 sm:space-y-5 sm:p-6 sm:pt-0">
+        <Alert className="py-3">
           <Shield className="h-4 w-4" />
           <AlertTitle>Controle real por cliente/usuário</AlertTitle>
-          <AlertDescription>
+          <AlertDescription className="text-xs sm:text-sm">
             Apenas o Super Admin autorizado pode alterar módulos.
           </AlertDescription>
         </Alert>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+        <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-2 sm:gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
           <div className="space-y-2">
             <Label>Cliente / usuário</Label>
             <Select value={selectedModuleUserId} onValueChange={setSelectedModuleUserId} disabled={usersLoading || systemUsers.length === 0}>
@@ -388,9 +388,9 @@ function ModulesPanel({
               </SelectContent>
             </Select>
           </div>
-          <div className="rounded-lg border bg-muted/30 p-3">
+          <div className="rounded-lg border bg-muted/30 p-2.5 sm:p-3">
             <p className="text-xs font-semibold uppercase text-muted-foreground">Módulos ativos</p>
-            <p className="mt-1 text-2xl font-bold">
+            <p className="mt-1 text-xl font-bold sm:text-2xl">
               {selectedModuleUser ? Object.values(getModulesForUser(selectedModuleUser)).filter(Boolean).length : 0}
               <span className="text-sm font-medium text-muted-foreground"> / {MODULE_DEFS.length}</span>
             </p>
@@ -403,7 +403,7 @@ function ModulesPanel({
             Carregando usuários e permissões...
           </div>
         ) : selectedModuleUser ? (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3">
             {MODULE_DEFS.map((module) => {
               const Icon = module.icon;
               const modules = getModulesForUser(selectedModuleUser);
@@ -413,20 +413,20 @@ function ModulesPanel({
               const isOwnAdminLock = module.key === 'admin' && selectedModuleUser.id === currentUserId;
 
               return (
-                <div key={module.key} className="flex items-start justify-between gap-4 rounded-lg border bg-background p-4">
+                <div key={module.key} className="flex min-w-0 items-start justify-between gap-2 rounded-lg border bg-background p-2.5 sm:gap-4 sm:p-4">
                   <div className="min-w-0 space-y-1">
                     <div className="flex items-center gap-2">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                        <Icon className="h-4 w-4" />
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary sm:h-8 sm:w-8">
+                        <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                       </div>
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold">{module.label}</p>
+                        <p className="truncate text-xs font-semibold sm:text-sm">{module.label}</p>
                         <Badge variant={isEnabled ? 'default' : 'secondary'} className="mt-1 h-5 text-[10px]">
                           {isEnabled ? 'Ativo' : 'Bloqueado'}
                         </Badge>
                       </div>
                     </div>
-                    <p className="text-xs leading-relaxed text-muted-foreground">{module.description}</p>
+                    <p className="hidden text-xs leading-relaxed text-muted-foreground sm:block">{module.description}</p>
                   </div>
                   <div className="flex items-center gap-2 pt-1">
                     {isSaving && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
@@ -475,18 +475,18 @@ function SecurityPanel({
   handleAdminPasswordReset,
 }: SecurityPanelProps) {
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 sm:space-y-5">
       {isSuperAdmin && (
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
+          <CardHeader className="p-4 sm:p-6">
+            <CardTitle className="flex flex-wrap items-center gap-2 text-base sm:text-lg">
               <KeyRound className="h-5 w-5" />
               Reset de senha de cliente
               <Badge variant="outline">Supabase Auth</Badge>
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_240px]">
+          <CardContent className="space-y-4 p-4 pt-0 sm:space-y-5 sm:p-6 sm:pt-0">
+            <div className="grid gap-3 sm:gap-4 lg:grid-cols-[minmax(0,1fr)_240px]">
               <div className="space-y-2">
                 <Label>Cliente / usuário</Label>
                 <Select value={selectedResetUserId} onValueChange={setSelectedResetUserId} disabled={usersLoading || systemUsers.length === 0 || resetSending}>
@@ -521,7 +521,7 @@ function SecurityPanel({
               />
             </div>
 
-            <Button variant="destructive" onClick={() => void handleAdminPasswordReset()} disabled={resetSending || !selectedResetUserId} className="gap-2">
+            <Button variant="destructive" onClick={() => void handleAdminPasswordReset()} disabled={resetSending || !selectedResetUserId} className="w-full gap-2 sm:w-auto">
               {resetSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
               Reenviar reset de senha
             </Button>
@@ -532,30 +532,35 @@ function SecurityPanel({
       <MfaSettingsCard />
 
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
+        <CardHeader className="p-3.5 sm:p-6">
+          <CardTitle className="flex flex-wrap items-center gap-2 text-base sm:text-lg">
             <Lock className="h-5 w-5" />
             Alterar Senha
             <Badge variant="outline">Indisponível</Badge>
           </CardTitle>
         </CardHeader>
-        <CardContent className="max-w-md space-y-4">
-          <Alert>
+        <CardContent className="space-y-3 p-3.5 pt-0 sm:max-w-md sm:space-y-4 sm:p-6 sm:pt-0">
+          <Alert className="py-2.5 sm:py-3">
             <Shield className="h-4 w-4" />
-            <AlertTitle>Fluxo ainda indisponível</AlertTitle>
-            <AlertDescription>
+            <AlertTitle className="text-sm">Fluxo ainda indisponível</AlertTitle>
+            <AlertDescription className="hidden text-xs sm:block sm:text-sm">
               A troca de senha nesta tela ainda não conversa com o provedor real de autenticação.
             </AlertDescription>
           </Alert>
-          <div className="space-y-2">
-            <Label>Senha Atual</Label>
-            <Input type="password" disabled placeholder="••••••••" />
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-1 sm:gap-3">
+            <div className="space-y-1.5 sm:space-y-2">
+              <Label className="text-xs sm:text-sm">Senha Atual</Label>
+              <Input type="password" disabled placeholder="••••••••" className="h-9" />
+            </div>
+            <div className="space-y-1.5 sm:space-y-2">
+              <Label className="text-xs sm:text-sm">Nova Senha</Label>
+              <Input type="password" disabled placeholder="Mínimo 6 caracteres" className="h-9" />
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label>Nova Senha</Label>
-            <Input type="password" disabled placeholder="Mínimo 6 caracteres" />
-          </div>
-          <Button disabled>Integração em implementação</Button>
+          <Button disabled className="w-full sm:w-auto">
+            <span className="sm:hidden">Em implementação</span>
+            <span className="hidden sm:inline">Integração em implementação</span>
+          </Button>
         </CardContent>
       </Card>
     </div>

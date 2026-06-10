@@ -4,6 +4,39 @@ Atualizado em: 2026-06-10
 
 ---
 
+## Mobile Crescimento E Configuracoes - 2026-06-10
+
+- Pedido: melhorar a experiencia mobile do modulo Crescimento e das abas de Configuracoes.
+- Crescimento:
+  - removido o texto auxiliar do topo para reduzir ruido no celular;
+  - seletor de cliente e periodo agora dividem a linha em 2 colunas no mobile;
+  - cards de integracao ficam menores, em 2 colunas no mobile, com status compacto;
+  - cards de metricas do site ficam em grade 2x2 no mobile, com valores e detalhes menores;
+  - grafico de evolucao ficou mais baixo, com fundo contido e datas brasileiras;
+  - insights do periodo foram compactados;
+  - paginas mais acessadas foram limitadas a 4 itens e origem do trafego a 5 fontes;
+  - graficos de evolucao/origem foram reduzidos para evitar estouro vertical;
+  - removido o aviso inferior de captura propria ainda nao configurada.
+- Configuracoes:
+  - Dados da empresa ganhou cabecalho mais centralizado no mobile e campos mais compactos;
+  - Modelos ficou mais denso no mobile, com preview, variaveis e acoes melhor comprimidas;
+  - Modulos agora organiza os cards em 2 colunas no mobile e esconde descricoes longas;
+  - Status & Fluxo ficou mais compacto, com textos longos reduzidos e chips menos pesados;
+  - Seguranca foi compactada: MFA caiu de ~455px para ~292px no viewport 393x852, e Alterar Senha de ~392px para ~244px.
+- Validacao visual local em mock:
+  - viewport 393x852: Crescimento sem overflow horizontal; topo sem texto auxiliar e sem aviso de captura;
+  - viewport 393x852: Configuracoes nas abas empresa/modelos/modulos/status/seguranca sem overflow horizontal;
+  - o mock nao possui cliente operacional com `moduleAccess.marketing=true`, entao os dados completos de Crescimento nao renderizaram localmente; a estrutura com dados foi validada por codigo e build.
+- Alteracao apenas de frontend; sem mudanca de banco, RPC, Storage ou Edge Function.
+- Validacao final executada:
+  - `npx tsc --noEmit`: passou.
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh.
+  - `npm test -- --run`: passou, 50 arquivos e 370 testes.
+  - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks/import dinamico.
+  - `npm run test:integration`: nao executado porque a alteracao foi apenas de frontend, sem tocar banco, RPC, Storage ou Edge Function.
+
+---
+
 ## Mobile Fechamento E Contas A Pagar - 2026-06-10
 
 - Pedido: melhorar a densidade mobile/tablet de Fechamento, Contas a Pagar e Sugestoes do Gmail.

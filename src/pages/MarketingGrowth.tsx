@@ -13,7 +13,6 @@ import {
 } from 'recharts';
 import {
   Activity,
-  AlertCircle,
   ArrowDownRight,
   ArrowUpRight,
   BarChart3,
@@ -52,7 +51,7 @@ const periodOptions = [
 ];
 
 const providerLabels: Record<string, string> = {
-  ga4: 'Google Analytics 4',
+  ga4: 'Google Analytics',
   clarity: 'Microsoft Clarity',
   meta_ads: 'Meta Ads',
   google_ads: 'Google Ads',
@@ -136,20 +135,20 @@ function MetricCard({
 
   return (
     <Card className="overflow-hidden rounded-lg border bg-card shadow-sm">
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between gap-4">
+      <CardContent className="p-3 sm:p-5">
+        <div className="flex items-start justify-between gap-2 sm:gap-4">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">{title}</p>
-            <p className="mt-3 text-3xl font-bold text-foreground">{value}</p>
-            <p className="mt-1 text-sm text-muted-foreground">{detail}</p>
+            <p className="line-clamp-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground sm:text-xs sm:tracking-[0.12em]">{title}</p>
+            <p className="mt-2 truncate text-xl font-bold leading-tight text-foreground sm:mt-3 sm:text-3xl">{value}</p>
+            <p className="mt-1 line-clamp-1 text-[11px] text-muted-foreground sm:text-sm">{detail}</p>
           </div>
-          <div className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-lg', toneClass)}>
-            <Icon className="h-5 w-5" />
+          <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg sm:h-11 sm:w-11', toneClass)}>
+            <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
           </div>
         </div>
         {delta ? (
           <div className={cn(
-            'mt-5 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold',
+            'mt-3 inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold sm:mt-5 sm:gap-1.5 sm:px-2.5 sm:py-1 sm:text-xs',
             delta.muted
               ? 'border-slate-200 bg-slate-50 text-slate-500'
               : delta.positive
@@ -157,7 +156,7 @@ function MetricCard({
                 : 'border-rose-200 bg-rose-50 text-rose-700',
           )}>
             {delta.muted ? <Clock3 className="h-3.5 w-3.5" /> : delta.positive ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
-            {delta.label} vs período anterior
+            <span className="truncate">{delta.label} <span className="hidden sm:inline">vs período anterior</span><span className="sm:hidden">vs ant.</span></span>
           </div>
         ) : null}
       </CardContent>
@@ -167,9 +166,9 @@ function MetricCard({
 
 function LoadingGrid() {
   return (
-    <div className="grid gap-4 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">
       {Array.from({ length: 4 }).map((_, index) => (
-        <Skeleton key={index} className="h-[168px] rounded-lg" />
+        <Skeleton key={index} className="h-[118px] rounded-lg sm:h-[168px]" />
       ))}
     </div>
   );
@@ -180,23 +179,23 @@ function EmptyIntegrationRail({ resumo }: { resumo: MarketingResumo }) {
   const activeByProvider = new Map(resumo.integrations.map((integration) => [integration.provider, integration]));
 
   return (
-    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-2 xl:grid-cols-4">
       {knownProviders.map((provider) => {
         const integration = activeByProvider.get(provider);
         const status = statusLabels[integration?.status ?? 'not_connected'];
         return (
-          <div key={provider} className="rounded-lg border bg-card p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Cable className="h-4 w-4" />
+          <div key={provider} className="rounded-lg border bg-card p-2.5 shadow-sm sm:p-4">
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+              <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary sm:h-9 sm:w-9">
+                  <Cable className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 </div>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-foreground">{providerLabels[provider]}</p>
-                  <p className="truncate text-xs text-muted-foreground">{integration?.accountName ?? 'Aguardando conexão segura'}</p>
+                  <p className="truncate text-xs font-semibold text-foreground sm:text-sm">{providerLabels[provider]}</p>
+                  <p className="hidden truncate text-xs text-muted-foreground sm:block">{integration?.accountName ?? 'Aguardando conexão segura'}</p>
                 </div>
               </div>
-              <Badge variant="outline" className={cn('shrink-0', status.className)}>{status.label}</Badge>
+              <Badge variant="outline" className={cn('w-fit shrink-0 text-[10px] sm:text-xs', status.className)}>{status.label}</Badge>
             </div>
           </div>
         );
@@ -213,10 +212,12 @@ function SiteTab({ resumo }: { resumo: MarketingResumo }) {
   const hasData = current.visits > 0 || Number(current.pageViews ?? 0) > 0 || actionEvents > 0 || current.leads > 0;
   const bestSource = resumo.site.sources.find((source) => source.visits > 0 || source.leads > 0);
   const bestPage = resumo.site.pages.find((page) => page.views > 0 || page.conversions > 0);
+  const displayedPages = resumo.site.pages.slice(0, 4);
+  const displayedSources = resumo.site.sources.slice(0, 5);
 
   return (
-    <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <div className="space-y-4 sm:space-y-5">
+      <div className="grid grid-cols-2 gap-2 sm:gap-4 xl:grid-cols-4">
         <MetricCard
           title="Pessoas no site"
           value={formatNumber(current.visits)}
@@ -260,19 +261,19 @@ function SiteTab({ resumo }: { resumo: MarketingResumo }) {
         />
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
+      <div className="grid gap-3 sm:gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
         <Card className="rounded-lg border bg-card shadow-sm">
-          <CardContent className="p-5">
-            <div className="mb-5 flex items-center justify-between gap-3">
+          <CardContent className="p-3 sm:p-5">
+            <div className="mb-3 flex items-center justify-between gap-3 sm:mb-5">
               <div>
                 <h2 className="text-base font-semibold text-foreground">Evolução do site</h2>
-                <p className="text-sm text-muted-foreground">Visitas, cliques e possíveis clientes por dia.</p>
+                <p className="hidden text-sm text-muted-foreground sm:block">Visitas, cliques e possíveis clientes por dia.</p>
               </div>
-              <Badge variant="outline" className="border-primary/20 bg-primary/5 text-primary">
+              <Badge variant="outline" className="shrink-0 border-primary/20 bg-primary/5 text-primary">
                 Dados do site
               </Badge>
             </div>
-            <div className="h-[280px]">
+            <div className="h-[200px] rounded-lg bg-muted/20 pt-2 sm:h-[260px]">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={resumo.site.daily}>
                   <defs>
@@ -284,13 +285,13 @@ function SiteTab({ resumo }: { resumo: MarketingResumo }) {
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                   <XAxis
                     dataKey="date"
-                    tick={{ fontSize: 12 }}
+                    tick={{ fontSize: 11 }}
                     tickFormatter={(value: string) => formatShortChartDate(value, resumo.periodDays)}
                     tickLine={false}
                     axisLine={false}
-                    minTickGap={34}
+                    minTickGap={28}
                   />
-                  <YAxis tick={{ fontSize: 12 }} tickLine={false} axisLine={false} width={34} />
+                  <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={28} />
                   <RechartsTooltip
                     labelFormatter={(value) => formatFullChartDate(String(value))}
                     formatter={(value, name) => [formatNumber(Number(value)), name]}
@@ -305,36 +306,36 @@ function SiteTab({ resumo }: { resumo: MarketingResumo }) {
         </Card>
 
         <Card className="rounded-lg border bg-card shadow-sm">
-          <CardContent className="p-5">
-            <div className="mb-5">
+          <CardContent className="p-3 sm:p-5">
+            <div className="mb-3 sm:mb-5">
               <h2 className="text-base font-semibold text-foreground">Insights do período</h2>
-              <p className="text-sm text-muted-foreground">Leitura automática baseada nos dados disponíveis.</p>
+              <p className="hidden text-sm text-muted-foreground sm:block">Leitura automática baseada nos dados disponíveis.</p>
             </div>
-            <div className="space-y-3">
-              <div className="rounded-lg border bg-muted/25 p-4">
-                <div className="flex items-start gap-3">
+            <div className="space-y-2 sm:space-y-3">
+              <div className="rounded-lg border bg-muted/25 p-3 sm:p-4">
+                <div className="flex items-start gap-2.5 sm:gap-3">
                   <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                  <p className="text-sm leading-relaxed text-foreground">
+                  <p className="text-xs leading-relaxed text-foreground sm:text-sm">
                     {bestPage
                       ? `A página ${bestPage.path} concentrou ${formatNumber(bestPage.views)} visitas no período.`
                       : 'Ainda não há páginas suficientes para destacar uma oportunidade real.'}
                   </p>
                 </div>
               </div>
-              <div className="rounded-lg border bg-muted/25 p-4">
-                <div className="flex items-start gap-3">
+              <div className="rounded-lg border bg-muted/25 p-3 sm:p-4">
+                <div className="flex items-start gap-2.5 sm:gap-3">
                   <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                  <p className="text-sm leading-relaxed text-foreground">
+                  <p className="text-xs leading-relaxed text-foreground sm:text-sm">
                     {bestSource
                       ? `A principal origem registrada foi ${bestSource.source}, com ${formatNumber(bestSource.visits)} visitas e ${formatNumber(bestSource.leads)} possíveis clientes.`
                       : 'As origens aparecem quando o site informa de onde a pessoa veio, como Google, Instagram ou campanha.'}
                   </p>
                 </div>
               </div>
-              <div className="rounded-lg border bg-muted/25 p-4">
-                <div className="flex items-start gap-3">
+              <div className="rounded-lg border bg-muted/25 p-3 sm:p-4">
+                <div className="flex items-start gap-2.5 sm:gap-3">
                   <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                  <p className="text-sm leading-relaxed text-foreground">
+                  <p className="text-xs leading-relaxed text-foreground sm:text-sm">
                     {current.visits > 0
                       ? `O site trouxe ${formatNumber(current.visits)} pessoas, ${formatNumber(actionEvents)} cliques importantes e ${formatNumber(current.leads)} possíveis clientes. Taxa de contato: ${formatPercent(current.conversionRate ?? 0)}.`
                       : 'O funil será calculado quando os primeiros eventos reais forem capturados.'}
@@ -346,23 +347,23 @@ function SiteTab({ resumo }: { resumo: MarketingResumo }) {
         </Card>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-3 sm:gap-4 xl:grid-cols-2">
         <Card className="rounded-lg border bg-card shadow-sm">
-          <CardContent className="p-5">
+          <CardContent className="p-3 sm:p-5">
             <h2 className="text-base font-semibold text-foreground">Páginas mais acessadas</h2>
-            <div className="mt-4 space-y-3">
-              {resumo.site.pages.length > 0 ? resumo.site.pages.map((page) => (
-                <div key={page.path} className="flex items-center justify-between gap-4 rounded-lg border bg-background p-3">
+            <div className="mt-3 space-y-2 sm:mt-4 sm:space-y-3">
+              {displayedPages.length > 0 ? displayedPages.map((page) => (
+                <div key={page.path} className="flex items-center justify-between gap-3 rounded-lg border bg-background p-2.5 sm:gap-4 sm:p-3">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-foreground">{page.path}</p>
-                    <p className="truncate text-xs text-muted-foreground">{page.title ?? 'Sem título informado'}</p>
+                    <p className="hidden truncate text-xs text-muted-foreground sm:block">{page.title ?? 'Sem título informado'}</p>
                   </div>
-                  <div className="flex shrink-0 items-center gap-4 text-right">
+                  <div className="flex shrink-0 items-center gap-2 text-right sm:gap-4">
                     <div>
                       <p className="text-sm font-semibold text-foreground">{formatNumber(page.views)}</p>
-                      <p className="text-xs text-muted-foreground">visitas</p>
+                      <p className="text-[10px] text-muted-foreground sm:text-xs">visitas</p>
                     </div>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    <ChevronRight className="hidden h-4 w-4 text-muted-foreground sm:block" />
                   </div>
                 </div>
               )) : (
@@ -373,15 +374,15 @@ function SiteTab({ resumo }: { resumo: MarketingResumo }) {
         </Card>
 
         <Card className="rounded-lg border bg-card shadow-sm">
-          <CardContent className="p-5">
+          <CardContent className="p-3 sm:p-5">
             <h2 className="text-base font-semibold text-foreground">Origem do tráfego</h2>
-            <div className="mt-4 h-[280px]">
-              {resumo.site.sources.length > 0 ? (
+            <div className="mt-3 h-[200px] sm:mt-4 sm:h-[260px]">
+              {displayedSources.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={resumo.site.sources} layout="vertical" margin={{ left: 12, right: 12 }}>
+                  <BarChart data={displayedSources} layout="vertical" margin={{ left: 4, right: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
-                    <XAxis type="number" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
-                    <YAxis type="category" dataKey="source" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} width={90} />
+                    <XAxis type="number" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+                    <YAxis type="category" dataKey="source" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={72} />
                     <RechartsTooltip />
                     <Bar dataKey="visits" name="Visitas" radius={[0, 6, 6, 0]} fill="hsl(var(--primary))" />
                   </BarChart>
@@ -402,7 +403,7 @@ function CampaignsTab({ resumo }: { resumo: MarketingResumo }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-4 xl:grid-cols-4">
         <MetricCard title="Investimento" value={financialAvailable ? formatCurrency(resumo.campaigns.current.spend) : 'Pendente'} detail="Meta/Google Ads ainda não conectados" icon={CircleDollarSign} tone="default" />
         <MetricCard title="Impressões" value={financialAvailable ? formatNumber(resumo.campaigns.current.impressions ?? 0) : 'Pendente'} detail="Search Console/Ads necessário" icon={Eye} tone="blue" />
         <MetricCard title="Cliques pagos" value={formatNumber(resumo.campaigns.current.clicks)} detail="Disponível após integração" icon={MousePointerClick} tone="teal" />
@@ -413,7 +414,7 @@ function CampaignsTab({ resumo }: { resumo: MarketingResumo }) {
         icon={Megaphone}
         title="Campanhas aguardando integração segura"
         description="Os dados financeiros entram quando Meta Ads ou Google Ads forem conectados com segurança, sem credenciais no navegador."
-        className="min-h-[240px]"
+        className="min-h-[180px] sm:min-h-[240px]"
       />
     </div>
   );
@@ -475,28 +476,25 @@ export default function MarketingGrowth() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="mx-auto w-full max-w-[1500px] space-y-6 p-4 md:p-6">
+      <div className="mx-auto w-full max-w-[1500px] space-y-4 p-3 sm:space-y-6 md:p-6">
         <div className="rounded-xl border bg-card shadow-sm">
-          <div className="flex flex-col gap-5 p-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex min-w-0 items-start gap-4">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-                <LineChart className="h-6 w-6" />
+          <div className="flex flex-col gap-3 p-3 sm:gap-5 sm:p-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-center gap-3 sm:items-start sm:gap-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm sm:h-14 sm:w-14">
+                <LineChart className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-2xl font-display font-bold text-foreground">Crescimento</h1>
+                  <h1 className="text-xl font-display font-bold text-foreground sm:text-2xl">Crescimento</h1>
                   <Badge variant="outline" className={cn('shrink-0', health.className)}>{health.label}</Badge>
                 </div>
-                <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
-                  Resultados do site, possíveis clientes e campanhas com dados reais do cliente selecionado.
-                </p>
               </div>
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
               {isAdmin ? (
                 <Select value={selectedUserId} onValueChange={setSelectedUserId} disabled={isLoadingUsers || selectableUsers.length === 0}>
-                  <SelectTrigger className="w-full sm:w-[260px]">
+                  <SelectTrigger className="w-full min-w-0 sm:w-[260px]">
                     <Users className="mr-2 h-4 w-4 text-muted-foreground" />
                     <SelectValue placeholder="Selecionar cliente" />
                   </SelectTrigger>
@@ -510,7 +508,7 @@ export default function MarketingGrowth() {
                 </Select>
               ) : null}
               <Select value={periodDays} onValueChange={setPeriodDays}>
-                <SelectTrigger className="w-full sm:w-[150px]">
+                <SelectTrigger className={cn('w-full min-w-0 sm:w-[150px]', !isAdmin && 'col-span-2 sm:col-span-1')}>
                   <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
                   <SelectValue placeholder="Período" />
                 </SelectTrigger>
@@ -520,7 +518,7 @@ export default function MarketingGrowth() {
                   ))}
                 </SelectContent>
               </Select>
-              <Button variant="outline" disabled className="justify-start sm:justify-center">
+              <Button variant="outline" disabled className="hidden justify-start sm:inline-flex sm:justify-center">
                 <BarChart3 className="mr-2 h-4 w-4" />
                 Exportar relatório
               </Button>
@@ -552,7 +550,7 @@ export default function MarketingGrowth() {
             {isAdmin && selectedUser ? (
               <div className="rounded-lg border bg-card px-4 py-3 text-sm text-muted-foreground shadow-sm">
                 Visualizando <span className="font-semibold text-foreground">{selectedUser.name}</span>
-                {selectedUser.email ? <span> · {selectedUser.email}</span> : null}
+                {selectedUser.email ? <span className="hidden sm:inline"> · {selectedUser.email}</span> : null}
               </div>
             ) : null}
 
@@ -571,12 +569,12 @@ export default function MarketingGrowth() {
                   </TabsTrigger>
                 </TabsList>
                 {isFetching ? (
-                  <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                  <span className="inline-flex items-center gap-2 text-xs text-muted-foreground sm:text-sm">
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Atualizando dados
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                  <span className="hidden items-center gap-2 text-sm text-muted-foreground sm:inline-flex">
                     <Activity className="h-4 w-4" />
                     Sem dados mockados em produção
                   </span>
@@ -591,20 +589,6 @@ export default function MarketingGrowth() {
                 <CampaignsTab resumo={data} />
               </TabsContent>
             </Tabs>
-
-            {!data.config.hasSiteKey ? (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
-                  <div>
-                    <p className="text-sm font-semibold">Captura própria ainda não configurada</p>
-                    <p className="mt-1 text-sm leading-relaxed">
-                      Para ativar eventos do site, configure uma chave pública por cliente. Nenhum token de GA4, Meta ou Google Ads deve ir para o navegador.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ) : null}
           </>
         ) : null}
       </div>

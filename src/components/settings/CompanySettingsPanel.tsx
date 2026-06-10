@@ -173,17 +173,17 @@ export function CompanySettingsPanel({ targetUserId, targetUserName }: CompanySe
   }
 
   return (
-    <Card>
-      <CardHeader className="space-y-2">
-        <CardTitle className="flex flex-wrap items-center gap-2 text-lg">
+    <Card className="overflow-hidden">
+      <CardHeader className="space-y-2 bg-muted/20 p-4 text-center sm:p-6 sm:text-left">
+        <CardTitle className="flex flex-wrap items-center justify-center gap-2 text-base sm:justify-start sm:text-lg">
           <Building2 className="h-5 w-5" />
           Dados da empresa
           <Badge variant="outline">{targetUserName ?? 'Conta atual'}</Badge>
         </CardTitle>
-        {dirty && <Badge className="w-fit" variant="secondary">Alterações pendentes</Badge>}
+        {dirty && <Badge className="mx-auto w-fit sm:mx-0" variant="secondary">Alterações pendentes</Badge>}
       </CardHeader>
-      <CardContent className="space-y-5">
-        <div className="grid gap-4 md:grid-cols-2">
+      <CardContent className="space-y-4 p-3 sm:space-y-5 sm:p-6">
+        <div className="grid gap-3 sm:grid-cols-2 sm:gap-4">
           <LockedField label="Razão social" value={query.data?.razaoSocial} />
           <div className="space-y-2">
             <Label>Nome fantasia</Label>
@@ -194,15 +194,15 @@ export function CompanySettingsPanel({ targetUserId, targetUserName }: CompanySe
           <LockedField label="Inscrição Municipal" value={query.data?.inscricaoMunicipal || 'Não informada'} />
         </div>
 
-        <Alert>
+        <Alert className="py-3">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Campos fiscais bloqueados</AlertTitle>
-          <AlertDescription>Razão social, CNPJ e inscrições são alterados apenas por suporte administrativo validado.</AlertDescription>
+          <AlertDescription className="text-xs sm:text-sm">Razão social, CNPJ e inscrições são alterados apenas por suporte administrativo validado.</AlertDescription>
         </Alert>
 
         <Separator />
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2 sm:gap-4">
           <div className="space-y-2 md:col-span-2">
             <Label>Endereço</Label>
             <Input value={draft.endereco} onChange={(event) => updateDraft('endereco', event.target.value)} />
@@ -223,7 +223,7 @@ export function CompanySettingsPanel({ targetUserId, targetUserName }: CompanySe
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
           <div className="space-y-2">
             <Label>Telefone</Label>
             <Input value={draft.telefone} onChange={(event) => updateDraft('telefone', onlyDigits(event.target.value).slice(0, 11))} />
@@ -250,7 +250,7 @@ export function CompanySettingsPanel({ targetUserId, targetUserName }: CompanySe
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2 sm:gap-4">
           <div className="space-y-2">
             <Label>Mensagem padrão</Label>
             <Textarea value={draft.mensagemAtendimento} maxLength={500} onChange={(event) => updateDraft('mensagemAtendimento', event.target.value)} />

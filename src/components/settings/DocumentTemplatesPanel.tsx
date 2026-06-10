@@ -203,8 +203,8 @@ export function DocumentTemplatesPanel({ targetUserId }: DocumentTemplatesPanelP
   return (
     <div className="space-y-5">
       <Card>
-        <CardHeader>
-          <CardTitle className="flex flex-wrap items-center gap-2 text-lg">
+        <CardHeader className="p-4 sm:p-6">
+          <CardTitle className="flex flex-wrap items-center gap-2 text-base sm:text-lg">
             <FileText className="h-5 w-5" />
             Modelos
             <Badge variant={selectedTemplate?.status === 'active' ? 'default' : 'secondary'}>
@@ -212,7 +212,7 @@ export function DocumentTemplatesPanel({ targetUserId }: DocumentTemplatesPanelP
             </Badge>
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-5">
+        <CardContent className="space-y-4 p-3 pt-0 sm:space-y-5 sm:p-6 sm:pt-0">
           {query.isError && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
@@ -221,7 +221,7 @@ export function DocumentTemplatesPanel({ targetUserId }: DocumentTemplatesPanelP
             </Alert>
           )}
 
-          <div className="grid gap-4 md:grid-cols-[260px_minmax(0,1fr)]">
+          <div className="grid gap-3 sm:gap-4 md:grid-cols-[260px_minmax(0,1fr)]">
             <div className="space-y-2">
               <Label>Tipo de documento</Label>
               <Select value={documentType} onValueChange={(value) => setDocumentType(value as DocumentType)}>
@@ -246,7 +246,7 @@ export function DocumentTemplatesPanel({ targetUserId }: DocumentTemplatesPanelP
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               <TextInput label="Título" value={draft.title} maxLength={80} onChange={(value) => setField('title', value)} />
               <TextInput label="Subtítulo" value={draft.subtitle} maxLength={140} onChange={(value) => setField('subtitle', value)} />
               <TextareaField label="Texto inicial" value={draft.introText} maxLength={500} onChange={(value) => setField('introText', value)} />
@@ -254,7 +254,7 @@ export function DocumentTemplatesPanel({ targetUserId }: DocumentTemplatesPanelP
               <TextareaField label="Termos" value={draft.termsText} maxLength={900} onChange={(value) => setField('termsText', value)} />
               <TextareaField label="Rodapé" value={draft.footerText} maxLength={500} onChange={(value) => setField('footerText', value)} />
 
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid grid-cols-3 gap-2 sm:gap-4">
                 <SelectField
                   label="Layout"
                   value={draft.layoutStyle}
@@ -275,25 +275,25 @@ export function DocumentTemplatesPanel({ targetUserId }: DocumentTemplatesPanelP
                 />
               </div>
 
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-2 sm:grid-cols-2 sm:gap-3">
                 <SwitchLine label="Mostrar dados da empresa" checked={draft.showCompanyData} onChange={(checked) => setField('showCompanyData', checked)} />
                 <SwitchLine label="Mostrar rodapé" checked={draft.showFooter} onChange={(checked) => setField('showFooter', checked)} />
               </div>
 
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-3 sm:gap-4">
                 <ColorInput label="Primária" value={draft.theme.primaryColor} onChange={(value) => setThemeField('primaryColor', value)} />
                 <ColorInput label="Secundária" value={draft.theme.secondaryColor} onChange={(value) => setThemeField('secondaryColor', value)} />
                 <ColorInput label="Destaque" value={draft.theme.accentColor} onChange={(value) => setThemeField('accentColor', value)} />
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               <div className="overflow-hidden rounded-lg border bg-background">
-                <div className="p-4 text-white" style={{ backgroundColor: draft.theme.primaryColor }}>
+                <div className="p-3 text-white sm:p-4" style={{ backgroundColor: draft.theme.primaryColor }}>
                   <p className="text-sm font-semibold">{renderTemplateText(draft.title, MOCK_VARIABLES)}</p>
                   <p className="mt-1 text-xs text-white/80">{renderTemplateText(draft.subtitle, MOCK_VARIABLES)}</p>
                 </div>
-                <div className="space-y-3 p-4 text-sm">
+                <div className="space-y-2 p-3 text-sm sm:space-y-3 sm:p-4">
                   <p>{renderTemplateText(draft.introText, MOCK_VARIABLES)}</p>
                   <div className="rounded-lg border">
                     <div className="grid grid-cols-[1fr_90px] border-b bg-muted/40 px-3 py-2 text-xs font-semibold uppercase text-muted-foreground">
@@ -312,11 +312,11 @@ export function DocumentTemplatesPanel({ targetUserId }: DocumentTemplatesPanelP
                 </div>
               </div>
 
-              <div className="rounded-lg border p-4">
+              <div className="rounded-lg border p-3 sm:p-4">
                 <p className="text-sm font-semibold">Variáveis permitidas</p>
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-3 flex max-h-32 flex-wrap gap-1.5 overflow-y-auto pr-1 sm:max-h-none sm:gap-2 sm:overflow-visible sm:pr-0">
                   {TEMPLATE_VARIABLES.map((variable) => (
-                    <Badge key={variable.key} variant="secondary" className="font-mono">
+                    <Badge key={variable.key} variant="secondary" className="font-mono text-[10px] sm:text-xs">
                       {'{{'}{variable.key}{'}}'}
                     </Badge>
                   ))}
@@ -335,7 +335,7 @@ export function DocumentTemplatesPanel({ targetUserId }: DocumentTemplatesPanelP
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:justify-end">
+          <div className="grid grid-cols-2 gap-2 border-t pt-4 sm:flex sm:justify-end sm:gap-3">
             <Button
               type="button"
               variant="outline"
@@ -350,7 +350,7 @@ export function DocumentTemplatesPanel({ targetUserId }: DocumentTemplatesPanelP
               {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Salvar rascunho
             </Button>
-            <Button type="button" disabled={!selectedTemplate?.id || publishMutation.isPending} onClick={() => setPublishOpen(true)} className="gap-2">
+            <Button type="button" disabled={!selectedTemplate?.id || publishMutation.isPending} onClick={() => setPublishOpen(true)} className="col-span-2 gap-2 sm:col-span-1">
               <Send className="h-4 w-4" />
               Publicar
             </Button>
