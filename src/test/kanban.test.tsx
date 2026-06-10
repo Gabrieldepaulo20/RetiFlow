@@ -7,9 +7,12 @@ import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { makeAuthCtx, makeDataCtx } from './helpers/contextMocks';
 
-vi.mock('@/contexts/DataContext', () => ({
-  useData: vi.fn(),
-}));
+vi.mock('@/contexts/DataContext', () => {
+  const useData = vi.fn();
+  // useOperationalData / usePayablesData são fatias do mesmo contexto: no teste
+  // apontam para a mesma fn mockada, então mockReturnValue vale para as três.
+  return { useData, useOperationalData: useData, usePayablesData: useData };
+});
 
 vi.mock('@/contexts/AuthContext', () => ({
   useAuth: vi.fn(),

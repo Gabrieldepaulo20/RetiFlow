@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { useSearchParams } from "react-router-dom";
-import { useData } from "@/contexts/DataContext";
+import { useOperationalData } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   NOTE_STATUS_ORDER,
@@ -138,7 +138,7 @@ function saveVisibleStatuses(set: Set<NoteStatus>) {
 /* ─── Component ─── */
 
 export default function Kanban() {
-  const { notes, clients, updateNoteStatus, getAttachmentsForNote } = useData();
+  const { notes, clients, updateNoteStatus, getAttachmentsForNote } = useOperationalData();
   const { user } = useAuth();
   const { toast } = useToast();
   const [selectedNote, setSelectedNote] = useState<string | null>(null);

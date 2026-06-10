@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { getNotaPDFSignedUrl, getNotaServicoDetalhes, type NotaServicoDetalhes } from '@/api/supabase/notas';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
-import { useData } from '@/contexts/DataContext';
+import { useOperationalData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -30,7 +30,7 @@ const MAIN_FLOW: NoteStatus[] = ['ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO'
 
 export default function IntakeNoteDetail() {
   const { id } = useParams();
-  const { getNote, getClient, getServicesForNote, getProductsForNote, getAttachmentsForNote, updateNoteStatus, updateNote, registrarRecebimentoNota, estornarRecebimentoNota, getChildNotes, notes } = useData();
+  const { getNote, getClient, getServicesForNote, getProductsForNote, getAttachmentsForNote, updateNoteStatus, updateNote, registrarRecebimentoNota, estornarRecebimentoNota, getChildNotes, notes } = useOperationalData();
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();

@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import { useData } from '@/contexts/DataContext';
+import { useOperationalData } from '@/contexts/DataContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,7 +11,7 @@ import { buildCustomerAddressLabel } from '@/services/domain/customers';
 
 export default function ClientDetail() {
   const { id } = useParams();
-  const { getClient, notes, attachments } = useData();
+  const { getClient, notes, attachments } = useOperationalData();
   const navigate = useNavigate();
   const client = getClient(id!);
 

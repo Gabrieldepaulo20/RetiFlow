@@ -246,6 +246,23 @@ type PayablesData = Pick<DataCtx,
 >;
 const PayablesCtx = createContext<PayablesData | null>(null);
 
+/**
+ * Fatia Operacional (notas, clientes, serviços, produtos, anexos) num contexto
+ * próprio. Páginas operacionais leem daqui e NÃO re-renderizam quando payables /
+ * sugestões / dataVersion mudam. Espelha o PayablesCtx — separa os dois grandes
+ * domínios que mudam de forma independente.
+ */
+type OperationalData = Pick<DataCtx,
+  | 'customers' | 'clients' | 'addClient' | 'updateClient' | 'getClient'
+  | 'notes' | 'addNote' | 'updateNote' | 'getNote' | 'updateNoteStatus'
+  | 'registrarRecebimentoNota' | 'estornarRecebimentoNota' | 'createPurchaseNote' | 'getChildNotes'
+  | 'services' | 'getServicesForNote' | 'addService' | 'replaceServicesForNote' | 'removeService'
+  | 'products' | 'getProductsForNote' | 'addProduct' | 'replaceProductsForNote' | 'removeProduct'
+  | 'attachments' | 'getAttachmentsForNote' | 'addAttachment'
+  | 'activities' | 'addActivity' | 'noteCounter'
+>;
+const OperationalCtx = createContext<OperationalData | null>(null);
+
 const uid = () => generateId();
 
 export function DataProvider({ children }: { children: ReactNode }) {
@@ -1221,11 +1238,78 @@ export function DataProvider({ children }: { children: ReactNode }) {
     dismissEmailSuggestion,
   ]);
 
+  // Valor escopado operacional — deps SEM payables/sugestões/dataVersion, então
+  // permanece estável quando esses mudam (páginas de notas/clientes não re-renderizam).
+  const operationalValue = useMemo<OperationalData>(() => ({
+    customers,
+    clients: customers,
+    addClient,
+    updateClient,
+    getClient,
+    notes,
+    addNote,
+    updateNote,
+    getNote,
+    updateNoteStatus,
+    registrarRecebimentoNota,
+    estornarRecebimentoNota,
+    createPurchaseNote,
+    getChildNotes,
+    services,
+    getServicesForNote,
+    addService,
+    replaceServicesForNote,
+    removeService,
+    products,
+    getProductsForNote,
+    addProduct,
+    replaceProductsForNote,
+    removeProduct,
+    attachments,
+    getAttachmentsForNote,
+    addAttachment,
+    activities,
+    addActivity,
+    noteCounter,
+  }), [
+    customers,
+    addClient,
+    updateClient,
+    getClient,
+    notes,
+    addNote,
+    updateNote,
+    getNote,
+    updateNoteStatus,
+    registrarRecebimentoNota,
+    estornarRecebimentoNota,
+    createPurchaseNote,
+    getChildNotes,
+    services,
+    getServicesForNote,
+    addService,
+    replaceServicesForNote,
+    removeService,
+    products,
+    getProductsForNote,
+    addProduct,
+    replaceProductsForNote,
+    removeProduct,
+    attachments,
+    getAttachmentsForNote,
+    addAttachment,
+    activities,
+    addActivity,
+    noteCounter,
+  ]);
+
   return (
     <Ctx.Provider value={value}>
-      <PayablesCtx.Provider value={payablesValue}>
-        {children}
-      </PayablesCtx.Provider>
+      <OperationalCtx.Provider value={operationalValue}>
+        <PayablesCtx.Provider value={payablesValue}>
+          {children}
+        </PayablesCtx.Provider>
+      </OperationalCtx.Provider>
     </Ctx.Provider>
   );
 }
@@ -1245,6 +1329,16 @@ export function usePayablesData() {
   const ctx = useContext(PayablesCtx);
   if (!ctx) {
     throw new Error('usePayablesData must be within DataProvider');
+  }
+
+  return ctx;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function useOperationalData() {
+  const ctx = useContext(OperationalCtx);
+  if (!ctx) {
+    throw new Error('useOperationalData must be within DataProvider');
   }
 
   return ctx;

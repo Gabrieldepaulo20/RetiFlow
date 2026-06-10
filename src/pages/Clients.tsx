@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useData } from '@/contexts/DataContext';
+import { useOperationalData } from '@/contexts/DataContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,7 +42,7 @@ const downloadClientsCsv = (clients: Client[]) => {
 };
 
 export default function Clients() {
-  const { clients, notes, updateClient } = useData();
+  const { clients, notes, updateClient } = useOperationalData();
   const { toast } = useToast();
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');

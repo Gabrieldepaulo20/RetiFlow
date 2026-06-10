@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from '@/hooks/useDebounce';
-import { useData } from '@/contexts/DataContext';
+import { useOperationalData } from '@/contexts/DataContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -74,7 +74,7 @@ function parseDateFilterInput(value: string) {
 }
 
 export default function IntakeNotes() {
-  const { notes, clients, getServicesForNote, getProductsForNote } = useData();
+  const { notes, clients, getServicesForNote, getProductsForNote } = useOperationalData();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { data: templateSettings } = useDocumentTemplateSettings();
