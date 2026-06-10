@@ -14,7 +14,7 @@ const baseCorsHeaders = {
   'Vary': 'Origin',
 };
 
-const scanVersion = 'ai-v5';
+const scanVersion = 'ai-v6-gpt55';
 const supportedAttachmentTypes = new Set([
   'application/pdf',
   'image/png',
@@ -29,6 +29,40 @@ const OPENAI_UPLOAD_TIMEOUT_MS = 60_000;
 const OPENAI_RESPONSES_TIMEOUT_MS = 45_000;
 const OPENAI_MAX_OUTPUT_TOKENS = 1200;
 const scheduledRetryDelayMs = 60 * 60 * 1000;
+const defaultPayableAiModel = 'gpt-5.5';
+const defaultPayableReasoningEffort = 'low';
+
+class GmailReconnectRequiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GmailReconnectRequiredError';
+  }
+}
+
+function isGmailReconnectRequiredError(error: unknown): error is GmailReconnectRequiredError {
+  return error instanceof GmailReconnectRequiredError || (error instanceof Error && error.name === 'GmailReconnectRequiredError');
+}
+
+function getPayableAiModel() {
+  const model = (Deno.env.get('OPENAI_PAYABLE_MODEL') ?? Deno.env.get('OPENAI_MODEL') ?? defaultPayableAiModel).trim();
+  return model || defaultPayableAiModel;
+}
+
+function getPayableReasoningEffort() {
+  const effort = (Deno.env.get('OPENAI_PAYABLE_REASONING_EFFORT') ?? defaultPayableReasoningEffort).trim().toLowerCase();
+  return ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(effort) ? effort : defaultPayableReasoningEffort;
+}
+
+function buildOpenAIRequestBody(base: Record<string, unknown>) {
+  const model = getPayableAiModel();
+  return {
+    ...base,
+    model,
+    ...(/^gpt-5/i.test(model)
+      ? { reasoning: { effort: getPayableReasoningEffort() } }
+      : {}),
+  };
+}
 
 async function fetchWithTimeout(url: string | URL, init: RequestInit, timeoutMs: number) {
   const controller = new AbortController();
@@ -191,7 +225,27 @@ async function refreshAccessToken(refreshToken: string) {
       grant_type: 'refresh_token',
     }),
   });
-  if (!response.ok) throw new Error(`Falha ao renovar token Google (${response.status}).`);
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    const normalized = body.toLowerCase();
+    console.error('[gmail-scan-payables] Falha ao renovar token Google', {
+      status: response.status,
+      body: body.slice(0, 300),
+    });
+
+    if (
+      response.status === 400 &&
+      (
+        normalized.includes('invalid_grant') ||
+        normalized.includes('unauthorized_client') ||
+        normalized.includes('token has been expired or revoked')
+      )
+    ) {
+      throw new GmailReconnectRequiredError('A autorização do Gmail expirou ou foi revogada. Reconecte a conta para voltar a buscar contas automaticamente.');
+    }
+
+    throw new Error(`Falha temporária ao renovar a conexão com o Gmail (${response.status}). Tente novamente em instantes.`);
+  }
   const data = await response.json() as { access_token?: string };
   if (!data.access_token) throw new Error('Google não retornou access_token.');
   return data.access_token;
@@ -259,10 +313,13 @@ function buildMeaningfulTitle(input: {
   const title = input.title.replace(/\s+/g, ' ').trim();
   if (title && !genericPayableTitles.has(normalizeTitleKey(title))) return title.slice(0, 120);
 
-  const parts = [title || 'Conta'];
-  if (input.supplierName) parts.push(input.supplierName);
+  const supplierName = input.supplierName.replace(/\s+/g, ' ').trim();
+  const supplierLooksUnknown = /^fornecedor n[aã]o identificado$/i.test(supplierName);
+  const parts = [supplierName && !supplierLooksUnknown ? supplierName : 'Conta importada'];
   const referenceDate = input.dueDate ?? input.paymentDate;
-  if (referenceDate) parts.push(referenceDate.slice(0, 7).split('-').reverse().join('/'));
+  if (referenceDate) {
+    parts.push(`${input.paymentDate ? 'Pago' : 'Venc.'} ${referenceDate.slice(0, 7).split('-').reverse().join('/')}`);
+  }
   return parts.filter(Boolean).join(' · ').slice(0, 120);
 }
 
@@ -654,7 +711,9 @@ async function analyzePayableEmail(params: {
     '- suggestedStatus=AGENDADO quando disser que o pagamento está agendado para uma data futura, sem confirmação de liquidação.',
     '- suggestedStatus=PENDENTE para boleto/fatura/cobrança ainda a pagar.',
     '- Salário, holerite, pró-labore, folha de pagamento ou recibo de funcionário também são contas a pagar; use supplierName como nome do funcionário ou "Folha de Pagamento" e trate recorrência como mensal no raciocínio.',
-    '- Se o e-mail mencionar "parcela X/Y", "parcela X de Y" ou "prestação X de Y", deixe isso claro no title ou reason para não confundir parcela real com duplicidade.',
+    '- "Duplicata" pode ser só o tipo do documento; NUNCA use "Duplicata" como title sozinho. O title deve identificar fornecedor, documento, competência, vencimento ou parcela.',
+    '- Se o e-mail mencionar "parcela X/Y", "parcela X de Y" ou "prestação X de Y", deixe isso claro no title e reason para não confundir parcela real com duplicidade.',
+    '- Se parecer uma cobrança repetida do mesmo fornecedor/valor/vencimento, registre em reason como "possível duplicidade" para revisão humana; não tente decidir sozinho sem histórico do sistema.',
     '- Promoções, propagandas, newsletter, venda de maquininha, desconto, campanha de marketing e avisos sem cobrança real devem ser isPayable=false.',
     '- Nunca invente valor ou vencimento. Se não estiver claro, use null.',
     '- Se houver PDF/imagem anexa, priorize o conteúdo do anexo sobre o texto do e-mail.',
@@ -700,8 +759,7 @@ async function analyzePayableEmail(params: {
         Authorization: `Bearer ${params.apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model: 'gpt-4.1-mini',
+      body: JSON.stringify(buildOpenAIRequestBody({
         temperature: 0,
         max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
         text: {
@@ -714,7 +772,7 @@ async function analyzePayableEmail(params: {
         },
         instructions,
         input: [{ role: 'user', content }],
-      }),
+      })),
     }, OPENAI_RESPONSES_TIMEOUT_MS);
 
     if (!response.ok) {
@@ -782,6 +840,9 @@ async function listGmailMessageIds(accessToken: string, query: string, maxResult
   const listResponse = await fetch(listUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!listResponse.ok) {
     const failure = await classifyGmailApiFailure(listResponse, 'list messages');
+    if (failure.code === 'gmail_auth_expired' || failure.code === 'gmail_permission_missing') {
+      throw new GmailReconnectRequiredError(failure.message);
+    }
     throw new Error(failure.message);
   }
   const list = await listResponse.json() as { messages?: Array<{ id: string }> };
@@ -863,17 +924,25 @@ Deno.serve(async (request) => {
 
   try {
     const accessToken = await refreshAccessToken(await decryptToken(connection.refresh_token_cipher));
+    const lastSyncAt = connection.last_sync_at ? new Date(connection.last_sync_at) : null;
+    const lastSyncOverlap = lastSyncAt && !Number.isNaN(lastSyncAt.getTime())
+      ? new Date(lastSyncAt.getTime() - 24 * 60 * 60 * 1000)
+      : null;
+    const afterClause = lastSyncOverlap
+      ? ` after:${lastSyncOverlap.toISOString().slice(0, 10).replaceAll('-', '/')}`
+      : '';
     const queries = [
-      'in:anywhere newer_than:90d (boleto OR fatura OR "nota fiscal" OR vencimento OR pagamento)',
-      'in:anywhere newer_than:90d has:attachment (boleto OR fatura OR "nota fiscal" OR vencimento OR pagamento OR cobrança OR mensalidade OR invoice)',
-      'in:anywhere newer_than:120d ("comprovante de pagamento" OR comprovante OR recibo OR quitado OR pago OR "pagamento efetuado" OR "pagamento realizado")',
-      'in:anywhere newer_than:45d filename:pdf',
+      `in:anywhere newer_than:180d${afterClause} (boleto OR fatura OR "nota fiscal" OR vencimento OR pagamento)`,
+      `in:anywhere newer_than:180d${afterClause} has:attachment (boleto OR fatura OR "nota fiscal" OR vencimento OR pagamento OR cobrança OR mensalidade OR invoice)`,
+      `in:anywhere newer_than:180d${afterClause} ("comprovante de pagamento" OR comprovante OR recibo OR quitado OR pago OR "pagamento efetuado" OR "pagamento realizado")`,
+      `in:anywhere newer_than:120d${afterClause} (duplicata OR parcela OR parcelas OR prestação OR prestacao)`,
+      `in:anywhere newer_than:90d${afterClause} filename:pdf`,
     ];
     const maxMessages = isScheduled && Number.isInteger(requestBody.maxMessages)
       ? Math.min(Math.max(Number(requestBody.maxMessages), 1), 12)
       : 50;
     const messageIds = Array.from(new Set((await Promise.all(
-      queries.map((query, index) => listGmailMessageIds(accessToken, query, index === 3 ? 15 : 25)),
+      queries.map((query, index) => listGmailMessageIds(accessToken, query, index === 4 ? 15 : 25)),
     )).flat())).slice(0, maxMessages);
 
     for (const messageId of messageIds) {
@@ -896,6 +965,9 @@ Deno.serve(async (request) => {
       });
       if (!detailResponse.ok) {
         const failure = await classifyGmailApiFailure(detailResponse, 'get message');
+        if (failure.code === 'gmail_auth_expired' || failure.code === 'gmail_permission_missing') {
+          throw new GmailReconnectRequiredError(failure.message);
+        }
         errors.push(`Mensagem ${messageId}: ${failure.message}`);
         continue;
       }
@@ -937,9 +1009,8 @@ Deno.serve(async (request) => {
         continue;
       }
 
-      // Mantém sugestões de risco ALTO (sinalizadas no front com badge + gating de criação),
-      // em vez de descartá-las em silêncio — transparência sobre fraude potencial.
-      // Threshold mínimo de confiança em 40; o front separa <55 em "Incertas".
+      // Mantém achados suspeitos auditáveis; a UI separa risco alto/baixa confiança
+      // em quarentena ou revisão antes de permitir criação.
       if (!analysis.isPayable || !analysis.amount || !analysis.dueDate || analysis.confidence < 40) {
         skipped += 1;
         await recordScannedMessage(service, existing?.id_gmail_scanned_messages ?? null, {
@@ -1090,11 +1161,17 @@ Deno.serve(async (request) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Erro desconhecido ao buscar Gmail.';
     const failedAt = new Date().toISOString();
+    const shouldReconnect = isGmailReconnectRequiredError(error);
     await service
       .schema('RetificaPremium')
       .from('Gmail_Connections')
       .update({
-        status: isScheduled ? 'CONNECTED' : 'ERROR',
+        status: shouldReconnect ? 'DISCONNECTED' : isScheduled ? 'CONNECTED' : 'ERROR',
+        ...(shouldReconnect ? {
+          sync_enabled: false,
+          auto_sync_enabled: false,
+          next_auto_sync_at: null,
+        } : {}),
         last_error: message,
         last_scan_messages_count: scanned,
         last_scan_attachments_count: attachmentsFound,
@@ -1105,8 +1182,10 @@ Deno.serve(async (request) => {
         updated_at: failedAt,
         ...(isScheduled ? {
           last_auto_sync_at: failedAt,
-          next_auto_sync_at: new Date(Date.now() + scheduledRetryDelayMs).toISOString(),
           auto_sync_failures: Number(connection.auto_sync_failures ?? 0) + 1,
+          ...(!shouldReconnect ? {
+            next_auto_sync_at: new Date(Date.now() + scheduledRetryDelayMs).toISOString(),
+          } : {}),
         } : {}),
       })
       .eq('id_gmail_connections', connection.id_gmail_connections);

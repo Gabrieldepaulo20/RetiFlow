@@ -34,7 +34,7 @@ Data: 2026-06-03. Autor: revisão arquitetural. Status: análise + plano (Fase 0
 ## 2. Fluxo atual (e-mail → IA → sugestão → conta)
 
 1. Cliente conecta Gmail (OAuth) → `Gmail_Connections` (refresh token AES-GCM, escopo `fk_auth_user`).
-2. `gmail-scan-payables` (manual ou cron `gmail-auto-sync-dispatch`): lê e-mails, baixa anexos, manda p/ OpenAI (`gpt-4.1-mini`), normaliza, **filtra** (isPayable + amount + dueDate + confidence ≥ 40) e insere em `Sugestoes_Email` (`fk_auth_user`). Reconcilia comprovante "pago" com sugestão pendente.
+2. `gmail-scan-payables` (manual ou cron `gmail-auto-sync-dispatch`): lê e-mails, baixa anexos, manda p/ OpenAI (`OPENAI_PAYABLE_MODEL`, padrão `gpt-5.5`), normaliza, **filtra** (isPayable + amount + dueDate + confidence ≥ 40) e insere em `Sugestoes_Email` (`fk_auth_user`). Reconcilia comprovante "pago" com sugestão pendente.
 3. Frontend lê `get_sugestoes_email` (filtra `fk_auth_user = auth.uid()`).
 4. Aceitar → `aceitar_sugestao_email` cria `Contas_Pagar`; "criar como paga" registra pagamento.
 
@@ -154,3 +154,11 @@ Registrar por sugestão: empresa, conta Gmail, e-mail (id), anexo, resultado/con
 - Adicionar lock transacional por conexão Gmail para impedir duas sincronizações simultâneas do mesmo usuário.
 - Implementar ação server-side de vincular comprovante a conta existente, em vez de obrigar criação nova.
 - Adicionar testes de integração específicos para reprocessamento do mesmo `message_id`, rate limit Gmail, token inválido, lock concorrente e tenant isolation de sugestões/quarentena.
+
+## 12. Atualização técnica — Gmail e modelo de IA — 2026-06-10
+
+- `gmail-scan-payables` e `analisar-conta-pagar` agora usam `OPENAI_PAYABLE_MODEL` (ou `OPENAI_MODEL`) com padrão `gpt-5.5`; `OPENAI_PAYABLE_REASONING_EFFORT` permite ajustar esforço (`low` por padrão).
+- Token Google revogado/expirado ou permissão Gmail ausente agora marca a conexão como `DISCONNECTED`, desativa sync automático e exige reconexão, em vez de manter tentativas silenciosas com erro repetido.
+- O scan passa a reaproveitar `last_sync_at` com sobreposição de 24h e queries ampliadas para 180d/120d, reduzindo desatualização por falhas temporárias ou e-mails que chegaram perto da última janela.
+- "Duplicata" foi tratada como tipo de documento, não como nome de conta. Título genérico sozinho é substituído por fornecedor/documento/vencimento/parcela.
+- Parcela só é assumida quando há evidência explícita (`parcela X/Y`, `X de Y`, `prestação`). Se parecer duplicidade ou houver dúvida entre parcela e conta repetida, a IA deve marcar como `INCERTO`/revisão e avisar.

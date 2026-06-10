@@ -279,7 +279,9 @@ function buildMeaningfulTitle(input: {
   const title = input.title.replace(/\s+/g, ' ').trim();
   if (title && !genericPayableTitles.has(normalizeTitleKey(title))) return title.slice(0, 120);
 
-  const parts = [input.supplierName || 'Conta Importada'];
+  const supplierName = input.supplierName.replace(/\s+/g, ' ').trim();
+  const supplierLooksUnknown = /^fornecedor n[aã]o identificado$/i.test(supplierName);
+  const parts = [supplierName && !supplierLooksUnknown ? supplierName : 'Conta importada'];
   if (input.recurrenceIndex && input.totalInstallments) {
     parts.push(`Parcela ${input.recurrenceIndex}/${input.totalInstallments}`);
   } else if (input.docNumber) {
@@ -360,6 +362,29 @@ function sanitizeAnalysis(raw: unknown, validCategoryIds: Set<string>, fallbackC
 const OPENAI_UPLOAD_TIMEOUT_MS = 60_000;
 const OPENAI_RESPONSES_TIMEOUT_MS = 45_000;
 const OPENAI_MAX_OUTPUT_TOKENS = 1500;
+const defaultPayableAiModel = 'gpt-5.5';
+const defaultPayableReasoningEffort = 'low';
+
+function getPayableAiModel() {
+  const model = (Deno.env.get('OPENAI_PAYABLE_MODEL') ?? Deno.env.get('OPENAI_MODEL') ?? defaultPayableAiModel).trim();
+  return model || defaultPayableAiModel;
+}
+
+function getPayableReasoningEffort() {
+  const effort = (Deno.env.get('OPENAI_PAYABLE_REASONING_EFFORT') ?? defaultPayableReasoningEffort).trim().toLowerCase();
+  return ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(effort) ? effort : defaultPayableReasoningEffort;
+}
+
+function buildOpenAIRequestBody(base: Record<string, unknown>) {
+  const model = getPayableAiModel();
+  return {
+    ...base,
+    model,
+    ...(/^gpt-5/i.test(model)
+      ? { reasoning: { effort: getPayableReasoningEffort() } }
+      : {}),
+  };
+}
 
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
   const controller = new AbortController();
@@ -511,6 +536,10 @@ Deno.serve(async (request) => {
         '   - Se o documento mencionar "parcela X de Y", "X/Y", "prestação X de Y", extraia:',
         '     recurrenceIndex: X (número da parcela atual), totalInstallments: Y (total de parcelas).',
         '   - Duas cobranças parecidas só devem ser tratadas como parcelas quando houver indicação explícita de parcela, prestação, mensalidade ou competência diferente.',
+        '   - "Duplicata" normalmente é tipo de documento/título de crédito, não nome do fornecedor. Nunca use "Duplicata" como supplierName nem como title sozinho.',
+        '   - Se houver número de duplicata, guarde em docNumber; se houver "duplicata 02/06" ou parcela equivalente, extraia recurrenceIndex/totalInstallments.',
+        '   - Se parecer uma duplicidade de cadastro (mesmo fornecedor, valor, vencimento ou documento repetido) mas não houver prova de parcela, use suggestedStatus: "INCERTO" e adicione warning com "possível duplicidade".',
+        '   - Se ficar em dúvida entre parcela real e conta duplicada, não invente parcela: use recurrenceIndex/null, totalInstallments/null e peça revisão em warnings.',
         '   - Nunca use title genérico como "Duplicata", "Boleto", "Fatura", "Pagamento" ou "Conta".',
         '   - O title deve começar pelo fornecedor/funcionário ou pelo tipo específico da despesa.',
         '   - Exemplos bons: "Auto Peças Silva · Doc 12345", "João Silva · Salário 05/2026", "Enel SP · Venc. 06/2026", "Fornecedor XPTO · Parcela 2/10".',
@@ -525,7 +554,7 @@ Deno.serve(async (request) => {
         '   - "PAGO": documento for comprovante, recibo ou tiver carimbo/selo de quitação.',
         '   - "AGENDADO": documento mencionar agendamento ou débito automático futuro.',
         '   - "PENDENTE": boleto, fatura ou nota fiscal sem evidência de pagamento.',
-        '   - "INCERTO": quando não houver evidência suficiente.',
+        '   - "INCERTO": quando não houver evidência suficiente, houver possível duplicidade, parcela ambígua, fornecedor duvidoso, valor/vencimento ilegível ou conflito entre campos.',
         '',
         '8. CAMPOS fields[] — mostrar ao usuário para revisão:',
         '   Liste os campos que extraiu com label em português, value (texto do documento) e confidence (0-100).',
@@ -550,8 +579,7 @@ Deno.serve(async (request) => {
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          model: 'gpt-4.1-mini',
+        body: JSON.stringify(buildOpenAIRequestBody({
           temperature: 0,
           max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
           text: {
@@ -572,7 +600,7 @@ Deno.serve(async (request) => {
               ],
             },
           ],
-        }),
+        })),
       }, OPENAI_RESPONSES_TIMEOUT_MS);
 
       if (!response.ok) {
