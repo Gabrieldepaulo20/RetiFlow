@@ -20,6 +20,7 @@ import {
 import { format, subMonths, startOfMonth, endOfMonth, differenceInDays, subDays, startOfDay, endOfDay, eachDayOfInterval } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   DASHBOARD_ACCOUNTING_START_LABEL,
   DASHBOARD_REVENUE_STATUSES,
@@ -73,13 +74,28 @@ function parseDateInput(value: string, fallback: Date) {
 
 function InlineInfo({ label }: { label: string }) {
   return (
-    <span
-      aria-label={label}
-      title={label}
-      className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground/45 transition-colors hover:text-muted-foreground"
-    >
-      <Info className="h-3.5 w-3.5" aria-hidden="true" />
-    </span>
+    <Popover>
+      <PopoverTrigger asChild>
+        <span
+          role="button"
+          tabIndex={0}
+          aria-label="Ver explicação da métrica"
+          className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground/50 transition-colors hover:bg-muted hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          <Info className="h-3.5 w-3.5" aria-hidden="true" />
+        </span>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        side="top"
+        className="w-[min(18rem,calc(100vw-2rem))] text-xs leading-relaxed"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {label}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -454,25 +470,25 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+          <div className="grid grid-cols-2 gap-2 p-3 sm:gap-3 sm:p-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 [@media(max-width:380px)]:grid-cols-1">
             <button
               type="button"
               onClick={() => navigate('/notas-entrada')}
-              className="rounded-2xl border border-border/70 bg-background p-4 text-left transition hover:border-primary/30 hover:bg-primary/5"
+              className="min-h-[116px] rounded-xl border border-border/70 bg-background p-3 text-left transition hover:border-primary/30 hover:bg-primary/5 sm:min-h-[152px] sm:rounded-2xl sm:p-4"
             >
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:gap-1.5 sm:text-xs">
                     Entradas previstas
                     <InlineInfo label={`Valor potencial das O.S. lançadas no período, sem contar O.S. excluídas. É uma previsão: só vira faturamento quando a O.S. entra na regra contábil.`} />
                   </p>
-                  <p className="mt-2 text-2xl font-display font-bold leading-none">R$ {fmtBRL(periodPotentialAmount)}</p>
+                  <p className="mt-2 truncate text-xl font-display font-bold leading-none sm:text-2xl">R$ {fmtBRL(periodPotentialAmount)}</p>
                 </div>
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-700">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-700 sm:h-9 sm:w-9">
                   <FileText className="h-4 w-4" />
                 </div>
               </div>
-              <p className="mt-3 text-xs text-muted-foreground">
+              <p className="mt-3 hidden text-xs text-muted-foreground sm:block">
                 {periodNotes.length} O.S. lançada{periodNotes.length !== 1 ? 's' : ''} no período
               </p>
             </button>
@@ -480,21 +496,21 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={() => navigate('/notas-entrada?status=FINALIZADO')}
-              className="rounded-2xl border border-border/70 bg-background p-4 text-left transition hover:border-emerald-300 hover:bg-emerald-50/60"
+              className="min-h-[116px] rounded-xl border border-border/70 bg-background p-3 text-left transition hover:border-emerald-300 hover:bg-emerald-50/60 sm:min-h-[152px] sm:rounded-2xl sm:p-4"
             >
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:gap-1.5 sm:text-xs">
                     Faturamento real
                     <InlineInfo label={`Entrada de fato: soma das O.S. que entraram na regra contábil do Dashboard, com data a partir de ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
                   </p>
-                  <p className="mt-2 text-2xl font-display font-bold leading-none text-emerald-700">R$ {fmtBRL(periodDeliveredAmount)}</p>
+                  <p className="mt-2 truncate text-xl font-display font-bold leading-none text-emerald-700 sm:text-2xl">R$ {fmtBRL(periodDeliveredAmount)}</p>
                 </div>
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 sm:h-9 sm:w-9">
                   <CheckCircle2 className="h-4 w-4" />
                 </div>
               </div>
-              <p className="mt-3 text-xs text-muted-foreground">
+              <p className="mt-3 hidden text-xs text-muted-foreground sm:block">
                 {periodDeliveredNotes.length} O.S. finalizada{periodDeliveredNotes.length !== 1 ? 's' : ''} · desde {DASHBOARD_ACCOUNTING_START_LABEL}: R$ {fmtBRL(totalRevenue)}
               </p>
             </button>
@@ -502,21 +518,21 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={() => navigate('/contas-a-pagar')}
-              className="rounded-2xl border border-border/70 bg-background p-4 text-left transition hover:border-orange-200 hover:bg-orange-50/50"
+              className="min-h-[116px] rounded-xl border border-border/70 bg-background p-3 text-left transition hover:border-orange-200 hover:bg-orange-50/50 sm:min-h-[152px] sm:rounded-2xl sm:p-4"
             >
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:gap-1.5 sm:text-xs">
                     Contas lançadas
                     <InlineInfo label="Total das contas cadastradas no Contas a Pagar para o período, usando competência financeira ou vencimento." />
                   </p>
-                  <p className="mt-2 text-2xl font-display font-bold leading-none text-orange-700">R$ {fmtBRL(periodPayablesTotal)}</p>
+                  <p className="mt-2 truncate text-xl font-display font-bold leading-none text-orange-700 sm:text-2xl">R$ {fmtBRL(periodPayablesTotal)}</p>
                 </div>
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-50 text-orange-700">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-700 sm:h-9 sm:w-9">
                   <Receipt className="h-4 w-4" />
                 </div>
               </div>
-              <p className="mt-3 text-xs text-muted-foreground">
+              <p className="mt-3 hidden text-xs text-muted-foreground sm:block">
                 {periodPayables.length} conta{periodPayables.length !== 1 ? 's' : ''} · pago R$ {fmtBRL(periodPayablesPaidPart)}
               </p>
             </button>
@@ -524,21 +540,21 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={() => navigate('/contas-a-pagar')}
-              className="rounded-2xl border border-border/70 bg-background p-4 text-left transition hover:border-red-200 hover:bg-red-50/50"
+              className="min-h-[116px] rounded-xl border border-border/70 bg-background p-3 text-left transition hover:border-red-200 hover:bg-red-50/50 sm:min-h-[152px] sm:rounded-2xl sm:p-4"
             >
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:gap-1.5 sm:text-xs">
                     Contas pagas
                     <InlineInfo label={`Saída de caixa: soma das contas marcadas como pagas ou parciais, usando a data real do pagamento dentro do período e nunca antes de ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
                   </p>
-                  <p className="mt-2 text-2xl font-display font-bold leading-none text-red-600">R$ {fmtBRL(periodPaidExpenses)}</p>
+                  <p className="mt-2 truncate text-xl font-display font-bold leading-none text-red-600 sm:text-2xl">R$ {fmtBRL(periodPaidExpenses)}</p>
                 </div>
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-50 text-red-600">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600 sm:h-9 sm:w-9">
                   <Landmark className="h-4 w-4" />
                 </div>
               </div>
-              <p className="mt-3 text-xs text-muted-foreground">
+              <p className="mt-3 hidden text-xs text-muted-foreground sm:block">
                 {periodPaidPayables.length} pagamento{periodPaidPayables.length !== 1 ? 's' : ''} no período · desde {DASHBOARD_ACCOUNTING_START_LABEL}
               </p>
             </button>
@@ -546,46 +562,46 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={() => navigate('/contas-a-pagar?status=pendente')}
-              className="rounded-2xl border border-border/70 bg-background p-4 text-left transition hover:border-amber-200 hover:bg-amber-50/50"
+              className="min-h-[116px] rounded-xl border border-border/70 bg-background p-3 text-left transition hover:border-amber-200 hover:bg-amber-50/50 sm:min-h-[152px] sm:rounded-2xl sm:p-4"
             >
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:gap-1.5 sm:text-xs">
                     Falta pagar
                     <InlineInfo label="Saldo ainda aberto das contas lançadas no período. Contas parciais entram somente com o valor restante." />
                   </p>
-                  <p className="mt-2 text-2xl font-display font-bold leading-none text-amber-700">R$ {fmtBRL(periodPayablesRemaining)}</p>
+                  <p className="mt-2 truncate text-xl font-display font-bold leading-none text-amber-700 sm:text-2xl">R$ {fmtBRL(periodPayablesRemaining)}</p>
                 </div>
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700 sm:h-9 sm:w-9">
                   <Landmark className="h-4 w-4" />
                 </div>
               </div>
-              <p className="mt-3 text-xs text-muted-foreground">
+              <p className="mt-3 hidden text-xs text-muted-foreground sm:block">
                 Dentro das contas lançadas no período
               </p>
             </button>
 
             <div className={cn(
-              'rounded-2xl border p-4',
+              'min-h-[116px] rounded-xl border p-3 sm:min-h-[152px] sm:rounded-2xl sm:p-4',
               periodProfit >= 0
                 ? 'border-primary/25 bg-primary/5'
                 : 'border-red-200 bg-red-50/60',
             )}>
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:gap-1.5 sm:text-xs">
                     Lucro do período
                     <InlineInfo label={`Cálculo: faturamento real menos contas pagas no mesmo período. Ambos começam somente em ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
                   </p>
-                  <p className={cn('mt-2 text-2xl font-display font-bold leading-none', periodProfit >= 0 ? 'text-primary' : 'text-red-700')}>
+                  <p className={cn('mt-2 truncate text-xl font-display font-bold leading-none sm:text-2xl', periodProfit >= 0 ? 'text-primary' : 'text-red-700')}>
                     R$ {fmtBRLFull(periodProfit)}
                   </p>
                 </div>
-                <div className={cn('flex h-9 w-9 items-center justify-center rounded-xl', periodProfit >= 0 ? 'bg-primary/10 text-primary' : 'bg-red-100 text-red-700')}>
+                <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-xl sm:h-9 sm:w-9', periodProfit >= 0 ? 'bg-primary/10 text-primary' : 'bg-red-100 text-red-700')}>
                   <PiggyBank className="h-4 w-4" />
                 </div>
               </div>
-              <p className="mt-3 text-xs text-muted-foreground">
+              <p className="mt-3 hidden text-xs text-muted-foreground sm:block">
                 Faturamento real - contas pagas{periodProfitMargin !== null ? ` · margem ${periodProfitMargin.toFixed(1)}%` : ''}
               </p>
             </div>

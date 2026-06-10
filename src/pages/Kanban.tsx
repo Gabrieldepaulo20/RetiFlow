@@ -294,9 +294,9 @@ export default function Kanban() {
   /* ── Render ── */
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex min-h-[calc(100dvh-6.5rem)] flex-col overflow-hidden">
       {/* Page header */}
-      <div className="sticky top-0 z-10 bg-background pb-4">
+      <div className="shrink-0 bg-background pb-3">
         {/* Title row */}
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 mb-3">
           <div>
@@ -318,9 +318,9 @@ export default function Kanban() {
         </div>
 
         {/* Filter bar */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible">
           {/* Period toggles */}
-          <div className="flex items-center gap-1 bg-muted/60 rounded-lg p-1">
+          <div className="flex shrink-0 items-center gap-1 rounded-lg bg-muted/60 p-1">
             {PERIOD_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
@@ -337,7 +337,7 @@ export default function Kanban() {
             ))}
           </div>
 
-          <div className="flex items-center gap-1 bg-muted/60 rounded-lg p-1">
+          <div className="flex shrink-0 items-center gap-1 rounded-lg bg-muted/60 p-1">
             <button
               onClick={() => setYearFilter("all")}
               className={cn(
@@ -439,11 +439,12 @@ export default function Kanban() {
       {/* Kanban board */}
       <ErrorBoundary>
       <DragDropContext onDragEnd={onDragEnd}>
-        <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-thin -mx-1 px-1">
+        <div className="-mx-3 min-h-0 flex-1 overflow-x-auto px-3 pb-3 scrollbar-thin sm:-mx-1 sm:px-1">
+        <div className="flex h-[calc(100dvh-13.5rem)] min-h-[420px] gap-3 sm:h-[calc(100dvh-12.5rem)]">
           {columns.map((col) => (
-            <div key={col.status} className="flex-shrink-0 w-[272px]">
+            <div key={col.status} className="flex h-full w-[min(82vw,280px)] flex-shrink-0 flex-col sm:w-[286px]">
               {/* Column header */}
-              <div className="flex items-center gap-2.5 mb-3 px-0.5">
+              <div className="mb-3 flex shrink-0 items-center gap-2.5 px-0.5">
                 <div
                   className={cn(
                     "w-2 h-2 rounded-full shrink-0",
@@ -477,7 +478,7 @@ export default function Kanban() {
                     ref={provided.innerRef}
                     {...provided.droppableProps}
                     className={cn(
-                      "space-y-2 min-h-[140px] rounded-xl p-2 border transition-colors duration-200",
+                      "min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain rounded-xl border p-2 transition-colors duration-200 scrollbar-thin",
                       snapshot.isDraggingOver
                         ? "bg-primary/[0.06] border-primary/25 ring-1 ring-primary/15 ring-inset"
                         : "bg-muted/30 border-border/40",
@@ -613,6 +614,7 @@ export default function Kanban() {
               </Droppable>
             </div>
           ))}
+        </div>
         </div>
       </DragDropContext>
 

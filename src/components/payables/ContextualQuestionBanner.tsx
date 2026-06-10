@@ -64,7 +64,7 @@ export function ContextualQuestionBanner({ question, payableId, onAction, onDism
                 key={action.action}
                 size="sm"
                 variant={props.variant}
-                className={cn('min-w-fit px-2 text-xs', props.className)}
+                className={cn('min-w-0 shrink-0 px-2 text-xs', props.className)}
                 onClick={() => onDismiss(payableId)}
               >
                 {action.label}
@@ -77,7 +77,7 @@ export function ContextualQuestionBanner({ question, payableId, onAction, onDism
               key={action.action}
               size="sm"
               variant={props.variant}
-              className={cn('min-w-fit px-2.5 text-xs', props.className)}
+              className={cn('min-w-0 shrink-0 px-2.5 text-xs', props.className)}
               onClick={() => onAction(payableId, action.action)}
             >
               {action.label}

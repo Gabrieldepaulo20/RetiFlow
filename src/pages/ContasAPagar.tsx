@@ -501,15 +501,15 @@ export default function ContasAPagar() {
 
   return (
     <>
-      <div className="space-y-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="space-y-4 overflow-x-hidden sm:space-y-6">
+        <div className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 via-primary/10 to-transparent ring-1 ring-primary/20">
-              <Wallet className="h-6 w-6 text-primary" />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary/20 via-primary/10 to-transparent ring-1 ring-primary/20 sm:h-12 sm:w-12 sm:rounded-2xl">
+              <Wallet className="h-5 w-5 text-primary sm:h-6 sm:w-6" />
             </div>
             <div>
-              <h1 className="text-2xl font-display font-bold tracking-tight">Contas a Pagar</h1>
-              <p className="mt-0.5 text-sm text-muted-foreground">Boletos, notas e despesas — entrada manual rápida ou importação assistida por IA.</p>
+              <h1 className="text-xl font-display font-bold tracking-tight sm:text-2xl">Contas a Pagar</h1>
+              <p className="mt-0.5 hidden text-sm text-muted-foreground sm:block">Boletos, notas e despesas — entrada manual rápida ou importação assistida por IA.</p>
             </div>
           </div>
           <div className="flex w-full flex-col items-stretch gap-3 sm:w-auto sm:items-end">
@@ -559,7 +559,7 @@ export default function ContasAPagar() {
         ) : null}
 
         {effectiveView === 'contas' ? <ErrorBoundary><>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
           {summaryCards.map((card, index) => {
             const tone = kpiToneStyles[card.tone];
             return (
@@ -569,25 +569,25 @@ export default function ContasAPagar() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.06, duration: 0.25 }}
                 className={cn(
-                  'relative overflow-hidden rounded-2xl border p-5 shadow-sm',
+                  'relative overflow-hidden rounded-xl border p-3 shadow-sm sm:rounded-2xl sm:p-5',
                   tone.card,
                 )}
               >
                 <div className="flex items-start justify-between gap-3">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{card.label}</span>
-                  <span className={cn('flex h-10 w-10 items-center justify-center rounded-xl', tone.icon)}>
-                    <card.Icon className="h-5 w-5" />
+                  <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-xl sm:h-10 sm:w-10', tone.icon)}>
+                    <card.Icon className="h-4 w-4 sm:h-5 sm:w-5" />
                   </span>
                 </div>
-                <p className={cn('mt-3 text-2xl font-display font-bold tracking-tight tabular-nums leading-tight', tone.value)}>{card.value}</p>
-                <p className="mt-1.5 text-xs font-medium text-muted-foreground">{card.sub}</p>
+                <p className={cn('mt-3 truncate text-lg font-display font-bold tracking-tight tabular-nums leading-tight sm:text-2xl', tone.value)}>{card.value}</p>
+                <p className="mt-1.5 line-clamp-2 text-[11px] font-medium text-muted-foreground sm:text-xs">{card.sub}</p>
               </motion.div>
             );
           })}
         </div>
 
         <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/[0.04] via-background to-background">
-          <CardContent className="grid gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <CardContent className="grid gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(0,1fr)_360px]">
             <div className="space-y-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -599,31 +599,31 @@ export default function ContasAPagar() {
                 </Badge>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-2xl border bg-background p-4">
+              <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
+                <div className="rounded-xl border bg-background p-3 sm:rounded-2xl sm:p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Próx. 7 dias</p>
-                  <p className="mt-2 text-xl font-bold tabular-nums">{fmtBRL(cashFlowSummary.nextSevenTotal)}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{cashFlowSummary.nextSevenCount} vencimento{cashFlowSummary.nextSevenCount === 1 ? '' : 's'}</p>
+                  <p className="mt-2 truncate text-lg font-bold tabular-nums sm:text-xl">{fmtBRL(cashFlowSummary.nextSevenTotal)}</p>
+                  <p className="mt-1 hidden text-xs text-muted-foreground sm:block">{cashFlowSummary.nextSevenCount} vencimento{cashFlowSummary.nextSevenCount === 1 ? '' : 's'}</p>
                 </div>
-                <div className="rounded-2xl border bg-background p-4">
+                <div className="rounded-xl border bg-background p-3 sm:rounded-2xl sm:p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Próx. 30 dias</p>
-                  <p className="mt-2 text-xl font-bold tabular-nums">{fmtBRL(cashFlowSummary.nextThirtyTotal)}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{cashFlowSummary.nextThirtyCount} conta{cashFlowSummary.nextThirtyCount === 1 ? '' : 's'} no radar</p>
+                  <p className="mt-2 truncate text-lg font-bold tabular-nums sm:text-xl">{fmtBRL(cashFlowSummary.nextThirtyTotal)}</p>
+                  <p className="mt-1 hidden text-xs text-muted-foreground sm:block">{cashFlowSummary.nextThirtyCount} conta{cashFlowSummary.nextThirtyCount === 1 ? '' : 's'} no radar</p>
                 </div>
-                <div className="rounded-2xl border border-destructive/20 bg-red-50/60 p-4">
+                <div className="rounded-xl border border-destructive/20 bg-red-50/60 p-3 sm:rounded-2xl sm:p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-destructive/80">Atrasadas</p>
-                  <p className="mt-2 text-xl font-bold tabular-nums text-destructive">{fmtBRL(cashFlowSummary.overdueTotal)}</p>
-                  <p className="mt-1 text-xs text-destructive/70">{cashFlowSummary.overdueCount} pendência{cashFlowSummary.overdueCount === 1 ? '' : 's'} crítica{cashFlowSummary.overdueCount === 1 ? '' : 's'}</p>
+                  <p className="mt-2 truncate text-lg font-bold tabular-nums text-destructive sm:text-xl">{fmtBRL(cashFlowSummary.overdueTotal)}</p>
+                  <p className="mt-1 hidden text-xs text-destructive/70 sm:block">{cashFlowSummary.overdueCount} pendência{cashFlowSummary.overdueCount === 1 ? '' : 's'} crítica{cashFlowSummary.overdueCount === 1 ? '' : 's'}</p>
                 </div>
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 sm:rounded-2xl sm:p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-800">Mão de obra</p>
-                  <p className="mt-2 text-xl font-bold tabular-nums text-emerald-950">{fmtBRL(cashFlowSummary.laborTotal)}</p>
-                  <p className="mt-1 text-xs text-emerald-800">{cashFlowSummary.laborCount} lançamento{cashFlowSummary.laborCount === 1 ? '' : 's'} identificado{cashFlowSummary.laborCount === 1 ? '' : 's'}</p>
+                  <p className="mt-2 truncate text-lg font-bold tabular-nums text-emerald-950 sm:text-xl">{fmtBRL(cashFlowSummary.laborTotal)}</p>
+                  <p className="mt-1 hidden text-xs text-emerald-800 sm:block">{cashFlowSummary.laborCount} lançamento{cashFlowSummary.laborCount === 1 ? '' : 's'} identificado{cashFlowSummary.laborCount === 1 ? '' : 's'}</p>
                 </div>
               </div>
             </div>
 
-            <div className="rounded-2xl border bg-background p-4">
+            <div className="rounded-xl border bg-background p-3 sm:rounded-2xl sm:p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold">Próximos vencimentos</p>
@@ -657,18 +657,18 @@ export default function ContasAPagar() {
 
         <Card>
           <CardContent className="p-0">
-            <div className="space-y-3 border-b border-border/60 p-4">
+            <div className="space-y-3 border-b border-border/60 p-3 sm:p-4">
               <Tabs value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
-                <TabsList className="h-9 flex-wrap">
-                  <TabsTrigger value="all">Todas</TabsTrigger>
-                  <TabsTrigger value="pendente">Pendentes</TabsTrigger>
-                  <TabsTrigger value="vencido">Vencidas</TabsTrigger>
-                  <TabsTrigger value="pago">Pagas</TabsTrigger>
+                <TabsList className="h-auto min-h-9 w-full justify-start overflow-x-auto rounded-xl p-1 sm:w-auto">
+                  <TabsTrigger value="all" className="shrink-0">Todas</TabsTrigger>
+                  <TabsTrigger value="pendente" className="shrink-0">Pendentes</TabsTrigger>
+                  <TabsTrigger value="vencido" className="shrink-0">Vencidas</TabsTrigger>
+                  <TabsTrigger value="pago" className="shrink-0">Pagas</TabsTrigger>
                   <TabsTrigger value="cancelado" className="hidden sm:flex">Canceladas</TabsTrigger>
                 </TabsList>
               </Tabs>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.2fr)_180px_180px_180px]">
-                <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={searchRaw} onChange={(event) => setSearchRaw(event.target.value)} placeholder="Buscar por título, fornecedor ou documento..." className="pl-9" /></div>
+                <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={searchRaw} onChange={(event) => setSearchRaw(event.target.value)} placeholder="Buscar por título, fornecedor ou documento..." className="h-11 pl-9" /></div>
                 <Select value={categoryFilter} onValueChange={setCategoryFilter}><SelectTrigger><SelectValue placeholder="Categoria" /></SelectTrigger><SelectContent><SelectItem value="all">Todas as categorias</SelectItem>{payableCategories.filter((category) => category.isActive).map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select>
                 <Select value={originFilter} onValueChange={(value) => setOriginFilter(value as OriginFilter)}><SelectTrigger><SelectValue placeholder="Origem" /></SelectTrigger><SelectContent><SelectItem value="all">Todas as origens</SelectItem><SelectItem value="MANUAL">Cadastro manual</SelectItem><SelectItem value="IA_IMPORT">Importadas por IA</SelectItem><SelectItem value="CAMERA_CAPTURE">Captura por câmera</SelectItem><SelectItem value="AUTO_SERIES">Geradas em série</SelectItem><SelectItem value="recurring">Recorrentes</SelectItem><SelectItem value="installment">Parceladas</SelectItem></SelectContent></Select>
                 <Select value={periodFilter} onValueChange={(value) => setPeriodFilter(value as PeriodFilter)}><SelectTrigger><SelectValue placeholder="Período" /></SelectTrigger><SelectContent><SelectItem value="all">Todo o período</SelectItem><SelectItem value="current-month">Vencimento neste mês</SelectItem><SelectItem value="next-30">Próximos 30 dias</SelectItem><SelectItem value="overdue">Somente vencidas</SelectItem></SelectContent></Select>
@@ -678,7 +678,7 @@ export default function ContasAPagar() {
             {filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-4 py-24 text-center"><Wallet className="h-10 w-10 text-muted-foreground" /><div className="max-w-sm"><h3 className="text-base font-semibold">Nenhuma conta encontrada</h3><p className="text-sm text-muted-foreground">Ajuste os filtros ou cadastre a primeira conta.</p></div><Button variant="outline" onClick={() => { setStatusFilter('all'); setPeriodFilter('all'); setOriginFilter('all'); setCategoryFilter('all'); setSearchRaw(''); }}>Limpar filtros</Button></div>
             ) : (
-              <div className="grid items-start gap-4 p-4 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid items-start gap-3 p-3 sm:gap-4 sm:p-4 md:grid-cols-2 xl:grid-cols-3">
                 {filtered.map((payable, index) => {
                   const urgency = getDueDateUrgencyLevel(payable);
                   const displayStatus = getPayableDisplayStatus(payable);
@@ -723,15 +723,15 @@ export default function ContasAPagar() {
                       transition={{ delay: Math.min(index, 8) * 0.03, duration: 0.22 }}
                       whileHover={{ y: -2 }}
                       className={cn(
-                        'group relative flex h-fit overflow-hidden rounded-2xl border bg-card shadow-sm transition-shadow hover:shadow-md',
+                        'group relative flex h-fit overflow-hidden rounded-xl border bg-card shadow-sm transition-shadow hover:shadow-md sm:rounded-2xl',
                         overdue && 'border-destructive/40',
                         isCancelled && 'opacity-70',
                       )}
                     >
                       <div className={cn('w-1.5 shrink-0', rail)} />
-                      <div className="flex min-w-0 flex-1 flex-col gap-2.5 p-3.5">
+                      <div className="flex min-w-0 flex-1 flex-col gap-2.5 p-3 sm:p-3.5">
                         <div className="flex items-start gap-3">
-                          <SupplierAvatar name={payable.supplierName} categoryIcon={category?.icon} size={44} />
+                          <SupplierAvatar name={payable.supplierName} categoryIcon={category?.icon} size={40} />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0 flex-1">
@@ -743,7 +743,7 @@ export default function ContasAPagar() {
                                   <p className="mt-0.5 truncate text-xs text-muted-foreground">{payable.supplierName}</p>
                                 ) : null}
                               </div>
-                              <p className={cn('max-w-[48%] truncate text-right text-lg font-display font-bold tabular-nums tracking-tight sm:text-xl', valueColor)}>
+                              <p className={cn('max-w-[46%] truncate text-right text-base font-display font-bold tabular-nums tracking-tight sm:text-xl', valueColor)}>
                                 {fmtBRL(payable.finalAmount)}
                               </p>
                             </div>
@@ -795,13 +795,13 @@ export default function ContasAPagar() {
                           <Button
                             variant="outline"
                             size="sm"
-                            className="min-w-0 flex-1 basis-32"
+                            className="min-w-0 flex-1 basis-[calc(50%-0.25rem)]"
                             onClick={() => updateRouteModal('details', payable.id)}
                           >
                             Ver detalhes
                           </Button>
                           {primaryAction ? (
-                            <Button size="sm" className="min-w-0 flex-1 basis-36" onClick={primaryAction.onClick}>
+                            <Button size="sm" className="min-w-0 flex-1 basis-[calc(50%-0.25rem)]" onClick={primaryAction.onClick}>
                               {primaryAction.label}
                             </Button>
                           ) : null}

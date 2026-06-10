@@ -6,7 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Download, MapPin, Pencil, Phone, PlusCircle, Search } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Download, Eye, MapPin, MoreHorizontal, Pencil, Phone, PlusCircle, Search } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { buildCustomerAddressLabel } from '@/services/domain/customers';
 import ClientDetailModal from '@/components/clients/ClientDetailModal';
@@ -153,54 +154,65 @@ export default function Clients() {
             </Badge>
           </div>
 
-          <div className="grid gap-3 xl:hidden">
+          <div className="grid gap-2 lg:hidden">
             {filtered.map((client) => (
-              <Card key={client.id} className="border border-border/60 shadow-none">
-                <CardContent className="p-4 space-y-3">
+              <Card key={client.id} className="overflow-hidden rounded-xl border border-border/60 shadow-none">
+                <CardContent className="space-y-3 p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-semibold text-foreground truncate">{client.name}</p>
+                      <p className="truncate text-sm font-semibold leading-tight text-foreground">{client.name}</p>
                       <p className="text-xs text-muted-foreground truncate">
                         {client.docType}: {client.docNumber}
                       </p>
                     </div>
-                    <Badge variant={client.isActive ? 'default' : 'secondary'}>
-                      {client.isActive ? 'Ativo' : 'Inativo'}
-                    </Badge>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <Badge variant={client.isActive ? 'default' : 'secondary'} className="h-6 rounded-full px-2 text-[11px]">
+                        {client.isActive ? 'Ativo' : 'Inativo'}
+                      </Badge>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48">
+                          <DropdownMenuItem onClick={() => setSelectedClientId(client.id)}>
+                            <Eye className="mr-2 h-4 w-4" /> Ver cliente
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => openEdit(client.id)}>
+                            <Pencil className="mr-2 h-4 w-4" /> Editar
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => { void updateClient(client.id, { isActive: !client.isActive }); }}>
+                            {client.isActive ? 'Desativar' : 'Ativar'}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   </div>
 
-                  <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+                  <div className="grid gap-1.5 text-xs text-muted-foreground sm:grid-cols-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      <Phone className="w-4 h-4 shrink-0" />
+                      <Phone className="h-3.5 w-3.5 shrink-0" />
                       <span className="truncate">{client.phone || 'Telefone nao informado'}</span>
                     </div>
                     <div className="flex items-start gap-2 min-w-0">
-                      <MapPin className="w-4 h-4 shrink-0 mt-0.5" />
+                      <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                       <span className="line-clamp-2">{buildCustomerAddressLabel(client)}</span>
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
                     <span className="text-muted-foreground">Ultima nota:</span>
                     <span className="font-medium text-primary">{lastNote(client.id) || '—'}</span>
                   </div>
 
-                  <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-                    <Button size="sm" variant="outline" onClick={() => setSelectedClientId(client.id)}>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button size="sm" variant="outline" className="min-w-0" onClick={() => setSelectedClientId(client.id)}>
                       Ver cliente
                     </Button>
-                    <Button size="sm" onClick={() => openEdit(client.id)}>
+                    <Button size="sm" className="min-w-0" onClick={() => openEdit(client.id)}>
                       <Pencil className="mr-1.5 h-3.5 w-3.5" />
                       Editar
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        void updateClient(client.id, { isActive: !client.isActive });
-                      }}
-                    >
-                      {client.isActive ? 'Desativar' : 'Ativar'}
                     </Button>
                   </div>
                 </CardContent>
@@ -214,7 +226,7 @@ export default function Clients() {
             )}
           </div>
 
-          <div className="hidden xl:block overflow-hidden rounded-lg border border-border/60">
+          <div className="hidden overflow-hidden rounded-lg border border-border/60 lg:block">
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
