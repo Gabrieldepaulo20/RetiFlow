@@ -1,6 +1,75 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-06-04
+Atualizado em: 2026-06-10
+
+---
+
+## HANDOFF 2026-06-10 — Estado, pendencias e como continuar
+
+> Resumo para outra IA (ou outro modelo) retomar o trabalho sem perder contexto.
+> Detalhes do modelo de dados estao no `AGENTS.md` (secoes "Modelo De Status E
+> Pagamento Das Notas" e "BACKEND APLICADO") e no `CLAUDE.md`.
+
+### Projeto / infra
+- Supabase: projeto `dqeoxxokvvcpssajycgq` ("Portal de Notas"). Remote SSH:
+  `github-gabriel:Gabrieldepaulo20/RetiFlow.git`. Trabalhar a partir de `origin/main`.
+- Validar SEMPRE antes de concluir: `npx tsc --noEmit -p tsconfig.app.json`, `npm run lint`,
+  `npm test -- --run` (hoje ~362 testes), `npm run build`. `test:integration` so com `.env.integration`.
+- Mudanca de banco/RPC/Edge Function em PRODUCAO exige aprovacao explicita do usuario (padrao firmado).
+
+### Concluido nesta fase
+- **Reforma de status das notas (11 status, 2 eixos):** fluxo (`ABERTO..ENTREGUE`, finais
+  `RECUSADO`/`SEM_CONSERTO`, admin `EXCLUIDA`) + eixo de pagamento `NotePaymentStatus`
+  (`PENDENTE/PAGO` + `paidAt`/`paidWith`). Faturavel = `BILLABLE_STATUSES`. Adapter traduz status
+  legados do banco. Removidos FINALIZADO e PRONTO (PRONTO->PRONTA).
+- **Recebimento nas notas:** `registrarRecebimentoNota`/`estornarRecebimentoNota` no DataContext;
+  botao no detalhe; Dashboard com **Faturado / Recebido / A receber**.
+- **Contato na nota** (`contatoNome`/`contatoTelefone`) + **glossario de status** em Configuracoes
+  (aba "Status & Fluxo", fonte unica `STATUS_DESCRIPTIONS`/`STATUS_CUSTOMER_LABELS` p/ o futuro chatbot).
+- **Legado:** 760 notas `Finalizado` -> `Entregue` + `payment_status=PAGO` + `origem=LEGADO`.
+- **Modo suporte:** NAO expira mais por tempo — encerra so no botao "Sair" (`ended_at`). A funcao
+  `resolve_suporte_contexto_usuario_id` deixou de checar `expires_at` (trade-off de seguranca aceito).
+- **P1 performance:** QueryClient com defaults (staleTime 30s, refetch-on-focus off); **fim do N+1 do
+  `dashboard-resumo`** (era 1 `get_nota_servico_detalhes` por nota; agora 1 RPC `get_servicos_resumo`,
+  edge v13+); split de contexto incremental: `useOperationalData()` (notas/clientes) e `usePayablesData()`
+  (payables) — paginas leem so a fatia que usam, reduzindo re-render. `useData()` segue p/ os demais.
+- **P4 Contas a Pagar:** `classifyPayableMatch()` (distingue duplicidade_provavel / possivel_parcela /
+  possivel_recorrencia / revisar / novo — nao bloqueia parcela como duplicata), integrado no
+  PayableQuickForm. **Favorecido/funcionario:** coluna `favorecido_tipo` em `Contas_Pagar` (contrato
+  completo nos RPCs via migration `..._complete_payables_favorecido_tipo_contract.sql`) + toggle
+  Fornecedor/Funcionario no formulario (Funcionario sugere categoria "Mao de Obra"). Salario = despesa
+  em Contas a Pagar; NAO existe modulo Contas a Receber.
+
+### O que falta (por prioridade)
+- **P2 — Seguranca:** rodar `get_advisors` e tratar `rls_enabled_no_policy` (ex.: `Configuracoes_*`,
+  `Gmail_Connections`); confirmar isolamento por tenant (`criado_por_usuario`/`fk_criado_por`) em todos
+  os RPCs e Storage; revisar o trade-off do suporte sem expiracao.
+- **P3 — Dashboard de gestao:** hoje e a "visao do cliente" simplificada + Faturado/Recebido/A receber.
+  Falta: servicos atrasados/parados ha X dias, tempo medio por etapa, gargalos por etapa, top clientes
+  e tipos de servico, contas vencidas/a vencer, saldo operacional (Recebido - Pago), previsao de caixa.
+  Preferir RPC/agregacao no banco (evitar puxar dado demais no front).
+- **P5 — IA de e-mails:** a edge `analisar-conta-pagar` ja retorna JSON estruturado, mas falta:
+  classificar TIPO de documento (boleto/NF/recibo/salario/imposto/promocional/desconhecido) ANTES de
+  extrair; pipeline regras+IA; usar `classifyPayableMatch` p/ detectar duplicidade/parcela; confianca
+  estruturada com revisao manual obrigatoria em baixa confianca; aprender com correcao do usuario
+  (regras por remetente/fornecedor); logs de decisao. IA NUNCA cria conta sem confianca suficiente.
+- **P6 — Organizacao:** `DataContext` ainda grande (split iniciado; estender com memo/selectors);
+  remover duplicacoes; revisar tipos/schemas; logica de negocio fora de componente visual.
+
+### Follow-ups menores (anotados tambem no AGENTS.md)
+- `get_notas_servico_contexto_suporte` e `get_nota_servico_detalhes` (+variante de suporte) ainda NAO
+  retornam os campos de pagamento/contato (afeta modo suporte e o detalhe de itens da nota).
+- Edge `admin-users` ainda grava `expires_at` de 1h ao iniciar suporte (ignorado pelos checks; cosmetico).
+- Redesenho profundo do `NoteDetailModal` + justificativa obrigatoria no "Excluir" (melhor com app rodando).
+
+### Regras que NAO podem ser violadas
+- Nao remover regra de seguranca para ganhar performance; seguranca real esta em RLS/RPC/Edge, nao no front.
+- Nao tratar parcela/recorrencia como duplicata real sem analise (usar `classifyPayableMatch`).
+- IA nao cria conta automaticamente sem confianca suficiente -> mandar para revisao manual.
+- Nunca commitar segredo. Nunca excluir dado de negocio fisicamente (so inativacao logica / soft delete).
+- Nota Fiscal segue fora da v1.
+
+---
 
 ## Estado Atual
 
