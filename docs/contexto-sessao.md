@@ -10,6 +10,20 @@ Atualizado em: 2026-06-10
 > Detalhes do modelo de dados estao no `AGENTS.md` (secoes "Modelo De Status E
 > Pagamento Das Notas" e "BACKEND APLICADO") e no `CLAUDE.md`.
 
+### Ajuste critico 2026-06-10 — suporte em clientes/O.S.
+- Corrigido o erro "Cliente não encontrado" ao editar clientes em modo suporte: migration
+  `20260610161103_fix_support_client_writes_and_passive_wheel.sql` adiciona contexto transacional
+  validado para o trigger `enforce_client_owner` e faz as RPCs de suporte de clientes configurarem
+  esse contexto antes do DML.
+- A mesma migration removeu `PUBLIC/anon EXECUTE` das RPCs sensiveis de suporte de notas/clientes,
+  validou contexto antes de criar Nota de Compra em suporte e replicou o bloqueio de O.S. ja vinculada
+  a fechamento em `update_nota_servico_contexto_suporte`.
+- Prova remota: edição temporaria de cliente da Retifica Premium via
+  `salvar_cliente_completo_contexto_suporte` retornou `200`, alterou o nome, restaurou o nome original
+  e limpou logs/sessao de prova.
+- Corrigido aviso de console do Kanban `Unable to preventDefault inside passive event listener invocation`
+  movendo o handler de `wheel` para listener nativo `{ passive: false }`.
+
 ### Projeto / infra
 - Supabase: projeto `dqeoxxokvvcpssajycgq` ("Portal de Notas"). Remote SSH:
   `github-gabriel:Gabrieldepaulo20/RetiFlow.git`. Trabalhar a partir de `origin/main`.

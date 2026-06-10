@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, type WheelEvent } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { useSearchParams } from "react-router-dom";
 import { useOperationalData } from "@/contexts/DataContext";
@@ -195,7 +195,7 @@ export default function Kanban() {
     scroller.scrollBy({ left: direction * distance, behavior: "smooth" });
   }, []);
 
-  const handleBoardWheel = useCallback((event: WheelEvent<HTMLDivElement>) => {
+  const handleBoardWheel = useCallback((event: WheelEvent) => {
     const scroller = boardScrollerRef.current;
     if (!scroller || scroller.scrollWidth <= scroller.clientWidth) return;
     if (Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
@@ -227,6 +227,17 @@ export default function Kanban() {
     event.preventDefault();
     scroller.scrollLeft += event.deltaY;
   }, []);
+
+  useEffect(() => {
+    const scroller = boardScrollerRef.current;
+    if (!scroller) return undefined;
+
+    scroller.addEventListener("wheel", handleBoardWheel, { passive: false });
+
+    return () => {
+      scroller.removeEventListener("wheel", handleBoardWheel);
+    };
+  }, [handleBoardWheel]);
 
   /* ── Filtered notes ── */
 
@@ -509,7 +520,6 @@ export default function Kanban() {
         <div
           ref={boardScrollerRef}
           data-testid="kanban-board-scroller"
-          onWheel={handleBoardWheel}
           className="-mx-3 min-h-0 flex-1 touch-pan-x overflow-x-auto overscroll-x-contain px-3 pb-3 scrollbar-thin sm:-mx-1 sm:px-1"
           style={{ WebkitOverflowScrolling: "touch" }}
         >

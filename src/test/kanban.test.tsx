@@ -205,4 +205,30 @@ describe('Kanban', () => {
 
     expect(await screen.findByText('note-detail-n1')).toBeInTheDocument();
   });
+
+  it('registers the board wheel handler as non-passive so horizontal scroll can prevent default', () => {
+    const addEventListenerSpy = vi.spyOn(HTMLElement.prototype, 'addEventListener');
+
+    render(
+      <MemoryRouter
+        initialEntries={['/kanban']}
+        future={{
+          v7_startTransition: true,
+          v7_relativeSplatPath: true,
+        }}
+      >
+        <Kanban />
+      </MemoryRouter>,
+    );
+
+    const boardScroller = screen.getByTestId('kanban-board-scroller');
+    const wheelRegistration = addEventListenerSpy.mock.calls.find(
+      ([eventName], index) => eventName === 'wheel' && addEventListenerSpy.mock.instances[index] === boardScroller,
+    );
+    const options = wheelRegistration?.[2] as AddEventListenerOptions | undefined;
+
+    expect(options).toMatchObject({ passive: false });
+
+    addEventListenerSpy.mockRestore();
+  });
 });
