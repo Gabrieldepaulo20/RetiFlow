@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getInitials } from '@/lib/avatarInitials';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
-import { Sheet, SheetClose, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetClose, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import {
   LayoutDashboard, Users, Settings, Menu, LogOut, ChevronLeft, ChevronRight, Wrench, Shield, ArrowLeft,
@@ -129,6 +129,7 @@ export default function AdminLayout() {
                 <Button variant="ghost" size="icon"><Menu className="w-5 h-5" /></Button>
               </SheetTrigger>
               <SheetContent side="left" className="w-[min(86vw,18rem)] p-0 bg-sidebar border-sidebar-border">
+                <SheetTitle className="sr-only">Menu de navegação administrativa</SheetTitle>
                 <NavContent onNav={() => {}} />
               </SheetContent>
             </Sheet>
@@ -198,6 +199,7 @@ export default function AdminLayout() {
                 </button>
               </SheetTrigger>
               <SheetContent side="bottom" className="rounded-t-[28px] p-0">
+                <SheetTitle className="sr-only">Menu da conta administrativa</SheetTitle>
                 <div className="border-b border-border/60 px-5 pb-3 pt-5">
                   <p className="text-sm font-semibold">{user.name}</p>
                   <p className="text-xs text-muted-foreground">{user.email}</p>

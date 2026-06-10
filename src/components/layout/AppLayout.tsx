@@ -22,7 +22,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
@@ -367,6 +367,7 @@ export default function AppLayout() {
                 </Button>
               </SheetTrigger>
               <SheetContent side="left" className="w-[min(86vw,18rem)] p-0 bg-sidebar border-sidebar-border">
+                <SheetTitle className="sr-only">Menu de navegação operacional</SheetTitle>
                 <NavContent onNav={() => setMobileMenuOpen(false)} />
               </SheetContent>
             </Sheet>
