@@ -181,7 +181,6 @@ export default function AppLayout() {
 
   const isModuleVisible = (item: typeof navItems[number]) => {
     if (!user) return false;
-    if (isAdminOperationalPortal && item.moduleKey === 'settings') return false;
     if (isSupportImpersonating && item.moduleKey === 'settings') return false;
     return canAccessModule(item.moduleKey);
   };

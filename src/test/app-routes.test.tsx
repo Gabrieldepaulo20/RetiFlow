@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '@/App';
 import type { AuthSession } from '@/types';
 
@@ -11,7 +11,10 @@ function renderAt(path: string) {
   return render(<App />);
 }
 
-function createSession(role: 'ADMIN' | 'FINANCEIRO'): AuthSession {
+function createSession(
+  role: 'ADMIN' | 'FINANCEIRO',
+  userOverrides: Partial<AuthSession['user']> = {},
+): AuthSession {
   const users = {
     ADMIN: {
       id: 'user-1',
@@ -32,7 +35,10 @@ function createSession(role: 'ADMIN' | 'FINANCEIRO'): AuthSession {
   } as const;
 
   return {
-    user: users[role],
+    user: {
+      ...users[role],
+      ...userOverrides,
+    },
     mode: 'development',
     authenticatedAt: '2026-03-29T12:00:00.000Z',
     tokens: {
@@ -43,8 +49,8 @@ function createSession(role: 'ADMIN' | 'FINANCEIRO'): AuthSession {
   };
 }
 
-function authenticateAs(role: 'ADMIN' | 'FINANCEIRO') {
-  window.localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(createSession(role)));
+function authenticateAs(role: 'ADMIN' | 'FINANCEIRO', userOverrides?: Partial<AuthSession['user']>) {
+  window.localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(createSession(role, userOverrides)));
 }
 
 function findDashboardHeading() {
@@ -53,6 +59,7 @@ function findDashboardHeading() {
 
 describe('App routes', () => {
   beforeEach(() => {
+    vi.unstubAllEnvs();
     window.localStorage.clear();
     window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
     window.localStorage.removeItem(SYSTEM_USERS_STORAGE_KEY);
@@ -109,6 +116,19 @@ describe('App routes', () => {
     expect(screen.queryByText(/alertas financeiros/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/alertas de produção/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/precisam de ação/i)).not.toBeInTheDocument();
+  });
+
+  it('shows Configurações in the operational sidebar for the configured Mega Master', async () => {
+    vi.stubEnv('VITE_SUPER_ADMIN_EMAILS', 'gabrielwilliam208@gmail.com');
+    authenticateAs('ADMIN', {
+      email: 'gabrielwilliam208@gmail.com',
+      name: 'Gabriel Mega Master',
+    });
+
+    renderAt('/dashboard');
+
+    expect(await findDashboardHeading()).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /configurações/i })).toHaveAttribute('href', '/configuracoes');
   });
 
   it.each([
