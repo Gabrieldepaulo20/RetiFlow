@@ -223,7 +223,7 @@ describe('Kanban', () => {
 
     const boardScroller = screen.getByTestId('kanban-board-scroller');
     const wheelRegistration = addEventListenerSpy.mock.calls.find(
-      ([eventName], index) => eventName === 'wheel' && addEventListenerSpy.mock.instances[index] === boardScroller,
+      ([eventName], index) => eventName === 'wheel' && addEventListenerSpy.mock.contexts[index] === boardScroller,
     );
     const options = wheelRegistration?.[2] as AddEventListenerOptions | undefined;
 
