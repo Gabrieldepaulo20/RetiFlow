@@ -13,6 +13,16 @@ const MONTH_SEGMENTS_PT_BR = [
   'dezembro',
 ] as const;
 
+const WEEKDAY_SEGMENTS_PT_BR = [
+  'Domingo',
+  'Segunda-feira',
+  'Terca-feira',
+  'Quarta-feira',
+  'Quinta-feira',
+  'Sexta-feira',
+  'Sabado',
+] as const;
+
 function removeDiacritics(value: string) {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
@@ -30,11 +40,13 @@ export function slugifyStorageSegment(value: string | null | undefined, fallback
 export function getStorageDateParts(input: Date | string | number = new Date()) {
   const date = input instanceof Date ? input : new Date(input);
   const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  const dayNumber = String(safeDate.getDate()).padStart(2, '0');
+  const weekday = WEEKDAY_SEGMENTS_PT_BR[safeDate.getDay()];
 
   return {
     year: String(safeDate.getFullYear()),
     month: MONTH_SEGMENTS_PT_BR[safeDate.getMonth()],
-    day: String(safeDate.getDate()).padStart(2, '0'),
+    day: `${dayNumber} (${weekday})`,
   };
 }
 

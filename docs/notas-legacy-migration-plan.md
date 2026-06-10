@@ -89,7 +89,7 @@ Somente depois da revisao do relatorio:
 
 - Em 2026-06-10, os paths da Retifica Premium foram normalizados para remover `legacy` do caminho visual.
 - Padrao atual das notas no bucket privado `notas`:
-  - `retifica-premium/ano/mes-por-extenso/dia/OS-<numero>.pdf`
+  - `retifica-premium/ano/mes-por-extenso/dia (dia-da-semana)/OS-<numero>.pdf`
 - Exemplo:
-  - `retifica-premium/2026/junho/05/OS-5776.pdf`
+  - `retifica-premium/2026/junho/05 (Sexta-feira)/OS-5776.pdf`
 - O campo `pdf_formato` das notas normalizadas passou a ser `supabase_storage`.

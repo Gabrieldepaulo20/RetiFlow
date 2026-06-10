@@ -131,11 +131,11 @@ Plano aprovado para executar em fases:
 
 ## Normalizacao De Paths De Storage Da Retifica Premium - 2026-06-10
 
-- Pedido: remover organizacao visual `auth_id/legacy/company-5/ano/mes` e usar pasta com nome da empresa, mes por extenso e dia.
+- Pedido: remover organizacao visual `auth_id/legacy/company-5/ano/mes` e usar pasta com nome da empresa, mes por extenso e dia explicativo.
 - Padrao novo:
-  - notas: `retifica-premium/ano/mes-por-extenso/dia/OS-<numero>.pdf`;
-  - contas a pagar: `retifica-premium/ano/mes-por-extenso/dia/<id-conta>/<arquivo>`.
-- Meses ficam em portugues sem acento no path, por exemplo `marco` e `junho`, para evitar encoding estranho em URL.
+  - notas: `retifica-premium/ano/mes-por-extenso/dia (dia-da-semana)/OS-<numero>.pdf`;
+  - contas a pagar: `retifica-premium/ano/mes-por-extenso/dia (dia-da-semana)/<id-conta>/<arquivo>`.
+- Meses e dias da semana ficam em portugues sem acento no path, por exemplo `marco`, `Terca-feira` e `Sabado`, para evitar encoding estranho em URL.
 - Criado script operacional `scripts/oneoff/normalize-retifica-premium-storage-paths.mjs`.
   - modo padrao `dry-run`;
   - modo real `--apply`;
@@ -158,9 +158,13 @@ Plano aprovado para executar em fases:
   - novo dry-run retornou 0 movimentos pendentes;
   - 885/885 notas da Retifica Premium seguem com PDF existente no bucket `notas`;
   - 3/3 anexos de contas a pagar seguem existentes no bucket `contas-pagar`;
-  - 0 referencias com `legacy`, `company-5`, prefixo antigo de `auth_id` ou mes numerico;
+  - 0 referencias com `legacy`, `company-5`, prefixo antigo de `auth_id`, mes numerico ou dia numerico sem dia da semana;
   - 0 arquivos restantes no prefixo antigo dos buckets;
   - buckets continuam privados; a seguranca segue baseada em owner/policies, nao no nome da pasta.
+- Ajuste complementar no mesmo dia:
+  - o segmento `dia` passou a incluir o dia da semana, exemplo `01 (Segunda-feira)`;
+  - 888 objetos existentes foram movidos do formato `dia/` para `dia (dia-da-semana)/`;
+  - auditoria pos-move confirmou 885/885 PDFs e 3/3 anexos com signed URL valido no novo formato.
 
 ## Contas A Pagar - Favorecido E Sugestoes De E-mail - 2026-06-10
 

@@ -127,15 +127,15 @@ describe('Notas Supabase PDF storage helpers', () => {
 
   it('uploadNotaPDF stores the PDF and returns storage path instead of public URL', async () => {
     const { uploadNotaPDF } = await import('@/api/supabase/notas');
-    mocks.upload.mockResolvedValue({ data: { path: 'retifica-premium/2026/junho/10/OS-123.pdf' }, error: null });
+    mocks.upload.mockResolvedValue({ data: { path: 'retifica-premium/2026/junho/10 (Quarta-feira)/OS-123.pdf' }, error: null });
 
     const path = await uploadNotaPDF(new Blob(['%PDF-1.4 test'], { type: 'application/pdf' }), 'OS-123');
 
-    expect(path).toMatch(/^retifica-premium\/\d{4}\/(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\/\d{2}\/OS-123\.pdf$/);
+    expect(path).toMatch(/^retifica-premium\/\d{4}\/(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\/\d{2} \((?:Domingo|Segunda-feira|Terca-feira|Quarta-feira|Quinta-feira|Sexta-feira|Sabado)\)\/OS-123\.pdf$/);
     expect(path.startsWith('http')).toBe(false);
     expect(mocks.from).toHaveBeenCalledWith('notas');
     expect(mocks.upload).toHaveBeenCalledWith(
-      expect.stringMatching(/^retifica-premium\/\d{4}\/(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\/\d{2}\/OS-123\.pdf$/),
+      expect.stringMatching(/^retifica-premium\/\d{4}\/(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\/\d{2} \((?:Domingo|Segunda-feira|Terca-feira|Quarta-feira|Quinta-feira|Sexta-feira|Sabado)\)\/OS-123\.pdf$/),
       expect.any(Blob),
       {
         contentType: 'application/pdf',

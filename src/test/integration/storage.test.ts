@@ -95,7 +95,7 @@ describe.skipIf(skipIntegration)('Storage — PDFs e anexos privados com signed 
 
     const path = await payablesApi.uploadAnexoContaPagar({ contaPagarId: contaId, file });
     payableAttachmentPaths.push(path);
-    expect(path.toLowerCase()).toMatch(new RegExp(`^[a-z0-9-]+/\\d{4}/(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)/\\d{2}/${contaId}/.+comprovante-teste\\.pdf$`));
+    expect(path.toLowerCase()).toMatch(new RegExp(`^[a-z0-9-]+/\\d{4}/(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)/\\d{2} \\((?:domingo|segunda-feira|terca-feira|quarta-feira|quinta-feira|sexta-feira|sabado)\\)/${contaId}/.+comprovante-teste\\.pdf$`));
 
     const anexoId = await payablesApi.insertAnexoContaPagar({
       p_fk_contas_pagar: contaId,
@@ -155,7 +155,7 @@ describe.skipIf(skipIntegration)('Storage — PDFs e anexos privados com signed 
     const path = await notasApi.uploadNotaPDF(pdfBlob, osNumero);
     notaPaths.push(path);
 
-    expect(path).toMatch(/^[a-z0-9-]+\/\d{4}\/(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\/\d{2}\/OS-INT-/);
+    expect(path).toMatch(/^[a-z0-9-]+\/\d{4}\/(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\/\d{2} \((?:Domingo|Segunda-feira|Terca-feira|Quarta-feira|Quinta-feira|Sexta-feira|Sabado)\)\/OS-INT-/);
     expect(path.startsWith('http')).toBe(false);
 
     const signedUrl = await notasApi.getNotaPDFSignedUrl(path);

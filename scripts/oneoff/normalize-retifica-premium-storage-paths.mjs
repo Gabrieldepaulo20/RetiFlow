@@ -26,6 +26,16 @@ const MONTH_SEGMENTS_PT_BR = [
   'dezembro',
 ];
 
+const WEEKDAY_SEGMENTS_PT_BR = [
+  'Domingo',
+  'Segunda-feira',
+  'Terca-feira',
+  'Quarta-feira',
+  'Quinta-feira',
+  'Sexta-feira',
+  'Sabado',
+];
+
 function readEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return {};
   return Object.fromEntries(
@@ -82,10 +92,12 @@ function slugifyStorageSegment(value, fallback = 'tenant') {
 function storageDateParts(value) {
   const date = value ? new Date(value) : new Date();
   const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  const dayNumber = String(safeDate.getDate()).padStart(2, '0');
+  const weekday = WEEKDAY_SEGMENTS_PT_BR[safeDate.getDay()];
   return {
     year: String(safeDate.getFullYear()),
     month: MONTH_SEGMENTS_PT_BR[safeDate.getMonth()],
-    day: String(safeDate.getDate()).padStart(2, '0'),
+    day: `${dayNumber} (${weekday})`,
   };
 }
 
