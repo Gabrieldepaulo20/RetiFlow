@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef, type WheelEvent } from "react";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { useSearchParams } from "react-router-dom";
 import { useOperationalData } from "@/contexts/DataContext";
@@ -20,6 +20,8 @@ import {
   Package,
   SlidersHorizontal,
   Check,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -141,6 +143,7 @@ export default function Kanban() {
   const { notes, clients, updateNoteStatus, getAttachmentsForNote } = useOperationalData();
   const { user } = useAuth();
   const { toast } = useToast();
+  const boardScrollerRef = useRef<HTMLDivElement | null>(null);
   const [selectedNote, setSelectedNote] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
   const searchQuery = (searchParams.get("q") ?? "").trim().toLowerCase();
@@ -183,6 +186,47 @@ export default function Kanban() {
   }, []);
 
   const allVisible = visibleStatuses.size === NOTE_STATUS_ORDER.length;
+
+  const scrollBoardBy = useCallback((direction: -1 | 1) => {
+    const scroller = boardScrollerRef.current;
+    if (!scroller) return;
+
+    const distance = Math.max(280, Math.floor(scroller.clientWidth * 0.75));
+    scroller.scrollBy({ left: direction * distance, behavior: "smooth" });
+  }, []);
+
+  const handleBoardWheel = useCallback((event: WheelEvent<HTMLDivElement>) => {
+    const scroller = boardScrollerRef.current;
+    if (!scroller || scroller.scrollWidth <= scroller.clientWidth) return;
+    if (Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+
+    const target = event.target;
+    const columnScroller =
+      target instanceof HTMLElement
+        ? target.closest<HTMLElement>("[data-kanban-column-scroll]")
+        : null;
+
+    if (columnScroller) {
+      const canScrollVertically =
+        columnScroller.scrollHeight > columnScroller.clientHeight + 1;
+      const isScrollingDown = event.deltaY > 0;
+      const isScrollingUp = event.deltaY < 0;
+      const atTop = columnScroller.scrollTop <= 0;
+      const atBottom =
+        columnScroller.scrollTop + columnScroller.clientHeight >=
+        columnScroller.scrollHeight - 1;
+
+      if (
+        canScrollVertically &&
+        ((isScrollingDown && !atBottom) || (isScrollingUp && !atTop))
+      ) {
+        return;
+      }
+    }
+
+    event.preventDefault();
+    scroller.scrollLeft += event.deltaY;
+  }, []);
 
   /* ── Filtered notes ── */
 
@@ -433,13 +477,42 @@ export default function Kanban() {
               </div>
             </PopoverContent>
           </Popover>
+
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-8 w-8 rounded-lg shadow-none"
+              aria-label="Rolar Kanban para a esquerda"
+              onClick={() => scrollBoardBy(-1)}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-8 w-8 rounded-lg shadow-none"
+              aria-label="Rolar Kanban para a direita"
+              onClick={() => scrollBoardBy(1)}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </div>
 
       {/* Kanban board */}
       <ErrorBoundary>
       <DragDropContext onDragEnd={onDragEnd}>
-        <div className="-mx-3 min-h-0 flex-1 overflow-x-auto overscroll-x-contain px-3 pb-3 scrollbar-thin sm:-mx-1 sm:px-1" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div
+          ref={boardScrollerRef}
+          data-testid="kanban-board-scroller"
+          onWheel={handleBoardWheel}
+          className="-mx-3 min-h-0 flex-1 touch-pan-x overflow-x-auto overscroll-x-contain px-3 pb-3 scrollbar-thin sm:-mx-1 sm:px-1"
+          style={{ WebkitOverflowScrolling: "touch" }}
+        >
         <div className="flex h-[calc(100dvh-13.5rem)] min-h-[420px] gap-3 sm:h-[calc(100dvh-12.5rem)]">
           {columns.map((col) => (
             <div key={col.status} className="flex h-full w-[min(82vw,280px)] flex-shrink-0 flex-col sm:w-[286px]">
@@ -477,8 +550,9 @@ export default function Kanban() {
                   <div
                     ref={provided.innerRef}
                     {...provided.droppableProps}
+                    data-kanban-column-scroll
                     className={cn(
-                      "min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-y-contain rounded-xl border p-2 transition-colors duration-200 scrollbar-thin",
+                      "min-h-0 flex-1 touch-pan-y space-y-2 overflow-y-auto overscroll-y-contain rounded-xl border p-2 transition-colors duration-200 scrollbar-thin",
                       snapshot.isDraggingOver
                         ? "bg-primary/[0.06] border-primary/25 ring-1 ring-primary/15 ring-inset"
                         : "bg-muted/30 border-border/40",
@@ -520,7 +594,7 @@ export default function Kanban() {
                                     {...provided.dragHandleProps}
                                     aria-label="Arrastar nota"
                                     onClick={(e) => e.stopPropagation()}
-                                    className="opacity-0 group-hover:opacity-50 active:opacity-100 transition-opacity -ml-0.5 shrink-0 touch-none cursor-grab active:cursor-grabbing rounded p-0.5 -m-0.5"
+                                    className="opacity-50 transition-opacity -ml-0.5 shrink-0 touch-none cursor-grab active:cursor-grabbing rounded p-0.5 -m-0.5 sm:opacity-0 sm:group-hover:opacity-50 sm:active:opacity-100"
                                   >
                                     <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
                                   </div>
