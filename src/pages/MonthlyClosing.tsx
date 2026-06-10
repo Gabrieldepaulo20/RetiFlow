@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import {
   AlertTriangle, Download, Building2,
-  PlusCircle, RefreshCcw, Share2, ChevronLeft, Eye, EyeOff, Sparkles, PencilLine, Printer,
+  PlusCircle, RefreshCcw, ChevronLeft, Eye, EyeOff, Sparkles, PencilLine, Printer,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -939,9 +939,9 @@ export default function MonthlyClosing() {
       </div>
 
       <Card>
-        <CardContent className="p-4">
-          <p className="text-sm font-medium mb-3">Novo rascunho de fechamento</p>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(220px,1fr)_160px_110px_auto] lg:items-end">
+        <CardContent className="p-3 sm:p-4">
+          <p className="mb-2 text-sm font-medium">Novo rascunho de fechamento</p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(220px,1fr)_160px_110px_auto] lg:items-end">
             <div className="flex-1 min-w-[180px]">
               <label className="mb-1.5 block text-xs text-muted-foreground">Cliente</label>
               <Select value={selClientId} onValueChange={setSelClientId}>
@@ -953,42 +953,35 @@ export default function MonthlyClosing() {
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <label className="mb-1.5 block text-xs text-muted-foreground">Mês</label>
-              <Select value={selMonth} onValueChange={setSelMonth} disabled={!selClientId || loadingPeriods || availableMonthsForYear.length === 0}>
-                <SelectTrigger className="w-full" aria-label="Selecionar mês do fechamento"><SelectValue placeholder={loadingPeriods ? 'Carregando...' : 'Sem notas'} /></SelectTrigger>
-                <SelectContent>
-                  {availableMonthsForYear.map((period) => (
-                    <SelectItem key={period.key} value={period.month}>
-                      {MONTHS[Number(period.month) - 1]} ({period.noteCount})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs text-muted-foreground">Ano</label>
-              <Select value={selYear} onValueChange={setSelYear} disabled={!selClientId || loadingPeriods || years.length === 0}>
-                <SelectTrigger className="w-full" aria-label="Selecionar ano do fechamento"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {years.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-2 sm:contents">
+              <div>
+                <label className="mb-1.5 block text-xs text-muted-foreground">Mês</label>
+                <Select value={selMonth} onValueChange={setSelMonth} disabled={!selClientId || loadingPeriods || availableMonthsForYear.length === 0}>
+                  <SelectTrigger className="w-full" aria-label="Selecionar mês do fechamento"><SelectValue placeholder={loadingPeriods ? 'Carregando...' : 'Sem notas'} /></SelectTrigger>
+                  <SelectContent>
+                    {availableMonthsForYear.map((period) => (
+                      <SelectItem key={period.key} value={period.month}>
+                        {MONTHS[Number(period.month) - 1]} ({period.noteCount})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs text-muted-foreground">Ano</label>
+                <Select value={selYear} onValueChange={setSelYear} disabled={!selClientId || loadingPeriods || years.length === 0}>
+                  <SelectTrigger className="w-full" aria-label="Selecionar ano do fechamento"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {years.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <Button onClick={handleBuildPreview} disabled={loadingPreview || loadingPeriods || !selClientId || !selMonth || availablePeriods.length === 0} className="w-full lg:min-w-[180px]">
               {loadingPreview || loadingPeriods ? <RefreshCcw className="w-4 h-4 mr-2 animate-spin" /> : <PlusCircle className="w-4 h-4 mr-2" />}
               Gerar rascunho
             </Button>
           </div>
-          <p className="mt-3 text-xs text-muted-foreground">
-            {selClientId
-              ? loadingPeriods
-                ? 'Buscando no banco os meses com O.S. finalizadas para este cliente...'
-                : availablePeriods.length > 0
-                  ? `Mostrando apenas períodos com notas finalizadas para ${clients.find((client) => client.id === selClientId)?.name ?? 'o cliente selecionado'}.`
-                  : 'Este cliente ainda não possui O.S. finalizadas para gerar fechamento.'
-              : 'Selecione um cliente para carregar no banco apenas os meses disponíveis para fechamento.'}
-          </p>
         </CardContent>
       </Card>
 
@@ -1013,9 +1006,9 @@ export default function MonthlyClosing() {
               const initials = draft.clientName.slice(0, 2).toUpperCase();
               return (
                 <Card key={draft.id} className={cn('border-l-4 overflow-hidden', palette.border)}>
-                  <CardContent className="p-4">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-                      <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0', palette.avatar)}>
+                  <CardContent className="p-3 sm:p-4">
+                    <div className="flex flex-col gap-2.5 sm:flex-row sm:items-start sm:gap-3">
+                      <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold sm:h-10 sm:w-10', palette.avatar)}>
                         {initials}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -1112,33 +1105,18 @@ export default function MonthlyClosing() {
                           </div>
                         )}
                       </div>
-                      <div className="flex w-full gap-2 sm:w-auto sm:shrink-0">
+                      <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:shrink-0">
                         <Button
                           size="sm"
                           variant="outline"
                           aria-label={`Visualizar template do fechamento ${f.periodo}`}
                           onClick={() => void openGeneratedPreview(f)}
-                          className="flex-1 sm:flex-none"
+                          className="flex-1 border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 sm:flex-none"
                         >
                           <Eye className="w-3.5 h-3.5 mr-1.5" /> Visualizar
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => handleDownload(f)} className="flex-1 sm:flex-none">
+                        <Button size="sm" variant="outline" onClick={() => handleDownload(f)} className="flex-1 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800 sm:flex-none">
                           <Download className="w-3.5 h-3.5 mr-1.5" /> PDF
-                        </Button>
-                        <Button size="sm" variant="ghost" aria-label={`Copiar link do fechamento ${f.periodo}`} onClick={async () => {
-                          if (f.pdf_url) {
-                            try {
-                              const url = await getFechamentoPDFSignedUrl(f.pdf_url);
-                              await navigator.clipboard.writeText(url);
-                              toast({ title: 'Link copiado!' });
-                            } catch {
-                              toast({ title: 'Erro ao gerar link', variant: 'destructive' });
-                            }
-                          } else {
-                            toast({ title: 'PDF ainda não disponível', variant: 'destructive' });
-                          }
-                        }} className="shrink-0">
-                          <Share2 className="w-3.5 h-3.5" />
                         </Button>
                       </div>
                     </div>

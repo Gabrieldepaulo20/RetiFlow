@@ -4,6 +4,38 @@ Atualizado em: 2026-06-10
 
 ---
 
+## Mobile Fechamento E Contas A Pagar - 2026-06-10
+
+- Pedido: melhorar a densidade mobile/tablet de Fechamento, Contas a Pagar e Sugestoes do Gmail.
+- Fechamento:
+  - card `Novo rascunho de fechamento` ficou mais curto;
+  - selects de mes e ano ficam lado a lado no mobile;
+  - texto explicativo abaixo do seletor foi removido;
+  - cards de fechamentos gerados ficaram mais compactos;
+  - botao de compartilhar foi removido dos cards gerados;
+  - acoes `Visualizar` e `PDF` ganharam cor e continuam lado a lado.
+- Contas a Pagar:
+  - botoes `Importar com IA` e `Nova Conta` ficam divididos na mesma linha no mobile;
+  - filtros foram comprimidos em duas linhas de duas colunas: busca/categoria e origem/periodo;
+  - cards de contas tiveram padding e banner contextual reduzidos para diminuir altura.
+- Sugestoes:
+  - indicadores da ultima busca agora alinham em grade de 3 colunas no mobile;
+  - cards de sugestao foram compactados, escondendo detalhes pesados no mobile e preservando titulo, status, confianca, valor, datas e acoes;
+  - aviso de conta vencida foi reduzido para uma linha mais densa com acao curta `Paga`.
+- Validacao visual local em mock:
+  - viewport 393x852: Fechamento com mes/ano na mesma linha, sem texto auxiliar e sem overflow horizontal;
+  - viewport 393x852: Contas a Pagar com botoes principais lado a lado, filtros em duas linhas e sem overflow horizontal;
+  - viewport 393x852: Sugestoes sem overflow horizontal; card de sugestao com vencimento caiu de ~304px para ~260px.
+- Alteracao apenas de frontend; sem mudanca de banco, RPC, Storage ou Edge Function.
+- Validacao final executada:
+  - `npx tsc --noEmit`: passou.
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh.
+  - `npm test -- --run`: passou, 50 arquivos e 370 testes.
+  - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks/import dinamico.
+  - `npm run test:integration`: nao executado porque a alteracao foi apenas de frontend, sem tocar banco, RPC, Storage ou Edge Function.
+
+---
+
 ## HANDOFF 2026-06-10 — Estado, pendencias e como continuar
 
 > Resumo para outra IA (ou outro modelo) retomar o trabalho sem perder contexto.

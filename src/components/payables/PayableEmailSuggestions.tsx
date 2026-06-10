@@ -151,14 +151,14 @@ function ConfidenceBadge({ value }: { value: number }) {
     : value >= 75
       ? 'bg-cyan-700 text-white ring-cyan-700'
       : 'bg-amber-500 text-slate-950 ring-amber-500';
-  return <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ring-1', tone)}><Sparkles className="h-2.5 w-2.5" />{value}% confiança</span>;
+  return <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 sm:text-xs', tone)}><Sparkles className="h-2.5 w-2.5" />{value}%</span>;
 }
 
 function GmailSyncMetric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="min-w-[88px] rounded-lg border border-border/60 bg-background px-2.5 py-2 shadow-sm">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="mt-0.5 text-base font-bold leading-none text-foreground">{value}</p>
+    <div className="min-w-0 rounded-lg border border-border/60 bg-background px-2 py-1.5 text-center shadow-sm sm:min-w-[104px] sm:px-2.5 sm:py-2 sm:text-left">
+      <p className="line-clamp-1 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground sm:text-[10px]">{label}</p>
+      <p className="mt-0.5 text-sm font-bold leading-none text-foreground sm:text-base">{value}</p>
     </div>
   );
 }
@@ -180,28 +180,28 @@ function SenderRiskBadge({ risk }: { risk?: 'BAIXO' | 'MEDIO' | 'ALTO' }) {
 function SuggestionStatusBadge({ suggestion }: { suggestion: EmailSuggestion }) {
   if (suggestion.suggestedStatus === 'INCERTO') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-800 ring-1 ring-rose-300">
-        <AlertCircle className="h-3.5 w-3.5" /> Revisar
+      <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-800 ring-1 ring-rose-300 sm:px-2.5 sm:py-1 sm:text-xs">
+        <AlertCircle className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> Revisar
       </span>
     );
   }
   if (suggestion.suggestedStatus === 'PAGO') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
-        <BadgeCheck className="h-3.5 w-3.5" /> Já paga
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200 sm:px-2.5 sm:py-1 sm:text-xs">
+        <BadgeCheck className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> Já paga
       </span>
     );
   }
   if (suggestion.suggestedStatus === 'AGENDADO') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700 ring-1 ring-sky-200">
-        <Clock3 className="h-3.5 w-3.5" /> Agendada
+      <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700 ring-1 ring-sky-200 sm:px-2.5 sm:py-1 sm:text-xs">
+        <Clock3 className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> Agendada
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-950 ring-1 ring-amber-300">
-      <ReceiptText className="h-3.5 w-3.5" /> A pagar
+    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-950 ring-1 ring-amber-300 sm:px-2.5 sm:py-1 sm:text-xs">
+      <ReceiptText className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> A pagar
     </span>
   );
 }
@@ -293,31 +293,31 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, r
           <div className="flex">
             <div className={cn('w-1.5 shrink-0', railClass)} />
             <div className="min-w-0 flex-1">
-              <div className="flex flex-col gap-2.5 p-3 lg:flex-row lg:items-start lg:justify-between">
-                <div className="flex min-w-0 gap-3">
+              <div className="flex flex-col gap-2 p-2.5 sm:gap-2.5 sm:p-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="flex min-w-0 gap-2.5 sm:gap-3">
                   <div className="relative mt-0.5 shrink-0">
                     {brand ? (
-                      <div className={cn('flex h-9 w-9 items-center justify-center rounded-xl', iconClass)}>
-                        <BrandMark brand={brand} className="text-base" />
+                      <div className={cn('flex h-8 w-8 items-center justify-center rounded-xl sm:h-9 sm:w-9', iconClass)}>
+                        <BrandMark brand={brand} className="text-sm sm:text-base" />
                       </div>
                     ) : (
-                      <SupplierAvatar name={suggestion.suggestedSupplierName} categoryIcon={categoryIcon} size={36} />
+                      <SupplierAvatar name={suggestion.suggestedSupplierName} categoryIcon={categoryIcon} size={32} />
                     )}
                     <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full border-2 border-white bg-slate-950 text-white shadow-sm">
                       <StatusIcon className="h-2.5 w-2.5" />
                     </span>
                   </div>
                   <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                       <SuggestionStatusBadge suggestion={suggestion} />
                       <ConfidenceBadge value={suggestion.confidence} />
                       <SenderRiskBadge risk={suggestion.senderRisk} />
                     </div>
-                    <p className="mt-1.5 text-sm font-semibold leading-snug text-foreground">{suggestion.suggestedTitle || suggestion.subject}</p>
-                    <p className="mt-1 text-xs font-medium text-slate-600">
+                    <p className="mt-1 text-sm font-semibold leading-snug text-foreground">{suggestion.suggestedTitle || suggestion.subject}</p>
+                    <p className="mt-1 hidden text-xs font-medium text-slate-600 sm:block">
                       {suggestion.senderName} &middot; recebido {format(parseISO(suggestion.receivedAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                     </p>
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5 sm:gap-2">
                       {brand ? <BrandChip brand={brand} /> : null}
                       <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-sm">
                         <CategoryIcon className="h-3.5 w-3.5 text-slate-500" />
@@ -326,7 +326,7 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, r
                       <PaymentMethodChip method={suggestion.suggestedPaymentMethod} />
                     </div>
                     {verificationSignals.length > 0 || fraudSignals.length > 0 ? (
-                      <div className="mt-3 flex flex-wrap gap-1.5">
+                      <div className="mt-2 hidden flex-wrap gap-1.5 sm:flex">
                         {verificationSignals.map((signal) => (
                           <span key={`v-${signal}`} className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
                             <BadgeCheck className="h-3 w-3" />{signal}
@@ -340,7 +340,7 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, r
                       </div>
                     ) : null}
                     {reviewReasons.length > 0 ? (
-                      <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                      <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 sm:mt-3 sm:px-3">
                         <p className="text-[11px] font-bold uppercase tracking-wide text-amber-800">Revisar antes de criar</p>
                         <div className="mt-1 flex flex-wrap gap-1.5">
                           {reviewReasons.slice(0, 4).map((reason) => (
@@ -352,18 +352,18 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, r
                       </div>
                     ) : null}
                     {suggestion.emailSnippet ? (
-                      <p className="mt-3 line-clamp-2 rounded-lg border border-slate-200 bg-white/85 px-3 py-2 text-xs font-medium leading-relaxed text-slate-700">
+                      <p className="mt-3 hidden line-clamp-2 rounded-lg border border-slate-200 bg-white/85 px-3 py-2 text-xs font-medium leading-relaxed text-slate-700 sm:block">
                         {suggestion.emailSnippet}
                       </p>
                     ) : null}
                     {!isPaid && overdueDays != null && onMarkPaid && !readOnly ? (
-                      <div className="mt-3 flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-                        <p className="flex items-start gap-1.5 text-xs font-medium text-amber-900">
+                      <div className="mt-2 flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 sm:mt-3 sm:px-3 sm:py-2">
+                        <p className="flex min-w-0 items-start gap-1.5 text-[11px] font-medium leading-snug text-amber-900 sm:text-xs">
                           <Clock3 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
-                          Venceu há {overdueDays} dia{overdueDays > 1 ? 's' : ''} — provavelmente já foi paga.
+                          <span className="line-clamp-2">Venceu há {overdueDays} dia{overdueDays > 1 ? 's' : ''} — provavelmente já foi paga.</span>
                         </p>
-                        <Button size="sm" className="h-7 shrink-0 gap-1 bg-emerald-600 px-2.5 text-xs text-white hover:bg-emerald-700" onClick={onMarkPaid}>
-                          <CheckCircle2 className="h-3.5 w-3.5" />Criar como paga
+                        <Button size="sm" className="h-7 shrink-0 gap-1 bg-emerald-600 px-2 text-[11px] text-white hover:bg-emerald-700 sm:px-2.5 sm:text-xs" onClick={onMarkPaid}>
+                          <CheckCircle2 className="hidden h-3.5 w-3.5 sm:block" />Paga
                         </Button>
                       </div>
                     ) : null}
@@ -388,21 +388,21 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, r
               </div>
 
               {!readOnly ? (
-              <div className={cn('flex items-center justify-end gap-2 border-t px-3 py-1.5', footerClass)}>
-                <div className="flex items-center gap-2 sm:justify-end">
+              <div className={cn('flex items-center justify-end gap-2 border-t px-2.5 py-1.5 sm:px-3', footerClass)}>
+                <div className="grid w-full grid-cols-2 items-center gap-1.5 sm:flex sm:w-auto sm:gap-2 sm:justify-end">
                   {isHighRisk && !allowHighRisk ? (
-                    <Button variant="ghost" size="sm" className="h-8 gap-1 text-rose-700 hover:bg-rose-100 hover:text-rose-800" onClick={() => setAllowHighRisk(true)}>
+                    <Button variant="ghost" size="sm" className="col-span-2 h-8 gap-1 text-rose-700 hover:bg-rose-100 hover:text-rose-800 sm:col-span-1" onClick={() => setAllowHighRisk(true)}>
                       Criar mesmo assim
                     </Button>
                   ) : null}
-                  <Button variant="outline" size="sm" className="h-8 gap-1 border-slate-300 bg-white/80 text-slate-700 hover:bg-white hover:text-destructive" onClick={onDismiss}>
+                  <Button variant="outline" size="sm" className="h-8 gap-1 border-slate-300 bg-white/80 px-2 text-slate-700 hover:bg-white hover:text-destructive sm:px-3" onClick={onDismiss}>
                     <X className="h-3.5 w-3.5" />Ignorar
                   </Button>
                   <Button
                     size="sm"
                     disabled={isHighRisk && !allowHighRisk}
                     title={isHighRisk && !allowHighRisk ? 'Remetente com sinais de fraude — confirme antes de criar.' : undefined}
-                    className={cn('h-8 gap-1', isPaid && 'bg-emerald-600 text-white hover:bg-emerald-700')}
+                    className={cn('h-8 gap-1 px-2 sm:px-3', isPaid && 'bg-emerald-600 text-white hover:bg-emerald-700')}
                     onClick={onAccept}
                   >
                     <CheckCircle2 className="h-3.5 w-3.5" />{isPaid ? 'Adicionar paga' : isReview ? 'Revisar e usar' : 'Usar como conta'}
@@ -831,9 +831,9 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <>
-      <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
         <div className="flex min-w-0 items-center gap-3">
           {gmailStatus?.connected ? (
             <span className="relative flex h-2.5 w-2.5 shrink-0">
@@ -867,9 +867,9 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
             ) : null}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
           {gmailStatus?.connected ? (
-            <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-2.5 py-1.5">
+            <div className="col-span-2 flex items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-2.5 py-1.5 sm:col-span-1">
               <Switch
                 id="payables-autoscan-toggle"
                 checked={autoScanEnabled}
@@ -904,7 +904,7 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
 
       {gmailStatus?.connected && gmailStatus.last_sync_at ? (
         <div className="space-y-2">
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-3 gap-1.5 sm:flex sm:flex-wrap sm:gap-2">
             <GmailSyncMetric label="E-mails lidos" value={gmailStatus.last_scan_messages_count ?? 0} />
             <GmailSyncMetric label="Anexos" value={gmailStatus.last_scan_attachments_count ?? 0} />
             <GmailSyncMetric label="Sugestões novas" value={gmailStatus.last_scan_suggestions_count ?? 0} />
@@ -951,9 +951,9 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
           </div>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {paidPending.length > 0 ? (
-            <section className="space-y-3">
+            <section className="space-y-2.5 sm:space-y-3">
               <div className="flex items-center gap-2">
                 <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200">
                   <BadgeCheck className="h-4 w-4" />
@@ -983,7 +983,7 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
           ) : null}
 
           {payablePending.length > 0 ? (
-            <section className="space-y-3">
+            <section className="space-y-2.5 sm:space-y-3">
               <div className="flex items-center gap-2">
                 <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-100 text-amber-700 ring-1 ring-amber-200">
                   <ReceiptText className="h-4 w-4" />

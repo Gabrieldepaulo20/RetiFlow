@@ -533,9 +533,9 @@ export default function ContasAPagar() {
               </TabsList>
             </Tabs>
             {effectiveView === 'contas' ? (
-            <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
-              <Button variant="outline" onClick={() => updateRouteModal('import')}><Sparkles className="mr-2 h-4 w-4" />Importar com IA</Button>
-              <Button onClick={() => updateRouteModal('new')} className="shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30"><PlusCircle className="mr-2 h-4 w-4" />Nova Conta</Button>
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
+              <Button variant="outline" onClick={() => updateRouteModal('import')} className="min-w-0 px-3 text-sm"><Sparkles className="mr-1.5 h-4 w-4 sm:mr-2" />Importar com IA</Button>
+              <Button onClick={() => updateRouteModal('new')} className="min-w-0 px-3 shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30"><PlusCircle className="mr-1.5 h-4 w-4 sm:mr-2" />Nova Conta</Button>
             </div>
             ) : null}
           </div>
@@ -667,11 +667,11 @@ export default function ContasAPagar() {
                   <TabsTrigger value="cancelado" className="hidden text-xs sm:flex">Canceladas</TabsTrigger>
                 </TabsList>
               </Tabs>
-              <div className="grid gap-2 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
-                <div className="relative"><Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><Input value={searchRaw} onChange={(event) => setSearchRaw(event.target.value)} placeholder="Buscar por título ou fornecedor..." className="h-9 pl-8 text-sm" /></div>
-                <Select value={categoryFilter} onValueChange={setCategoryFilter}><SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Categorias" /></SelectTrigger><SelectContent><SelectItem value="all">Todas as categorias</SelectItem>{payableCategories.filter((category) => category.isActive).map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select>
-                <Select value={originFilter} onValueChange={(value) => setOriginFilter(value as OriginFilter)}><SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Origens" /></SelectTrigger><SelectContent><SelectItem value="all">Todas as origens</SelectItem><SelectItem value="MANUAL">Cadastro manual</SelectItem><SelectItem value="IA_IMPORT">Importadas por IA</SelectItem><SelectItem value="CAMERA_CAPTURE">Captura por câmera</SelectItem><SelectItem value="AUTO_SERIES">Geradas em série</SelectItem><SelectItem value="recurring">Recorrentes</SelectItem><SelectItem value="installment">Parceladas</SelectItem></SelectContent></Select>
-                <Select value={periodFilter} onValueChange={(value) => setPeriodFilter(value as PeriodFilter)}><SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Período" /></SelectTrigger><SelectContent><SelectItem value="all">Todo o período</SelectItem><SelectItem value="current-month">Vencimento neste mês</SelectItem><SelectItem value="next-30">Próximos 30 dias</SelectItem><SelectItem value="overdue">Somente vencidas</SelectItem></SelectContent></Select>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
+                <div className="relative min-w-0"><Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><Input value={searchRaw} onChange={(event) => setSearchRaw(event.target.value)} placeholder="Buscar conta..." className="h-9 pl-8 text-sm" /></div>
+                <Select value={categoryFilter} onValueChange={setCategoryFilter}><SelectTrigger className="h-9 min-w-0 text-xs sm:text-sm"><SelectValue placeholder="Categorias" /></SelectTrigger><SelectContent><SelectItem value="all">Todas as categorias</SelectItem>{payableCategories.filter((category) => category.isActive).map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select>
+                <Select value={originFilter} onValueChange={(value) => setOriginFilter(value as OriginFilter)}><SelectTrigger className="h-9 min-w-0 text-xs sm:text-sm"><SelectValue placeholder="Origens" /></SelectTrigger><SelectContent><SelectItem value="all">Todas as origens</SelectItem><SelectItem value="MANUAL">Cadastro manual</SelectItem><SelectItem value="IA_IMPORT">Importadas por IA</SelectItem><SelectItem value="CAMERA_CAPTURE">Captura por câmera</SelectItem><SelectItem value="AUTO_SERIES">Geradas em série</SelectItem><SelectItem value="recurring">Recorrentes</SelectItem><SelectItem value="installment">Parceladas</SelectItem></SelectContent></Select>
+                <Select value={periodFilter} onValueChange={(value) => setPeriodFilter(value as PeriodFilter)}><SelectTrigger className="h-9 min-w-0 text-xs sm:text-sm"><SelectValue placeholder="Período" /></SelectTrigger><SelectContent><SelectItem value="all">Todo o período</SelectItem><SelectItem value="current-month">Vencimento neste mês</SelectItem><SelectItem value="next-30">Próximos 30 dias</SelectItem><SelectItem value="overdue">Somente vencidas</SelectItem></SelectContent></Select>
               </div>
             </div>
 
@@ -729,9 +729,9 @@ export default function ContasAPagar() {
                       )}
                     >
                       <div className={cn('w-1.5 shrink-0', rail)} />
-                      <div className="flex min-w-0 flex-1 flex-col gap-2.5 p-3 sm:p-3.5">
+                      <div className="flex min-w-0 flex-1 flex-col gap-2 p-2.5 sm:gap-2.5 sm:p-3.5">
                         <div className="flex items-start gap-2.5">
-                          <SupplierAvatar name={payable.supplierName} categoryIcon={category?.icon} size={32} />
+                          <SupplierAvatar name={payable.supplierName} categoryIcon={category?.icon} size={30} />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0 flex-1">
@@ -774,7 +774,7 @@ export default function ContasAPagar() {
                           ) : null}
                         </div>
 
-                        <div className="flex items-center gap-1.5 text-xs">
+                        <div className="flex items-center gap-1.5 text-xs leading-tight">
                           <CalendarClock className={cn(
                             'h-3.5 w-3.5 shrink-0',
                             overdue ? 'text-destructive' : urgency === 'critical' ? 'text-amber-600' : 'text-muted-foreground',
@@ -791,7 +791,7 @@ export default function ContasAPagar() {
                           />
                         ) : null}
 
-                        <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
+                        <div className="mt-auto flex flex-wrap items-center gap-2 pt-0.5">
                           <Button
                             variant="outline"
                             size="sm"

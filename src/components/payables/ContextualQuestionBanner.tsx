@@ -47,15 +47,15 @@ export function ContextualQuestionBanner({ question, payableId, onAction, onDism
   return (
     <div
       role="status"
-      className={cn('w-full min-w-0 overflow-hidden rounded-xl border px-3 py-2.5', tone.box)}
+      className={cn('w-full min-w-0 overflow-hidden rounded-xl border px-2.5 py-2 sm:px-3 sm:py-2.5', tone.box)}
     >
-      <div className="flex min-w-0 items-start gap-2">
-        <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', tone.icon)} aria-hidden />
-        <p className={cn('min-w-0 whitespace-normal break-words text-xs font-medium leading-relaxed', tone.text)}>
+      <div className="flex min-w-0 items-start gap-1.5 sm:gap-2">
+        <Icon className={cn('mt-0.5 h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4', tone.icon)} aria-hidden />
+        <p className={cn('min-w-0 whitespace-normal break-words text-xs font-medium leading-snug sm:leading-relaxed', tone.text)}>
           {question.message}
         </p>
       </div>
-      <div className="mt-3 flex min-w-0 flex-wrap items-center gap-1.5">
+      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5 sm:mt-3">
         {question.actions.map((action: ContextualAction) => {
           if (action.action === 'dismiss') {
             const props = actionButtonProps(action.variant);
@@ -64,7 +64,7 @@ export function ContextualQuestionBanner({ question, payableId, onAction, onDism
                 key={action.action}
                 size="sm"
                 variant={props.variant}
-                className={cn('min-w-0 shrink-0 px-2 text-xs', props.className)}
+                className={cn('min-w-0 shrink-0 px-2 text-xs leading-none', props.className)}
                 onClick={() => onDismiss(payableId)}
               >
                 {action.label}
@@ -77,7 +77,7 @@ export function ContextualQuestionBanner({ question, payableId, onAction, onDism
               key={action.action}
               size="sm"
               variant={props.variant}
-              className={cn('min-w-0 shrink-0 px-2.5 text-xs', props.className)}
+              className={cn('min-w-0 shrink-0 px-2.5 text-xs leading-none', props.className)}
               onClick={() => onAction(payableId, action.action)}
             >
               {action.label}
