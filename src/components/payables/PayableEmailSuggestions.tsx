@@ -35,7 +35,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { EmailSuggestion } from '@/types';
-import { buildPayableHistoryDescription, findPayableForSuggestion, getSuggestionOverdueDays } from '@/services/domain/payables';
+import { buildPayableHistoryDescription, classifyEmailSuggestionForReview, getSuggestionOverdueDays } from '@/services/domain/payables';
 import { getGmailConnectionStatus, scanGmailPayables, startGmailOAuth, updateGmailAutoSyncSettings, type GmailConnectionStatus } from '@/api/supabase/gmail-payables';
 import { getCategoryIcon } from '@/lib/payableCategoryIcon';
 import { SupplierAvatar } from '@/components/payables/SupplierAvatar';
@@ -231,12 +231,13 @@ type SuggestionCardProps = {
   categoryIcon?: string | null;
   overdueDays?: number | null;
   readOnly?: boolean;
+  reviewReasons?: string[];
   onAccept: () => void;
   onMarkPaid?: () => void;
   onDismiss: () => void;
 };
 
-function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, readOnly = false, onAccept, onMarkPaid, onDismiss }: SuggestionCardProps) {
+function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, readOnly = false, reviewReasons = [], onAccept, onMarkPaid, onDismiss }: SuggestionCardProps) {
   const isPaid = suggestion.suggestedStatus === 'PAGO';
   const isScheduled = suggestion.suggestedStatus === 'AGENDADO';
   const isReview = suggestion.suggestedStatus === 'INCERTO';
@@ -336,6 +337,18 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, r
                             <AlertCircle className="h-3 w-3" />{signal}
                           </span>
                         ))}
+                      </div>
+                    ) : null}
+                    {reviewReasons.length > 0 ? (
+                      <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-amber-800">Revisar antes de criar</p>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {reviewReasons.slice(0, 4).map((reason) => (
+                            <span key={reason} className="inline-flex items-center rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-amber-900 ring-1 ring-amber-200">
+                              {reason}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     ) : null}
                     {suggestion.emailSnippet ? (
@@ -504,6 +517,69 @@ function PaidSuggestionDialog({
   );
 }
 
+type ReviewSuggestion = {
+  suggestion: EmailSuggestion;
+  reasons: string[];
+};
+
+function ReviewSuggestionDialog({
+  review,
+  categoryName,
+  open,
+  onOpenChange,
+  onConfirm,
+}: {
+  review: ReviewSuggestion | null;
+  categoryName: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+}) {
+  const suggestion = review?.suggestion ?? null;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Confirmar após revisão?</DialogTitle>
+          <DialogDescription>
+            Esta sugestão tem algum sinal que impede criação direta. Confira os dados antes de lançar no contas a pagar.
+          </DialogDescription>
+        </DialogHeader>
+
+        {suggestion ? (
+          <div className="space-y-4">
+            <div className="rounded-xl border bg-muted/20 p-4">
+              <p className="text-sm font-semibold">{suggestion.suggestedTitle}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {suggestion.suggestedSupplierName} · {fmtBRL(suggestion.suggestedAmount)} · vence {format(parseISO(suggestion.suggestedDueDate), 'dd/MM/yyyy')}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">Categoria: {categoryName}</p>
+            </div>
+
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-amber-800">Motivos da revisão</p>
+              <ul className="mt-2 space-y-1 text-sm text-amber-950">
+                {(review?.reasons.length ? review.reasons : ['Sugestão exige confirmação manual']).map((reason) => (
+                  <li key={reason}>- {reason}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        ) : null}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Voltar</Button>
+          <Button onClick={onConfirm}>
+            <CheckCircle2 className="mr-2 h-4 w-4" />
+            Confirmar criação
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 type PayableEmailSuggestionsProps = {
   onCreated?: (payableId: string) => void;
   /** Modo suporte: status, OAuth, scan e ações usam contexto auditado da empresa acessada. */
@@ -518,31 +594,43 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
   const [gmailLoading, setGmailLoading] = useState(true);
   const [gmailActionLoading, setGmailActionLoading] = useState(false);
   const [paidSuggestionToConfirm, setPaidSuggestionToConfirm] = useState<EmailSuggestion | null>(null);
+  const [reviewSuggestionToConfirm, setReviewSuggestionToConfirm] = useState<ReviewSuggestion | null>(null);
   const [autoScanEnabled, setAutoScanEnabled] = useState(false);
   const [autoScanIntervalHours, setAutoScanIntervalHours] = useState(12);
 
   const categoryById = useMemo(() => new Map(payableCategories.map((c) => [c.id, c])), [payableCategories]);
   const pendingAll = useMemo(() => emailSuggestions.filter((s) => s.status === 'PENDING'), [emailSuggestions]);
-  // Sugestões cuja conta equivalente JÁ existe (import por IA ou cadastro manual) → fora da lista
-  // ativa, para uma seção "já cadastradas" — evita duplicata e inconsistência entre origens.
+  const reviewedPending = useMemo(
+    () => pendingAll.map((suggestion) => ({
+      suggestion,
+      disposition: classifyEmailSuggestionForReview(suggestion, payables),
+    })),
+    [pendingAll, payables],
+  );
   const alreadyRegistered = useMemo(
-    () => pendingAll.filter((s) => findPayableForSuggestion(s, payables) != null),
-    [pendingAll, payables],
+    () => reviewedPending.filter((item) => item.disposition.bucket === 'duplicate'),
+    [reviewedPending],
   );
-  const pending = useMemo(
-    () => pendingAll.filter((s) => findPayableForSuggestion(s, payables) == null),
-    [pendingAll, payables],
+  const quarantinedPending = useMemo(
+    () => reviewedPending.filter((item) => item.disposition.bucket === 'quarantine'),
+    [reviewedPending],
   );
-  const paidPending = useMemo(() => pending.filter((s) => s.suggestedStatus === 'PAGO'), [pending]);
-  const payablePendingAll = useMemo(() => pending.filter((s) => s.suggestedStatus !== 'PAGO'), [pending]);
-  // Confiança < 55 vai para a seção "Incertas", para não poluir a lista principal.
+  const paidPending = useMemo(
+    () => reviewedPending.filter((item) => item.disposition.bucket === 'receipt').map((item) => item.suggestion),
+    [reviewedPending],
+  );
   const payablePending = useMemo(
-    () => payablePendingAll.filter((s) => s.confidence >= 55).sort((a, b) => b.confidence - a.confidence),
-    [payablePendingAll],
+    () => reviewedPending
+      .filter((item) => item.disposition.bucket === 'main')
+      .map((item) => item.suggestion)
+      .sort((a, b) => b.confidence - a.confidence),
+    [reviewedPending],
   );
-  const uncertainPending = useMemo(
-    () => payablePendingAll.filter((s) => s.confidence < 55).sort((a, b) => b.confidence - a.confidence),
-    [payablePendingAll],
+  const reviewPending = useMemo(
+    () => reviewedPending
+      .filter((item) => item.disposition.bucket === 'review')
+      .sort((a, b) => b.suggestion.confidence - a.suggestion.confidence),
+    [reviewedPending],
   );
   const dismissed = useMemo(() => emailSuggestions.filter((s) => s.status === 'DISMISSED'), [emailSuggestions]);
   const accepted = useMemo(() => emailSuggestions.filter((s) => s.status === 'ACCEPTED'), [emailSuggestions]);
@@ -685,8 +773,24 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
   }
 
   async function handleAccept(suggestion: EmailSuggestion) {
+    const disposition = classifyEmailSuggestionForReview(suggestion, payables);
+    if (disposition.bucket === 'quarantine' || disposition.bucket === 'duplicate') {
+      toast({
+        title: disposition.bucket === 'quarantine' ? 'Item em quarentena' : 'Possível duplicidade',
+        description: 'Esta sugestão precisa ser revisada fora da lista principal antes de virar conta.',
+        variant: 'destructive',
+      });
+      return;
+    }
     if (suggestion.suggestedStatus === 'PAGO') {
       setPaidSuggestionToConfirm(suggestion);
+      return;
+    }
+    if (disposition.bucket === 'review') {
+      setReviewSuggestionToConfirm({
+        suggestion,
+        reasons: disposition.reasons.length > 0 ? disposition.reasons : ['Sugestão exige confirmação manual'],
+      });
       return;
     }
     await acceptSuggestionNow(suggestion);
@@ -815,7 +919,7 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
       ) : null}
       </>
 
-      {(paidPending.length > 0 || payablePending.length > 0 || accepted.length > 0 || dismissed.length > 0) ? (
+      {(paidPending.length > 0 || payablePending.length > 0 || reviewPending.length > 0 || quarantinedPending.length > 0 || accepted.length > 0 || dismissed.length > 0) ? (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
           {paidPending.length > 0 ? (
             <span className="inline-flex items-center gap-1.5 font-medium text-emerald-700">
@@ -829,12 +933,14 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
               {payablePending.length} a pagar
             </span>
           ) : null}
+          {reviewPending.length > 0 ? <span>{reviewPending.length} para revisão</span> : null}
+          {quarantinedPending.length > 0 ? <span className="font-medium text-rose-700">{quarantinedPending.length} em quarentena</span> : null}
           {accepted.length > 0 ? <span>{accepted.length} aceita{accepted.length !== 1 ? 's' : ''}</span> : null}
           {dismissed.length > 0 ? <span>{dismissed.length} ignorada{dismissed.length !== 1 ? 's' : ''}</span> : null}
         </div>
       ) : null}
 
-      {pending.length === 0 ? (
+      {pendingAll.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border/60 py-16 text-center">
           <div className="rounded-full bg-muted/60 p-3">
             <MailOpen className="h-6 w-6 text-muted-foreground" />
@@ -908,16 +1014,16 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
             </section>
           ) : null}
 
-          {uncertainPending.length > 0 ? (
+          {reviewPending.length > 0 ? (
             <details className="group rounded-2xl border border-dashed border-border/70 bg-muted/20 p-3">
               <summary className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-muted-foreground hover:text-foreground">
                 <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
                 <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
-                {uncertainPending.length} sugest{uncertainPending.length !== 1 ? 'ões' : 'ão'} incerta{uncertainPending.length !== 1 ? 's' : ''} (baixa confiança) — revise antes de usar
+                {reviewPending.length} sugest{reviewPending.length !== 1 ? 'ões' : 'ão'} para revisão — criação exige confirmação
               </summary>
               <div className="mt-3 space-y-3">
                 <AnimatePresence mode="popLayout">
-                  {uncertainPending.map((suggestion) => {
+                  {reviewPending.map(({ suggestion, disposition }) => {
                     const category = categoryById.get(suggestion.suggestedCategoryId);
                     return (
                       <SuggestionCard
@@ -926,6 +1032,7 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
                         categoryName={category?.name ?? 'Categoria'}
                         categoryIcon={category?.icon}
                         overdueDays={getSuggestionOverdueDays(suggestion)}
+                        reviewReasons={disposition.reasons}
                         onAccept={() => { void handleAccept(suggestion); }}
                         onMarkPaid={() => { void handleMarkPaid(suggestion); }}
                         onDismiss={() => { void handleDismiss(suggestion); }}
@@ -944,19 +1051,52 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
           <summary className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-emerald-800 hover:text-emerald-900">
             <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
             <BadgeCheck className="h-3.5 w-3.5" />
-            {alreadyRegistered.length} já cadastrada{alreadyRegistered.length !== 1 ? 's' : ''} no contas a pagar — não recria duplicata
+            {alreadyRegistered.length} possível duplicidade — não recria automaticamente
           </summary>
           <div className="mt-3 space-y-2">
-            {alreadyRegistered.map((suggestion) => (
+            {alreadyRegistered.map(({ suggestion, disposition }) => (
               <div key={suggestion.id} className="flex items-center gap-3 rounded-xl border border-emerald-200/60 bg-white/70 px-4 py-2.5 text-sm">
                 <SupplierAvatar name={suggestion.suggestedSupplierName} categoryIcon={categoryById.get(suggestion.suggestedCategoryId)?.icon} size={32} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-medium">{suggestion.suggestedTitle}</p>
-                  <p className="text-xs text-muted-foreground">{fmtBRL(suggestion.suggestedAmount)} &middot; vence {format(parseISO(suggestion.suggestedDueDate), 'dd/MM/yyyy')}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {fmtBRL(suggestion.suggestedAmount)} &middot; vence {format(parseISO(suggestion.suggestedDueDate), 'dd/MM/yyyy')}
+                    {disposition.match?.match ? ` · parecida com "${disposition.match.match.title}"` : ''}
+                  </p>
                 </div>
                 <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={() => { void handleDismiss(suggestion); }}>
                   Arquivar
                 </Button>
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
+
+      {quarantinedPending.length > 0 ? (
+        <details className="group rounded-2xl border border-rose-200/80 bg-rose-50/50 p-3">
+          <summary className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-rose-800 hover:text-rose-900">
+            <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
+            <AlertCircle className="h-3.5 w-3.5" />
+            {quarantinedPending.length} item{quarantinedPending.length !== 1 ? 's' : ''} suspeito{quarantinedPending.length !== 1 ? 's' : ''} ocultado{quarantinedPending.length !== 1 ? 's' : ''} da lista principal
+          </summary>
+          <div className="mt-3 space-y-2">
+            {quarantinedPending.map(({ suggestion, disposition }) => (
+              <div key={suggestion.id} className="rounded-xl border border-rose-200 bg-white/80 px-4 py-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-semibold">{suggestion.suggestedTitle}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{suggestion.senderName} · {fmtBRL(suggestion.suggestedAmount)} · {suggestion.confidence}% confiança</p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {(disposition.reasons.length > 0 ? disposition.reasons : ['Risco alto']).slice(0, 4).map((reason) => (
+                        <span key={reason} className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-800">{reason}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-rose-700" onClick={() => { void handleDismiss(suggestion); }}>
+                    Arquivar
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
@@ -989,6 +1129,18 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
         open={paidSuggestionToConfirm !== null}
         onOpenChange={(open) => { if (!open) setPaidSuggestionToConfirm(null); }}
         onConfirm={() => { if (paidSuggestionToConfirm) void acceptSuggestionNow(paidSuggestionToConfirm); }}
+      />
+      <ReviewSuggestionDialog
+        review={reviewSuggestionToConfirm}
+        categoryName={reviewSuggestionToConfirm ? categoryById.get(reviewSuggestionToConfirm.suggestion.suggestedCategoryId)?.name ?? 'Categoria' : 'Categoria'}
+        open={reviewSuggestionToConfirm !== null}
+        onOpenChange={(open) => { if (!open) setReviewSuggestionToConfirm(null); }}
+        onConfirm={() => {
+          if (!reviewSuggestionToConfirm) return;
+          const suggestion = reviewSuggestionToConfirm.suggestion;
+          setReviewSuggestionToConfirm(null);
+          void acceptSuggestionNow(suggestion);
+        }}
       />
     </div>
   );

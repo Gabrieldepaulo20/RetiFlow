@@ -296,6 +296,43 @@ type PayableEmailAnalysis = {
   reason: string;
 };
 
+const payableEmailAnalysisSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'isPayable',
+    'suggestedStatus',
+    'senderRisk',
+    'senderVerdict',
+    'verificationSignals',
+    'fraudSignals',
+    'title',
+    'amount',
+    'dueDate',
+    'paymentDate',
+    'supplierName',
+    'paymentMethod',
+    'confidence',
+    'reason',
+  ],
+  properties: {
+    isPayable: { type: 'boolean' },
+    suggestedStatus: { type: 'string', enum: ['PENDENTE', 'PAGO', 'AGENDADO', 'INCERTO'] },
+    senderRisk: { type: 'string', enum: ['BAIXO', 'MEDIO', 'ALTO'] },
+    senderVerdict: { type: 'string' },
+    verificationSignals: { type: 'array', items: { type: 'string' }, maxItems: 4 },
+    fraudSignals: { type: 'array', items: { type: 'string' }, maxItems: 4 },
+    title: { type: 'string' },
+    amount: { type: ['number', 'null'] },
+    dueDate: { type: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+    paymentDate: { type: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+    supplierName: { type: 'string' },
+    paymentMethod: { type: 'string', enum: ['PIX', 'BOLETO', 'TRANSFERENCIA', 'CARTAO_CREDITO', 'CARTAO_DEBITO', 'DINHEIRO', 'CHEQUE', 'DEBITO_AUTOMATICO'] },
+    confidence: { type: 'number', minimum: 0, maximum: 100 },
+    reason: { type: 'string' },
+  },
+} as const;
+
 function decodeBase64Url(value: string) {
   const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
   const padding = '='.repeat((4 - normalized.length % 4) % 4);
@@ -667,6 +704,14 @@ async function analyzePayableEmail(params: {
         model: 'gpt-4.1-mini',
         temperature: 0,
         max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
+        text: {
+          format: {
+            type: 'json_schema',
+            name: 'payable_email_analysis',
+            strict: true,
+            schema: payableEmailAnalysisSchema,
+          },
+        },
         instructions,
         input: [{ role: 'user', content }],
       }),

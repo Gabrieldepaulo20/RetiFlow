@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { classifyPayableMatch, type PayableMatchCandidate } from '@/services/domain/payables';
-import type { AccountPayable } from '@/types';
+import { classifyEmailSuggestionForReview, classifyPayableMatch, type PayableMatchCandidate } from '@/services/domain/payables';
+import type { AccountPayable, EmailSuggestion } from '@/types';
 
 function payable(overrides: Partial<AccountPayable>): AccountPayable {
   return {
@@ -28,6 +28,27 @@ function candidate(overrides: Partial<PayableMatchCandidate>): PayableMatchCandi
     docNumber: '12345',
     dueDate: '2026-06-10',
     originalAmount: 300,
+    ...overrides,
+  };
+}
+
+function suggestion(overrides: Partial<EmailSuggestion>): EmailSuggestion {
+  return {
+    id: 's1',
+    subject: 'Boleto fornecedor',
+    senderName: 'Distribuidora X',
+    senderEmail: 'financeiro@distribuidorax.com.br',
+    receivedAt: '2026-06-01T12:00:00.000Z',
+    suggestedTitle: 'Boleto Distribuidora X',
+    suggestedAmount: 300,
+    suggestedDueDate: '2026-06-10',
+    suggestedCategoryId: 'cat-1',
+    suggestedSupplierName: 'Distribuidora X',
+    suggestedPaymentMethod: 'BOLETO',
+    confidence: 92,
+    status: 'PENDING',
+    suggestedStatus: 'PENDENTE',
+    createdAt: '2026-06-01T12:00:00.000Z',
     ...overrides,
   };
 }
@@ -107,5 +128,31 @@ describe('classifyPayableMatch', () => {
     const cand = candidate({ originalAmount: 320, dueDate: '2026-06-25' });
     const result = classifyPayableMatch(cand, [existing]);
     expect(result.kind).toBe('duplicidade_provavel');
+  });
+
+  it('triagem de sugestão manda alto risco para quarentena', () => {
+    const result = classifyEmailSuggestionForReview(
+      suggestion({ senderRisk: 'ALTO', fraudSignals: ['Domínio divergente'], confidence: 91 }),
+      [],
+    );
+    expect(result.bucket).toBe('quarantine');
+    expect(result.reasons).toContain('Remetente classificado com alto risco');
+  });
+
+  it('triagem de sugestão exige revisão abaixo de 80% de confiança', () => {
+    const result = classifyEmailSuggestionForReview(suggestion({ confidence: 79 }), []);
+    expect(result.bucket).toBe('review');
+    expect(result.reasons).toContain('Confiança abaixo de 80%');
+  });
+
+  it('triagem de sugestão separa comprovantes do fluxo principal', () => {
+    const result = classifyEmailSuggestionForReview(suggestion({ suggestedStatus: 'PAGO' }), []);
+    expect(result.bucket).toBe('receipt');
+  });
+
+  it('triagem de sugestão bloqueia duplicidade provável na lista principal', () => {
+    const result = classifyEmailSuggestionForReview(suggestion({}), [payable({})]);
+    expect(result.bucket).toBe('duplicate');
+    expect(result.match?.match?.id).toBe('p-existing');
   });
 });

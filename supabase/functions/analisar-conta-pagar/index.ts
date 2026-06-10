@@ -32,6 +32,66 @@ type AnalysisResult = {
   highlights: string[];
 };
 
+const importAnalysisSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['draft', 'fields', 'warnings', 'highlights'],
+  properties: {
+    draft: {
+      type: 'object',
+      additionalProperties: false,
+      required: [
+        'title',
+        'supplierName',
+        'categoryId',
+        'dueDate',
+        'issueDate',
+        'originalAmount',
+        'paymentMethod',
+        'recurrence',
+        'docNumber',
+        'observations',
+        'isUrgent',
+        'suggestedStatus',
+        'recurrenceIndex',
+        'totalInstallments',
+      ],
+      properties: {
+        title: { type: 'string' },
+        supplierName: { type: 'string' },
+        categoryId: { type: 'string' },
+        dueDate: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+        issueDate: { type: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+        originalAmount: { type: 'number', minimum: 0 },
+        paymentMethod: { type: 'string', enum: ['PIX', 'BOLETO', 'TRANSFERENCIA', 'CARTAO_CREDITO', 'CARTAO_DEBITO', 'DINHEIRO', 'CHEQUE', 'DEBITO_AUTOMATICO'] },
+        recurrence: { type: 'string', enum: ['NENHUMA', 'SEMANAL', 'QUINZENAL', 'MENSAL', 'BIMESTRAL', 'TRIMESTRAL', 'SEMESTRAL', 'ANUAL'] },
+        docNumber: { type: ['string', 'null'] },
+        observations: { type: ['string', 'null'] },
+        isUrgent: { type: 'boolean' },
+        suggestedStatus: { type: 'string', enum: ['PAGO', 'PENDENTE', 'AGENDADO', 'INCERTO'] },
+        recurrenceIndex: { type: ['number', 'null'], minimum: 1 },
+        totalInstallments: { type: ['number', 'null'], minimum: 2 },
+      },
+    },
+    fields: {
+      type: 'array',
+      maxItems: 12,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['label', 'value', 'confidence'],
+        properties: {
+          label: { type: 'string' },
+          value: { type: 'string' },
+          confidence: { type: 'number', minimum: 0, maximum: 100 },
+        },
+      },
+    },
+    warnings: { type: 'array', maxItems: 6, items: { type: 'string' } },
+    highlights: { type: 'array', maxItems: 6, items: { type: 'string' } },
+  },
+} as const;
+
 const localDevOrigins = new Set([
   'http://localhost:5173',
   'http://127.0.0.1:5173',
@@ -494,6 +554,14 @@ Deno.serve(async (request) => {
           model: 'gpt-4.1-mini',
           temperature: 0,
           max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
+          text: {
+            format: {
+              type: 'json_schema',
+              name: 'payable_import_analysis',
+              strict: true,
+              schema: importAnalysisSchema,
+            },
+          },
           instructions,
           input: [
             {

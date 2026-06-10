@@ -2,6 +2,7 @@ import { differenceInCalendarDays, format, isBefore, parseISO, startOfDay } from
 import { ptBR } from 'date-fns/locale';
 import {
   AccountPayable,
+  EmailSuggestion,
   PayableAttachmentFileType,
   PayableCategory,
   PayableDisplayStatus,
@@ -531,6 +532,78 @@ export function getSuggestionOverdueDays(
   return days > 0 ? days : null;
 }
 
+export type EmailSuggestionReviewBucket = 'main' | 'receipt' | 'review' | 'duplicate' | 'quarantine';
+
+export interface EmailSuggestionReviewDisposition {
+  bucket: EmailSuggestionReviewBucket;
+  match: PayableMatchResult | null;
+  reasons: string[];
+}
+
+export function classifyEmailSuggestionForReview(
+  suggestion: EmailSuggestion,
+  existingPayables: AccountPayable[],
+): EmailSuggestionReviewDisposition {
+  const match = classifyPayableMatch(
+    {
+      supplierName: suggestion.suggestedSupplierName,
+      originalAmount: suggestion.suggestedAmount,
+      dueDate: suggestion.suggestedDueDate,
+    },
+    existingPayables,
+  );
+  const fraudSignals = suggestion.fraudSignals ?? [];
+  const reasons: string[] = [];
+
+  if (suggestion.senderRisk === 'ALTO') {
+    reasons.push('Remetente classificado com alto risco');
+  }
+  if (fraudSignals.length > 0) {
+    reasons.push(...fraudSignals.slice(0, 3));
+  }
+
+  if (suggestion.senderRisk === 'ALTO' || (fraudSignals.length > 0 && suggestion.confidence < 80)) {
+    return { bucket: 'quarantine', match, reasons };
+  }
+
+  if (match.kind === 'duplicidade_provavel') {
+    return {
+      bucket: 'duplicate',
+      match,
+      reasons: match.reasons.length > 0 ? match.reasons : ['Conta muito parecida já cadastrada'],
+    };
+  }
+
+  if (suggestion.suggestedStatus === 'PAGO') {
+    return {
+      bucket: 'receipt',
+      match,
+      reasons: match.kind !== 'novo'
+        ? match.reasons
+        : ['Parece ser comprovante/recibo; confirme antes de criar uma nova conta'],
+    };
+  }
+
+  if (suggestion.confidence < 80) {
+    reasons.push('Confiança abaixo de 80%');
+  }
+  if (suggestion.senderRisk === 'MEDIO') {
+    reasons.push('Remetente precisa de revisão');
+  }
+  if (suggestion.suggestedStatus === 'INCERTO') {
+    reasons.push('A IA marcou a classificação como incerta');
+  }
+  if (match.kind === 'revisar') {
+    reasons.push(...match.reasons);
+  }
+
+  if (reasons.length > 0 || match.kind === 'revisar') {
+    return { bucket: 'review', match, reasons: Array.from(new Set(reasons)) };
+  }
+
+  return { bucket: 'main', match, reasons: [] };
+}
+
 // ─── Construção de log de histórico ─────────────────────────────────────────
 
 interface BuildPayableHistoryEntryInput {
@@ -618,6 +691,7 @@ export function buildPayableHistoryDescription(
 
 export type {
   AccountPayable,
+  EmailSuggestion,
   PayableAttachmentFileType,
   PayableCategory,
   PayableDisplayStatus,

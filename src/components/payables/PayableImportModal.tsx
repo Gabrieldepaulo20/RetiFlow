@@ -2,6 +2,7 @@ import { ChangeEvent, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import PayableModalShell from '@/components/payables/PayableModalShell';
@@ -80,6 +81,11 @@ type ImportFileItem = {
   createdPayableId?: string;
   createdPayable?: AccountPayable;
   duplicatePayableId?: string;
+};
+
+type CreateConfirmation = {
+  itemId: string;
+  type: 'receipt' | 'duplicate';
 };
 
 function formatBytes(size: number) {
@@ -250,6 +256,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
   const itemsRef = useRef<ImportFileItem[]>([]);
   const [selectedTab, setSelectedTab] = useState('arquivo');
   const [items, setItems] = useState<ImportFileItem[]>([]);
+  const [confirmation, setConfirmation] = useState<CreateConfirmation | null>(null);
 
   useEffect(() => {
     itemsRef.current = items;
@@ -334,7 +341,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
 
     const newItems = selectedFiles.map((file) => buildImportFileItem(file, source));
     setItems((previous) => [...previous, ...newItems]);
-    void processItems(newItems, { closeOnSuccess: true });
+    void analyzeItems(newItems);
   }
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>, source: ImportSource) {
@@ -505,64 +512,48 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     return { payable };
   }
 
-  async function processItems(targets: ImportFileItem[], options: { closeOnSuccess?: boolean } = {}) {
+  async function analyzeItems(targets: ImportFileItem[]) {
     if (targets.length === 0) return;
 
-    let createdCount = 0;
     let errorCount = 0;
-    let attachmentWarningCount = 0;
-    let lastCreated: AccountPayable | undefined;
+    let analyzedCount = 0;
 
     for (const item of targets) {
-      const analysis = item.analysis ?? await analyzeItem(item);
+      const analysis = await analyzeItem(item);
       if (!analysis) {
         errorCount += 1;
         continue;
       }
-
-      updateItem(item.id, { creating: true, expanded: false });
-      try {
-        const mergedDraft = mergeDraftEdits(item) ?? analysis.draft;
-        const { payable: created } = await createPayableFromAnalysis(item, { ...analysis, draft: mergedDraft });
-        createdCount += 1;
-        lastCreated = created;
-      } catch (error) {
-        errorCount += 1;
-        const message = error instanceof Error ? error.message : 'Não foi possível criar a conta.';
-        if (message.startsWith('Conta criada, mas o anexo')) attachmentWarningCount += 1;
-        updateItem(item.id, {
-          creating: false,
-          status: 'error',
-          progress: 0,
-          error: message,
-          expanded: true,
-        });
-      }
+      analyzedCount += 1;
     }
 
     toast({
-      title: createdCount > 0 ? 'Importação concluída' : 'Importação precisa de revisão',
+      title: analyzedCount > 0 ? 'Análise concluída' : 'Análise precisa de revisão',
       description: [
-        `${createdCount} conta${createdCount === 1 ? '' : 's'} criada${createdCount === 1 ? '' : 's'}`,
+        `${analyzedCount} rascunho${analyzedCount === 1 ? '' : 's'} pronto${analyzedCount === 1 ? '' : 's'} para confirmar`,
         errorCount > 0 ? `${errorCount} arquivo${errorCount === 1 ? '' : 's'} com pendência` : null,
-        attachmentWarningCount > 0 ? `${attachmentWarningCount} anexo${attachmentWarningCount === 1 ? '' : 's'} não salvo${attachmentWarningCount === 1 ? '' : 's'} no Storage` : null,
       ].filter(Boolean).join(' • '),
-      variant: createdCount === 0 ? 'destructive' : undefined,
+      variant: analyzedCount === 0 ? 'destructive' : undefined,
     });
-
-    if (options.closeOnSuccess && createdCount > 0 && errorCount === 0 && lastCreated) {
-      onOpenChange(false);
-      window.setTimeout(clearItems, 250);
-      onCreated?.(lastCreated);
-    }
   }
 
-  async function handleCreateItem(itemId: string, options: { allowDuplicate?: boolean } = {}) {
+  async function handleCreateItem(itemId: string, options: { allowDuplicate?: boolean; confirmedReceipt?: boolean; confirmedDuplicate?: boolean } = {}) {
     const item = itemsRef.current.find((i) => i.id === itemId);
     if (!item || !item.analysis) return;
-    updateItem(itemId, { creating: true });
     const mergedDraft = mergeDraftEdits(item);
     if (!mergedDraft) return;
+
+    if (mergedDraft.suggestedStatus === 'PAGO' && !options.confirmedReceipt) {
+      setConfirmation({ itemId, type: 'receipt' });
+      return;
+    }
+
+    if (options.allowDuplicate && !options.confirmedDuplicate) {
+      setConfirmation({ itemId, type: 'duplicate' });
+      return;
+    }
+
+    updateItem(itemId, { creating: true });
     try {
       const { payable: created } = await createPayableFromAnalysis(item, { ...item.analysis, draft: mergedDraft }, options);
       toast({
@@ -592,10 +583,16 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
       duplicatePayableId: undefined,
     };
     updateItem(itemId, freshItem);
-    await processItems([freshItem], { closeOnSuccess: false });
+    await analyzeItems([freshItem]);
   }
 
+  const confirmationItem = confirmation
+    ? items.find((item) => item.id === confirmation.itemId) ?? null
+    : null;
+  const confirmationDraft = confirmationItem ? mergeDraftEdits(confirmationItem) : null;
+
   return (
+    <>
     <PayableModalShell
       open={open}
       onOpenChange={onOpenChange}
@@ -659,6 +656,60 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
         </TabsContent>
       </Tabs>
     </PayableModalShell>
+    <Dialog open={confirmation !== null} onOpenChange={(open) => { if (!open) setConfirmation(null); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            {confirmation?.type === 'receipt' ? 'Criar conta a partir de comprovante?' : 'Criar conta duplicada?'}
+          </DialogTitle>
+          <DialogDescription>
+            {confirmation?.type === 'receipt'
+              ? 'Este arquivo parece ser comprovante/recibo. O caminho mais seguro é vincular a uma conta existente quando houver uma correspondente.'
+              : 'Já existe uma conta muito parecida. Confirme somente se estes lançamentos realmente devem conviver.'}
+          </DialogDescription>
+        </DialogHeader>
+
+        {confirmationDraft ? (
+          <div className="space-y-3">
+            <div className="rounded-xl border bg-muted/20 p-4">
+              <p className="text-sm font-semibold">{confirmationDraft.title}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {confirmationDraft.supplierName} • {formatMoney(confirmationDraft.originalAmount)} • vence {confirmationDraft.dueDate}
+              </p>
+            </div>
+            <Alert>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>{confirmation?.type === 'receipt' ? 'Ação sensível' : 'Duplicidade confirmada pelo usuário'}</AlertTitle>
+              <AlertDescription>
+                {confirmation?.type === 'receipt'
+                  ? 'Ao confirmar, a conta será criada como paga e o anexo ficará vinculado ao novo lançamento.'
+                  : 'O sistema vai manter as duas contas e registrar a criação no histórico do lançamento.'}
+              </AlertDescription>
+            </Alert>
+          </div>
+        ) : null}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setConfirmation(null)}>
+            {confirmation?.type === 'receipt' ? 'Não, voltar' : 'Não, usar existente'}
+          </Button>
+          <Button
+            variant={confirmation?.type === 'receipt' ? 'default' : 'destructive'}
+            onClick={() => {
+              if (!confirmation) return;
+              const current = confirmation;
+              setConfirmation(null);
+              void handleCreateItem(current.itemId, current.type === 'receipt'
+                ? { confirmedReceipt: true }
+                : { allowDuplicate: true, confirmedDuplicate: true, confirmedReceipt: true });
+            }}
+          >
+            {confirmation?.type === 'receipt' ? 'Sim, criar mesmo assim' : 'Sim, criar duplicada'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
 
@@ -668,7 +719,7 @@ type ImportBodyProps = {
   payableCategories: Array<{ id: string; name: string }>;
   cameraMode?: boolean;
   onSelect: () => void;
-  onCreateItem: (id: string, options?: { allowDuplicate?: boolean }) => void;
+  onCreateItem: (id: string, options?: { allowDuplicate?: boolean; confirmedReceipt?: boolean; confirmedDuplicate?: boolean }) => void;
   onRetryItem: (id: string) => void;
   onEditDraft: (id: string, edits: ImportDraftEdits) => void;
   onClear: () => void;
@@ -781,7 +832,7 @@ type ImportFileCardProps = {
   payableCategories: Array<{ id: string; name: string }>;
   onRemove: (id: string) => void;
   onToggleExpanded: (id: string) => void;
-  onCreateItem: (id: string, options?: { allowDuplicate?: boolean }) => void;
+  onCreateItem: (id: string, options?: { allowDuplicate?: boolean; confirmedReceipt?: boolean; confirmedDuplicate?: boolean }) => void;
   onRetryItem: (id: string) => void;
   onEditDraft: (id: string, edits: ImportDraftEdits) => void;
 };

@@ -115,3 +115,42 @@ Registrar por sugestão: empresa, conta Gmail, e-mail (id), anexo, resultado/con
 - Edge functions não entram no `tsc` → revisar à mão + integração.
 - Mudança em RPC `SECURITY DEFINER` mal feita quebra a view (escopo). Toda migration nova = `create or replace` (não editar antigas).
 - Rotacionar as chaves Supabase expostas (pendência aberta).
+
+---
+
+## 11. Atualização técnica — 2026-06-10
+
+### Estado revalidado no código
+
+- Stack atual: React 18 + Vite + TypeScript + Tailwind/Radix/Lucide no front; Supabase Auth/RPC/Storage/Edge Functions no backend; OpenAI Responses API nas funções `gmail-scan-payables` e `analisar-conta-pagar`.
+- O bug crítico de suporte descrito na Fase 1 já está mitigado no código atual:
+  - `src/api/supabase/_base.ts` remapeia `get_sugestoes_email`, `get_gmail_connection_status`, ações de sugestão e escritas de contas a pagar para RPCs `*_contexto_suporte`;
+  - `supabase/migrations/20260603130000_support_context_email_suggestions.sql` cria leitura escopada por `Usuarios.auth_id` do alvo;
+  - `supabase/migrations/20260604103000_support_context_gmail_connection.sql` cria status/configuração Gmail por contexto;
+  - `supabase/migrations/20260603183000_support_context_payables_writes.sql` adiciona escritas auditadas para contas a pagar em suporte.
+- Gmail já tem pontos bons: OAuth server-side, escopo `gmail.readonly`, token criptografado por `GOOGLE_TOKEN_ENCRYPTION_KEY`, limites de anexo, queries sem polling agressivo no front, cron backend com intervalo 6/12/24h, contadores de sync, e registro de mensagens processadas por `Gmail_Scanned_Messages`.
+- A IA já tinha defesas relevantes: prompt anti-injection, limite de anexos/tamanho, timeout, limpeza de arquivos OpenAI, sinais antifraude, risco de remetente e confidence.
+
+### Problemas encontrados nesta rodada
+
+- `PayableImportModal` criava conta automaticamente após analisar arquivo selecionado. Isso violava a regra de não transformar comprovante/importação incerta em conta sem confirmação explícita.
+- Sugestões Gmail com `senderRisk=ALTO` ainda ficavam na lista operacional principal, com um botão de override no próprio card. Isso misturava auditoria/quarentena com fluxo normal.
+- Confiança abaixo de 80% ainda era tratada como sugestão utilizável na lista principal em alguns casos; o threshold operacional estava em 55%.
+- A chamada OpenAI ainda dependia principalmente de "retorne JSON" por prompt. O sanitizador ajudava, mas faltava `text.format` com JSON Schema estrito no Responses API.
+- A deduplicação forte existe no front e em helpers, mas o backend ainda precisa de uma camada dedicada para idempotency keys por payload/hash/conta e auditoria de confirmação de duplicidade.
+
+### Patch aplicado localmente
+
+- `src/services/domain/payables.ts`: adicionada classificação única de sugestão Gmail em `main`, `receipt`, `review`, `duplicate` e `quarantine`.
+- `src/components/payables/PayableEmailSuggestions.tsx`: sugestões de alto risco saem da lista principal e aparecem em quarentena; confidence < 80 vai para revisão com confirmação; duplicidade provável não recria automaticamente.
+- `src/components/payables/PayableImportModal.tsx`: importação agora analisa e mostra rascunho; criação exige clique explícito; comprovante e duplicidade pedem confirmação extra.
+- `supabase/functions/gmail-scan-payables/index.ts` e `supabase/functions/analisar-conta-pagar/index.ts`: chamadas OpenAI agora usam `text.format` com `json_schema` e `strict: true`.
+- `src/test/payable-match-classification.test.ts`: cobertura para quarentena, revisão por confiança, comprovante e duplicidade.
+
+### Pendências de produção
+
+- Criar migration de auditoria/idempotência de sugestões com campos dedicados para `document_type`, `recommended_action`, `evidence`, `payload_hash`, `attachment_hash`, `created_from_receipt`, confirmação de duplicidade e confirmação de comprovante.
+- Mover a comparação de duplicidade/recorrência para RPC/Edge Function, usando histórico real da empresa, não apenas estado carregado no front.
+- Adicionar lock transacional por conexão Gmail para impedir duas sincronizações simultâneas do mesmo usuário.
+- Implementar ação server-side de vincular comprovante a conta existente, em vez de obrigar criação nova.
+- Adicionar testes de integração específicos para reprocessamento do mesmo `message_id`, rate limit Gmail, token inválido, lock concorrente e tenant isolation de sugestões/quarentena.
