@@ -57,11 +57,21 @@ describe('payable dedup (chave por nome normalizado)', () => {
 
   it('detecta título genérico e monta descrição útil para evitar "Duplicata" solta', () => {
     expect(isGenericPayableTitle('  duplicata ')).toBe(true);
+    expect(isGenericPayableTitle('Duplicata 123456')).toBe(true);
+    expect(isGenericPayableTitle('Duplicata 02/03')).toBe(true);
+    expect(isGenericPayableTitle('Fatura Vivo Total')).toBe(false);
     expect(buildMeaningfulPayableTitle({
       title: 'Duplicata',
       supplierName: 'Auto Peças Silva',
       dueDate: '2026-06-10',
     })).toBe('Auto Peças Silva · Venc. 06/2026');
+
+    expect(buildMeaningfulPayableTitle({
+      title: 'Duplicata 123456',
+      supplierName: 'Viação Sertanezina',
+      docNumber: 'Duplicata 123456',
+      dueDate: '2026-06-10',
+    })).toBe('Viação Sertanezina · Doc 123456');
   });
 
   it('remove títulos genéricos preservando documento ou parcela quando disponíveis', () => {

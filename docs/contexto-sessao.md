@@ -274,6 +274,38 @@ Plano aprovado para executar em fases:
   - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks.
   - `npm run test:integration`: passou, 16 arquivos e 54 testes.
 
+## Contas A Pagar - Auditoria De Titulos Genericos - 2026-06-10
+
+- Pedido: remover nomes de contas que ficaram como `Duplicata...` na Retifica Premium e endurecer a IA para nao criar sugestoes/titulos genericos.
+- Banco remoto auditado no projeto `dqeoxxokvvcpssajycgq`:
+  - 3 contas com titulo `Duplicata...` foram encontradas na Retifica Premium;
+  - 2 eram da SERRAF com mesmo fornecedor, documento, vencimento, valor e parcela `1/2`;
+  - a mais antiga foi mantida como `SERRAF Distribuidora · Parcela 1/2 · Doc 75939 1`;
+  - a duplicidade exata mais nova foi arquivada por `excluido_em`, sem delete fisico;
+  - a conta da MAVILI foi renomeada para `MAVILI Abrasivos e Ferramentas · Doc 000024849A` e recategorizada como `Pecas e Materiais`;
+  - nomes visiveis dos anexos foram revisados para remover `Duplicata`;
+  - historico das tres contas recebeu registro de auditoria;
+  - validacao remota retornou `0` contas ativas da Retifica Premium com titulo iniciando por `duplicata`.
+- Codigo:
+  - `isGenericPayableTitle` agora trata `Duplicata 123`, `Duplicata 02/03` e titulos genericos com apenas referencia numerica como genericos;
+  - `buildMeaningfulPayableTitle` remove `Duplicata` da referencia do documento antes de montar titulo util;
+  - as Edge Functions `analisar-conta-pagar` e `gmail-scan-payables` receberam a mesma regra para futuras importacoes/sugestoes.
+- Teste adicionado em `src/test/payable-dedup.test.ts` cobrindo `Duplicata 123456`, `Duplicata 02/03` e preservacao de titulo descritivo como `Fatura Vivo Total`.
+- Edge Functions publicadas no projeto `dqeoxxokvvcpssajycgq`:
+  - `analisar-conta-pagar` v24, `verify_jwt=false`;
+  - `gmail-scan-payables` v35, `verify_jwt=false`.
+- Validacao executada:
+  - `npx tsc --noEmit`: passou;
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh;
+  - `npm test -- --run`: passou, 50 arquivos e 370 testes;
+  - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks;
+  - `npm run test:integration`: passou, 17 arquivos e 55 testes.
+- Limpeza pos-integracao:
+  - a suite recriou 14 usuarios de teste (`integration.test` e `tenant-isolation-*`);
+  - removidos 14 registros de `RetificaPremium.Usuarios`/`Modulos`;
+  - removido 1 usuario de teste do Supabase Auth;
+  - validacao final confirmou `suspicious_internal_users = 0` e `suspicious_auth_users = 0`.
+
 ## Protecao Contra Duplicidade De O.S. - 2026-06-03
 
 - Pedido: impedir que o frontend ou qualquer chamada de criacao gere O.S. duplicada.

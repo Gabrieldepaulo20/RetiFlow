@@ -258,12 +258,45 @@ const genericPayableTitles = new Set([
   'recibo',
 ]);
 
+const genericReferencePrefixes = [
+  'boleto',
+  'cobranca',
+  'conta',
+  'fatura',
+  'nota fiscal',
+  'nota',
+  'pagamento',
+  'recibo',
+];
+
 function normalizeTitleKey(value: string) {
   return value
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function hasOnlyDocumentReferenceAfterPrefix(key: string, prefix: string) {
+  const suffix = key.slice(prefix.length).trim();
+  if (!suffix) return true;
+  return /^(?:n|no|num|numero|doc|documento|parcela|prestacao)?\s*[\d\s./-]+$/u.test(suffix);
+}
+
+function isGenericTitle(value: string) {
+  const key = normalizeTitleKey(value);
+  if (!key || genericPayableTitles.has(key)) return true;
+  if (key.startsWith('duplicata ')) return true;
+  return genericReferencePrefixes.some((prefix) => (
+    key.startsWith(`${prefix} `) && hasOnlyDocumentReferenceAfterPrefix(key, prefix)
+  ));
+}
+
+function cleanDocumentReferenceForTitle(value?: string) {
+  return (value ?? '')
+    .replace(/\bduplicata\b/giu, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -277,15 +310,16 @@ function buildMeaningfulTitle(input: {
   totalInstallments?: number;
 }) {
   const title = input.title.replace(/\s+/g, ' ').trim();
-  if (title && !genericPayableTitles.has(normalizeTitleKey(title))) return title.slice(0, 120);
+  if (title && !isGenericTitle(title)) return title.slice(0, 120);
 
   const supplierName = input.supplierName.replace(/\s+/g, ' ').trim();
   const supplierLooksUnknown = /^fornecedor n[aã]o identificado$/i.test(supplierName);
   const parts = [supplierName && !supplierLooksUnknown ? supplierName : 'Conta importada'];
+  const docReference = cleanDocumentReferenceForTitle(input.docNumber);
   if (input.recurrenceIndex && input.totalInstallments) {
     parts.push(`Parcela ${input.recurrenceIndex}/${input.totalInstallments}`);
-  } else if (input.docNumber) {
-    parts.push(`Doc ${input.docNumber}`);
+  } else if (docReference) {
+    parts.push(`Doc ${docReference}`);
   } else if (input.dueDate) {
     parts.push(`Venc. ${input.dueDate.slice(0, 7).split('-').reverse().join('/')}`);
   }

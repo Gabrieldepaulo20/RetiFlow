@@ -36,13 +36,44 @@ const GENERIC_PAYABLE_TITLES = new Set([
   'recibo',
 ]);
 
+const GENERIC_REFERENCE_PREFIXES = [
+  'boleto',
+  'cobranca',
+  'conta',
+  'fatura',
+  'nota fiscal',
+  'nota',
+  'pagamento',
+  'recibo',
+];
+
 function normalizeTitleKey(value?: string | null) {
   return normalizeDedupName(value).replace(/[^\p{L}\p{N}\s]/gu, '').trim();
 }
 
+function hasOnlyDocumentReferenceAfterPrefix(key: string, prefix: string) {
+  const suffix = key.slice(prefix.length).trim();
+  if (!suffix) return true;
+  return /^(?:n|no|num|numero|doc|documento|parcela|prestacao)?\s*[\d\s./-]+$/u.test(suffix);
+}
+
 export function isGenericPayableTitle(value?: string | null): boolean {
   const key = normalizeTitleKey(value);
-  return !key || GENERIC_PAYABLE_TITLES.has(key);
+  if (!key || GENERIC_PAYABLE_TITLES.has(key)) return true;
+
+  if (key.startsWith('duplicata ')) return true;
+
+  return GENERIC_REFERENCE_PREFIXES.some((prefix) => (
+    key.startsWith(`${prefix} `) && hasOnlyDocumentReferenceAfterPrefix(key, prefix)
+  ));
+}
+
+function cleanDocumentReferenceForTitle(value?: string | null) {
+  const cleaned = (value ?? '')
+    .replace(/\bduplicata\b/giu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned;
 }
 
 export function buildMeaningfulPayableTitle(input: {
@@ -58,11 +89,12 @@ export function buildMeaningfulPayableTitle(input: {
 
   const supplier = (input.supplierName ?? '').replace(/\s+/g, ' ').trim();
   const parts = [supplier || 'Conta Importada'];
+  const docReference = cleanDocumentReferenceForTitle(input.docNumber);
 
   if (input.recurrenceIndex && input.totalInstallments) {
     parts.push(`Parcela ${input.recurrenceIndex}/${input.totalInstallments}`);
-  } else if (input.docNumber) {
-    parts.push(`Doc ${input.docNumber.replace(/\s+/g, ' ').trim()}`);
+  } else if (docReference) {
+    parts.push(`Doc ${docReference}`);
   } else if (input.dueDate) {
     parts.push(`Venc. ${format(parseISO(input.dueDate), 'MM/yyyy')}`);
   }

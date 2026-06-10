@@ -294,6 +294,17 @@ const genericPayableTitles = new Set([
   'recibo',
 ]);
 
+const genericReferencePrefixes = [
+  'boleto',
+  'cobranca',
+  'conta',
+  'fatura',
+  'nota fiscal',
+  'nota',
+  'pagamento',
+  'recibo',
+];
+
 function normalizeTitleKey(value: string) {
   return value
     .normalize('NFD')
@@ -304,6 +315,21 @@ function normalizeTitleKey(value: string) {
     .trim();
 }
 
+function hasOnlyDocumentReferenceAfterPrefix(key: string, prefix: string) {
+  const suffix = key.slice(prefix.length).trim();
+  if (!suffix) return true;
+  return /^(?:n|no|num|numero|doc|documento|parcela|prestacao)?\s*[\d\s./-]+$/u.test(suffix);
+}
+
+function isGenericTitle(value: string) {
+  const key = normalizeTitleKey(value);
+  if (!key || genericPayableTitles.has(key)) return true;
+  if (key.startsWith('duplicata ')) return true;
+  return genericReferencePrefixes.some((prefix) => (
+    key.startsWith(`${prefix} `) && hasOnlyDocumentReferenceAfterPrefix(key, prefix)
+  ));
+}
+
 function buildMeaningfulTitle(input: {
   title: string;
   supplierName: string;
@@ -311,7 +337,7 @@ function buildMeaningfulTitle(input: {
   paymentDate?: string | null;
 }) {
   const title = input.title.replace(/\s+/g, ' ').trim();
-  if (title && !genericPayableTitles.has(normalizeTitleKey(title))) return title.slice(0, 120);
+  if (title && !isGenericTitle(title)) return title.slice(0, 120);
 
   const supplierName = input.supplierName.replace(/\s+/g, ' ').trim();
   const supplierLooksUnknown = /^fornecedor n[aã]o identificado$/i.test(supplierName);
