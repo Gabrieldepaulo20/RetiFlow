@@ -218,9 +218,9 @@ function MetricBlock({ label, value, tone = 'neutral' }: { label: string; value:
       ? 'text-amber-800'
       : 'text-slate-600';
   return (
-    <div className={cn('min-w-[92px] rounded-lg border px-2.5 py-1.5 shadow-sm', toneClass)}>
-      <p className={cn('text-[10px] font-bold uppercase tracking-wide', labelClass)}>{label}</p>
-      <p className="mt-0.5 text-sm font-bold leading-none">{value}</p>
+    <div className={cn('min-w-[72px] rounded-lg border px-2 py-1 shadow-sm', toneClass)}>
+      <p className={cn('text-[9px] font-bold uppercase tracking-wide', labelClass)}>{label}</p>
+      <p className="mt-0.5 text-xs font-bold leading-none">{value}</p>
     </div>
   );
 }
@@ -293,18 +293,18 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, r
           <div className="flex">
             <div className={cn('w-1.5 shrink-0', railClass)} />
             <div className="min-w-0 flex-1">
-              <div className="flex flex-col gap-3 p-3.5 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex flex-col gap-2.5 p-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="flex min-w-0 gap-3">
                   <div className="relative mt-0.5 shrink-0">
                     {brand ? (
-                      <div className={cn('flex h-11 w-11 items-center justify-center rounded-xl', iconClass)}>
-                        <BrandMark brand={brand} className="text-lg" />
+                      <div className={cn('flex h-9 w-9 items-center justify-center rounded-xl', iconClass)}>
+                        <BrandMark brand={brand} className="text-base" />
                       </div>
                     ) : (
-                      <SupplierAvatar name={suggestion.suggestedSupplierName} categoryIcon={categoryIcon} size={44} />
+                      <SupplierAvatar name={suggestion.suggestedSupplierName} categoryIcon={categoryIcon} size={36} />
                     )}
-                    <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-slate-950 text-white shadow-sm">
-                      <StatusIcon className="h-3 w-3" />
+                    <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full border-2 border-white bg-slate-950 text-white shadow-sm">
+                      <StatusIcon className="h-2.5 w-2.5" />
                     </span>
                   </div>
                   <div className="min-w-0">
@@ -313,7 +313,7 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, r
                       <ConfidenceBadge value={suggestion.confidence} />
                       <SenderRiskBadge risk={suggestion.senderRisk} />
                     </div>
-                    <p className="mt-2 text-base font-semibold leading-snug text-foreground">{suggestion.suggestedTitle || suggestion.subject}</p>
+                    <p className="mt-1.5 text-sm font-semibold leading-snug text-foreground">{suggestion.suggestedTitle || suggestion.subject}</p>
                     <p className="mt-1 text-xs font-medium text-slate-600">
                       {suggestion.senderName} &middot; recebido {format(parseISO(suggestion.receivedAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                     </p>
@@ -370,7 +370,7 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, r
                   </div>
                 </div>
 
-                <div className={cn('grid gap-2', isPaid ? 'grid-cols-3 lg:min-w-[320px]' : 'grid-cols-2 lg:min-w-[220px]')}>
+                <div className={cn('grid gap-1.5', isPaid ? 'grid-cols-3 lg:min-w-[260px]' : 'grid-cols-2 lg:min-w-[172px]')}>
                   <MetricBlock label="Valor" value={fmtBRL(suggestion.suggestedAmount)} />
                   <MetricBlock
                     label={isPaid ? 'Venc. original' : 'Vence em'}
@@ -388,7 +388,7 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, r
               </div>
 
               {!readOnly ? (
-              <div className={cn('flex items-center justify-end gap-2 border-t px-4 py-2', footerClass)}>
+              <div className={cn('flex items-center justify-end gap-2 border-t px-3 py-1.5', footerClass)}>
                 <div className="flex items-center gap-2 sm:justify-end">
                   {isHighRisk && !allowHighRisk ? (
                     <Button variant="ghost" size="sm" className="h-8 gap-1 text-rose-700 hover:bg-rose-100 hover:text-rose-800" onClick={() => setAllowHighRisk(true)}>

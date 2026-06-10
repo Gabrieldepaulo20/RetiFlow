@@ -439,7 +439,7 @@ export default function Kanban() {
       {/* Kanban board */}
       <ErrorBoundary>
       <DragDropContext onDragEnd={onDragEnd}>
-        <div className="-mx-3 min-h-0 flex-1 overflow-x-auto px-3 pb-3 scrollbar-thin sm:-mx-1 sm:px-1">
+        <div className="-mx-3 min-h-0 flex-1 overflow-x-auto overscroll-x-contain px-3 pb-3 scrollbar-thin sm:-mx-1 sm:px-1" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="flex h-[calc(100dvh-13.5rem)] min-h-[420px] gap-3 sm:h-[calc(100dvh-12.5rem)]">
           {columns.map((col) => (
             <div key={col.status} className="flex h-full w-[min(82vw,280px)] flex-shrink-0 flex-col sm:w-[286px]">
@@ -478,7 +478,7 @@ export default function Kanban() {
                     ref={provided.innerRef}
                     {...provided.droppableProps}
                     className={cn(
-                      "min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain rounded-xl border p-2 transition-colors duration-200 scrollbar-thin",
+                      "min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-y-contain rounded-xl border p-2 transition-colors duration-200 scrollbar-thin",
                       snapshot.isDraggingOver
                         ? "bg-primary/[0.06] border-primary/25 ring-1 ring-primary/15 ring-inset"
                         : "bg-muted/30 border-border/40",
@@ -504,22 +504,23 @@ export default function Kanban() {
                             <div
                               ref={provided.innerRef}
                               {...provided.draggableProps}
-                              {...provided.dragHandleProps}
                               onClick={() => setSelectedNote(note.id)}
                               className={cn(
-                                "group bg-card rounded-xl border border-t-2 border-border/50 cursor-grab active:cursor-grabbing transition-all duration-150",
+                                "group bg-card rounded-xl border border-t-2 border-border/50 transition-all duration-150",
                                 CARD_ACCENT_BORDER[note.status],
                                 "hover:border-border/80 hover:shadow-md hover:-translate-y-0.5",
                                 snapshot.isDragging &&
-                                  "shadow-xl shadow-black/[0.12] border-border ring-2 ring-primary/20 rotate-[1deg] scale-[1.03] cursor-grabbing",
+                                  "shadow-xl shadow-black/[0.12] border-border ring-2 ring-primary/20 rotate-[1deg] scale-[1.03]",
                               )}
                             >
                               <div className="p-3">
                                 {/* Top row: drag handle + number + type badge + indicators */}
                                 <div className="flex items-center gap-1.5">
                                   <div
-                                    aria-hidden
-                                    className="opacity-0 group-hover:opacity-40 transition-opacity -ml-0.5 shrink-0"
+                                    {...provided.dragHandleProps}
+                                    aria-label="Arrastar nota"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="opacity-0 group-hover:opacity-50 active:opacity-100 transition-opacity -ml-0.5 shrink-0 touch-none cursor-grab active:cursor-grabbing rounded p-0.5 -m-0.5"
                                   >
                                     <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
                                   </div>

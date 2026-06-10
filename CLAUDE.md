@@ -18,6 +18,7 @@ Functions. UI language is Portuguese (pt-BR); routes and domain terms are Portug
 npm run dev              # local dev server (Vite, port 8080)
 npm run build            # production build
 npm run build:dev        # development-mode build
+npm run preview          # preview local build
 npx tsc --noEmit         # typecheck (or: npm run typecheck)
 npm run lint             # eslint
 npm test -- --run        # unit tests (vitest, single run)
@@ -25,6 +26,10 @@ npm run test:watch       # unit tests in watch mode
 npm run test:integration # integration tests (needs .env.integration; skips cleanly if absent)
 npm run test:all         # unit + integration
 npm run test:e2e         # Playwright e2e (e2e/)
+
+# Security scans (run before security-sensitive changes)
+gitleaks detect --source . --redact=100          # scan git history
+gitleaks detect --source . --no-git --redact=100 # scan working tree
 ```
 
 Run a single unit test: `npm test -- --run src/path/to/file.test.ts` (add `-t "name"` to filter).
@@ -62,6 +67,11 @@ o futuro chatbot. O adapter `supabaseToIntakeNote` traduz status legados do banc
 cliente; alimenta o WhatsApp. **Salário de funcionário** é despesa em **Contas a Pagar** (categoria Mão
 de Obra + recorrência MENSAL), não em recebíveis; não há módulo de Contas a Receber.
 
+**Contas a Pagar — favorecido:** coluna `favorecido_tipo` em `Contas_Pagar` com valores `FORNECEDOR`
+(padrão) ou `FUNCIONARIO`. Todos os RPCs (`insert_conta_pagar`, `update_conta_pagar`, `get_contas_pagar`,
+`get_conta_pagar_detalhes` e variantes `*_contexto_suporte`) incluem esse campo. Ao escolher
+`FUNCIONARIO`, o formulário sugere categoria "Mão de Obra".
+
 ## Architecture
 
 **Data access is layered — components do not touch Supabase tables directly.**
@@ -76,6 +86,10 @@ de Obra + recorrência MENSAL), não em recebíveis; não há módulo de Contas 
 - `src/contexts/` — `AuthContext` (session, permissions, module access, MFA, support impersonation) and
   `DataContext` (large legacy hub for multiple flows). **Do not rewrite `DataContext.tsx` wholesale** —
   it is being migrated incrementally; prefer pulling logic into `services/` and `api/`.
+  DataContext exports three scoped hooks — **use the narrowest one**:
+  - `useOperationalData()` — notas + clientes (use on note/customer pages)
+  - `usePayablesData()` — contas a pagar (use on payables pages)
+  - `useData()` — full context (legacy; use only when the above don't cover the need)
 - `src/hooks/` — TanStack Query hooks (`useOperationalQueries`, `useNotesData`, `useCustomersData`, …).
 - `src/pages/` + `src/features/payables/` — screens. `src/components/` has shadcn/Radix UI primitives.
 
@@ -92,6 +106,15 @@ barrier; real authorization lives in RLS, RPCs, policies, and Edge Functions.
 re-validate the user server-side), `analisar-conta-pagar` (AI/OCR for payables), `dashboard-resumo`,
 `marketing-*`, `support-*`, and the `gmail-*` OAuth + payable-scan pipeline. Migrations live in
 `supabase/migrations/` (38+ applied).
+
+**PDF generation:** use `src/lib/printPdf.ts` as the single helper for printing/preview. For saved
+notes/closings with `pdf_url`, generate a signed URL; for unsaved, create a temporary blob. Never open
+PDFs in a new tab as the primary action — embed in a modal first.
+
+**One-off scripts** (migrations, imports, cleanups) go in `scripts/oneoff/`. Always implement dry-run
+mode by default; require `--apply` for real writes. Storage paths follow the convention:
+`retifica-premium/ano/mes-por-extenso/dia (dia-da-semana)/...` with months and weekdays in Portuguese
+without accents (e.g. `marco`, `Terca-feira`).
 
 ## Performance constraints (from AGENTS.md)
 
