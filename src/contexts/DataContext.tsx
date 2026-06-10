@@ -100,6 +100,7 @@ function supabaseToAccountPayable(row: ContaPagar): AccountPayable {
     isUrgent: row.urgente,
     deletedAt: row.excluido_em ?? undefined,
     entrySource: (row.origem_lancamento as PayableEntrySource) ?? 'MANUAL',
+    favorecidoTipo: row.favorecido_tipo === 'FUNCIONARIO' ? 'FUNCIONARIO' : 'FORNECEDOR',
     competencyDate: row.data_competencia ?? undefined,
     paymentExecutionStatus: 'MANUAL',
     reconciliationStatus: 'PENDENTE',
@@ -912,6 +913,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           p_total_parcelas: newPayable.totalInstallments,
           p_observacoes: newPayable.observations,
           p_urgente: newPayable.isUrgent,
+          p_favorecido_tipo: newPayable.favorecidoTipo,
         });
         newPayable.id = dbId;
         if (newPayable.status === 'PAGO' && newPayable.paidAmount) {
@@ -983,6 +985,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           if (data.competencyDate !== undefined) payload.p_data_competencia = data.competencyDate;
           if (data.isUrgent !== undefined) payload.p_urgente = data.isUrgent;
           if (data.observations !== undefined) payload.p_observacoes = data.observations;
+          if (data.favorecidoTipo !== undefined) payload.p_favorecido_tipo = data.favorecidoTipo;
           if (Object.keys(payload).length > 0) {
             await updateContaPagar(id, payload);
           }

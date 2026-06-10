@@ -406,8 +406,10 @@ export interface AccountPayable {
   title: string;
   /** ID do fornecedor cadastrado — opcional */
   supplierId?: string;
-  /** Nome livre do fornecedor quando não há cadastro formal */
+  /** Nome livre do fornecedor/favorecido quando não há cadastro formal */
   supplierName?: string;
+  /** Tipo do favorecido: fornecedor (padrão) ou funcionário (salário/vale/comissão/adiantamento). */
+  favorecidoTipo?: 'FORNECEDOR' | 'FUNCIONARIO';
   /** ID da PayableCategory associada */
   categoryId: string;
 

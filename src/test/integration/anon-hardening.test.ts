@@ -101,6 +101,7 @@ describe.skipIf(!envStatus.configured)('Anon key hardening — chamadas externas
       p_fk_categorias: TEST_CATEGORY_ID,
       p_data_vencimento: '2026-12-31',
       p_valor_original: 100,
+      p_favorecido_tipo: 'FORNECEDOR',
     });
     await expectRpcDenied('update_nota_pdf_url', {
       p_id_nota: '00000000-0000-0000-0000-000000000000',

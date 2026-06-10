@@ -84,6 +84,7 @@ describe.skipIf(skipIntegration)('Storage — PDFs e anexos privados com signed 
       p_data_vencimento: '2026-12-20T00:00:00',
       p_valor_original: 99.9,
       p_origem_lancamento: 'MANUAL',
+      p_favorecido_tipo: 'FORNECEDOR',
     });
     expect(created.status).toBe(200);
 
@@ -94,7 +95,7 @@ describe.skipIf(skipIntegration)('Storage — PDFs e anexos privados com signed 
 
     const path = await payablesApi.uploadAnexoContaPagar({ contaPagarId: contaId, file });
     payableAttachmentPaths.push(path);
-    expect(path.toLowerCase()).toMatch(new RegExp(`^[0-9a-f-]{36}/${contaId}/.+comprovante-teste\\.pdf$`));
+    expect(path.toLowerCase()).toMatch(new RegExp(`^[a-z0-9-]+/\\d{4}/(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)/\\d{2}/${contaId}/.+comprovante-teste\\.pdf$`));
 
     const anexoId = await payablesApi.insertAnexoContaPagar({
       p_fk_contas_pagar: contaId,
@@ -154,7 +155,7 @@ describe.skipIf(skipIntegration)('Storage — PDFs e anexos privados com signed 
     const path = await notasApi.uploadNotaPDF(pdfBlob, osNumero);
     notaPaths.push(path);
 
-    expect(path).toMatch(new RegExp(`^${login.data.user?.id}/\\d{4}/\\d{2}/OS-INT-`));
+    expect(path).toMatch(/^[a-z0-9-]+\/\d{4}\/(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\/\d{2}\/OS-INT-/);
     expect(path.startsWith('http')).toBe(false);
 
     const signedUrl = await notasApi.getNotaPDFSignedUrl(path);

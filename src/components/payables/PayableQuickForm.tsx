@@ -55,6 +55,7 @@ type FormValues = {
   title: string;
   categoryId: string;
   supplierName: string;
+  favorecidoTipo: 'FORNECEDOR' | 'FUNCIONARIO';
   dueDate: string;
   amount: string;
   initialStatus: InitialStatus;
@@ -133,6 +134,7 @@ export default function PayableQuickForm({
     title: initialValues?.title ?? '',
     categoryId: initialValues?.categoryId ?? payableCategories[0]?.id ?? 'paycat-1',
     supplierName: initialValues?.supplierName ?? '',
+    favorecidoTipo: initialValues?.favorecidoTipo ?? 'FORNECEDOR',
     dueDate: initialValues?.dueDate ?? '',
     amount: initialValues?.amount ?? '',
     initialStatus: initialValues?.initialStatus ?? 'PENDENTE',
@@ -261,6 +263,7 @@ export default function PayableQuickForm({
         title,
         supplierId: matchedSupplier?.id,
         supplierName,
+        favorecidoTipo: form.favorecidoTipo,
         categoryId: form.categoryId,
         docNumber: normalizeWhitespace(form.docNumber) || undefined,
         dueDate: form.dueDate,
@@ -387,13 +390,38 @@ export default function PayableQuickForm({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Fornecedor *</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label>{form.favorecidoTipo === 'FUNCIONARIO' ? 'Funcionário *' : 'Fornecedor *'}</Label>
+                <div className="flex rounded-lg border border-border/70 p-0.5 text-[11px] font-medium">
+                  <button
+                    type="button"
+                    onClick={() => setField('favorecidoTipo', 'FORNECEDOR')}
+                    className={`rounded-md px-2 py-0.5 transition-colors ${form.favorecidoTipo !== 'FUNCIONARIO' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    Fornecedor
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const maoDeObra = payableCategories.find((c) => /m[aã]o\s*de\s*obra/i.test(c.name));
+                      setForm((prev) => ({
+                        ...prev,
+                        favorecidoTipo: 'FUNCIONARIO',
+                        categoryId: maoDeObra?.id ?? prev.categoryId,
+                      }));
+                    }}
+                    className={`rounded-md px-2 py-0.5 transition-colors ${form.favorecidoTipo === 'FUNCIONARIO' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    Funcionário
+                  </button>
+                </div>
+              </div>
               <Input
                 list="payable-suppliers"
                 value={form.supplierName}
                 onChange={(event) => setField('supplierName', event.target.value.slice(0, PAYABLE_FIELD_LIMITS.supplierName))}
                 onBlur={() => setField('supplierName', toTitleCasePtBr(form.supplierName))}
-                placeholder="Digite ou escolha um fornecedor"
+                placeholder={form.favorecidoTipo === 'FUNCIONARIO' ? 'Nome do funcionário' : 'Digite ou escolha um fornecedor'}
               />
               <datalist id="payable-suppliers">
                 {supplierOptions.map((supplier) => <option key={supplier} value={supplier} />)}

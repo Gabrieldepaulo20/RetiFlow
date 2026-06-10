@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   createSignedUrl: vi.fn(),
   upload: vi.fn(),
   getUser: vi.fn(),
+  getPerfil: vi.fn(),
 }));
 
 vi.mock('@/lib/supabase', () => ({
@@ -19,12 +20,17 @@ vi.mock('@/lib/supabase', () => ({
   },
 }));
 
+vi.mock('@/api/supabase/auth', () => ({
+  getPerfil: mocks.getPerfil,
+}));
+
 describe('Notas Supabase PDF storage helpers', () => {
   beforeEach(() => {
     mocks.from.mockReset();
     mocks.createSignedUrl.mockReset();
     mocks.upload.mockReset();
     mocks.getUser.mockReset();
+    mocks.getPerfil.mockReset();
     mocks.from.mockReturnValue({
       createSignedUrl: mocks.createSignedUrl,
       upload: mocks.upload,
@@ -32,6 +38,10 @@ describe('Notas Supabase PDF storage helpers', () => {
     mocks.getUser.mockResolvedValue({
       data: { user: { id: '00000000-0000-0000-0000-000000000001' } },
       error: null,
+    });
+    mocks.getPerfil.mockResolvedValue({
+      nome: 'Retífica Premium',
+      email: 'retificapremium5@gmail.com',
     });
   });
 
@@ -117,15 +127,15 @@ describe('Notas Supabase PDF storage helpers', () => {
 
   it('uploadNotaPDF stores the PDF and returns storage path instead of public URL', async () => {
     const { uploadNotaPDF } = await import('@/api/supabase/notas');
-    mocks.upload.mockResolvedValue({ data: { path: 'notas/2026/04/OS-123.pdf' }, error: null });
+    mocks.upload.mockResolvedValue({ data: { path: 'retifica-premium/2026/junho/10/OS-123.pdf' }, error: null });
 
     const path = await uploadNotaPDF(new Blob(['%PDF-1.4 test'], { type: 'application/pdf' }), 'OS-123');
 
-    expect(path).toMatch(/^[0-9a-f-]{36}\/\d{4}\/\d{2}\/OS-123\.pdf$/);
+    expect(path).toMatch(/^retifica-premium\/\d{4}\/(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\/\d{2}\/OS-123\.pdf$/);
     expect(path.startsWith('http')).toBe(false);
     expect(mocks.from).toHaveBeenCalledWith('notas');
     expect(mocks.upload).toHaveBeenCalledWith(
-      expect.stringMatching(/^[0-9a-f-]{36}\/\d{4}\/\d{2}\/OS-123\.pdf$/),
+      expect.stringMatching(/^retifica-premium\/\d{4}\/(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\/\d{2}\/OS-123\.pdf$/),
       expect.any(Blob),
       {
         contentType: 'application/pdf',

@@ -129,6 +129,64 @@ Plano aprovado para executar em fases:
   - 0 falhas.
   - Total migrado: 72.570.891 bytes.
 
+## Normalizacao De Paths De Storage Da Retifica Premium - 2026-06-10
+
+- Pedido: remover organizacao visual `auth_id/legacy/company-5/ano/mes` e usar pasta com nome da empresa, mes por extenso e dia.
+- Padrao novo:
+  - notas: `retifica-premium/ano/mes-por-extenso/dia/OS-<numero>.pdf`;
+  - contas a pagar: `retifica-premium/ano/mes-por-extenso/dia/<id-conta>/<arquivo>`.
+- Meses ficam em portugues sem acento no path, por exemplo `marco` e `junho`, para evitar encoding estranho em URL.
+- Criado script operacional `scripts/oneoff/normalize-retifica-premium-storage-paths.mjs`.
+  - modo padrao `dry-run`;
+  - modo real `--apply`;
+  - valida origem, destino e colisoes antes de mover;
+  - move o objeto no bucket e atualiza a referencia no banco em seguida.
+- Dry-run antes da execucao:
+  - 888 movimentos planejados;
+  - 885 PDFs de notas;
+  - 3 anexos de contas a pagar;
+  - 0 origens faltando;
+  - 0 destinos ocupados;
+  - 0 colisoes.
+- Execucao real:
+  - 888 objetos movidos;
+  - 885 `Notas_de_Servico.pdf_url` atualizados;
+  - 3 `Contas_Pagar_Anexos.url` atualizados;
+  - `Notas_de_Servico.pdf_formato` normalizado para `supabase_storage`;
+  - 0 falhas.
+- Validacao pos-normalizacao:
+  - novo dry-run retornou 0 movimentos pendentes;
+  - 885/885 notas da Retifica Premium seguem com PDF existente no bucket `notas`;
+  - 3/3 anexos de contas a pagar seguem existentes no bucket `contas-pagar`;
+  - 0 referencias com `legacy`, `company-5`, prefixo antigo de `auth_id` ou mes numerico;
+  - 0 arquivos restantes no prefixo antigo dos buckets;
+  - buckets continuam privados; a seguranca segue baseada em owner/policies, nao no nome da pasta.
+
+## Contas A Pagar - Favorecido E Sugestoes De E-mail - 2026-06-10
+
+- Adicionado contrato completo para `favorecido_tipo` em `Contas_Pagar`:
+  - `FORNECEDOR` como padrao;
+  - `FUNCIONARIO` para salarios, vales, comissoes e adiantamentos sem criar uma tabela separada de funcionarios na v1.
+- RPCs normais e de suporte agora aceitam e retornam `favorecido_tipo`:
+  - `insert_conta_pagar`;
+  - `update_conta_pagar`;
+  - `get_contas_pagar`;
+  - `get_conta_pagar_detalhes`;
+  - variantes `*_contexto_suporte`.
+- A assinatura antiga de `insert_conta_pagar` sem `p_favorecido_tipo` foi removida para evitar ambiguidade de overload.
+- `aceitar_sugestao_email` passou a chamar `insert_conta_pagar` por parametros nomeados com `p_favorecido_tipo => 'FORNECEDOR'`.
+- Frontend:
+  - formulario rapido de conta tem toggle `Fornecedor` / `Funcionario`;
+  - ao escolher `Funcionario`, tenta sugerir a categoria `Mao de Obra`;
+  - edicao de conta tambem preserva e permite alterar o tipo do favorecido;
+  - modo suporte usa o mesmo contrato auditado.
+- Validacao executada:
+  - `npx tsc --noEmit`: passou.
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh.
+  - `npm test -- --run`: passou, 47 arquivos e 351 testes.
+  - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks.
+  - `npm run test:integration`: passou, 16 arquivos e 54 testes.
+
 ## Protecao Contra Duplicidade De O.S. - 2026-06-03
 
 - Pedido: impedir que o frontend ou qualquer chamada de criacao gere O.S. duplicada.

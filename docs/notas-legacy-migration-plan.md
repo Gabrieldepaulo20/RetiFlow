@@ -75,7 +75,7 @@ Somente depois da revisao do relatorio:
 - Modo de escrita: `--apply`.
 - Modo de validacao posterior: `--verify-existing`.
 - Estrutura dos arquivos no bucket privado `notas`:
-  - `auth_id/legacy/company-5/ano/mes/OS-<numero>-<nota>.pdf`
+  - estrutura inicial usada na importacao: `auth_id/legacy/company-5/ano/mes/OS-<numero>-<nota>.pdf`
 - Resultado da execucao:
   - 880 PDFs baixados do S3 legado;
   - 880 PDFs enviados ao Storage do Supabase;
@@ -84,3 +84,12 @@ Somente depois da revisao do relatorio:
   - 0 objetos faltando;
   - 0 objetos com owner incorreto;
   - 880 PDFs validados por signed URL/download.
+
+## Normalizacao posterior
+
+- Em 2026-06-10, os paths da Retifica Premium foram normalizados para remover `legacy` do caminho visual.
+- Padrao atual das notas no bucket privado `notas`:
+  - `retifica-premium/ano/mes-por-extenso/dia/OS-<numero>.pdf`
+- Exemplo:
+  - `retifica-premium/2026/junho/05/OS-5776.pdf`
+- O campo `pdf_formato` das notas normalizadas passou a ser `supabase_storage`.

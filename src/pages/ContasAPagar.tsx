@@ -101,6 +101,7 @@ export default function ContasAPagar() {
   const [editObservations, setEditObservations] = useState('');
   const [editUrgent, setEditUrgent] = useState(false);
   const [editSupplierName, setEditSupplierName] = useState('');
+  const [editFavorecidoTipo, setEditFavorecidoTipo] = useState<'FORNECEDOR' | 'FUNCIONARIO'>('FORNECEDOR');
   const [editOriginalAmount, setEditOriginalAmount] = useState('');
   const [editDocNumber, setEditDocNumber] = useState('');
   const [editPaymentMethod, setEditPaymentMethod] = useState<PaymentMethod>('PIX');
@@ -278,6 +279,7 @@ export default function ContasAPagar() {
     setEditObservations('');
     setEditUrgent(false);
     setEditSupplierName('');
+    setEditFavorecidoTipo('FORNECEDOR');
     setEditOriginalAmount('');
     setEditDocNumber('');
     setEditPaymentMethod('PIX');
@@ -304,6 +306,7 @@ export default function ContasAPagar() {
     setEditObservations(payable.observations ?? '');
     setEditUrgent(payable.isUrgent);
     setEditSupplierName(payable.supplierName ?? '');
+    setEditFavorecidoTipo(payable.favorecidoTipo === 'FUNCIONARIO' ? 'FUNCIONARIO' : 'FORNECEDOR');
     setEditOriginalAmount(payable.originalAmount.toFixed(2).replace('.', ','));
     setEditDocNumber(payable.docNumber ?? '');
     setEditPaymentMethod(payable.paymentMethod ?? 'PIX');
@@ -339,6 +342,7 @@ export default function ContasAPagar() {
       title: `${payable.title} (cópia)`,
       supplierId: payable.supplierId,
       supplierName: payable.supplierName,
+      favorecidoTipo: payable.favorecidoTipo,
       categoryId: payable.categoryId,
       docNumber: payable.docNumber,
       issueDate: payable.issueDate,
@@ -422,6 +426,7 @@ export default function ContasAPagar() {
       };
       if (!restricted) {
         if (normalizedSupplierName) patch.supplierName = normalizedSupplierName;
+        patch.favorecidoTipo = editFavorecidoTipo;
         patch.originalAmount = parsedAmount;
         patch.finalAmount = calculatePayableFinalAmount(parsedAmount, selectedPayable.interest, selectedPayable.discount);
         if (normalizedDocNumber) patch.docNumber = normalizedDocNumber;
@@ -837,7 +842,16 @@ export default function ContasAPagar() {
           </DialogHeader>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2 md:col-span-2"><Label>Título *</Label><Input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} onBlur={() => setEditTitle(toTitleCasePtBr(editTitle))} /></div>
-            <div className="space-y-2"><Label>Fornecedor</Label><Input value={editSupplierName} onChange={(event) => setEditSupplierName(event.target.value)} onBlur={() => setEditSupplierName(toTitleCasePtBr(editSupplierName))} disabled={!!(selectedPayable && isPayableEditRestricted(selectedPayable))} placeholder="Nome do fornecedor" /></div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <Label>{editFavorecidoTipo === 'FUNCIONARIO' ? 'Funcionário' : 'Fornecedor'}</Label>
+                <div className="flex rounded-lg border border-border/70 p-0.5 text-xs font-medium">
+                  <button type="button" onClick={() => setEditFavorecidoTipo('FORNECEDOR')} disabled={!!(selectedPayable && isPayableEditRestricted(selectedPayable))} className={`rounded-md px-2 py-1 transition-colors ${editFavorecidoTipo !== 'FUNCIONARIO' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'} disabled:cursor-not-allowed disabled:opacity-60`}>Fornecedor</button>
+                  <button type="button" onClick={() => setEditFavorecidoTipo('FUNCIONARIO')} disabled={!!(selectedPayable && isPayableEditRestricted(selectedPayable))} className={`rounded-md px-2 py-1 transition-colors ${editFavorecidoTipo === 'FUNCIONARIO' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'} disabled:cursor-not-allowed disabled:opacity-60`}>Funcionário</button>
+                </div>
+              </div>
+              <Input value={editSupplierName} onChange={(event) => setEditSupplierName(event.target.value)} onBlur={() => setEditSupplierName(toTitleCasePtBr(editSupplierName))} disabled={!!(selectedPayable && isPayableEditRestricted(selectedPayable))} placeholder={editFavorecidoTipo === 'FUNCIONARIO' ? 'Nome do funcionário' : 'Nome do fornecedor'} />
+            </div>
             <div className="space-y-2"><Label>Nº do documento</Label><Input value={editDocNumber} onChange={(event) => setEditDocNumber(event.target.value)} onBlur={() => setEditDocNumber(normalizeWhitespace(editDocNumber))} disabled={!!(selectedPayable && isPayableEditRestricted(selectedPayable))} placeholder="Número do boleto, NF..." /></div>
             <div className="space-y-2"><Label>Categoria *</Label><Select value={editCategoryId} onValueChange={setEditCategoryId}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{payableCategories.filter((category) => category.isActive).map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-2"><Label>Vencimento *</Label><Input type="date" value={editDueDate} onChange={(event) => setEditDueDate(event.target.value)} /></div>

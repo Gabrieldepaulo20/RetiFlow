@@ -1,6 +1,8 @@
 import { callRPC } from './_base';
 import { supabase } from '@/lib/supabase';
 import { readStoredSupportContext } from '@/services/auth/supportContext';
+import { getPerfil } from './auth';
+import { buildPayableAttachmentStoragePath } from '@/services/storage/storagePaths';
 
 export interface ContaPagar {
   id_contas_pagar: string;
@@ -24,6 +26,7 @@ export interface ContaPagar {
   total_parcelas: number | null;
   urgente: boolean;
   origem_lancamento: string;
+  favorecido_tipo?: string;
   excluido_em: string | null;
   vencida: boolean;
   created_at: string;
@@ -52,6 +55,7 @@ export interface InsertContaPagarPayload {
   p_total_parcelas?: number;
   p_observacoes?: string;
   p_urgente?: boolean;
+  p_favorecido_tipo?: string;
 }
 
 export async function getContasPagar(params?: {
@@ -120,7 +124,10 @@ export async function getContaPagarDetalhes(idContasPagar: string): Promise<Cont
 }
 
 export async function insertContaPagar(payload: InsertContaPagarPayload) {
-  const env = await callRPC('insert_conta_pagar', payload as unknown as Record<string, unknown>);
+  const env = await callRPC('insert_conta_pagar', {
+    ...payload,
+    p_favorecido_tipo: payload.p_favorecido_tipo ?? 'FORNECEDOR',
+  } as unknown as Record<string, unknown>);
   return env.id_contas_pagar as string;
 }
 
@@ -168,19 +175,6 @@ export async function updateAnexoContaPagarNome(params: {
 
 const PAYABLE_ATTACHMENTS_BUCKET = import.meta.env.VITE_SUPABASE_PAYABLE_ATTACHMENTS_BUCKET || 'contas-pagar';
 
-function sanitizeStorageName(filename: string) {
-  const extension = filename.includes('.') ? `.${filename.split('.').pop()}` : '';
-  const basename = filename
-    .replace(/\.[^.]+$/, '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9-_]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80) || 'anexo';
-
-  return `${basename}${extension.toLowerCase()}`;
-}
-
 export async function uploadAnexoContaPagar(params: {
   contaPagarId: string;
   file: File;
@@ -191,8 +185,12 @@ export async function uploadAnexoContaPagar(params: {
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.id) throw new Error('[uploadAnexoContaPagar] Sessão sem usuário autenticado.');
-  const safeName = sanitizeStorageName(params.file.name);
-  const path = `${user.id}/${params.contaPagarId}/${Date.now()}-${safeName}`;
+  const perfil = await getPerfil();
+  const path = buildPayableAttachmentStoragePath({
+    tenantName: perfil.nome || perfil.email || user.id,
+    contaPagarId: params.contaPagarId,
+    filename: params.file.name,
+  });
   const { error } = await supabase.storage.from(PAYABLE_ATTACHMENTS_BUCKET).upload(path, params.file, {
     contentType: params.file.type || 'application/octet-stream',
     upsert: false,

@@ -1,6 +1,8 @@
 import { callRPC } from './_base';
 import { NoteStatus, NotePaymentStatus, NoteType, IntakeNote, PaymentMethod, STATUS_LABELS } from '@/types';
 import { readStoredSupportContext } from '@/services/auth/supportContext';
+import { getPerfil } from './auth';
+import { buildNotePdfStoragePath } from '@/services/storage/storagePaths';
 
 const NOTAS_BUCKET = 'notas';
 const DEFAULT_NOTA_PDF_SIGNED_URL_TTL = 60 * 60;
@@ -213,11 +215,11 @@ export async function uploadNotaPDF(blob: Blob, osNumero: string): Promise<strin
   const { supabase } = await import('@/lib/supabase');
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.id) throw new Error('[uploadNotaPDF] Sessão sem usuário autenticado.');
-  const now = new Date();
-  const ano = now.getFullYear();
-  const mes = String(now.getMonth() + 1).padStart(2, '0');
-  const numeroNormalizado = osNumero.replace(/^OS-/i, '').replace(/[^\dA-Za-z-]/g, '') || osNumero;
-  const path = `${user.id}/${ano}/${mes}/OS-${numeroNormalizado}.pdf`;
+  const perfil = await getPerfil();
+  const path = buildNotePdfStoragePath({
+    tenantName: perfil.nome || perfil.email || user.id,
+    osNumero,
+  });
   const { error } = await supabase.storage.from(NOTAS_BUCKET).upload(path, blob, {
     contentType: 'application/pdf',
     cacheControl: '3600',

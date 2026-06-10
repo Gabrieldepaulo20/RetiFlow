@@ -48,6 +48,7 @@ describe.skipIf(skipIntegration)('Contas a Pagar — integração real com Supab
       p_fk_categorias: TEST_CATEGORY_ID,
       p_data_vencimento: '2026-12-31',
       p_valor_original: 100,
+      p_favorecido_tipo: 'FORNECEDOR',
     })).rejects.toThrow(/permission denied|not allowed/i);
   });
 
@@ -88,6 +89,7 @@ describe.skipIf(skipIntegration)('Contas a Pagar — integração real com Supab
       p_desconto: 0,
       p_numero_documento: 'NF-TEST-001',
       p_origem_lancamento: 'MANUAL',
+      p_favorecido_tipo: 'FORNECEDOR',
     });
 
     expect(result.status).toBe(200);
@@ -107,6 +109,7 @@ describe.skipIf(skipIntegration)('Contas a Pagar — integração real com Supab
       p_fk_categorias: TEST_CATEGORY_ID,
       p_data_vencimento: '2026-11-30T00:00:00',
       p_valor_original: 500.00,
+      p_favorecido_tipo: 'FORNECEDOR',
     });
 
     expect(result.status).toBe(200);
