@@ -53,7 +53,8 @@ interface AuthContextType {
   startSupportImpersonation: (targetUserId: string, reason: string) => Promise<SupportImpersonationSession>;
   endSupportImpersonation: () => Promise<void>;
   retryAuth: () => void;
-  refreshProfile: (options?: { keepCurrentSessionOnTransientError?: boolean }) => Promise<boolean>;
+  refreshProfile: (options?: { keepCurrentSessionOnTransientError?: boolean; force?: boolean }) => Promise<boolean>;
+  isProfileFresh: () => boolean;
   completeMfaLogin: () => Promise<LoginResult>;
   can: (permission: Permission) => boolean;
   canAccessModule: (moduleKey: Parameters<typeof getModulePermission>[0]) => boolean;
@@ -115,6 +116,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [moduleAccessVersion, setModuleAccessVersion] = useState(0);
   const sessionRef = useRef<AuthSession | null>(session);
   const pendingMfaSessionRef = useRef<{ session: AuthSession; portal: LoginPortal } | null>(null);
+  const lastSuccessfulProfileFetchAt = useRef<number>(0);
+  const PROFILE_CACHE_TTL_MS = 30_000;
 
   const authMode: AuthMode = IS_REAL_AUTH ? 'real' : 'development';
 
@@ -159,11 +162,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     removeStorageItem(AUTH_SESSION_STORAGE_KEY);
     setSession(result.session);
     setProfileError(null);
+    lastSuccessfulProfileFetchAt.current = Date.now();
     return true;
   }, []);
 
-  const refreshProfile = useCallback(async (options?: { keepCurrentSessionOnTransientError?: boolean }) => {
+  const refreshProfile = useCallback(async (options?: { keepCurrentSessionOnTransientError?: boolean; force?: boolean }) => {
     if (!IS_REAL_AUTH) return true;
+
+    // Reutiliza perfil em cache se foi carregado há menos de PROFILE_CACHE_TTL_MS (evita RPC por rota)
+    if (!options?.force && sessionRef.current?.user && Date.now() - lastSuccessfulProfileFetchAt.current < PROFILE_CACHE_TTL_MS) {
+      return true;
+    }
 
     const { data: { session: sbSession } } = await supabase.auth.getSession();
     if (!sbSession) {
@@ -332,12 +341,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     removeStorageItem(AUTH_SESSION_STORAGE_KEY);
   }, []);
 
+  const isProfileFresh = useCallback(() => {
+    return Boolean(sessionRef.current?.user) && Date.now() - lastSuccessfulProfileFetchAt.current < PROFILE_CACHE_TTL_MS;
+  }, []);
+
   const retryAuth = useCallback(() => {
     if (!IS_REAL_AUTH) return;
     setIsAuthLoading(true);
     setProfileError(null);
 
-    void refreshProfile().catch(() => {
+    void refreshProfile({ force: true }).catch(() => {
       setProfileError('Erro inesperado ao verificar sessão. Tente novamente.');
     }).finally(() => {
       setIsAuthLoading(false);
@@ -527,13 +540,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       endSupportImpersonation,
       retryAuth,
       refreshProfile,
+      isProfileFresh,
       completeMfaLogin,
       can,
       canAccessModule,
       isAdmin: realUser?.role === 'ADMIN',
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [authMode, realUser, user, operationalUser, supportTargetUser, session, supportSession, isAuthLoading, profileError, login, logout, startSupportImpersonation, endSupportImpersonation, retryAuth, refreshProfile, completeMfaLogin, can, canAccessModule, moduleAccessVersion],
+    [authMode, realUser, user, operationalUser, supportTargetUser, session, supportSession, isAuthLoading, profileError, login, logout, startSupportImpersonation, endSupportImpersonation, retryAuth, refreshProfile, isProfileFresh, completeMfaLogin, can, canAccessModule, moduleAccessVersion],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

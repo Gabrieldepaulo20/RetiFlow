@@ -21,6 +21,8 @@ const authBase = {
   startSupportImpersonation: vi.fn(),
   endSupportImpersonation: vi.fn(),
   completeMfaLogin: vi.fn(),
+  // false → força revalidação (necessário para testes que esperam o spinner)
+  isProfileFresh: vi.fn().mockReturnValue(false),
 };
 
 const baseUser: User = {

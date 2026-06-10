@@ -14,7 +14,7 @@ interface ProtectedRouteProps {
 }
 
 export default function ProtectedRoute({ moduleKey, allowedRoles, redirectTo }: ProtectedRouteProps) {
-  const { authMode, isAuthenticated, canAccessModule, isAuthLoading, user, profileError, retryAuth, refreshProfile } = useAuth();
+  const { authMode, isAuthenticated, canAccessModule, isAuthLoading, user, profileError, retryAuth, refreshProfile, isProfileFresh } = useAuth();
   const location = useLocation();
   const loginPath = moduleKey === 'admin' ? '/admin/login' : '/login';
   const accessCheckKey = useMemo(
@@ -27,6 +27,12 @@ export default function ProtectedRoute({ moduleKey, allowedRoles, redirectTo }: 
   useEffect(() => {
     if (!shouldRevalidateRoute) {
       setVerifiedAccessKey(null);
+      return;
+    }
+
+    // Perfil carregado recentemente — libera rota sem spinner nem RPC adicional
+    if (isProfileFresh()) {
+      setVerifiedAccessKey(accessCheckKey);
       return;
     }
 
@@ -44,7 +50,7 @@ export default function ProtectedRoute({ moduleKey, allowedRoles, redirectTo }: 
     return () => {
       cancelled = true;
     };
-  }, [accessCheckKey, refreshProfile, shouldRevalidateRoute]);
+  }, [accessCheckKey, isProfileFresh, refreshProfile, shouldRevalidateRoute]);
 
   if (isAuthLoading) {
     return (

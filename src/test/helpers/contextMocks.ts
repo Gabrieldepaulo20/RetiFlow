@@ -29,6 +29,7 @@ export function makeAuthCtx(overrides: Partial<AuthCtx> = {}): AuthCtx {
     endSupportImpersonation: vi.fn(),
     retryAuth: vi.fn(),
     refreshProfile: vi.fn().mockResolvedValue(true),
+    isProfileFresh: vi.fn().mockReturnValue(true),
     completeMfaLogin: vi.fn(),
     can: vi.fn(),
     canAccessModule: vi.fn(),
