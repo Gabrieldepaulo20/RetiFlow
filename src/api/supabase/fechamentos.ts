@@ -155,11 +155,21 @@ export async function updateFechamento(
   await callMutationRPC('update_fechamento', { p_id_fechamentos: idFechamentos, ...dados });
 }
 
-export function buildFechamentoDocumentSnapshotParams(customization?: ResolvedDocumentCustomization | null) {
+function asJsonRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+export function buildFechamentoDocumentSnapshotParams(customization?: ResolvedDocumentCustomization | null): {
+  p_fk_template_documento: string | null;
+  p_documento_tema_snapshot: Record<string, unknown> | null;
+  p_documento_config_snapshot: Record<string, unknown> | null;
+} {
   return {
     p_fk_template_documento: customization?.template?.id ?? null,
-    p_documento_tema_snapshot: customization?.theme?.config ?? null,
-    p_documento_config_snapshot: customization?.resolvedConfig ?? null,
+    p_documento_tema_snapshot: asJsonRecord(customization?.theme?.config),
+    p_documento_config_snapshot: asJsonRecord(customization?.resolvedConfig),
   };
 }
 

@@ -10,6 +10,16 @@ export type DocumentType =
 export type DocumentTemplateStatus = 'draft' | 'active' | 'archived';
 export type DocumentLayoutStyle = 'classic' | 'modern' | 'compact' | 'premium' | 'minimal' | 'colorful';
 export type DocumentDensity = 'compact' | 'normal' | 'detailed';
+export type DocumentTableStyle = 'classic' | 'striped' | 'lined' | 'minimal';
+export type DocumentTotalStyle = 'boxed' | 'highlight' | 'minimal';
+
+const DOCUMENT_LAYOUT_STYLES = ['classic', 'modern', 'compact', 'premium', 'minimal', 'colorful'] as const;
+const DOCUMENT_DENSITIES = ['compact', 'normal', 'detailed'] as const;
+const DOCUMENT_LOGO_SIZES = ['small', 'medium', 'large'] as const;
+const DOCUMENT_ALIGNMENTS = ['left', 'center', 'right'] as const;
+const DOCUMENT_HEADER_STYLES = ['split', 'solid', 'minimal'] as const;
+const DOCUMENT_TABLE_STYLES = ['classic', 'striped', 'lined', 'minimal'] as const;
+const DOCUMENT_TOTAL_STYLES = ['boxed', 'highlight', 'minimal'] as const;
 
 export interface CompanyDocumentSettings {
   fkUsuarios: string;
@@ -43,8 +53,8 @@ export interface DocumentThemeConfig {
   headerTextColor: string;
   borderColor: string;
   layoutStyle?: DocumentLayoutStyle;
-  tableStyle?: 'classic' | 'striped' | 'lined' | 'minimal';
-  totalStyle?: 'boxed' | 'highlight' | 'minimal';
+  tableStyle?: DocumentTableStyle;
+  totalStyle?: DocumentTotalStyle;
 }
 
 export interface DocumentTemplateConfig {
@@ -65,8 +75,8 @@ export interface DocumentTemplateConfig {
   showCompanyData: boolean;
   showFooter: boolean;
   headerStyle: 'split' | 'solid' | 'minimal';
-  tableStyle: 'classic' | 'striped' | 'lined' | 'minimal';
-  totalStyle: 'boxed' | 'highlight' | 'minimal';
+  tableStyle: DocumentTableStyle;
+  totalStyle: DocumentTotalStyle;
   theme: DocumentThemeConfig;
 }
 
@@ -435,16 +445,16 @@ export function normalizeDocumentTemplateConfig(
     termsText: pickString(source.termsText, defaults.termsText, 900),
     footerText: pickString(source.footerText, defaults.footerText, 500),
     thankYouText: pickString(source.thankYouText, defaults.thankYouText, 260),
-    layoutStyle: pickEnum(source.layoutStyle, ['classic', 'modern', 'compact', 'premium', 'minimal', 'colorful'], defaults.layoutStyle),
-    density: pickEnum(source.density, ['compact', 'normal', 'detailed'], defaults.density),
+    layoutStyle: pickEnum(source.layoutStyle, DOCUMENT_LAYOUT_STYLES, defaults.layoutStyle),
+    density: pickEnum(source.density, DOCUMENT_DENSITIES, defaults.density),
     showLogo: pickBoolean(source.showLogo, defaults.showLogo),
-    logoSize: pickEnum(source.logoSize, ['small', 'medium', 'large'], defaults.logoSize),
-    logoAlignment: pickEnum(source.logoAlignment, ['left', 'center', 'right'], defaults.logoAlignment),
+    logoSize: pickEnum(source.logoSize, DOCUMENT_LOGO_SIZES, defaults.logoSize),
+    logoAlignment: pickEnum(source.logoAlignment, DOCUMENT_ALIGNMENTS, defaults.logoAlignment),
     showCompanyData: pickBoolean(source.showCompanyData, defaults.showCompanyData),
     showFooter: pickBoolean(source.showFooter, defaults.showFooter),
-    headerStyle: pickEnum(source.headerStyle, ['split', 'solid', 'minimal'], defaults.headerStyle),
-    tableStyle: pickEnum(source.tableStyle, ['classic', 'striped', 'lined', 'minimal'], defaults.tableStyle),
-    totalStyle: pickEnum(source.totalStyle, ['boxed', 'highlight', 'minimal'], defaults.totalStyle),
+    headerStyle: pickEnum(source.headerStyle, DOCUMENT_HEADER_STYLES, defaults.headerStyle),
+    tableStyle: pickEnum(source.tableStyle, DOCUMENT_TABLE_STYLES, defaults.tableStyle),
+    totalStyle: pickEnum(source.totalStyle, DOCUMENT_TOTAL_STYLES, defaults.totalStyle),
     theme: {
       primaryColor: normalizeHexColor(themeSource.primaryColor as string | undefined, defaults.theme.primaryColor),
       secondaryColor: normalizeHexColor(themeSource.secondaryColor as string | undefined, defaults.theme.secondaryColor),
@@ -452,9 +462,9 @@ export function normalizeDocumentTemplateConfig(
       headerBackgroundColor: normalizeHexColor(themeSource.headerBackgroundColor as string | undefined, defaults.theme.headerBackgroundColor),
       headerTextColor: normalizeHexColor(themeSource.headerTextColor as string | undefined, defaults.theme.headerTextColor),
       borderColor: normalizeHexColor(themeSource.borderColor as string | undefined, defaults.theme.borderColor),
-      layoutStyle: pickEnum(themeSource.layoutStyle, ['classic', 'modern', 'compact', 'premium', 'minimal', 'colorful'], defaults.theme.layoutStyle ?? defaults.layoutStyle),
-      tableStyle: pickEnum(themeSource.tableStyle, ['classic', 'striped', 'lined', 'minimal'], defaults.theme.tableStyle ?? defaults.tableStyle),
-      totalStyle: pickEnum(themeSource.totalStyle, ['boxed', 'highlight', 'minimal'], defaults.theme.totalStyle ?? defaults.totalStyle),
+      layoutStyle: pickEnum(themeSource.layoutStyle, DOCUMENT_LAYOUT_STYLES, defaults.theme.layoutStyle ?? defaults.layoutStyle),
+      tableStyle: pickEnum(themeSource.tableStyle, DOCUMENT_TABLE_STYLES, defaults.theme.tableStyle ?? defaults.tableStyle),
+      totalStyle: pickEnum(themeSource.totalStyle, DOCUMENT_TOTAL_STYLES, defaults.theme.totalStyle ?? defaults.totalStyle),
     },
   };
 }

@@ -406,8 +406,8 @@ function Via({
     company?.observacaoDocumentos,
     resolvedConfig?.termsText,
   ]
-    .map((value) => value?.trim())
-    .filter(Boolean)
+    .map((value) => value?.trim() ?? '')
+    .filter((value): value is string => value.length > 0)
     .map((value) => renderTemplateText(value, templateVariables));
   const observationLines = configuredObservation.length > 0 ? configuredObservation : NOTA_PRINT_OBSERVATIONS;
   const footerText = resolvedConfig?.showFooter === false

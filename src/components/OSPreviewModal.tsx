@@ -226,8 +226,8 @@ function PreviewVia({
     company?.observacaoDocumentos,
     config?.termsText,
   ]
-    .map((value) => value?.trim())
-    .filter(Boolean)
+    .map((value) => value?.trim() ?? '')
+    .filter((value): value is string => value.length > 0)
     .map((value) => renderTemplateText(value, templateVariables));
   const observationLines = configuredObservation.length > 0 ? configuredObservation : NOTA_PRINT_OBSERVATIONS;
   const footerText = config?.showFooter === false ? '' : renderTemplateText(config?.footerText || '', templateVariables);
