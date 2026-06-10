@@ -23,12 +23,13 @@ import {
   getNotaDetalhesParaFechamento,
   uploadFechamentoPDF,
   getFechamentoPDFSignedUrl,
+  buildFechamentoDocumentSnapshotParams,
   type FechamentoListItem,
   type FechamentoDadosJson,
   type FechamentoNota,
 } from '@/api/supabase/fechamentos';
 import { getNotasServico } from '@/api/supabase/notas';
-import { useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
+import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 import {
   filterFechamentosForClientScope,
   getMonthlyClosingDraftsStorageKey,
@@ -209,6 +210,7 @@ export default function MonthlyClosing() {
   const { operationalUser } = useAuth();
   const { toast } = useToast();
   const { data: templateSettings } = useDocumentTemplateSettings();
+  const { data: documentSettings } = useDocumentCustomization('closing_report');
 
   const now = new Date();
   const defaultMonth = String(now.getMonth() + 1);
@@ -452,9 +454,10 @@ export default function MonthlyClosing() {
         dados={dados}
         geradoEm={geradoEm}
         accentColor={templateSettings?.corFechamento}
+        documentSettings={documentSettings}
       />,
     ).toBlob();
-  }, [templateSettings?.corFechamento]);
+  }, [documentSettings, templateSettings?.corFechamento]);
 
   const openClosingPdfPreview = useCallback(async (dados: FechamentoDadosJson, title: string) => {
     const previewWindow = createPdfPreviewWindow(title);
@@ -813,6 +816,7 @@ export default function MonthlyClosing() {
           notas: notasDados,
         },
         p_pdf_url: pdfUrl,
+        ...buildFechamentoDocumentSnapshotParams(documentSettings),
       });
 
       // 4. Audit action
@@ -835,7 +839,7 @@ export default function MonthlyClosing() {
     } finally {
       setGenerating(false);
     }
-  }, [scopedClientIdSet, toast, renderClosingPdfBlob, loadFechamentos, removeDraft, closeDraftModal]);
+  }, [scopedClientIdSet, toast, renderClosingPdfBlob, loadFechamentos, removeDraft, closeDraftModal, documentSettings]);
 
   const handleGerar = useCallback(async () => {
     if (!activeDraft) return;
@@ -1336,7 +1340,11 @@ export default function MonthlyClosing() {
                 </div>
               ) : modalPreviewDados ? (
                 <div className="h-full min-h-0 overflow-y-auto overscroll-contain scroll-smooth px-0 scrollbar-thin">
-                  <ClosingHtmlPreview dados={modalPreviewDados} accentColor={templateSettings?.corFechamento} />
+                  <ClosingHtmlPreview
+                    dados={modalPreviewDados}
+                    accentColor={templateSettings?.corFechamento}
+                    documentSettings={documentSettings}
+                  />
                 </div>
               ) : storedPdfPreviewUrl ? (
                 <iframe

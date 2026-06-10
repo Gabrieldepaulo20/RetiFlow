@@ -47,7 +47,7 @@ import { formatNoteNumber, normalizeNoteNumber } from '@/lib/noteNumbers';
 import { getNotaServicoDetalhes, uploadNotaPDF, updateNotaPdfUrl } from '@/api/supabase/notas';
 import { getTiposDeMotor, getServicosItens } from '@/api/supabase/catalogo';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
-import { useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
+import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 import { getNotaItemDetailLines } from '@/components/notes/notaItemDetails';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
@@ -182,6 +182,7 @@ export default function NoteFormCore({
   const { user } = useAuth();
   const { toast } = useToast();
   const { data: templateSettings } = useDocumentTemplateSettings();
+  const { data: documentSettings } = useDocumentCustomization('entry_note');
 
   const isEditing = Boolean(editingNote);
   const isLocked = editingNote ? FINAL_STATUSES.has(editingNote.status) : false;
@@ -659,9 +660,10 @@ export default function NoteFormCore({
             const blob = await generateNotaPdfBlob(detalhes, templateSettings ? {
               accentColor: templateSettings.corDocumento,
               templateMode: templateSettings.osModelo,
+              documentSettings,
             } : undefined);
             const url = await uploadNotaPDF(blob, editingNote.number);
-            await updateNotaPdfUrl(editingNote.id, url);
+            await updateNotaPdfUrl(editingNote.id, url, documentSettings);
             await updateNote(editingNote.id, { pdfUrl: url });
           } else {
             console.error('[PDF] getNotaServicoDetalhes retornou null para', editingNote.id);
@@ -738,9 +740,10 @@ export default function NoteFormCore({
             const blob = await generateNotaPdfBlob(detalhes, templateSettings ? {
               accentColor: templateSettings.corDocumento,
               templateMode: templateSettings.osModelo,
+              documentSettings,
             } : undefined);
             const url = await uploadNotaPDF(blob, note.number);
-            await updateNotaPdfUrl(note.id, url);
+            await updateNotaPdfUrl(note.id, url, documentSettings);
             await updateNote(note.id, { pdfUrl: url });
           } else {
             console.error('[PDF] getNotaServicoDetalhes retornou null para', note.id);

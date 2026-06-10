@@ -1,4 +1,6 @@
 import type { FechamentoDadosJson } from '@/api/supabase/fechamentos';
+import type { ResolvedDocumentCustomization, TemplateVariableKey } from '@/services/domain/documentCustomization';
+import { getDocumentAccentColor, renderTemplateText } from '@/services/domain/documentCustomization';
 import { cn } from '@/lib/utils';
 
 const MAX_ITEMS_PER_SECTION = 12;
@@ -18,14 +20,29 @@ const chunkItems = <T,>(items: T[], size: number) => {
 interface Props {
   dados: FechamentoDadosJson;
   accentColor?: string;
+  documentSettings?: ResolvedDocumentCustomization | null;
 }
 
-export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95' }: Props) {
+export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSettings }: Props) {
+  const effectiveAccent = getDocumentAccentColor(documentSettings, accentColor);
+  const company = documentSettings?.company;
+  const config = documentSettings?.resolvedConfig;
+  const companyName = company?.nomeFantasia?.trim() || 'RETÍFICA PREMIUM';
   const generatedAt = new Date(dados.gerado_em).toLocaleDateString('pt-BR', {
     day: '2-digit',
     month: 'long',
     year: 'numeric',
   });
+  const templateVariables: Partial<Record<TemplateVariableKey, string | number | null | undefined>> = {
+    company_name: companyName,
+    company_phone: company?.telefone,
+    company_whatsapp: company?.whatsapp,
+    customer_name: dados.cliente.nome,
+    closing_number: dados.periodo,
+    current_date: generatedAt,
+    total_amount: `R$ ${brl(dados.total_com_desconto)}`,
+  };
+  const subtitle = renderTemplateText(config?.subtitle || 'Fechamento mensal de serviços', templateVariables);
 
   const sections = dados.notas.flatMap((nota) => {
     const chunks = chunkItems(nota.itens, MAX_ITEMS_PER_SECTION);
@@ -40,11 +57,11 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95' }: Props) {
   return (
     <div className="mx-auto w-full max-w-[860px] space-y-4 px-3 py-4 sm:px-5 sm:py-6">
       <div className="rounded-[22px] bg-white p-5 text-slate-900 shadow-sm ring-1 ring-slate-200 sm:p-7">
-        <div className="rounded-2xl p-5 text-white" style={{ background: `linear-gradient(135deg, ${accentColor}, #0f172a)` }}>
+        <div className="rounded-2xl p-5 text-white" style={{ background: `linear-gradient(135deg, ${effectiveAccent}, #0f172a)` }}>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <p className="text-lg font-bold tracking-wide">RETÍFICA PREMIUM</p>
-              <p className="mt-1 text-xs text-cyan-50">Fechamento mensal de serviços</p>
+              <p className="text-lg font-bold tracking-wide">{companyName}</p>
+              <p className="mt-1 text-xs text-cyan-50">{subtitle}</p>
             </div>
             <div className="text-sm text-cyan-50 sm:text-right">
               <p className="font-semibold text-white">{dados.cliente.nome}</p>
@@ -70,9 +87,9 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95' }: Props) {
                 key={`${nota.id}-${chunkIndex}`}
                 className="break-inside-avoid overflow-hidden rounded-xl border border-slate-200 bg-white"
               >
-                <div className="flex items-start justify-between gap-3 border-b px-4 py-3" style={{ backgroundColor: `${accentColor}12`, borderBottomColor: `${accentColor}25` }}>
+                <div className="flex items-start justify-between gap-3 border-b px-4 py-3" style={{ backgroundColor: `${effectiveAccent}12`, borderBottomColor: `${effectiveAccent}25` }}>
                   <div className="min-w-0">
-                    <p className="font-bold" style={{ color: accentColor }}>
+                    <p className="font-bold" style={{ color: effectiveAccent }}>
                       {nota.os}{isContinuation ? ' · continuação' : ''}
                     </p>
                     <p className="truncate text-xs text-slate-600">{nota.veiculo || 'Veículo não informado'}</p>
@@ -80,7 +97,7 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95' }: Props) {
                       <p className="mt-1 text-[11px] text-slate-500">Parte {chunkIndex + 1} de {chunksTotal}</p>
                     )}
                   </div>
-                  <p className="shrink-0 rounded-full bg-white px-3 py-1 text-xs font-semibold ring-1" style={{ color: accentColor, borderColor: `${accentColor}25` }}>
+                  <p className="shrink-0 rounded-full bg-white px-3 py-1 text-xs font-semibold ring-1" style={{ color: effectiveAccent, borderColor: `${effectiveAccent}25` }}>
                     {nota.placa || 'Não informada'}
                   </p>
                 </div>
@@ -123,7 +140,7 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95' }: Props) {
                         <p><span className="text-slate-500">Desconto:</span> {nota.desconto_nota}%</p>
                       </>
                     )}
-                    <p className="font-bold" style={{ color: accentColor }}>Total {nota.os}: R$ {brl(nota.total_com_desconto)}</p>
+                    <p className="font-bold" style={{ color: effectiveAccent }}>Total {nota.os}: R$ {brl(nota.total_com_desconto)}</p>
                   </div>
                 ) : (
                   <p className="border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
@@ -135,7 +152,7 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95' }: Props) {
           })}
         </div>
 
-        <div className="mt-5 flex flex-col gap-2 rounded-2xl border px-5 py-4 sm:flex-row sm:items-end sm:justify-between" style={{ backgroundColor: `${accentColor}12`, borderColor: `${accentColor}25` }}>
+        <div className="mt-5 flex flex-col gap-2 rounded-2xl border px-5 py-4 sm:flex-row sm:items-end sm:justify-between" style={{ backgroundColor: `${effectiveAccent}12`, borderColor: `${effectiveAccent}25` }}>
           <div className="text-sm text-slate-600">
             <p>{dados.notas.length} ordem{dados.notas.length !== 1 ? 's' : ''} de serviço · {dados.periodo}</p>
             {dados.total_original !== dados.total_com_desconto && (
@@ -143,8 +160,8 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95' }: Props) {
             )}
           </div>
           <div className="text-right">
-            <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: accentColor }}>Total geral</p>
-            <p className="text-2xl font-bold" style={{ color: accentColor }}>R$ {brl(dados.total_com_desconto)}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: effectiveAccent }}>Total geral</p>
+            <p className="text-2xl font-bold" style={{ color: effectiveAccent }}>R$ {brl(dados.total_com_desconto)}</p>
           </div>
         </div>
       </div>

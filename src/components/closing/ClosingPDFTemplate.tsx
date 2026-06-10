@@ -1,5 +1,7 @@
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { FechamentoDadosJson } from '@/api/supabase/fechamentos';
+import type { ResolvedDocumentCustomization, TemplateVariableKey } from '@/services/domain/documentCustomization';
+import { getDocumentAccentColor, renderTemplateText } from '@/services/domain/documentCustomization';
 
 const MAX_ITEMS_PER_OS_BLOCK = 12;
 
@@ -78,12 +80,33 @@ interface Props {
   dados: FechamentoDadosJson;
   geradoEm: string;
   accentColor?: string;
+  documentSettings?: ResolvedDocumentCustomization | null;
 }
 
-export function ClosingPDFTemplate({ dados, geradoEm, accentColor = '#0f7f95' }: Props) {
+export function ClosingPDFTemplate({
+  dados,
+  geradoEm,
+  accentColor = '#0f7f95',
+  documentSettings,
+}: Props) {
+  const effectiveAccent = getDocumentAccentColor(documentSettings, accentColor);
+  const company = documentSettings?.company;
+  const config = documentSettings?.resolvedConfig;
+  const companyName = company?.nomeFantasia?.trim() || 'RETÍFICA PREMIUM';
   const dataFormatada = new Date(geradoEm).toLocaleDateString('pt-BR', {
     day: '2-digit', month: 'long', year: 'numeric',
   });
+  const templateVariables: Partial<Record<TemplateVariableKey, string | number | null | undefined>> = {
+    company_name: companyName,
+    company_phone: company?.telefone,
+    company_whatsapp: company?.whatsapp,
+    customer_name: dados.cliente.nome,
+    closing_number: dados.periodo,
+    current_date: dataFormatada,
+    total_amount: `R$ ${brl(dados.total_com_desconto)}`,
+  };
+  const subtitle = renderTemplateText(config?.subtitle || 'Fechamento mensal de serviços', templateVariables);
+  const footerText = renderTemplateText(config?.footerText || `${companyName} · Fechamento Mensal`, templateVariables);
   const notaSections = dados.notas.flatMap((nota) => {
     const chunks = chunkItems(nota.itens, MAX_ITEMS_PER_OS_BLOCK);
     return chunks.map((itens, chunkIndex) => ({
@@ -98,11 +121,11 @@ export function ClosingPDFTemplate({ dados, geradoEm, accentColor = '#0f7f95' }:
     <Document title={`Fechamento ${dados.periodo} — ${dados.cliente.nome}`}>
       <Page size="A4" orientation="portrait" style={s.page}>
         {/* Header */}
-        <View style={{ ...s.headerCard, backgroundColor: accentColor }} fixed>
+        <View style={{ ...s.headerCard, backgroundColor: effectiveAccent }} fixed>
           <View style={s.headerRow}>
             <View>
-              <Text style={s.company}>RETÍFICA PREMIUM</Text>
-              <Text style={s.subtitle}>Fechamento mensal de serviços</Text>
+              <Text style={s.company}>{companyName}</Text>
+              <Text style={s.subtitle}>{subtitle}</Text>
             </View>
             <View style={s.headerRight}>
               <Text style={{ ...s.headerMeta, fontWeight: 600 }}>{dados.cliente.nome}</Text>
@@ -113,15 +136,15 @@ export function ClosingPDFTemplate({ dados, geradoEm, accentColor = '#0f7f95' }:
           <View style={s.summaryStrip}>
             <View style={s.summaryPill}>
               <Text style={s.summaryLabel}>Ordens</Text>
-              <Text style={{ ...s.summaryValue, color: accentColor }}>{dados.notas.length} O.S.</Text>
+              <Text style={{ ...s.summaryValue, color: effectiveAccent }}>{dados.notas.length} O.S.</Text>
             </View>
             <View style={s.summaryPill}>
               <Text style={s.summaryLabel}>Subtotal</Text>
-              <Text style={{ ...s.summaryValue, color: accentColor }}>R$ {brl(dados.total_original)}</Text>
+              <Text style={{ ...s.summaryValue, color: effectiveAccent }}>R$ {brl(dados.total_original)}</Text>
             </View>
             <View style={s.summaryPill}>
               <Text style={s.summaryLabel}>Total</Text>
-              <Text style={{ ...s.summaryValue, color: accentColor }}>R$ {brl(dados.total_com_desconto)}</Text>
+              <Text style={{ ...s.summaryValue, color: effectiveAccent }}>R$ {brl(dados.total_com_desconto)}</Text>
             </View>
           </View>
         </View>
@@ -134,15 +157,15 @@ export function ClosingPDFTemplate({ dados, geradoEm, accentColor = '#0f7f95' }:
           return (
             <View key={`${nota.id}-${chunkIndex}`} style={s.osBlock} wrap={false}>
               {/* OS header */}
-              <View style={{ ...s.osHeader, backgroundColor: rgba(accentColor, 0.09), borderBottomColor: rgba(accentColor, 0.2) }}>
+              <View style={{ ...s.osHeader, backgroundColor: rgba(effectiveAccent, 0.09), borderBottomColor: rgba(effectiveAccent, 0.2) }}>
                 <View>
-                  <Text style={{ ...s.osNumber, color: accentColor }}>{nota.os}{isContinuation ? ' · continuação' : ''}</Text>
+                  <Text style={{ ...s.osNumber, color: effectiveAccent }}>{nota.os}{isContinuation ? ' · continuação' : ''}</Text>
                   <Text style={s.osVehicle}>{nota.veiculo}</Text>
                   {chunksTotal > 1 && (
                     <Text style={s.continuation}>Parte {chunkIndex + 1} de {chunksTotal}</Text>
                   )}
                 </View>
-                <Text style={{ ...s.osPlate, color: accentColor }}>{nota.placa || 'Não informada'}</Text>
+                <Text style={{ ...s.osPlate, color: effectiveAccent }}>{nota.placa || 'Não informada'}</Text>
               </View>
 
               {/* Items table header */}
@@ -185,7 +208,7 @@ export function ClosingPDFTemplate({ dados, geradoEm, accentColor = '#0f7f95' }:
                   )}
                   <View style={temDesconto ? s.footGroup : s.footGroupFirst}>
                     <Text style={{ ...s.footLabel, fontWeight: 700 }}>Total {nota.os}:</Text>
-                    <Text style={{ ...s.footTotal, color: accentColor }}>R$ {brl(nota.total_com_desconto)}</Text>
+                    <Text style={{ ...s.footTotal, color: effectiveAccent }}>R$ {brl(nota.total_com_desconto)}</Text>
                   </View>
                 </View>
               ) : (
@@ -196,7 +219,7 @@ export function ClosingPDFTemplate({ dados, geradoEm, accentColor = '#0f7f95' }:
         })}
 
         {/* Grand total */}
-        <View style={{ ...s.totalSection, backgroundColor: rgba(accentColor, 0.08), borderColor: rgba(accentColor, 0.2) }}>
+        <View style={{ ...s.totalSection, backgroundColor: rgba(effectiveAccent, 0.08), borderColor: rgba(effectiveAccent, 0.2) }}>
           <View>
             <Text style={{ fontSize: 8, color: '#555' }}>
               {dados.notas.length} ordem{dados.notas.length !== 1 ? 's' : ''} de serviço · Período: {dados.periodo}
@@ -209,13 +232,13 @@ export function ClosingPDFTemplate({ dados, geradoEm, accentColor = '#0f7f95' }:
           </View>
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={{ fontSize: 8, color: '#555' }}>TOTAL GERAL</Text>
-            <Text style={{ ...s.totalValue, color: accentColor }}>R$ {brl(dados.total_com_desconto)}</Text>
+            <Text style={{ ...s.totalValue, color: effectiveAccent }}>R$ {brl(dados.total_com_desconto)}</Text>
           </View>
         </View>
 
         {/* Page footer */}
         <View style={s.pageFooter} fixed>
-          <Text style={s.footerText}>Retífica Premium · Fechamento Mensal</Text>
+          <Text style={s.footerText}>{footerText}</Text>
           <Text style={s.footerText} render={({ pageNumber, totalPages }) => `Página ${pageNumber} / ${totalPages}`} />
         </View>
       </Page>

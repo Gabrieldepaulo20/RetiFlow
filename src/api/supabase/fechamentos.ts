@@ -1,6 +1,7 @@
 import { callRPC, type RPCEnvelope } from './_base';
 import { supabase } from '@/lib/supabase';
 import { readStoredSupportContext } from '@/services/auth/supportContext';
+import type { ResolvedDocumentCustomization } from '@/services/domain/documentCustomization';
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
 
@@ -55,6 +56,9 @@ export interface FechamentoListItem {
   cliente: { id: string; nome: string } | null;
   dados_json: FechamentoDadosJson | null;
   pdf_url: string | null;
+  fk_template_documento?: string | null;
+  documento_tema_snapshot?: Record<string, unknown> | null;
+  documento_config_snapshot?: Record<string, unknown> | null;
 }
 
 export interface NotaDetalhesItem {
@@ -143,9 +147,20 @@ export async function updateFechamento(
     p_valor_total: number;
     p_dados_json: FechamentoDadosJson;
     p_pdf_url: string;
+    p_fk_template_documento: string | null;
+    p_documento_tema_snapshot: Record<string, unknown> | null;
+    p_documento_config_snapshot: Record<string, unknown> | null;
   }>,
 ) {
   await callMutationRPC('update_fechamento', { p_id_fechamentos: idFechamentos, ...dados });
+}
+
+export function buildFechamentoDocumentSnapshotParams(customization?: ResolvedDocumentCustomization | null) {
+  return {
+    p_fk_template_documento: customization?.template?.id ?? null,
+    p_documento_tema_snapshot: customization?.theme?.config ?? null,
+    p_documento_config_snapshot: customization?.resolvedConfig ?? null,
+  };
 }
 
 export async function registrarAcaoFechamento(params: {

@@ -20,8 +20,10 @@ import {
 import { createPdfPreviewWindow, openPdfInBrowser } from '@/lib/printPdf';
 import { shareOrCopyText } from '@/lib/browserShare';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
-import { useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
+import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 import type { OsTemplateMode } from '@/api/supabase/modelos';
+import type { ResolvedDocumentCustomization, TemplateVariableKey } from '@/services/domain/documentCustomization';
+import { getDocumentAccentColor, renderTemplateText } from '@/services/domain/documentCustomization';
 import { getNotaItemDetailLines } from '@/components/notes/notaItemDetails';
 
 const MAX_ROWS = NOTA_PRINT_MAX_ROWS;
@@ -36,6 +38,7 @@ interface OSPreviewModalProps {
   products: IntakeProduct[];
   accentColor?: string;
   templateMode?: OsTemplateMode;
+  documentSettings?: ResolvedDocumentCustomization | null;
   dados?: NotaServicoDetalhes | null;
   loadingDados?: boolean;
 }
@@ -181,6 +184,7 @@ function PreviewVia({
   fullPage = false,
   copyLabel,
   accentColor = '#1a7a8a',
+  documentSettings,
 }: {
   dados: NotaServicoDetalhes;
   itens: NotaServicoDetalhesItem[];
@@ -188,9 +192,45 @@ function PreviewVia({
   fullPage?: boolean;
   copyLabel?: string;
   accentColor?: string;
+  documentSettings?: ResolvedDocumentCustomization | null;
 }) {
   const { cabecalho, financeiro_servicos } = dados;
   const paddingRows = Math.max(0, maxRows - itens.length);
+  const config = documentSettings?.resolvedConfig;
+  const company = documentSettings?.company;
+  const effectiveAccent = getDocumentAccentColor(documentSettings, accentColor);
+  const companyName = company?.nomeFantasia?.trim() || 'PREMIUM';
+  const subtitle = config?.subtitle?.trim() || 'RETÍFICA DE CABEÇOTE';
+  const documentTitle = config?.title?.trim() || 'Ordem de Serviço';
+  const companyAddress = [company?.endereco, company?.cidade && company?.estado ? `${company.cidade}/${company.estado}` : company?.cidade]
+    .filter(Boolean)
+    .join(' · ');
+  const contactLine = [
+    company?.cep ? `CEP ${company.cep}` : '',
+    company?.telefone || company?.whatsapp || '',
+    company?.email || '',
+  ].filter(Boolean).join(' · ');
+  const templateVariables: Partial<Record<TemplateVariableKey, string | number | null | undefined>> = {
+    company_name: companyName,
+    company_phone: company?.telefone,
+    company_whatsapp: company?.whatsapp,
+    customer_name: cabecalho.cliente.nome,
+    vehicle_plate: cabecalho.veiculo.placa,
+    service_order_number: cabecalho.os_numero,
+    entry_note_number: cabecalho.os_numero,
+    current_date: formatDate(new Date().toISOString()),
+    total_amount: `R$ ${formatCurrency(financeiro_servicos.total_liquido)}`,
+  };
+  const configuredObservation = [
+    config?.defaultObservation,
+    company?.observacaoDocumentos,
+    config?.termsText,
+  ]
+    .map((value) => value?.trim())
+    .filter(Boolean)
+    .map((value) => renderTemplateText(value, templateVariables));
+  const observationLines = configuredObservation.length > 0 ? configuredObservation : NOTA_PRINT_OBSERVATIONS;
+  const footerText = config?.showFooter === false ? '' : renderTemplateText(config?.footerText || '', templateVariables);
 
   return (
     <section
@@ -204,23 +244,27 @@ function PreviewVia({
         fullPage ? 'min-h-[126px]' : 'min-h-[92px]',
       )}>
         <div className="flex w-[48%] flex-col items-center justify-center p-2 text-center">
-          <h2 className={cn('m-0 font-bold leading-tight', fullPage ? 'text-[30px]' : 'text-[21px]')} style={{ color: accentColor }}>
-            PREMIUM
+          <h2 className={cn('m-0 font-bold leading-tight', fullPage ? 'text-[30px]' : 'text-[21px]')} style={{ color: effectiveAccent }}>
+            {companyName}
           </h2>
           <p className={cn('m-0 text-neutral-700', fullPage ? 'text-[18px]' : 'text-[14px]')}>
-            RETÍFICA DE CABEÇOTE
+            {subtitle}
           </p>
         </div>
-        <div className="flex w-[52%] flex-col items-center justify-center border-l px-3 py-2 text-center text-[13px] text-neutral-700" style={{ borderLeftColor: accentColor }}>
-          <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: accentColor }}>Ordem de Serviço</p>
+        <div className="flex w-[52%] flex-col items-center justify-center border-l px-3 py-2 text-center text-[13px] text-neutral-700" style={{ borderLeftColor: effectiveAccent }}>
+          <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: effectiveAccent }}>{documentTitle}</p>
           {copyLabel && (
             <p className="mb-1 rounded-full border border-[#d2d2d2] bg-white px-3 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-neutral-700">
               {copyLabel}
             </p>
           )}
-          <p className="my-0.5 font-medium">Av. Fioravante Magro, 1059</p>
-          <p className="my-0.5">Jardim Boa Vista · Sertãozinho/SP</p>
-          <p className="my-0.5">CEP 14177-578 · (16) 3524-4661</p>
+          {config?.showCompanyData !== false && (
+            <>
+              <p className="my-0.5 font-medium">{companyAddress || 'Av. Fioravante Magro, 1059'}</p>
+              <p className="my-0.5">{contactLine || 'Jardim Boa Vista · Sertãozinho/SP'}</p>
+              {company?.site && <p className="my-0.5">{company.site}</p>}
+            </>
+          )}
         </div>
       </div>
 
@@ -235,7 +279,7 @@ function PreviewVia({
             'absolute inset-x-0 top-0 grid grid-cols-3 items-center text-center text-neutral-700',
             fullPage ? 'px-4 py-2' : 'px-2.5 py-1',
           )}
-          style={{ backgroundColor: `${accentColor}22` }}
+          style={{ backgroundColor: `${effectiveAccent}22` }}
         >
           <div className="whitespace-nowrap">
             <strong className="mr-1.5">O.S:</strong>
@@ -291,7 +335,7 @@ function PreviewVia({
             <col className="w-[19%]" />
           </colgroup>
           <thead>
-            <tr style={{ backgroundColor: `${accentColor}18` }}>
+            <tr style={{ backgroundColor: `${effectiveAccent}18` }}>
               <th className="border border-[#d0d0d0] px-1 py-[5px] text-center text-[12px] font-bold">QTD.</th>
               <th className="border border-[#d0d0d0] px-1 py-[5px] text-center text-[12px] font-bold">DESCRIÇÃO DOS PRODUTOS</th>
               <th className="border border-[#d0d0d0] px-1 py-[5px] text-center text-[11px] font-bold">VALOR UNI.</th>
@@ -350,11 +394,12 @@ function PreviewVia({
 
       <div className="mb-3 shrink-0 border border-[#dddddd] bg-[#efefef] p-2.5 text-[11px] text-neutral-700">
         <strong>OBSERVAÇÕES:</strong>
-        {NOTA_PRINT_OBSERVATIONS.map((line, index) => (
+        {observationLines.map((line, index) => (
           <p key={`${line}-${index}`} className="my-[5px]">
             {line}
           </p>
         ))}
+        {footerText && <p className="my-[5px]">{footerText}</p>}
       </div>
 
       <div className="flex shrink-0 justify-evenly gap-5 pt-[10px] text-center text-[12px]">
@@ -371,7 +416,17 @@ function PreviewVia({
   );
 }
 
-function PreviewPage({ dados, itens, accentColor }: { dados: NotaServicoDetalhes; itens: NotaServicoDetalhesItem[]; accentColor: string }) {
+function PreviewPage({
+  dados,
+  itens,
+  accentColor,
+  documentSettings,
+}: {
+  dados: NotaServicoDetalhes;
+  itens: NotaServicoDetalhesItem[];
+  accentColor: string;
+  documentSettings?: ResolvedDocumentCustomization | null;
+}) {
   return (
     <div
       className="mx-auto flex shrink-0 overflow-hidden bg-white shadow-sm ring-1 ring-black/10"
@@ -380,9 +435,9 @@ function PreviewPage({ dados, itens, accentColor }: { dados: NotaServicoDetalhes
         height: NOTA_PRINT_PAGE.height,
       }}
     >
-      <PreviewVia dados={dados} itens={itens} accentColor={accentColor} />
+      <PreviewVia dados={dados} itens={itens} accentColor={accentColor} documentSettings={documentSettings} />
       <div className="my-5 w-px border-l border-dashed border-[#cccccc]" />
-      <PreviewVia dados={dados} itens={itens} accentColor={accentColor} />
+      <PreviewVia dados={dados} itens={itens} accentColor={accentColor} documentSettings={documentSettings} />
     </div>
   );
 }
@@ -392,11 +447,13 @@ function PreviewPortraitPage({
   itens,
   copyLabel,
   accentColor,
+  documentSettings,
 }: {
   dados: NotaServicoDetalhes;
   itens: NotaServicoDetalhesItem[];
   copyLabel: string;
   accentColor: string;
+  documentSettings?: ResolvedDocumentCustomization | null;
 }) {
   return (
     <div
@@ -406,7 +463,15 @@ function PreviewPortraitPage({
         height: NOTA_PRINT_PORTRAIT_PAGE.height,
       }}
     >
-      <PreviewVia dados={dados} itens={itens} maxRows={LONG_MAX_ROWS} fullPage copyLabel={copyLabel} accentColor={accentColor} />
+      <PreviewVia
+        dados={dados}
+        itens={itens}
+        maxRows={LONG_MAX_ROWS}
+        fullPage
+        copyLabel={copyLabel}
+        accentColor={accentColor}
+        documentSettings={documentSettings}
+      />
     </div>
   );
 }
@@ -420,6 +485,7 @@ export default function OSPreviewModal({
   products,
   accentColor,
   templateMode,
+  documentSettings,
   dados,
   loadingDados = false,
 }: OSPreviewModalProps) {
@@ -427,7 +493,9 @@ export default function OSPreviewModal({
   const [busyAction, setBusyAction] = useState<'download' | 'print' | null>(null);
   const [previewViewportRef, previewViewportSize] = useElementSize<HTMLDivElement>();
   const { data: savedTemplate } = useDocumentTemplateSettings(null, open && (!accentColor || !templateMode));
-  const effectiveAccentColor = accentColor ?? savedTemplate?.corDocumento ?? '#1a7a8a';
+  const { data: resolvedDocumentSettings } = useDocumentCustomization('entry_note', null, open && !documentSettings);
+  const effectiveDocumentSettings = documentSettings ?? resolvedDocumentSettings ?? null;
+  const effectiveAccentColor = accentColor ?? getDocumentAccentColor(effectiveDocumentSettings, savedTemplate?.corDocumento ?? '#1a7a8a');
   const effectiveTemplateMode = templateMode ?? savedTemplate?.osModelo ?? 'auto';
 
   const pdfDados = useMemo(
@@ -471,6 +539,7 @@ export default function OSPreviewModal({
     const blob = await generateNotaPdfBlob(pdfDados, {
       accentColor: effectiveAccentColor,
       templateMode: effectiveTemplateMode,
+      documentSettings: effectiveDocumentSettings,
     });
     return URL.createObjectURL(blob);
   };
@@ -598,8 +667,23 @@ export default function OSPreviewModal({
                     }}
                   >
                     {usePortraitLayout
-                      ? <PreviewPortraitPage dados={pdfDados} itens={page.items} copyLabel={page.copyLabel ?? 'Via'} accentColor={effectiveAccentColor} />
-                      : <PreviewPage dados={pdfDados} itens={page.items} accentColor={effectiveAccentColor} />
+                      ? (
+                        <PreviewPortraitPage
+                          dados={pdfDados}
+                          itens={page.items}
+                          copyLabel={page.copyLabel ?? 'Via'}
+                          accentColor={effectiveAccentColor}
+                          documentSettings={effectiveDocumentSettings}
+                        />
+                      )
+                      : (
+                        <PreviewPage
+                          dados={pdfDados}
+                          itens={page.items}
+                          accentColor={effectiveAccentColor}
+                          documentSettings={effectiveDocumentSettings}
+                        />
+                      )
                     }
                   </div>
                 </div>

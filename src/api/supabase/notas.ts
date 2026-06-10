@@ -3,6 +3,7 @@ import { NoteStatus, NotePaymentStatus, NoteType, IntakeNote, PaymentMethod, STA
 import { readStoredSupportContext } from '@/services/auth/supportContext';
 import { getPerfil } from './auth';
 import { buildNotePdfStoragePath } from '@/services/storage/storagePaths';
+import type { ResolvedDocumentCustomization } from '@/services/domain/documentCustomization';
 
 const NOTAS_BUCKET = 'notas';
 const DEFAULT_NOTA_PDF_SIGNED_URL_TTL = 60 * 60;
@@ -108,6 +109,9 @@ export interface NotaServicoDetalhes {
     total_produtos: number;
     criado_por_usuario: string | null;
     pdf_url: string | null;
+    fk_template_documento?: string | null;
+    documento_tema_snapshot?: Record<string, unknown> | null;
+    documento_config_snapshot?: Record<string, unknown> | null;
     cliente: {
       id: string;
       nome: string;
@@ -142,8 +146,24 @@ export async function getNotaServicoDetalhes(idNota: string): Promise<NotaServic
   }
 }
 
-export async function updateNotaPdfUrl(idNota: string, pdfUrl: string): Promise<void> {
-  await callRPC('update_nota_pdf_url', { p_id_nota: idNota, p_pdf_url: pdfUrl });
+function buildDocumentSnapshotParams(customization?: ResolvedDocumentCustomization | null) {
+  return {
+    p_fk_template_documento: customization?.template?.id ?? null,
+    p_documento_tema_snapshot: customization?.theme?.config ?? null,
+    p_documento_config_snapshot: customization?.resolvedConfig ?? null,
+  };
+}
+
+export async function updateNotaPdfUrl(
+  idNota: string,
+  pdfUrl: string,
+  customization?: ResolvedDocumentCustomization | null,
+): Promise<void> {
+  await callRPC('update_nota_pdf_url', {
+    p_id_nota: idNota,
+    p_pdf_url: pdfUrl,
+    ...buildDocumentSnapshotParams(customization),
+  });
 }
 
 export function extractNotaStoragePath(pathOrUrl: string | null | undefined): string | null {

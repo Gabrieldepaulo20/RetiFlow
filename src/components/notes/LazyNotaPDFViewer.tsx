@@ -1,7 +1,7 @@
 import { lazy, Suspense } from 'react';
 import type { Style } from '@react-pdf/types';
 import type { NotaServicoDetalhes } from '@/api/supabase/notas';
-import { useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
+import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 
 interface NotaPDFViewerProps {
   dados: NotaServicoDetalhes;
@@ -17,12 +17,14 @@ const NotaPDFViewerInner = lazy(async () => {
   return {
     default: function NotaPDFViewer({ dados, style }: NotaPDFViewerProps) {
       const { data: templateSettings } = useDocumentTemplateSettings();
+      const { data: documentSettings } = useDocumentCustomization('entry_note');
       return (
         <PDFViewer width="100%" height="100%" style={style ?? { border: 'none', flex: 1 }}>
           <NotaPDFTemplate
             dados={dados}
             accentColor={templateSettings?.corDocumento}
             templateMode={templateSettings?.osModelo}
+            documentSettings={documentSettings}
           />
         </PDFViewer>
       );

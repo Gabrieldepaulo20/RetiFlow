@@ -2,6 +2,8 @@ import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { Style } from '@react-pdf/types';
 import type { NotaServicoDetalhes, NotaServicoDetalhesItem } from '@/api/supabase/notas';
 import type { OsTemplateMode } from '@/api/supabase/modelos';
+import type { ResolvedDocumentCustomization, TemplateVariableKey } from '@/services/domain/documentCustomization';
+import { getDocumentAccentColor, renderTemplateText } from '@/services/domain/documentCustomization';
 import {
   formatNotaClientPrintName,
   NOTA_PRINT_LONG_MAX_ROWS,
@@ -362,6 +364,7 @@ function Via({
   fullPage = false,
   copyLabel,
   accentColor = '#1a7a8a',
+  documentSettings,
 }: {
   dados: NotaServicoDetalhes;
   itens: NotaServicoDetalhesItem[];
@@ -369,23 +372,65 @@ function Via({
   fullPage?: boolean;
   copyLabel?: string;
   accentColor?: string;
+  documentSettings?: ResolvedDocumentCustomization | null;
 }) {
   const { cabecalho, financeiro_servicos } = dados;
   const paddingRows = Math.max(0, maxRows - itens.length);
+  const resolvedConfig = documentSettings?.resolvedConfig;
+  const company = documentSettings?.company;
+  const effectiveAccent = getDocumentAccentColor(documentSettings, accentColor);
+  const documentTitle = resolvedConfig?.title?.trim() || 'ORDEM DE SERVIÇO';
+  const companyName = company?.nomeFantasia?.trim() || 'PREMIUM';
+  const companySubtitle = resolvedConfig?.subtitle?.trim() || 'RETÍFICA DE CABEÇOTE';
+  const companyAddress = [company?.endereco, company?.cidade && company?.estado ? `${company.cidade}/${company.estado}` : company?.cidade]
+    .filter(Boolean)
+    .join(' · ');
+  const contactLine = [
+    company?.cep ? `CEP ${company.cep}` : '',
+    company?.telefone || company?.whatsapp || '',
+    company?.email || '',
+  ].filter(Boolean).join(' · ');
+  const templateVariables: Partial<Record<TemplateVariableKey, string | number | null | undefined>> = {
+    company_name: companyName,
+    company_phone: company?.telefone,
+    company_whatsapp: company?.whatsapp,
+    customer_name: cabecalho.cliente.nome,
+    vehicle_plate: cabecalho.veiculo.placa,
+    service_order_number: cabecalho.os_numero,
+    entry_note_number: cabecalho.os_numero,
+    current_date: formatDate(new Date().toISOString()),
+    total_amount: `R$ ${formatCurrency(financeiro_servicos.total_liquido)}`,
+  };
+  const configuredObservation = [
+    resolvedConfig?.defaultObservation,
+    company?.observacaoDocumentos,
+    resolvedConfig?.termsText,
+  ]
+    .map((value) => value?.trim())
+    .filter(Boolean)
+    .map((value) => renderTemplateText(value, templateVariables));
+  const observationLines = configuredObservation.length > 0 ? configuredObservation : NOTA_PRINT_OBSERVATIONS;
+  const footerText = resolvedConfig?.showFooter === false
+    ? ''
+    : renderTemplateText(resolvedConfig?.footerText || '', templateVariables);
 
   return (
     <View style={sx(styles.nota, fullPage && styles.notaFullPage)}>
       <View style={sx(styles.notaHeader, fullPage && { minHeight: 116 })}>
         <View style={styles.headerSide}>
-          <Text style={sx(styles.headerTitle, fullPage && styles.headerTitleFull, { color: accentColor })}>PREMIUM</Text>
-          <Text style={sx(styles.headerSubtitle, fullPage && styles.headerSubtitleFull)}>RETÍFICA DE CABEÇOTE</Text>
+          <Text style={sx(styles.headerTitle, fullPage && styles.headerTitleFull, { color: effectiveAccent })}>{companyName}</Text>
+          <Text style={sx(styles.headerSubtitle, fullPage && styles.headerSubtitleFull)}>{companySubtitle}</Text>
         </View>
-        <View style={[styles.headerSide, styles.headerRight, { borderLeftColor: accentColor }]}>
-          <Text style={[styles.headerEyebrow, { color: accentColor }]}>ORDEM DE SERVIÇO</Text>
+        <View style={[styles.headerSide, styles.headerRight, { borderLeftColor: effectiveAccent }]}>
+          <Text style={[styles.headerEyebrow, { color: effectiveAccent }]}>{documentTitle.toUpperCase()}</Text>
           {copyLabel && <Text style={[styles.headerInfo, styles.headerInfoStrong]}>{copyLabel.toUpperCase()}</Text>}
-          <Text style={[styles.headerInfo, styles.headerInfoStrong]}>Av. Fioravante Magro, 1059</Text>
-          <Text style={styles.headerInfo}>Jardim Boa Vista · Sertãozinho/SP</Text>
-          <Text style={styles.headerInfo}>CEP 14177-578 · (16) 3524-4661</Text>
+          {resolvedConfig?.showCompanyData !== false && (
+            <>
+              <Text style={[styles.headerInfo, styles.headerInfoStrong]}>{companyAddress || 'Av. Fioravante Magro, 1059'}</Text>
+              <Text style={styles.headerInfo}>{contactLine || 'Jardim Boa Vista · Sertãozinho/SP'}</Text>
+              {company?.site && <Text style={styles.headerInfo}>{company.site}</Text>}
+            </>
+          )}
         </View>
       </View>
 
@@ -475,11 +520,16 @@ function Via({
 
       <View style={styles.observacoes}>
         <Text style={styles.observacoesTitle}>OBSERVAÇÕES:</Text>
-        {NOTA_PRINT_OBSERVATIONS.map((linha, index) => (
+        {observationLines.map((linha, index) => (
           <Text key={`${linha}-${index}`} style={styles.observacaoLinha}>
             {linha}
           </Text>
         ))}
+        {footerText && (
+          <Text style={styles.observacaoLinha}>
+            {footerText}
+          </Text>
+        )}
       </View>
 
       <View style={styles.assinaturas}>
@@ -500,9 +550,16 @@ interface Props {
   dados: NotaServicoDetalhes;
   accentColor?: string;
   templateMode?: OsTemplateMode;
+  documentSettings?: ResolvedDocumentCustomization | null;
 }
 
-export function NotaPDFTemplate({ dados, accentColor = '#1a7a8a', templateMode = 'auto' }: Props) {
+export function NotaPDFTemplate({
+  dados,
+  accentColor = '#1a7a8a',
+  templateMode = 'auto',
+  documentSettings,
+}: Props) {
+  const effectiveAccent = getDocumentAccentColor(documentSettings, accentColor);
   const usePortraitLayout = templateMode === 'a4_vertical' || (templateMode === 'auto' && dados.itens_servico.length > MAX_ROWS);
   const itemPages = chunkItems(dados.itens_servico, usePortraitLayout ? LONG_MAX_ROWS : MAX_ROWS);
   const portraitPages = itemPages.flatMap((itens, index) => [
@@ -521,13 +578,21 @@ export function NotaPDFTemplate({ dados, accentColor = '#1a7a8a', templateMode =
         >
           {usePortraitLayout ? (
             <View style={styles.notaContainer}>
-              <Via dados={dados} itens={page.itens} maxRows={LONG_MAX_ROWS} fullPage copyLabel={page.copyLabel ?? undefined} accentColor={accentColor} />
+              <Via
+                dados={dados}
+                itens={page.itens}
+                maxRows={LONG_MAX_ROWS}
+                fullPage
+                copyLabel={page.copyLabel ?? undefined}
+                accentColor={effectiveAccent}
+                documentSettings={documentSettings}
+              />
             </View>
           ) : (
             <View style={styles.notaContainer}>
-              <Via dados={dados} itens={page.itens} accentColor={accentColor} />
+              <Via dados={dados} itens={page.itens} accentColor={effectiveAccent} documentSettings={documentSettings} />
               <View style={styles.divider} />
-              <Via dados={dados} itens={page.itens} accentColor={accentColor} />
+              <Via dados={dados} itens={page.itens} accentColor={effectiveAccent} documentSettings={documentSettings} />
             </View>
           )}
         </Page>

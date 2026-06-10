@@ -49,12 +49,18 @@ const SUPPORT_BLOCKED_WRITE_RPCS = new Set([
   'novo_cliente',
   'reativar_cliente',
   'registrar_acao_fechamento',
+  'ativar_tema_documento',
+  'publicar_modelo_documento',
+  'restaurar_modelo_documento_padrao',
+  'salvar_rascunho_modelo_documento',
+  'salvar_tema_documento',
   'salvar_cliente_completo',
   'update_cliente',
   'update_fatura',
   'update_fechamento',
   'update_nota_pdf_url',
   'update_nota_servico',
+  'upsert_configuracao_empresa_cliente',
 ]);
 
 function withSupportContext(rpcName: string, params: Record<string, unknown>) {

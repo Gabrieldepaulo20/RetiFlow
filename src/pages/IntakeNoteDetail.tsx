@@ -20,7 +20,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { buildWhatsAppUrl, openExternalUrl } from '@/lib/browserShare';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
-import { useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
+import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 import { createPdfPreviewWindow, openPdfInBrowser } from '@/lib/printPdf';
 
 const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
@@ -35,6 +35,7 @@ export default function IntakeNoteDetail() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { data: templateSettings } = useDocumentTemplateSettings();
+  const { data: documentSettings } = useDocumentCustomization('entry_note');
   const [showPreview, setShowPreview] = useState(false);
   const [realDetalhes, setRealDetalhes] = useState<NotaServicoDetalhes | null>(null);
   const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
@@ -172,6 +173,7 @@ export default function IntakeNoteDetail() {
                   const blob = await generateNotaPdfBlob(source, templateSettings ? {
                     accentColor: templateSettings.corDocumento,
                     templateMode: templateSettings.osModelo,
+                    documentSettings,
                   } : undefined);
                   const url = URL.createObjectURL(blob);
                   openPdfInBrowser(url, {
@@ -547,6 +549,7 @@ export default function IntakeNoteDetail() {
             services={svcs}
             products={prds}
             dados={realDetalhes}
+            documentSettings={documentSettings}
           />
         </Suspense>
       )}

@@ -66,7 +66,7 @@ import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
-import { useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
+import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 import { createPdfPreviewWindow, openPdfInBrowser } from '@/lib/printPdf';
 
 /** Main workflow statuses for timeline display */
@@ -166,6 +166,7 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
   const navigate = useNavigate();
   const { toast } = useToast();
   const { data: templateSettings } = useDocumentTemplateSettings();
+  const { data: documentSettings } = useDocumentCustomization('entry_note');
 
   const [realItens, setRealItens] = useState<NotaServicoDetalhesItem[]>([]);
   const [realDetalhes, setRealDetalhes] = useState<NotaServicoDetalhes | null>(null);
@@ -940,6 +941,7 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                       const blob = await generateNotaPdfBlob(pdfDados, templateSettings ? {
                         accentColor: templateSettings.corDocumento,
                         templateMode: templateSettings.osModelo,
+                        documentSettings,
                       } : undefined);
                       const url = URL.createObjectURL(blob);
                       openPdfInBrowser(url, {
