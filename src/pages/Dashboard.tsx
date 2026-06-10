@@ -80,11 +80,11 @@ function InlineInfo({ label }: { label: string }) {
           role="button"
           tabIndex={0}
           aria-label="Ver explicação da métrica"
-          className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground/50 transition-colors hover:bg-muted hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground/50 transition-colors hover:bg-muted hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-5 sm:w-5"
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => event.stopPropagation()}
         >
-          <Info className="h-3.5 w-3.5" aria-hidden="true" />
+          <Info className="h-3 w-3 sm:h-3.5 sm:w-3.5" aria-hidden="true" />
         </span>
       </PopoverTrigger>
       <PopoverContent
@@ -98,6 +98,11 @@ function InlineInfo({ label }: { label: string }) {
     </Popover>
   );
 }
+
+const financialMetricButtonClass = 'min-h-[88px] rounded-lg border border-border/70 bg-background p-2 text-left transition sm:min-h-[112px] sm:rounded-xl sm:p-3 lg:min-h-[136px] lg:rounded-2xl lg:p-4';
+const financialMetricLabelClass = 'flex items-start gap-0.5 text-[10px] font-medium leading-tight text-muted-foreground sm:gap-1.5 sm:text-xs';
+const financialMetricValueClass = 'mt-1.5 truncate text-[15px] font-display font-bold leading-none sm:mt-2 sm:text-xl lg:text-2xl';
+const financialMetricIconClass = 'hidden h-7 w-7 shrink-0 items-center justify-center rounded-lg sm:flex lg:h-9 lg:w-9 lg:rounded-xl';
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -470,21 +475,21 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 p-3 sm:gap-3 sm:p-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 [@media(max-width:380px)]:grid-cols-1">
+          <div className="grid grid-cols-3 gap-1.5 p-2 sm:gap-2 sm:p-3 xl:grid-cols-3 xl:gap-3 xl:p-4 2xl:grid-cols-6">
             <button
               type="button"
               onClick={() => navigate('/notas-entrada')}
-              className="min-h-[116px] rounded-xl border border-border/70 bg-background p-3 text-left transition hover:border-primary/30 hover:bg-primary/5 sm:min-h-[152px] sm:rounded-2xl sm:p-4"
+              className={cn(financialMetricButtonClass, 'hover:border-primary/30 hover:bg-primary/5')}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:gap-1.5 sm:text-xs">
+                  <p className={financialMetricLabelClass}>
                     Entradas previstas
                     <InlineInfo label={`Valor potencial das O.S. lançadas no período, sem contar O.S. excluídas. É uma previsão: só vira faturamento quando a O.S. entra na regra contábil.`} />
                   </p>
-                  <p className="mt-2 truncate text-xl font-display font-bold leading-none sm:text-2xl">R$ {fmtBRL(periodPotentialAmount)}</p>
+                  <p className={financialMetricValueClass}>R$ {fmtBRL(periodPotentialAmount)}</p>
                 </div>
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-700 sm:h-9 sm:w-9">
+                <div className={cn(financialMetricIconClass, 'bg-sky-50 text-sky-700')}>
                   <FileText className="h-4 w-4" />
                 </div>
               </div>
@@ -496,17 +501,17 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={() => navigate('/notas-entrada?status=FINALIZADO')}
-              className="min-h-[116px] rounded-xl border border-border/70 bg-background p-3 text-left transition hover:border-emerald-300 hover:bg-emerald-50/60 sm:min-h-[152px] sm:rounded-2xl sm:p-4"
+              className={cn(financialMetricButtonClass, 'hover:border-emerald-300 hover:bg-emerald-50/60')}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:gap-1.5 sm:text-xs">
+                  <p className={financialMetricLabelClass}>
                     Faturamento real
                     <InlineInfo label={`Entrada de fato: soma das O.S. que entraram na regra contábil do Dashboard, com data a partir de ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
                   </p>
-                  <p className="mt-2 truncate text-xl font-display font-bold leading-none text-emerald-700 sm:text-2xl">R$ {fmtBRL(periodDeliveredAmount)}</p>
+                  <p className={cn(financialMetricValueClass, 'text-emerald-700')}>R$ {fmtBRL(periodDeliveredAmount)}</p>
                 </div>
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 sm:h-9 sm:w-9">
+                <div className={cn(financialMetricIconClass, 'bg-emerald-50 text-emerald-700')}>
                   <CheckCircle2 className="h-4 w-4" />
                 </div>
               </div>
@@ -518,17 +523,17 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={() => navigate('/contas-a-pagar')}
-              className="min-h-[116px] rounded-xl border border-border/70 bg-background p-3 text-left transition hover:border-orange-200 hover:bg-orange-50/50 sm:min-h-[152px] sm:rounded-2xl sm:p-4"
+              className={cn(financialMetricButtonClass, 'hover:border-orange-200 hover:bg-orange-50/50')}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:gap-1.5 sm:text-xs">
+                  <p className={financialMetricLabelClass}>
                     Contas lançadas
                     <InlineInfo label="Total das contas cadastradas no Contas a Pagar para o período, usando competência financeira ou vencimento." />
                   </p>
-                  <p className="mt-2 truncate text-xl font-display font-bold leading-none text-orange-700 sm:text-2xl">R$ {fmtBRL(periodPayablesTotal)}</p>
+                  <p className={cn(financialMetricValueClass, 'text-orange-700')}>R$ {fmtBRL(periodPayablesTotal)}</p>
                 </div>
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-700 sm:h-9 sm:w-9">
+                <div className={cn(financialMetricIconClass, 'bg-orange-50 text-orange-700')}>
                   <Receipt className="h-4 w-4" />
                 </div>
               </div>
@@ -540,17 +545,17 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={() => navigate('/contas-a-pagar')}
-              className="min-h-[116px] rounded-xl border border-border/70 bg-background p-3 text-left transition hover:border-red-200 hover:bg-red-50/50 sm:min-h-[152px] sm:rounded-2xl sm:p-4"
+              className={cn(financialMetricButtonClass, 'hover:border-red-200 hover:bg-red-50/50')}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:gap-1.5 sm:text-xs">
+                  <p className={financialMetricLabelClass}>
                     Contas pagas
                     <InlineInfo label={`Saída de caixa: soma das contas marcadas como pagas ou parciais, usando a data real do pagamento dentro do período e nunca antes de ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
                   </p>
-                  <p className="mt-2 truncate text-xl font-display font-bold leading-none text-red-600 sm:text-2xl">R$ {fmtBRL(periodPaidExpenses)}</p>
+                  <p className={cn(financialMetricValueClass, 'text-red-600')}>R$ {fmtBRL(periodPaidExpenses)}</p>
                 </div>
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600 sm:h-9 sm:w-9">
+                <div className={cn(financialMetricIconClass, 'bg-red-50 text-red-600')}>
                   <Landmark className="h-4 w-4" />
                 </div>
               </div>
@@ -562,17 +567,17 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={() => navigate('/contas-a-pagar?status=pendente')}
-              className="min-h-[116px] rounded-xl border border-border/70 bg-background p-3 text-left transition hover:border-amber-200 hover:bg-amber-50/50 sm:min-h-[152px] sm:rounded-2xl sm:p-4"
+              className={cn(financialMetricButtonClass, 'hover:border-amber-200 hover:bg-amber-50/50')}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:gap-1.5 sm:text-xs">
+                  <p className={financialMetricLabelClass}>
                     Falta pagar
                     <InlineInfo label="Saldo ainda aberto das contas lançadas no período. Contas parciais entram somente com o valor restante." />
                   </p>
-                  <p className="mt-2 truncate text-xl font-display font-bold leading-none text-amber-700 sm:text-2xl">R$ {fmtBRL(periodPayablesRemaining)}</p>
+                  <p className={cn(financialMetricValueClass, 'text-amber-700')}>R$ {fmtBRL(periodPayablesRemaining)}</p>
                 </div>
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700 sm:h-9 sm:w-9">
+                <div className={cn(financialMetricIconClass, 'bg-amber-50 text-amber-700')}>
                   <Landmark className="h-4 w-4" />
                 </div>
               </div>
@@ -582,22 +587,22 @@ export default function Dashboard() {
             </button>
 
             <div className={cn(
-              'min-h-[116px] rounded-xl border p-3 sm:min-h-[152px] sm:rounded-2xl sm:p-4',
+              financialMetricButtonClass,
               periodProfit >= 0
                 ? 'border-primary/25 bg-primary/5'
                 : 'border-red-200 bg-red-50/60',
             )}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:gap-1.5 sm:text-xs">
+                  <p className={financialMetricLabelClass}>
                     Lucro do período
                     <InlineInfo label={`Cálculo: faturamento real menos contas pagas no mesmo período. Ambos começam somente em ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
                   </p>
-                  <p className={cn('mt-2 truncate text-xl font-display font-bold leading-none sm:text-2xl', periodProfit >= 0 ? 'text-primary' : 'text-red-700')}>
+                  <p className={cn(financialMetricValueClass, periodProfit >= 0 ? 'text-primary' : 'text-red-700')}>
                     R$ {fmtBRLFull(periodProfit)}
                   </p>
                 </div>
-                <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-xl sm:h-9 sm:w-9', periodProfit >= 0 ? 'bg-primary/10 text-primary' : 'bg-red-100 text-red-700')}>
+                <div className={cn(financialMetricIconClass, periodProfit >= 0 ? 'bg-primary/10 text-primary' : 'bg-red-100 text-red-700')}>
                   <PiggyBank className="h-4 w-4" />
                 </div>
               </div>
@@ -607,24 +612,42 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="border-t border-border/70 px-2 pb-4">
+          <div className="border-t border-border/70 px-2 pb-4 sm:px-4">
             {hasPeriodFinancialData ? (
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={periodFinancialData} margin={{ top: 18, right: 16, left: 0, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 10 }} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
-                  <RechartsTooltip
-                    formatter={(value: number, name: string) => [
-                      `R$ ${value.toLocaleString('pt-BR')}`,
-                      name === 'entrada' ? 'O.S. finalizadas' : name === 'saida' ? 'Contas pagas' : 'Lucro',
-                    ]}
-                    contentStyle={{ fontSize: 12 }}
-                  />
-                  <Bar dataKey="entrada" name="entrada" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="saida" name="saida" fill="#ef4444" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <div className="rounded-2xl border border-border/60 bg-gradient-to-br from-background via-muted/20 to-primary/5 p-2 shadow-inner sm:p-3">
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={periodFinancialData} margin={{ top: 18, right: 8, left: -12, bottom: 4 }} barGap={6} barCategoryGap="30%">
+                    <defs>
+                      <linearGradient id="entradaFinanceira" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.95} />
+                        <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0.45} />
+                      </linearGradient>
+                      <linearGradient id="saidaFinanceira" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#ef4444" stopOpacity={0.92} />
+                        <stop offset="100%" stopColor="#fb7185" stopOpacity={0.42} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid vertical={false} strokeDasharray="4 8" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} dy={8} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10 }} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} width={36} />
+                    <RechartsTooltip
+                      cursor={{ fill: 'hsl(var(--muted) / 0.35)' }}
+                      formatter={(value: number, name: string) => [
+                        `R$ ${value.toLocaleString('pt-BR')}`,
+                        name === 'entrada' ? 'O.S. finalizadas' : name === 'saida' ? 'Contas pagas' : 'Lucro',
+                      ]}
+                      contentStyle={{
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: 16,
+                        boxShadow: '0 14px 34px rgba(15, 23, 42, 0.12)',
+                        fontSize: 12,
+                      }}
+                    />
+                    <Bar dataKey="entrada" name="entrada" fill="url(#entradaFinanceira)" radius={[10, 10, 4, 4]} barSize={18} />
+                    <Bar dataKey="saida" name="saida" fill="url(#saidaFinanceira)" radius={[10, 10, 4, 4]} barSize={18} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             ) : (
               <SectionEmptyState
                 title="Sem movimentação no período"

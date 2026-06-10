@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Download, Eye, MapPin, MoreHorizontal, Pencil, Phone, PlusCircle, Search } from 'lucide-react';
+import { Download, Eye, MoreHorizontal, Pencil, Phone, PlusCircle, Search } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { buildCustomerAddressLabel } from '@/services/domain/customers';
 import ClientDetailModal from '@/components/clients/ClientDetailModal';
@@ -100,9 +100,10 @@ export default function Clients() {
           <h1 className="text-2xl font-display font-bold">Clientes</h1>
           <p className="text-muted-foreground text-sm">{clients.length} cadastrados</p>
         </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+        <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:min-w-[18rem]">
           <Button
             variant="outline"
+            className="w-full"
             onClick={() => {
               downloadClientsCsv(filtered);
               toast({
@@ -113,19 +114,19 @@ export default function Clients() {
           >
             <Download className="w-4 h-4 mr-2" /> Exportar
           </Button>
-          <Button onClick={() => setNewClientOpen(true)}><PlusCircle className="w-4 h-4 mr-2" /> Novo Cliente</Button>
+          <Button className="w-full" onClick={() => setNewClientOpen(true)}><PlusCircle className="w-4 h-4 mr-2" /> Novo Cliente</Button>
         </div>
       </div>
 
       <Card>
-        <CardContent className="p-4">
-          <div className="mb-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_150px_180px]">
+        <CardContent className="p-3 sm:p-4">
+          <div className="mb-3 grid grid-cols-[minmax(0,1.15fr)_minmax(5.5rem,0.8fr)_minmax(6rem,0.9fr)] gap-2 md:mb-4 md:grid-cols-[minmax(16rem,1fr)_150px_180px] md:gap-3">
             <div className="relative min-w-0">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input placeholder="Buscar por nome, documento, cidade..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
+              <Input placeholder="Buscar" value={search} onChange={e => setSearch(e.target.value)} className="h-10 pl-9 text-sm" />
             </div>
             <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-10 w-full px-2 text-xs md:px-3 md:text-sm"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos</SelectItem>
                 <SelectItem value="active">Ativos</SelectItem>
@@ -133,35 +134,35 @@ export default function Clients() {
               </SelectContent>
             </Select>
             <Select value={filterDocType} onValueChange={(value) => setFilterDocType(value as 'all' | 'CPF' | 'CNPJ')}>
-              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-10 w-full px-2 text-xs md:px-3 md:text-sm"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">CPF e CNPJ</SelectItem>
-                <SelectItem value="CPF">Somente CPF</SelectItem>
-                <SelectItem value="CNPJ">Somente CNPJ</SelectItem>
+                <SelectItem value="all">CPF/CNPJ</SelectItem>
+                <SelectItem value="CPF">CPF</SelectItem>
+                <SelectItem value="CNPJ">CNPJ</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
-          <div className="mb-4 flex flex-wrap gap-2">
-            <Badge variant="outline" className="rounded-full bg-background">
+          <div className="mb-3 flex flex-wrap gap-1.5 md:mb-4 md:gap-2">
+            <Badge variant="outline" className="rounded-full bg-background text-[11px] md:text-xs">
               {filtered.length} cliente{filtered.length !== 1 ? 's' : ''} na lista
             </Badge>
-            <Badge variant="secondary" className="rounded-full">
+            <Badge variant="secondary" className="rounded-full text-[11px] md:text-xs">
               {filteredDocCounts.cnpj} empresa{filteredDocCounts.cnpj !== 1 ? 's' : ''} (CNPJ)
             </Badge>
-            <Badge variant="secondary" className="rounded-full">
+            <Badge variant="secondary" className="rounded-full text-[11px] md:text-xs">
               {filteredDocCounts.cpf} pessoa{filteredDocCounts.cpf !== 1 ? 's' : ''} (CPF)
             </Badge>
           </div>
 
           <div className="grid gap-2 lg:hidden">
             {filtered.map((client) => (
-              <Card key={client.id} className="overflow-hidden rounded-xl border border-border/60 shadow-none">
-                <CardContent className="space-y-3 p-3">
+              <Card key={client.id} className="overflow-hidden rounded-lg border border-border/60 shadow-none">
+                <CardContent className="space-y-2 p-2.5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold leading-tight text-foreground">{client.name}</p>
-                      <p className="text-xs text-muted-foreground truncate">
+                      <p className="truncate text-[13px] font-semibold leading-tight text-foreground sm:text-sm">{client.name}</p>
+                      <p className="truncate text-[11px] text-muted-foreground sm:text-xs">
                         {client.docType}: {client.docNumber}
                       </p>
                     </div>
@@ -190,30 +191,14 @@ export default function Clients() {
                     </div>
                   </div>
 
-                  <div className="grid gap-1.5 text-xs text-muted-foreground sm:grid-cols-2">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground sm:text-xs">
                     <div className="flex items-center gap-2 min-w-0">
                       <Phone className="h-3.5 w-3.5 shrink-0" />
                       <span className="truncate">{client.phone || 'Telefone nao informado'}</span>
                     </div>
-                    <div className="flex items-start gap-2 min-w-0">
-                      <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                      <span className="line-clamp-2">{buildCustomerAddressLabel(client)}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className="text-muted-foreground">Ultima nota:</span>
-                    <span className="font-medium text-primary">{lastNote(client.id) || '—'}</span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button size="sm" variant="outline" className="min-w-0" onClick={() => setSelectedClientId(client.id)}>
-                      Ver cliente
-                    </Button>
-                    <Button size="sm" className="min-w-0" onClick={() => openEdit(client.id)}>
-                      <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                      Editar
-                    </Button>
+                    {(client.city || client.state) ? (
+                      <span className="truncate">{[client.city, client.state].filter(Boolean).join('/')}</span>
+                    ) : null}
                   </div>
                 </CardContent>
               </Card>

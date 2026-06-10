@@ -572,6 +572,31 @@ Plano aprovado para executar em fases:
   - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks/import dinâmico.
   - Observação: uma rodada intermediária de testes acusou `endOfMonth is not defined`; import corrigido e testes reexecutados com sucesso.
 
+## Dashboard E Clientes Mobile - 2026-06-10
+
+- Pedido: melhorar a experiência em celular/tablet, especialmente no Poco X6 Pro, reduzindo densidade visual sem perder os indicadores principais.
+- Dashboard:
+  - cards financeiros passaram de 2 por linha para 3 por linha em mobile/tablet, formando 3 + 3 para os seis indicadores principais;
+  - cards ficaram mais baixos, valores menores e ícones ocultos no mobile para caber com leitura limpa;
+  - tablet continua com 3 cards por linha, mas com altura e respiro maiores;
+  - gráfico financeiro recebeu painel com bordas mais suaves, gradiente discreto, barras arredondadas e tooltip mais polido.
+- Clientes:
+  - botões `Exportar` e `Novo Cliente` dividem a mesma linha no mobile;
+  - filtros foram compactados em uma linha: busca menor, status e CPF/CNPJ ao lado;
+  - labels do filtro de documento foram simplificados para `CPF/CNPJ`, `CPF` e `CNPJ`;
+  - cards mobile escondem rua/endereço e última nota, mantendo nome, documento, status, telefone, cidade/UF e ações pelo menu de três pontos.
+- Validação visual local em mock:
+  - viewport 393x851: Dashboard confirmado com 3 cards na primeira linha e 3 na segunda, cada card com 113px de largura;
+  - viewport 768x1024: Dashboard confirmado com 3 cards por linha em tablet;
+  - viewport 393x851: Clientes confirmado com busca compacta, filtros ao lado, botões 50/50 e sem rua/última nota visíveis nos cards.
+- Alteração apenas de frontend; sem mudança de banco, RPC, Storage ou Edge Function.
+- Validação final executada:
+  - `npx tsc --noEmit`: passou.
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh.
+  - `npm test -- --run`: passou, 50 arquivos e 370 testes.
+  - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks/import dinâmico.
+  - `npm run test:integration`: não executado porque a alteração foi apenas de frontend, sem tocar banco, RPC, Storage ou Edge Function.
+
 ## Notas De Entrada - Filtros Mais Limpos - 2026-06-09
 
 - Pedido: remover duplicidade visual de paginação dentro de `Filtros da lista`.
