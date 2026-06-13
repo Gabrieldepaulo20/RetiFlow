@@ -39,6 +39,15 @@ import { buildPayableHistoryDescription, classifyEmailSuggestionForReview, getSu
 import { getGmailConnectionStatus, scanGmailPayables, startGmailOAuth, updateGmailAutoSyncSettings, type GmailConnectionStatus } from '@/api/supabase/gmail-payables';
 import { getCategoryIcon } from '@/lib/payableCategoryIcon';
 import { SupplierAvatar } from '@/components/payables/SupplierAvatar';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import type { DismissReason } from '@/api/supabase/sugestoes-email';
+
+const DISMISS_REASONS: { value: DismissReason; label: string }[] = [
+  { value: 'NAO_E_CONTA', label: 'Não é uma conta a pagar' },
+  { value: 'DUPLICADO', label: 'Já está cadastrada' },
+  { value: 'SPAM', label: 'É spam / golpe' },
+  { value: 'OUTRO', label: 'Só ignorar' },
+];
 
 function fmtBRL(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -234,7 +243,7 @@ type SuggestionCardProps = {
   reviewReasons?: string[];
   onAccept: () => void;
   onMarkPaid?: () => void;
-  onDismiss: () => void;
+  onDismiss: (motivo: DismissReason) => void;
 };
 
 function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, readOnly = false, reviewReasons = [], onAccept, onMarkPaid, onDismiss }: SuggestionCardProps) {
@@ -395,9 +404,20 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, r
                       Criar mesmo assim
                     </Button>
                   ) : null}
-                  <Button variant="outline" size="sm" className="h-8 gap-1 border-slate-300 bg-white/80 px-2 text-slate-700 hover:bg-white hover:text-destructive sm:px-3" onClick={onDismiss}>
-                    <X className="h-3.5 w-3.5" />Ignorar
-                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-8 gap-1 border-slate-300 bg-white/80 px-2 text-slate-700 hover:bg-white hover:text-destructive sm:px-3">
+                        <X className="h-3.5 w-3.5" />Ignorar
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52">
+                      {DISMISS_REASONS.map((reason) => (
+                        <DropdownMenuItem key={reason.value} onClick={() => onDismiss(reason.value)}>
+                          {reason.label}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                   <Button
                     size="sm"
                     disabled={isHighRisk && !allowHighRisk}
@@ -825,8 +845,8 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
     }
   }
 
-  async function handleDismiss(suggestion: EmailSuggestion) {
-    await dismissEmailSuggestion(suggestion.id);
+  async function handleDismiss(suggestion: EmailSuggestion, motivo: DismissReason) {
+    await dismissEmailSuggestion(suggestion.id, motivo);
     toast({ title: 'Sugestão ignorada', description: 'Você pode encontrá-la no histórico se precisar.' });
   }
 
@@ -974,7 +994,7 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
                       categoryName={category?.name ?? 'Categoria'}
                       categoryIcon={category?.icon}
                       onAccept={() => { void handleAccept(suggestion); }}
-                      onDismiss={() => { void handleDismiss(suggestion); }}
+                      onDismiss={(motivo) => { void handleDismiss(suggestion, motivo); }}
                     />
                   );
                 })}
@@ -1006,7 +1026,7 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
                       overdueDays={getSuggestionOverdueDays(suggestion)}
                       onAccept={() => { void handleAccept(suggestion); }}
                       onMarkPaid={() => { void handleMarkPaid(suggestion); }}
-                      onDismiss={() => { void handleDismiss(suggestion); }}
+                      onDismiss={(motivo) => { void handleDismiss(suggestion, motivo); }}
                     />
                   );
                 })}
@@ -1035,7 +1055,7 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
                         reviewReasons={disposition.reasons}
                         onAccept={() => { void handleAccept(suggestion); }}
                         onMarkPaid={() => { void handleMarkPaid(suggestion); }}
-                        onDismiss={() => { void handleDismiss(suggestion); }}
+                        onDismiss={(motivo) => { void handleDismiss(suggestion, motivo); }}
                       />
                     );
                   })}
@@ -1064,7 +1084,7 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
                     {disposition.match?.match ? ` · parecida com "${disposition.match.match.title}"` : ''}
                   </p>
                 </div>
-                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={() => { void handleDismiss(suggestion); }}>
+                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={() => { void handleDismiss(suggestion, 'DUPLICADO'); }}>
                   Arquivar
                 </Button>
               </div>
@@ -1093,7 +1113,7 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
                       ))}
                     </div>
                   </div>
-                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-rose-700" onClick={() => { void handleDismiss(suggestion); }}>
+                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-rose-700" onClick={() => { void handleDismiss(suggestion, 'SPAM'); }}>
                     Arquivar
                   </Button>
                 </div>

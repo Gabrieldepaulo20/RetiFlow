@@ -54,3 +54,17 @@ export async function aceitarSugestaoEmail(idSugestoesEmail: string) {
 export async function ignorarSugestaoEmail(idSugestoesEmail: string) {
   await callRPC('ignorar_sugestao_email', { p_id_sugestoes_email: idSugestoesEmail });
 }
+
+export type DismissReason = 'SPAM' | 'DUPLICADO' | 'NAO_E_CONTA' | 'OUTRO';
+
+/**
+ * Registra por que o usuário descartou a sugestão (sinal para medir
+ * assertividade e, no futuro, aprender por remetente/fornecedor). Best-effort:
+ * uma falha aqui nunca deve atrapalhar o descarte em si.
+ */
+export async function definirMotivoDescarteSugestao(idSugestoesEmail: string, motivo: DismissReason) {
+  await callRPC('definir_motivo_descarte_sugestao', {
+    p_id_sugestao: idSugestoesEmail,
+    p_motivo: motivo,
+  });
+}

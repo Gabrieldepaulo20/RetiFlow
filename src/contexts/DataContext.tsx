@@ -58,8 +58,10 @@ import { getFornecedores, type Fornecedor } from '@/api/supabase/fornecedores';
 import { insertLog } from '@/api/supabase/logs';
 import {
   aceitarSugestaoEmail,
+  definirMotivoDescarteSugestao,
   getSugestoesEmail,
   ignorarSugestaoEmail,
+  type DismissReason,
   type SugestaoEmail,
 } from '@/api/supabase/sugestoes-email';
 import { dashboardResumoToDomainData, getDashboardResumo, getServicosResumo } from '@/api/supabase/dashboard';
@@ -230,7 +232,7 @@ interface DataCtx {
   emailSuggestions: EmailSuggestion[];
   refreshEmailSuggestions: () => Promise<void>;
   acceptEmailSuggestion: (id: string) => Promise<AccountPayable | null>;
-  dismissEmailSuggestion: (id: string) => Promise<void>;
+  dismissEmailSuggestion: (id: string, motivo?: DismissReason) => Promise<void>;
 }
 
 const Ctx = createContext<DataCtx | null>(null);
@@ -1158,9 +1160,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return newPayable;
   }, [emailSuggestions, bumpDataVersion]);
 
-  const dismissEmailSuggestion = useCallback(async (id: string) => {
+  const dismissEmailSuggestion = useCallback(async (id: string, motivo?: DismissReason) => {
     if (IS_REAL_AUTH) {
       await ignorarSugestaoEmail(id);
+      // Motivo é sinal para medir assertividade / aprender por remetente (#3).
+      // Best-effort: nunca deve atrapalhar o descarte (ex.: sem variante de suporte).
+      if (motivo) {
+        void definirMotivoDescarteSugestao(id, motivo).catch((error) =>
+          logError(error, 'DataContext.definirMotivoDescarte'),
+        );
+      }
     }
     setEmailSuggestions((prev) => prev.map((s) => s.id === id ? { ...s, status: 'DISMISSED' } : s));
   }, []);

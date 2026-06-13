@@ -107,6 +107,24 @@ describe.skipIf(skipIntegration)('Sugestões de e-mail — integração real com
     });
     expect((payables.dados as unknown[]).length).toBe(0);
 
+    // Captura de decisão (#2): registra o motivo do descarte e confirma que o
+    // trigger preencheu decidido_em e a RPC gravou motivo_descarte.
+    const motivo = await callRpc(client, 'definir_motivo_descarte_sugestao', {
+      p_id_sugestao: suggestionId,
+      p_motivo: 'NAO_E_CONTA',
+    });
+    expect(motivo.status).toBe(200);
+
+    const service = createServiceClient();
+    const { data: decisionRow } = await service
+      .schema('RetificaPremium')
+      .from('Sugestoes_Email')
+      .select('decidido_em, motivo_descarte')
+      .eq('id_sugestoes_email', suggestionId)
+      .single();
+    expect(decisionRow?.motivo_descarte).toBe('NAO_E_CONTA');
+    expect(decisionRow?.decidido_em).toBeTruthy();
+
     await client.auth.signOut();
   });
 });
