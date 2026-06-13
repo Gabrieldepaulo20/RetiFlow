@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { callRPC } from './_base';
 import { readStoredSupportContext } from '@/services/auth/supportContext';
 import { supabaseToClient, type ClienteListItem } from './clientes';
 import { supabaseToIntakeNote, type NotaServico, type NotaServicoDetalhesItem } from './notas';
@@ -33,7 +34,7 @@ export interface DashboardResumo {
   };
 }
 
-export async function getDashboardResumo(params?: { p_limite?: number }) {
+export async function getDashboardResumo(params?: { p_limite?: number; p_incluir_servicos?: boolean }) {
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
   const accessToken = sessionData.session?.access_token;
 
@@ -64,6 +65,20 @@ export async function getDashboardResumo(params?: { p_limite?: number }) {
     servicos: data.dados.servicos ?? [],
     totais: data.dados.totais ?? {},
   };
+}
+
+/**
+ * Busca os itens de serviço agregados de forma independente do resumo do
+ * dashboard. Usado para carregar `services` em segundo plano (não bloqueia o
+ * landing). Passa pelo callRPC, então respeita o contexto de suporte
+ * (remapeado para `get_servicos_resumo_contexto_suporte` em _base).
+ */
+export async function getServicosResumo(params?: { p_limite?: number }): Promise<IntakeService[]> {
+  const envelope = await callRPC<DashboardServicoResumoItem[]>('get_servicos_resumo', {
+    p_limite: params?.p_limite ?? 5000,
+  });
+  const dados = Array.isArray(envelope.dados) ? envelope.dados : [];
+  return dados.map(dashboardServicoToIntakeService);
 }
 
 function dashboardContaToPayable(row: ContaPagar): AccountPayable {

@@ -17,6 +17,7 @@ const SUPPORT_CONTEXT_RPC_MAP: Record<string, string> = {
   get_cliente_detalhes: 'get_cliente_detalhes_contexto_suporte',
   get_notas_servico: 'get_notas_servico_contexto_suporte',
   get_nota_servico_detalhes: 'get_nota_servico_detalhes_contexto_suporte',
+  get_servicos_resumo: 'get_servicos_resumo_contexto_suporte',
   get_contas_pagar: 'get_contas_pagar_contexto_suporte',
   get_conta_pagar_detalhes: 'get_conta_pagar_detalhes_contexto_suporte',
   get_fornecedores: 'get_fornecedores_contexto_suporte',

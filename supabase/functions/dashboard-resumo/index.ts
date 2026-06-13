@@ -115,35 +115,35 @@ Deno.serve(async (request) => {
   });
 
   try {
-    const body = await request.json().catch(() => ({})) as { p_limite?: unknown; supportContext?: unknown };
+    const body = await request.json().catch(() => ({})) as { p_limite?: unknown; supportContext?: unknown; p_incluir_servicos?: unknown };
     const limit = parseLimit(body.p_limite);
     const supportContext = parseSupportContext(body.supportContext);
+    // Itens de serviço (~milhares de linhas) só são usados em telas abertas depois
+    // (preview/PDF e fechamento), não no landing. O front pede `false` na carga
+    // crítica e busca os serviços em segundo plano. Default `true` mantém
+    // compatibilidade com chamadas existentes (suporte, agendador, etc.).
+    const incluirServicos = body.p_incluir_servicos !== false;
     const clientesRpc = getSupportRpc('get_clientes', supportContext);
     const notasRpc = getSupportRpc('get_notas_servico', supportContext);
     const contasRpc = getSupportRpc('get_contas_pagar', supportContext);
-    const [notasEnvelope, clientesEnvelope, contasEnvelope, categoriasEnvelope] = await Promise.all([
+    // Agrega os itens de serviço numa única RPC (antes era N+1: uma chamada de
+    // get_nota_servico_detalhes por nota). Agora roda EM PARALELO com os demais
+    // (antes era sequencial, após o Promise.all, somando latência ao landing).
+    // Falha ao agregar serviços não deve derrubar o dashboard inteiro → cai em [].
+    const servicosRpc = getSupportRpc('get_servicos_resumo', supportContext);
+    const [notasEnvelope, clientesEnvelope, contasEnvelope, categoriasEnvelope, servicosEnvelope] = await Promise.all([
       callRpc<{ dados?: Array<Record<string, unknown>>; total?: number }>(userClient, notasRpc.name, { p_limite: limit, ...notasRpc.params }),
       callRpc<{ dados?: Array<Record<string, unknown>>; total?: number }>(userClient, clientesRpc.name, { p_limite: limit, ...clientesRpc.params }),
       callRpc<{ dados?: Array<Record<string, unknown>>; total?: number }>(userClient, contasRpc.name, { p_limite: limit, ...contasRpc.params }),
       callRpc<{ dados?: Array<Record<string, unknown>> }>(userClient, 'get_categorias_conta_pagar', { p_ativo: true }),
+      incluirServicos
+        ? callRpc<{ dados?: Array<Record<string, unknown>> }>(userClient, servicosRpc.name, { p_limite: limit, ...servicosRpc.params })
+            .catch(() => ({ dados: [] as Array<Record<string, unknown>> }))
+        : Promise.resolve({ dados: [] as Array<Record<string, unknown>> }),
     ]);
 
     const notas = Array.isArray(notasEnvelope.dados) ? notasEnvelope.dados : [];
-
-    // Agrega os itens de serviço numa única RPC (antes era N+1: uma chamada de
-    // get_nota_servico_detalhes por nota — gargalo grave no dashboard/suporte).
-    const servicosRpc = getSupportRpc('get_servicos_resumo', supportContext);
-    let servicos: Array<Record<string, unknown>> = [];
-    try {
-      const servicosEnvelope = await callRpc<{ dados?: Array<Record<string, unknown>> }>(
-        userClient,
-        servicosRpc.name,
-        { p_limite: limit, ...servicosRpc.params },
-      );
-      servicos = Array.isArray(servicosEnvelope.dados) ? servicosEnvelope.dados : [];
-    } catch {
-      // Falha ao agregar serviços não deve derrubar o dashboard inteiro.
-    }
+    const servicos = Array.isArray(servicosEnvelope.dados) ? servicosEnvelope.dados : [];
 
     return jsonResponse({
       status: 200,

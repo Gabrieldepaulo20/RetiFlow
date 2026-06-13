@@ -23,6 +23,7 @@ import {
 import * as seed from '@/data/seed';
 import { debouncedSaveToStorage, loadStateFromStorage, type PersistedData } from '@/services/storage/dataPersistence';
 import { generateId } from '@/lib/generateId';
+import { logError } from '@/lib/monitoring';
 import { formatNoteNumber, getNextNoteCounter, parseNoteNumberValue } from '@/lib/noteNumbers';
 import { applyNoteStatusTransition, applyNotePayment, revertNotePayment } from '@/services/domain/intakeNotes';
 import {
@@ -61,7 +62,7 @@ import {
   ignorarSugestaoEmail,
   type SugestaoEmail,
 } from '@/api/supabase/sugestoes-email';
-import { dashboardResumoToDomainData, getDashboardResumo } from '@/api/supabase/dashboard';
+import { dashboardResumoToDomainData, getDashboardResumo, getServicosResumo } from '@/api/supabase/dashboard';
 import { buildMeaningfulPayableTitle } from '@/services/domain/payables';
 import { sanitizeClientInput } from '@/services/domain/customers';
 import { toast } from '@/hooks/use-toast';
@@ -365,52 +366,82 @@ export function DataProvider({ children }: { children: ReactNode }) {
       };
     }
 
+    // Itens de serviço (~milhares de linhas) só são usados em telas abertas
+    // depois do landing (preview/PDF de O.S. e fechamento). Carregamos em segundo
+    // plano para não inflar o payload crítico do dashboard. `services` é estado
+    // reativo — as telas que dependem dele renderizam assim que ele chega.
+    const loadServicesInBackground = () => {
+      getServicosResumo({ p_limite: 5000 })
+        .then((loadedServices) => {
+          if (!cancelled) setServices(loadedServices);
+        })
+        .catch((error) => logError(error, 'DataContext.getServicosResumo'));
+    };
+
     const loadCoreDashboardData = async () => {
       try {
-        const resumo = await getDashboardResumo({ p_limite: 5000 });
+        const resumo = await getDashboardResumo({ p_limite: 5000, p_incluir_servicos: false });
         if (cancelled) return;
         const loaded = dashboardResumoToDomainData(resumo);
         setCustomers(loaded.clients);
         setNotes(loaded.notes);
-        setServices(loaded.services);
         setPayables(loaded.payables);
         if (loaded.payableCategories.length > 0) setPayableCategories(loaded.payableCategories);
         setNoteCounter(getNextNoteCounter(loaded.notes.map((n) => n.number)));
+        loadServicesInBackground();
         return;
-      } catch {
-        // Fallback compatível caso a Function ainda não tenha sido publicada no ambiente.
+      } catch (resumoError) {
+        // dashboard-resumo pode não estar publicado no ambiente; cai no fallback por RPC,
+        // mas a falha é registrada (não silenciada) para diagnóstico em produção.
+        logError(resumoError, 'DataContext.dashboardResumo');
       }
 
-      getClientes({ p_limite: 5000 }).then(({ dados }) => {
-        if (!cancelled) setCustomers(dados.map(supabaseToClient));
-      }).catch(() => {});
-      getNotasServico({ p_limite: 5000 }).then(({ dados }) => {
-        if (cancelled) return;
-        const loaded = dados.map(supabaseToIntakeNote);
-        setNotes(loaded);
-        setNoteCounter(getNextNoteCounter(loaded.map((n) => n.number)));
-      }).catch(() => {});
-      getContasPagar({ p_limite: 5000 }).then(({ dados }) => {
-        if (!cancelled) setPayables(dados.map(supabaseToAccountPayable));
-      }).catch(() => {});
-      getCategorias(true).then((cats) => {
-        if (!cancelled && cats.length > 0) setPayableCategories(cats.map(supabaseToPayableCategory));
-      }).catch(() => {});
+      // Fallback por RPC: agrega o resultado para avisar o usuário se algo crítico falhar,
+      // em vez de deixar a tela vazia silenciosamente.
+      const results = await Promise.allSettled([
+        getClientes({ p_limite: 5000 }).then(({ dados }) => {
+          if (!cancelled) setCustomers(dados.map(supabaseToClient));
+        }),
+        getNotasServico({ p_limite: 5000 }).then(({ dados }) => {
+          if (cancelled) return;
+          const loaded = dados.map(supabaseToIntakeNote);
+          setNotes(loaded);
+          setNoteCounter(getNextNoteCounter(loaded.map((n) => n.number)));
+        }),
+        getContasPagar({ p_limite: 5000 }).then(({ dados }) => {
+          if (!cancelled) setPayables(dados.map(supabaseToAccountPayable));
+        }),
+        getCategorias(true).then((cats) => {
+          if (!cancelled && cats.length > 0) setPayableCategories(cats.map(supabaseToPayableCategory));
+        }),
+      ]);
+
+      if (cancelled) return;
+      loadServicesInBackground();
+      const failed = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+      if (failed.length > 0) {
+        failed.forEach((result) => logError(result.reason, 'DataContext.loadCore'));
+        toast({
+          title: 'Falha ao carregar dados',
+          description: 'Não foi possível carregar parte das informações. Verifique a conexão e recarregue a página.',
+          variant: 'destructive',
+        });
+      }
     };
 
     void loadCoreDashboardData();
 
     getStatusNotas({ p_tipo_nota: 'Serviço' }).then((statuses) => {
       if (!cancelled) statusDbIdRef.current = buildStatusIdMap(statuses);
-    }).catch(() => {});
+    }).catch((error) => logError(error, 'DataContext.getStatusNotas'));
     getFornecedores({ p_ativo: true, p_limite: 200 }).then(({ dados }) => {
       if (!cancelled && dados.length > 0) setPayableSuppliers(dados.map(supabaseToPayableSupplier));
-    }).catch(() => {});
+    }).catch((error) => logError(error, 'DataContext.getFornecedores'));
     getSugestoesEmail()
       .then((dados) => {
         if (!cancelled) setEmailSuggestions(dados.map(supabaseToEmailSuggestion));
       })
-      .catch(() => {});
+      .catch((error) => logError(error, 'DataContext.getSugestoesEmail'));
     return () => {
       cancelled = true;
     };

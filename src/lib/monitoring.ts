@@ -1,4 +1,4 @@
-import { AwsRum, AwsRumConfig } from 'aws-rum-web';
+import type { AwsRum, AwsRumConfig } from 'aws-rum-web';
 
 let rumClient: AwsRum | null = null;
 
@@ -21,20 +21,24 @@ export function initMonitoring(): void {
 
   if (!monitorId || !identityPool) return;
 
-  try {
-    const config: AwsRumConfig = {
-      sessionSampleRate: 1,
-      identityPoolId: identityPool,
-      endpoint: `https://dataplane.rum.${region}.amazonaws.com`,
-      telemetries: ['performance', 'errors', 'http'],
-      allowCookies: true,
-      enableXRay: false,
-    };
+  // Import dinâmico: a lib aws-rum-web (pesada) só entra no bundle como chunk
+  // separado, carregado sob demanda em produção — fora do bundle de entrada.
+  void import('aws-rum-web')
+    .then(({ AwsRum }) => {
+      const config: AwsRumConfig = {
+        sessionSampleRate: 1,
+        identityPoolId: identityPool,
+        endpoint: `https://dataplane.rum.${region}.amazonaws.com`,
+        telemetries: ['performance', 'errors', 'http'],
+        allowCookies: true,
+        enableXRay: false,
+      };
 
-    rumClient = new AwsRum(monitorId, '1.0.0', region, config);
-  } catch {
-    // Falha silenciosa — monitoramento nunca deve travar o app
-  }
+      rumClient = new AwsRum(monitorId, '1.0.0', region, config);
+    })
+    .catch(() => {
+      // Falha silenciosa — monitoramento nunca deve travar o app
+    });
 }
 
 /** Registra um erro manualmente (ex: catch de operação crítica). */
