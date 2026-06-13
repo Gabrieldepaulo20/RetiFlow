@@ -53,6 +53,12 @@ function getPayableReasoningEffort() {
   return ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(effort) ? effort : defaultPayableReasoningEffort;
 }
 
+function getScanConcurrency() {
+  const raw = Number(Deno.env.get('GMAIL_SCAN_CONCURRENCY') ?? '4');
+  if (!Number.isFinite(raw)) return 4;
+  return Math.min(8, Math.max(1, Math.trunc(raw)));
+}
+
 function buildOpenAIRequestBody(base: Record<string, unknown>) {
   const model = getPayableAiModel();
   return {
@@ -982,7 +988,8 @@ Deno.serve(async (request) => {
       queries.map((query, index) => listGmailMessageIds(accessToken, query, index === 4 ? 15 : 25)),
     )).flat())).slice(0, maxMessages);
 
-    for (const messageId of messageIds) {
+    let reconnectError: GmailReconnectRequiredError | null = null;
+    const processMessage = async (messageId: string): Promise<void> => {
       scanned += 1;
       const { data: existing } = await service
         .schema('RetificaPremium')
@@ -994,7 +1001,7 @@ Deno.serve(async (request) => {
 
       if (existing?.fk_sugestoes_email || String(existing?.message_hash ?? '').startsWith(`${scanVersion}:`)) {
         skipped += 1;
-        continue;
+        return;
       }
 
       const detailResponse = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=full`, {
@@ -1006,7 +1013,7 @@ Deno.serve(async (request) => {
           throw new GmailReconnectRequiredError(failure.message);
         }
         errors.push(`Mensagem ${messageId}: ${failure.message}`);
-        continue;
+        return;
       }
 
       const detail = await detailResponse.json() as {
@@ -1043,7 +1050,7 @@ Deno.serve(async (request) => {
         }), labelIds);
       } catch (error) {
         errors.push(`Mensagem ${messageId}: ${error instanceof Error ? error.message : 'falha na IA'}`);
-        continue;
+        return;
       }
 
       // Mantém achados suspeitos auditáveis; a UI separa risco alto/baixa confiança
@@ -1059,7 +1066,7 @@ Deno.serve(async (request) => {
           recebido_em: received,
           fk_sugestoes_email: null,
         });
-        continue;
+        return;
       }
 
       // Reconciliação: e-mail de comprovante/pagamento que casa uma sugestão PENDENTE
@@ -1098,7 +1105,7 @@ Deno.serve(async (request) => {
             fk_sugestoes_email: match.id_sugestoes_email as string,
           });
           reconciled += 1;
-          continue;
+          return;
         }
       }
 
@@ -1134,7 +1141,7 @@ Deno.serve(async (request) => {
           error: suggestionError?.message ?? 'resposta vazia',
         });
         errors.push(`Mensagem ${messageId}: não foi possível salvar a sugestão.`);
-        continue;
+        return;
       }
 
       await recordScannedMessage(service, existing?.id_gmail_scanned_messages ?? null, {
@@ -1147,7 +1154,32 @@ Deno.serve(async (request) => {
         fk_sugestoes_email: suggestion.id_sugestoes_email,
       });
       created += 1;
-    }
+    };
+
+    // Processa os e-mails com concorrência limitada. Antes era sequencial:
+    // 1 chamada gpt-5.5 (com reasoning) por e-mail, até ~50 em série — o que
+    // dominava o tempo do scan. A lógica POR mensagem é idêntica; os contadores
+    // são seguros (JS é single-thread, increments não sofrem corrida). Um erro
+    // de reconexão (token expirado/permission) aborta o lote e propaga para o
+    // catch externo, que marca a conexão para reconectar.
+    let cursor = 0;
+    const concurrency = Math.min(getScanConcurrency(), messageIds.length || 1);
+    const runners = Array.from({ length: concurrency }, async () => {
+      while (cursor < messageIds.length && !reconnectError) {
+        const messageId = messageIds[cursor++];
+        try {
+          await processMessage(messageId);
+        } catch (error) {
+          if (isGmailReconnectRequiredError(error)) {
+            reconnectError = error;
+            return;
+          }
+          errors.push(`Mensagem ${messageId}: ${error instanceof Error ? error.message : 'falha ao processar'}`);
+        }
+      }
+    });
+    await Promise.all(runners);
+    if (reconnectError) throw reconnectError;
 
     const completedAt = new Date().toISOString();
     const { error: updateConnectionError } = await service
