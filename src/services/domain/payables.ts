@@ -143,10 +143,10 @@ export function getPayableDisplayStatus(payable: AccountPayable): PayableDisplay
 /**
  * True se a conta está vencida (status PENDENTE ou PARCIAL + dueDate < hoje).
  */
-export function isPayableOverdue(payable: AccountPayable): boolean {
+export function isPayableOverdue(payable: AccountPayable, now: Date = new Date()): boolean {
   if (payable.status !== 'PENDENTE' && payable.status !== 'PARCIAL') return false;
   const due = startOfDay(parseISO(payable.dueDate));
-  const today = startOfDay(new Date());
+  const today = startOfDay(now);
   return isBefore(due, today);
 }
 

@@ -42,7 +42,7 @@ export function calculatePayablesCashFlowSummary(input: {
   const inRange = (payable: AccountPayable, endDate: string) => payable.dueDate >= todayISO && payable.dueDate <= endDate;
   const nextSeven = pendingSorted.filter((payable) => inRange(payable, inSevenDaysISO));
   const nextThirty = pendingSorted.filter((payable) => inRange(payable, inThirtyDaysISO));
-  const overdue = pendingSorted.filter((payable) => isPayableOverdue(payable));
+  const overdue = pendingSorted.filter((payable) => isPayableOverdue(payable, now));
   const laborPayables = pendingSorted.filter((payable) => isLaborRelatedPayable(payable, categoryById.get(payable.categoryId)?.name));
 
   return {

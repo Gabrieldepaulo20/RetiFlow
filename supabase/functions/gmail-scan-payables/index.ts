@@ -74,6 +74,11 @@ async function fetchWithTimeout(url: string | URL, init: RequestInit, timeoutMs:
   }
 }
 
+function getSuperAdminEmails() {
+  const raw = Deno.env.get('SUPER_ADMIN_EMAILS') ?? Deno.env.get('SUPER_ADMIN_EMAIL') ?? '';
+  return new Set(raw.split(',').map((email) => email.trim().toLowerCase()).filter(Boolean));
+}
+
 function getCorsHeaders(request: Request) {
   const origin = request.headers.get('Origin') ?? '';
   const configured = (Deno.env.get('CORS_ALLOWED_ORIGINS') ?? Deno.env.get('ALLOWED_ORIGINS') ?? '')
@@ -144,16 +149,23 @@ async function resolveSupportTarget(params: {
     ? Boolean(actor.Modulos[0]?.admin)
     : Boolean((actor?.Modulos as { admin?: boolean } | null)?.admin);
 
+  const superAdminEmails = getSuperAdminEmails();
+  const actorEmail = String(actor?.email ?? '').toLowerCase();
+
   if (
     actorError
     || !actor
-    || String(actor.email ?? '').toLowerCase() !== 'gabrielwilliam208@gmail.com'
+    || superAdminEmails.size === 0
+    || !superAdminEmails.has(actorEmail)
     || String(actor.acesso ?? '') !== 'administrador'
     || !admin
   ) {
     throw new Error('Somente o Mega Master pode buscar Gmail em modo suporte.');
   }
 
+  // A sessão de suporte não expira mais por tempo (decisão firmada em
+  // 20260605150000_support_session_no_time_expiry); encerra apenas via "Sair do
+  // suporte" (ended_at). Mantido alinhado com resolve_suporte_contexto_usuario_id.
   const { data: session, error: sessionError } = await params.service
     .schema('RetificaPremium')
     .from('Sessoes_Suporte')
@@ -162,7 +174,6 @@ async function resolveSupportTarget(params: {
     .eq('fk_actor_usuarios', actor.id_usuarios)
     .eq('fk_target_usuarios', params.supportContext.targetUserId)
     .is('ended_at', null)
-    .gt('expires_at', new Date().toISOString())
     .maybeSingle();
 
   if (sessionError || !session) {
