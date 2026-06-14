@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Eye, EyeOff, LogIn, Shield, Wrench } from 'lucide-react';
+import { Building2, ClipboardCheck, Eye, EyeOff, LayoutDashboard, LifeBuoy, LogIn, Shield, Sparkles, Wallet, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -34,10 +34,24 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
   const isAdminPortal = portal === 'admin';
   const portalTitle = isAdminPortal ? 'GAWI Admin' : 'Portal do Cliente';
   const portalBadge = isAdminPortal ? 'Acesso administrativo' : 'Acesso operacional';
-  const panelTitle = isAdminPortal ? 'Gestão interna das empresas' : 'Acompanhamento operacional';
+  const panelTitle = isAdminPortal
+    ? 'Gestão das empresas atendidas'
+    : 'A gestão da sua retífica, sem complicação';
   const panelDescription = isAdminPortal
-    ? 'Ambiente reservado para administrar contas, módulos e suporte às empresas atendidas.'
-    : 'Consulte ordens de serviço, produção e informações liberadas para sua conta.';
+    ? 'Provisione contas, libere módulos e dê suporte às empresas — tudo em um só lugar.'
+    : 'Ordens de serviço, financeiro e produção reunidos numa plataforma feita para o seu dia a dia.';
+  const panelFeatures = isAdminPortal
+    ? [
+        { icon: Building2, title: 'Empresas e módulos', description: 'Provisione contas e libere recursos por cliente.' },
+        { icon: LifeBuoy, title: 'Suporte assistido', description: 'Acompanhe e atue nas operações quando preciso.' },
+        { icon: LayoutDashboard, title: 'Visão consolidada', description: 'Indicadores das empresas num só painel.' },
+      ]
+    : [
+        { icon: ClipboardCheck, title: 'Ordens de serviço', description: 'Da entrada à entrega, com cada etapa no lugar.' },
+        { icon: Wallet, title: 'Financeiro completo', description: 'Contas a pagar, fechamento e fluxo de caixa.' },
+        { icon: LayoutDashboard, title: 'Gestão em tempo real', description: 'Produção, recebíveis e indicadores num só painel.' },
+        { icon: Sparkles, title: 'Assistente com IA', description: 'Sugestões de contas direto do seu e-mail.' },
+      ];
   const formTitle = isAdminPortal ? 'Entrar como administrador' : 'Entrar na área do cliente';
   const formDescription = isAdminPortal
     ? 'Use suas credenciais administrativas para continuar.'
@@ -143,68 +157,80 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
     <div className="min-h-[100dvh] bg-background text-foreground">
       <div className="mx-auto grid min-h-[100dvh] w-full md:grid-cols-[minmax(300px,0.82fr)_minmax(380px,1fr)] xl:grid-cols-[minmax(420px,0.78fr)_minmax(520px,1fr)]">
         <aside className="relative hidden overflow-hidden bg-sidebar text-sidebar-primary-foreground md:flex">
-          <div className="absolute inset-0 bg-[linear-gradient(145deg,hsl(var(--sidebar-background))_0%,hsl(var(--sidebar-accent))_100%)]" />
+          <div className="absolute inset-0 bg-[linear-gradient(155deg,hsl(var(--sidebar-background))_0%,hsl(var(--sidebar-accent))_100%)]" />
+          {/* Brilhos suaves para profundidade premium */}
+          <div className="pointer-events-none absolute -left-28 top-[28%] h-80 w-80 rounded-full bg-sidebar-primary/25 blur-[130px]" />
+          <div className="pointer-events-none absolute -right-20 bottom-[-4rem] h-72 w-72 rounded-full bg-accent/20 blur-[130px]" />
           <div
-            className="absolute inset-0 opacity-[0.045]"
+            className="absolute inset-0 opacity-[0.04]"
             style={{
               backgroundImage: 'linear-gradient(rgba(255,255,255,.8) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.8) 1px, transparent 1px)',
-              backgroundSize: '40px 40px',
+              backgroundSize: '38px 38px',
             }}
           />
 
-          <div className="relative z-10 flex min-h-[100dvh] w-full flex-col justify-between px-8 py-8 lg:px-12 lg:py-10">
+          <div className="relative z-10 flex min-h-[100dvh] w-full flex-col justify-between px-8 py-10 lg:px-14 lg:py-12">
             <motion.div
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.6 }}
-              className="flex items-center gap-3"
+              className="flex items-center gap-3.5"
             >
-              <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-sidebar-border bg-sidebar-primary/15 text-sidebar-primary shadow-sm">
-                {isAdminPortal ? <Shield className="h-5 w-5" /> : <Wrench className="h-5 w-5" />}
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-sidebar-primary to-accent text-white shadow-lg shadow-sidebar-primary/30 ring-1 ring-white/15">
+                {isAdminPortal ? <Shield className="h-6 w-6" /> : <Wrench className="h-6 w-6" />}
               </div>
               <div>
-                <p className="font-display text-lg font-bold leading-tight">{portalTitle}</p>
-                <p className="text-xs font-medium uppercase tracking-[0.18em] text-sidebar-foreground/60">{portalBadge}</p>
+                <p className="font-display text-lg font-bold leading-tight tracking-tight text-white">{portalTitle}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sidebar-foreground/55">{portalBadge}</p>
               </div>
             </motion.div>
 
             <motion.div
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.3 }}
-              className="max-w-[430px] space-y-5"
+              transition={{ duration: 0.8, delay: 0.25 }}
+              className="max-w-[470px]"
             >
-              <h1 className="font-display text-3xl font-extrabold leading-tight text-sidebar-primary-foreground lg:text-4xl">
+              <h1 className="font-display text-[2rem] font-extrabold leading-[1.12] tracking-tight text-white lg:text-[2.6rem]">
                 {panelTitle}
               </h1>
-              <p className="text-sm leading-6 text-sidebar-foreground lg:text-base">
+              <p className="mt-4 text-sm leading-6 text-sidebar-foreground/85 lg:text-base">
                 {panelDescription}
               </p>
 
-              <div className="mt-8 grid gap-2 rounded-lg border border-sidebar-border bg-sidebar-accent/45 p-3 text-sm text-sidebar-foreground shadow-sm">
-                <div className="flex items-center justify-between gap-4 rounded-md bg-sidebar-background/50 px-3 py-2">
-                  <span>Ambiente</span>
-                  <span className="font-medium text-sidebar-primary-foreground">Seguro</span>
-                </div>
-                <div className="flex items-center justify-between gap-4 rounded-md bg-sidebar-background/50 px-3 py-2">
-                  <span>Acesso</span>
-                  <span className="font-medium text-sidebar-primary-foreground">Autenticado</span>
-                </div>
-                <div className="flex items-center justify-between gap-4 rounded-md bg-sidebar-background/50 px-3 py-2">
-                  <span>Portal</span>
-                  <span className="font-medium text-sidebar-primary-foreground">{isAdminPortal ? 'Admin' : 'Cliente'}</span>
-                </div>
+              <div className="mt-9 space-y-2.5">
+                {panelFeatures.map((feature, index) => {
+                  const Icon = feature.icon;
+                  return (
+                    <motion.div
+                      key={feature.title}
+                      initial={{ opacity: 0, y: 14 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.5, delay: 0.45 + index * 0.1 }}
+                      className="flex items-center gap-3.5 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 shadow-sm backdrop-blur-sm"
+                    >
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sidebar-primary/15 text-sidebar-primary ring-1 ring-sidebar-primary/25">
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-white">{feature.title}</p>
+                        <p className="truncate text-xs text-sidebar-foreground/65">{feature.description}</p>
+                      </div>
+                    </motion.div>
+                  );
+                })}
               </div>
             </motion.div>
 
-            <motion.p
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 1.2 }}
-              className="text-[11px] text-sidebar-foreground/45"
+              transition={{ delay: 1.1 }}
+              className="flex items-center gap-2.5 text-xs font-medium text-sidebar-foreground/50"
             >
-              © {new Date().getFullYear()} {isAdminPortal ? 'GAWI · Gestão de sistemas' : 'Retífica Premium · Software de Gestão'}
-            </motion.p>
+              <span className="inline-flex h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_hsl(var(--accent))]" />
+              {isAdminPortal ? 'Painel administrativo GAWI' : 'Plataforma de gestão para retíficas'}
+            </motion.div>
           </div>
         </aside>
 
