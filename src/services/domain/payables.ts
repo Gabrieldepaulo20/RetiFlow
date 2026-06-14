@@ -572,9 +572,40 @@ export interface EmailSuggestionReviewDisposition {
   reasons: string[];
 }
 
+export interface SenderHistoryStat {
+  accepted: number;
+  dismissed: number;
+}
+
+/** Chave de remetente para aprendizado: e-mail normalizado. */
+function senderHistoryKey(email: string): string {
+  return (email ?? '').trim().toLowerCase();
+}
+
+/**
+ * Aprendizado por remetente (#3): resume as decisões passadas por remetente a
+ * partir do histórico de sugestões (inclui ACCEPTED/DISMISSED). Alimenta
+ * classifyEmailSuggestionForReview para tratar remetentes reincidentes —
+ * quem é sempre descartado vai para quarentena; quem é sempre aceito ganha
+ * menos atrito.
+ */
+export function summarizeSenderHistory(history: EmailSuggestion[]): Map<string, SenderHistoryStat> {
+  const map = new Map<string, SenderHistoryStat>();
+  for (const item of history) {
+    const key = senderHistoryKey(item.senderEmail);
+    if (!key) continue;
+    const stat = map.get(key) ?? { accepted: 0, dismissed: 0 };
+    if (item.status === 'ACCEPTED') stat.accepted += 1;
+    else if (item.status === 'DISMISSED') stat.dismissed += 1;
+    map.set(key, stat);
+  }
+  return map;
+}
+
 export function classifyEmailSuggestionForReview(
   suggestion: EmailSuggestion,
   existingPayables: AccountPayable[],
+  senderHistory?: Map<string, SenderHistoryStat>,
 ): EmailSuggestionReviewDisposition {
   const match = classifyPayableMatch(
     {
@@ -587,14 +618,26 @@ export function classifyEmailSuggestionForReview(
   const fraudSignals = suggestion.fraudSignals ?? [];
   const reasons: string[] = [];
 
+  // Aprendizado por remetente: histórico de decisões anteriores deste remetente.
+  const senderStat = senderHistory?.get(senderHistoryKey(suggestion.senderEmail));
+  const senderRepeatedlyDismissed = !!senderStat && senderStat.dismissed >= 2 && senderStat.accepted === 0;
+  const senderTrusted = !!senderStat && senderStat.accepted >= 2 && senderStat.dismissed === 0;
+
   if (suggestion.senderRisk === 'ALTO') {
     reasons.push('Remetente classificado com alto risco');
   }
   if (fraudSignals.length > 0) {
     reasons.push(...fraudSignals.slice(0, 3));
   }
+  if (senderRepeatedlyDismissed) {
+    reasons.push(`Remetente já descartado ${senderStat!.dismissed}× antes`);
+  }
 
-  if (suggestion.senderRisk === 'ALTO' || (fraudSignals.length > 0 && suggestion.confidence < 80)) {
+  if (
+    suggestion.senderRisk === 'ALTO'
+    || (fraudSignals.length > 0 && suggestion.confidence < 80)
+    || senderRepeatedlyDismissed
+  ) {
     return { bucket: 'quarantine', match, reasons };
   }
 
@@ -616,7 +659,7 @@ export function classifyEmailSuggestionForReview(
     };
   }
 
-  if (suggestion.confidence < 80) {
+  if (suggestion.confidence < 80 && !senderTrusted) {
     reasons.push('Confiança abaixo de 80%');
   }
   if (suggestion.senderRisk === 'MEDIO') {

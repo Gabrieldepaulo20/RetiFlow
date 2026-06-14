@@ -35,7 +35,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { EmailSuggestion } from '@/types';
-import { buildPayableHistoryDescription, classifyEmailSuggestionForReview, getSuggestionOverdueDays } from '@/services/domain/payables';
+import { buildPayableHistoryDescription, classifyEmailSuggestionForReview, getSuggestionOverdueDays, summarizeSenderHistory } from '@/services/domain/payables';
 import { getGmailConnectionStatus, scanGmailPayables, startGmailOAuth, updateGmailAutoSyncSettings, type GmailConnectionStatus } from '@/api/supabase/gmail-payables';
 import { getCategoryIcon } from '@/lib/payableCategoryIcon';
 import { SupplierAvatar } from '@/components/payables/SupplierAvatar';
@@ -620,12 +620,14 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
 
   const categoryById = useMemo(() => new Map(payableCategories.map((c) => [c.id, c])), [payableCategories]);
   const pendingAll = useMemo(() => emailSuggestions.filter((s) => s.status === 'PENDING'), [emailSuggestions]);
+  // Aprendizado por remetente (#3): histórico de decisões alimenta a revisão.
+  const senderHistory = useMemo(() => summarizeSenderHistory(emailSuggestions), [emailSuggestions]);
   const reviewedPending = useMemo(
     () => pendingAll.map((suggestion) => ({
       suggestion,
-      disposition: classifyEmailSuggestionForReview(suggestion, payables),
+      disposition: classifyEmailSuggestionForReview(suggestion, payables, senderHistory),
     })),
-    [pendingAll, payables],
+    [pendingAll, payables, senderHistory],
   );
   const alreadyRegistered = useMemo(
     () => reviewedPending.filter((item) => item.disposition.bucket === 'duplicate'),
@@ -793,7 +795,7 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
   }
 
   async function handleAccept(suggestion: EmailSuggestion) {
-    const disposition = classifyEmailSuggestionForReview(suggestion, payables);
+    const disposition = classifyEmailSuggestionForReview(suggestion, payables, senderHistory);
     if (disposition.bucket === 'quarantine' || disposition.bucket === 'duplicate') {
       toast({
         title: disposition.bucket === 'quarantine' ? 'Item em quarentena' : 'Possível duplicidade',

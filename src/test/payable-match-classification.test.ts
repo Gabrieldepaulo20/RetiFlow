@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyEmailSuggestionForReview, classifyPayableMatch, type PayableMatchCandidate } from '@/services/domain/payables';
+import { classifyEmailSuggestionForReview, classifyPayableMatch, summarizeSenderHistory, type PayableMatchCandidate } from '@/services/domain/payables';
 import type { AccountPayable, EmailSuggestion } from '@/types';
 
 function payable(overrides: Partial<AccountPayable>): AccountPayable {
@@ -154,5 +154,41 @@ describe('classifyPayableMatch', () => {
     const result = classifyEmailSuggestionForReview(suggestion({}), [payable({})]);
     expect(result.bucket).toBe('duplicate');
     expect(result.match?.match?.id).toBe('p-existing');
+  });
+
+  it('aprendizado: remetente descartado repetidamente vai para quarentena mesmo com confiança alta', () => {
+    const history: EmailSuggestion[] = [
+      suggestion({ id: 'h1', status: 'DISMISSED' }),
+      suggestion({ id: 'h2', status: 'DISMISSED' }),
+    ];
+    const result = classifyEmailSuggestionForReview(
+      suggestion({ confidence: 92 }),
+      [],
+      summarizeSenderHistory(history),
+    );
+    expect(result.bucket).toBe('quarantine');
+    expect(result.reasons.some((reason) => reason.includes('descartado'))).toBe(true);
+  });
+
+  it('aprendizado: remetente confiável não é barrado por confiança abaixo de 80%', () => {
+    const history: EmailSuggestion[] = [
+      suggestion({ id: 'h1', status: 'ACCEPTED' }),
+      suggestion({ id: 'h2', status: 'ACCEPTED' }),
+    ];
+    const result = classifyEmailSuggestionForReview(
+      suggestion({ confidence: 79 }),
+      [],
+      summarizeSenderHistory(history),
+    );
+    expect(result.bucket).toBe('main');
+  });
+
+  it('aprendizado: sem histórico mantém o comportamento padrão (revisão abaixo de 80%)', () => {
+    const result = classifyEmailSuggestionForReview(
+      suggestion({ confidence: 79 }),
+      [],
+      summarizeSenderHistory([]),
+    );
+    expect(result.bucket).toBe('review');
   });
 });
