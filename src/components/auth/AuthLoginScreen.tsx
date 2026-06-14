@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Building2, ClipboardCheck, Eye, EyeOff, LayoutDashboard, LifeBuoy, LogIn, Shield, Sparkles, Wallet, Wrench } from 'lucide-react';
+import { Eye, EyeOff, LogIn, Shield, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -32,30 +32,13 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
   const credentials = getDevelopmentCredentialHint();
 
   const isAdminPortal = portal === 'admin';
-  const portalTitle = isAdminPortal ? 'GAWI Admin' : 'Portal do Cliente';
-  const portalBadge = isAdminPortal ? 'Acesso administrativo' : 'Acesso operacional';
-  const panelTitle = isAdminPortal
-    ? 'Gestão das empresas atendidas'
-    : 'A gestão da sua retífica, sem complicação';
-  const panelDescription = isAdminPortal
-    ? 'Provisione contas, libere módulos e dê suporte às empresas — tudo em um só lugar.'
-    : 'Ordens de serviço, financeiro e produção reunidos numa plataforma feita para o seu dia a dia.';
-  const panelFeatures = isAdminPortal
-    ? [
-        { icon: Building2, title: 'Empresas e módulos', description: 'Provisione contas e libere recursos por cliente.' },
-        { icon: LifeBuoy, title: 'Suporte assistido', description: 'Acompanhe e atue nas operações quando preciso.' },
-        { icon: LayoutDashboard, title: 'Visão consolidada', description: 'Indicadores das empresas num só painel.' },
-      ]
-    : [
-        { icon: ClipboardCheck, title: 'Ordens de serviço', description: 'Da entrada à entrega, com cada etapa no lugar.' },
-        { icon: Wallet, title: 'Financeiro completo', description: 'Contas a pagar, fechamento e fluxo de caixa.' },
-        { icon: LayoutDashboard, title: 'Gestão em tempo real', description: 'Produção, recebíveis e indicadores num só painel.' },
-        { icon: Sparkles, title: 'Assistente com IA', description: 'Sugestões de contas direto do seu e-mail.' },
-      ];
-  const formTitle = isAdminPortal ? 'Entrar como administrador' : 'Entrar na área do cliente';
-  const formDescription = isAdminPortal
-    ? 'Use suas credenciais administrativas para continuar.'
-    : 'Use o e-mail e a senha da conta liberada para este usuário.';
+  const brandName = 'RetiFlow';
+  const brandTagline = isAdminPortal ? 'Administração da plataforma' : 'Sistema de gestão · Retífica Premium';
+  const panelHeadline = isAdminPortal
+    ? 'Gestão da plataforma RetiFlow.'
+    : 'Tudo da sua retífica, organizado e sob controle.';
+  const formTitle = 'Entrar na sua conta';
+  const formDescription = 'Informe seu e-mail e senha para continuar.';
 
   useEffect(() => {
     const reason = consumeSessionExpiredReason();
@@ -169,67 +152,28 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
             }}
           />
 
-          <div className="relative z-10 flex min-h-[100dvh] w-full flex-col justify-between px-8 py-10 lg:px-14 lg:py-12">
+          <div className="relative z-10 flex min-h-[100dvh] w-full flex-col justify-center px-8 py-12 lg:px-16">
             <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.6 }}
-              className="flex items-center gap-3.5"
-            >
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-sidebar-primary to-accent text-white shadow-lg shadow-sidebar-primary/30 ring-1 ring-white/15">
-                {isAdminPortal ? <Shield className="h-6 w-6" /> : <Wrench className="h-6 w-6" />}
-              </div>
-              <div>
-                <p className="font-display text-lg font-bold leading-tight tracking-tight text-white">{portalTitle}</p>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sidebar-foreground/55">{portalBadge}</p>
-              </div>
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 30 }}
+              initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.25 }}
-              className="max-w-[470px]"
+              transition={{ duration: 0.7 }}
+              className="max-w-[460px]"
             >
-              <h1 className="font-display text-[2rem] font-extrabold leading-[1.12] tracking-tight text-white lg:text-[2.6rem]">
-                {panelTitle}
-              </h1>
-              <p className="mt-4 text-sm leading-6 text-sidebar-foreground/85 lg:text-base">
-                {panelDescription}
-              </p>
-
-              <div className="mt-9 space-y-2.5">
-                {panelFeatures.map((feature, index) => {
-                  const Icon = feature.icon;
-                  return (
-                    <motion.div
-                      key={feature.title}
-                      initial={{ opacity: 0, y: 14 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.5, delay: 0.45 + index * 0.1 }}
-                      className="flex items-center gap-3.5 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 shadow-sm backdrop-blur-sm"
-                    >
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sidebar-primary/15 text-sidebar-primary ring-1 ring-sidebar-primary/25">
-                        <Icon className="h-5 w-5" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-white">{feature.title}</p>
-                        <p className="truncate text-xs text-sidebar-foreground/65">{feature.description}</p>
-                      </div>
-                    </motion.div>
-                  );
-                })}
+              <div className="flex items-center gap-4">
+                <div className="flex h-16 w-16 items-center justify-center rounded-[1.25rem] bg-gradient-to-br from-sidebar-primary to-accent text-white shadow-xl shadow-sidebar-primary/30 ring-1 ring-white/15">
+                  {isAdminPortal ? <Shield className="h-8 w-8" /> : <Wrench className="h-8 w-8" />}
+                </div>
+                <span className="font-display text-4xl font-extrabold tracking-tight text-white lg:text-5xl">{brandName}</span>
               </div>
-            </motion.div>
 
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 1.1 }}
-              className="flex items-center gap-2.5 text-xs font-medium text-sidebar-foreground/50"
-            >
-              <span className="inline-flex h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_hsl(var(--accent))]" />
-              {isAdminPortal ? 'Painel administrativo GAWI' : 'Plataforma de gestão para retíficas'}
+              <p className="mt-8 text-sm font-semibold uppercase tracking-[0.2em] text-sidebar-primary/90">
+                {brandTagline}
+              </p>
+              <h1 className="mt-3 font-display text-[1.85rem] font-bold leading-[1.2] tracking-tight text-white lg:text-[2.3rem]">
+                {panelHeadline}
+              </h1>
+
+              <div className="mt-10 h-px w-28 bg-gradient-to-r from-sidebar-primary/70 to-transparent" />
             </motion.div>
           </div>
         </aside>
@@ -248,8 +192,8 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
                 {isAdminPortal ? <Shield className="h-5 w-5" /> : <Wrench className="h-5 w-5" />}
               </div>
               <div className="min-w-0">
-                <h1 className="truncate font-display text-lg font-bold text-foreground">{portalTitle}</h1>
-                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{portalBadge}</p>
+                <h1 className="truncate font-display text-lg font-bold text-foreground">{brandName}</h1>
+                <p className="truncate text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{brandTagline}</p>
               </div>
             </div>
 
@@ -411,15 +355,13 @@ export default function AuthLoginScreen({ portal }: AuthLoginScreenProps) {
                 )}
               </AnimatePresence>
 
-              <div className="mt-5 flex flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-                <span>{isAdminPortal ? 'Área administrativa protegida' : 'Área operacional liberada por conta'}</span>
-                <Link
-                  to={isAdminPortal ? '/login' : '/admin/login'}
-                  className="font-medium text-primary hover:underline"
-                >
-                  {isAdminPortal ? 'Ir para portal do cliente' : 'Ir para login admin'}
-                </Link>
-              </div>
+              {isAdminPortal && (
+                <div className="mt-5 text-center text-xs text-muted-foreground">
+                  <Link to="/login" className="font-medium text-primary hover:underline">
+                    Ir para portal do cliente
+                  </Link>
+                </div>
+              )}
             </section>
 
             {authMode === 'development' && (
