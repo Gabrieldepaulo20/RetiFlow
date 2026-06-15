@@ -57,7 +57,6 @@ import {
   ShoppingCart,
   CheckCheck,
   Truck,
-  Archive,
   Hammer,
   Printer,
   X,
@@ -81,65 +80,61 @@ const MAIN_FLOW: NoteStatus[] = [
   'ENTREGUE',
 ];
 
-const STATUS_ICON: Record<string, LucideIcon> = {
+const STATUS_ICON: Record<NoteStatus, LucideIcon> = {
   ABERTO: FolderOpen,
   EM_ANALISE: ScanSearch,
   ORCAMENTO: ClipboardList,
   APROVADO: ThumbsUp,
   EM_EXECUCAO: Wrench,
   AGUARDANDO_COMPRA: ShoppingCart,
-  PRONTO: CheckCheck,
+  PRONTA: CheckCheck,
   ENTREGUE: Truck,
-  FINALIZADO: Archive,
-  CANCELADO: Ban,
-  DESCARTADO: Trash2,
+  RECUSADO: XCircle,
   SEM_CONSERTO: Hammer,
+  EXCLUIDA: Trash2,
 };
 
-const STATUS_DOT: Record<string, string> = {
+const STATUS_DOT: Record<NoteStatus, string> = {
   ABERTO: 'bg-blue-500',
   EM_ANALISE: 'bg-amber-500',
   ORCAMENTO: 'bg-orange-500',
   APROVADO: 'bg-emerald-500',
   EM_EXECUCAO: 'bg-violet-500',
   AGUARDANDO_COMPRA: 'bg-yellow-500',
-  PRONTO: 'bg-teal-500',
+  PRONTA: 'bg-teal-500',
   ENTREGUE: 'bg-sky-500',
-  FINALIZADO: 'bg-slate-400',
-  CANCELADO: 'bg-red-500',
-  DESCARTADO: 'bg-zinc-400',
+  RECUSADO: 'bg-red-500',
   SEM_CONSERTO: 'bg-rose-500',
+  EXCLUIDA: 'bg-zinc-400',
 };
 
 /** 3px accent bar color at the very top of the modal */
-const STATUS_ACCENT: Record<string, string> = {
+const STATUS_ACCENT: Record<NoteStatus, string> = {
   ABERTO: 'bg-blue-500',
   EM_ANALISE: 'bg-amber-500',
   ORCAMENTO: 'bg-orange-500',
   APROVADO: 'bg-emerald-500',
   EM_EXECUCAO: 'bg-violet-500',
   AGUARDANDO_COMPRA: 'bg-yellow-400',
-  PRONTO: 'bg-teal-500',
+  PRONTA: 'bg-teal-500',
   ENTREGUE: 'bg-sky-500',
-  FINALIZADO: 'bg-slate-400',
-  CANCELADO: 'bg-red-500',
-  DESCARTADO: 'bg-zinc-400',
+  RECUSADO: 'bg-red-500',
   SEM_CONSERTO: 'bg-rose-500',
+  EXCLUIDA: 'bg-zinc-400',
 };
 
-const STATUS_TEXT: Record<string, string> = {
+const STATUS_TEXT: Record<NoteStatus, string> = {
   ABERTO: 'text-blue-600',
   EM_ANALISE: 'text-amber-600',
   ORCAMENTO: 'text-orange-600',
   APROVADO: 'text-emerald-600',
   EM_EXECUCAO: 'text-violet-600',
   AGUARDANDO_COMPRA: 'text-yellow-600',
-  PRONTO: 'text-teal-600',
+  PRONTA: 'text-teal-600',
   ENTREGUE: 'text-sky-600',
-  FINALIZADO: 'text-slate-500',
-  CANCELADO: 'text-red-600',
-  DESCARTADO: 'text-zinc-500',
+  RECUSADO: 'text-red-600',
   SEM_CONSERTO: 'text-rose-600',
+  EXCLUIDA: 'text-zinc-500',
 };
 
 interface NoteDetailModalProps {
@@ -162,7 +157,7 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
     updateNoteStatus,
     getChildNotes,
   } = useData();
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { data: templateSettings } = useDocumentTemplateSettings();
@@ -260,10 +255,14 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
   const nextMainStatus = allowed.find(
     (s) => !FINAL_STATUSES.has(s) || s === 'ENTREGUE',
   );
-  const canAdvance = !isFinal && !isAguardando && nextMainStatus !== undefined;
+  const canManageWorkflowStatus = user?.role === 'ADMIN'
+    || can('notes.status.manage')
+    || can('notes.manage')
+    || can('kanban.manage');
+  const canAdvance = canManageWorkflowStatus && !isFinal && !isAguardando && nextMainStatus !== undefined;
   const mainFlowIdx = MAIN_FLOW.indexOf(note.status);
   const canGoBack =
-    mainFlowIdx > 0 && user?.role === 'ADMIN' && !isFinal && !isAguardando;
+    canManageWorkflowStatus && mainFlowIdx > 0 && !isFinal && !isAguardando;
   const daysInStatus = Math.floor(
     (Date.now() - new Date(note.updatedAt).getTime()) / (1000 * 60 * 60 * 24),
   );
@@ -735,13 +734,15 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
             <div className="flex items-center gap-2">
               {canGoBack && (
                 <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 shrink-0 gap-1.5 px-3 text-xs font-medium"
                   onClick={goBack}
-                  title="Voltar etapa"
+                  title="Voltar status"
                 >
-                  <ChevronLeft className="w-4 h-4" />
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Voltar status</span>
+                  <span className="sm:hidden">Voltar</span>
                 </Button>
               )}
               <Button
@@ -754,7 +755,8 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                 }}
               >
                 <ExternalLink className="w-3.5 h-3.5" />
-                Ver O.S. completa
+                <span className="hidden sm:inline">Ver O.S. completa</span>
+                <span className="sm:hidden">Detalhes</span>
               </Button>
               {(pdfDados || IS_REAL_AUTH) && noteId && (
                 <Button

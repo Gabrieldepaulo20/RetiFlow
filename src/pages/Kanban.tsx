@@ -43,49 +43,46 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 /* ─── Status color maps ─── */
 
-const COLUMN_ACCENT: Record<string, string> = {
+const COLUMN_ACCENT: Record<NoteStatus, string> = {
   ABERTO: "bg-blue-500",
   EM_ANALISE: "bg-amber-500",
   ORCAMENTO: "bg-orange-500",
   APROVADO: "bg-emerald-500",
   EM_EXECUCAO: "bg-violet-500",
   AGUARDANDO_COMPRA: "bg-yellow-500",
-  PRONTO: "bg-teal-500",
+  PRONTA: "bg-teal-500",
   ENTREGUE: "bg-sky-500",
-  FINALIZADO: "bg-slate-400",
-  CANCELADO: "bg-red-500",
-  DESCARTADO: "bg-zinc-400",
+  RECUSADO: "bg-red-500",
   SEM_CONSERTO: "bg-rose-500",
+  EXCLUIDA: "bg-zinc-400",
 };
 
-const COLUMN_COUNT_BG: Record<string, string> = {
+const COLUMN_COUNT_BG: Record<NoteStatus, string> = {
   ABERTO: "bg-blue-50 text-blue-700",
   EM_ANALISE: "bg-amber-50 text-amber-700",
   ORCAMENTO: "bg-orange-50 text-orange-700",
   APROVADO: "bg-emerald-50 text-emerald-700",
   EM_EXECUCAO: "bg-violet-50 text-violet-700",
   AGUARDANDO_COMPRA: "bg-yellow-50 text-yellow-700",
-  PRONTO: "bg-teal-50 text-teal-700",
+  PRONTA: "bg-teal-50 text-teal-700",
   ENTREGUE: "bg-sky-50 text-sky-700",
-  FINALIZADO: "bg-slate-100 text-slate-600",
-  CANCELADO: "bg-red-50 text-red-700",
-  DESCARTADO: "bg-zinc-100 text-zinc-600",
+  RECUSADO: "bg-red-50 text-red-700",
   SEM_CONSERTO: "bg-rose-50 text-rose-700",
+  EXCLUIDA: "bg-zinc-100 text-zinc-600",
 };
 
-const CARD_ACCENT_BORDER: Record<string, string> = {
+const CARD_ACCENT_BORDER: Record<NoteStatus, string> = {
   ABERTO: "border-t-blue-400",
   EM_ANALISE: "border-t-amber-400",
   ORCAMENTO: "border-t-orange-400",
   APROVADO: "border-t-emerald-400",
   EM_EXECUCAO: "border-t-violet-400",
   AGUARDANDO_COMPRA: "border-t-yellow-400",
-  PRONTO: "border-t-teal-400",
+  PRONTA: "border-t-teal-400",
   ENTREGUE: "border-t-sky-400",
-  FINALIZADO: "border-t-slate-300",
-  CANCELADO: "border-t-red-400",
-  DESCARTADO: "border-t-zinc-300",
+  RECUSADO: "border-t-red-400",
   SEM_CONSERTO: "border-t-rose-400",
+  EXCLUIDA: "border-t-zinc-300",
 };
 
 /* ─── Period filter ─── */
