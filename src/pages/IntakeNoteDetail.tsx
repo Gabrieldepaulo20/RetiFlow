@@ -31,7 +31,7 @@ const MAIN_FLOW: NoteStatus[] = ['ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO'
 export default function IntakeNoteDetail() {
   const { id } = useParams();
   const { getNote, getClient, getServicesForNote, getProductsForNote, getAttachmentsForNote, updateNoteStatus, updateNote, registrarRecebimentoNota, estornarRecebimentoNota, getChildNotes, notes } = useOperationalData();
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { data: templateSettings } = useDocumentTemplateSettings();
@@ -73,10 +73,14 @@ export default function IntakeNoteDetail() {
   const allowed = ALLOWED_TRANSITIONS[note.status];
   // Próximo estágio no fluxo principal (exclui finais alternativos e AGUARDANDO)
   const nextMainStatus = allowed.find(s => !FINAL_STATUSES.has(s) || s === 'ENTREGUE');
-  const canAdvance = !isFinal && !isAguardando && nextMainStatus !== undefined;
+  const canManageWorkflowStatus = user?.role === 'ADMIN'
+    || can('notes.status.manage')
+    || can('notes.manage')
+    || can('kanban.manage');
+  const canAdvance = canManageWorkflowStatus && !isFinal && !isAguardando && nextMainStatus !== undefined;
 
   const mainFlowIdx = MAIN_FLOW.indexOf(note.status);
-  const canGoBack = mainFlowIdx > 0 && user?.role === 'ADMIN' && !isFinal && !isAguardando;
+  const canGoBack = canManageWorkflowStatus && mainFlowIdx > 0 && !isFinal && !isAguardando;
 
   const advance = () => {
     if (canAdvance && nextMainStatus) {
@@ -209,7 +213,11 @@ export default function IntakeNoteDetail() {
           <Button variant="outline" size="sm" onClick={handleWhatsAppShare} className="gap-1.5">
             <Share2 className="w-4 h-4" /> WhatsApp
           </Button>
-          {canGoBack && <Button variant="ghost" size="sm" onClick={goBack}><ChevronLeft className="w-4 h-4" /> Voltar etapa</Button>}
+          {canGoBack && (
+            <Button variant="outline" size="sm" onClick={goBack} className="gap-1.5">
+              <ChevronLeft className="w-4 h-4" /> Voltar status
+            </Button>
+          )}
           {canAdvance && <Button size="sm" onClick={advance}>Avançar <ChevronRight className="w-4 h-4 ml-1" /></Button>}
 
           {/* Registrar recebimento - somente em nota faturável e pendente */}

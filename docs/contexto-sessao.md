@@ -1,6 +1,27 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-06-10
+Atualizado em: 2026-06-15
+
+---
+
+## Notas De Entrada - Voltar Status - 2026-06-15
+
+- Pedido: adicionar uma acao clara para voltar um status nas notas de entrada, porque a UI parecia permitir apenas avancar.
+- Ajuste frontend-only:
+  - `IntakeNoteDetail` agora mostra `Voltar status` como botao textual, nao mais como acao discreta;
+  - `NoteDetailModal` agora mostra `Voltar status` no desktop e `Voltar` no mobile, preservando espaco no rodape;
+  - avancar e voltar passam a usar o mesmo criterio de gerenciamento do fluxo (`ADMIN`, `notes.status.manage`, `notes.manage` ou `kanban.manage`).
+- Regras preservadas:
+  - status finais continuam sem volta direta pela UI;
+  - `AGUARDANDO_COMPRA` continua bloqueado para voltar/avancar pelo atalho, pois envolve fluxo de compra vinculado;
+  - nenhuma mudanca de banco, RPC, Storage ou Edge Function.
+- Testes de login/rotas foram atualizados para os textos atuais do layout responsivo (`Sistema de gestão · Retífica Premium` e `Administração da plataforma`), substituindo asserts antigos que procuravam `Entrar na área do cliente`.
+- Validacao executada:
+  - `npx tsc --noEmit`: passou.
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh.
+  - `npm test -- --run`: passou, 50 arquivos e 373 testes.
+  - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks/import dinamico.
+  - Playwright local em `VITE_AUTH_MODE=development`: O.S. `OS-5` confirmou `Voltar status` + `Avançar` na pagina completa e `Voltar` + `Avançar` no modal.
 
 ---
 

@@ -67,9 +67,9 @@ describe('App routes', () => {
   });
 
   it.each([
-    ['/', async () => screen.findByText('Entrar na área do cliente')],
-    ['/login', async () => screen.findByText('Entrar na área do cliente')],
-    ['/admin/login', async () => screen.findByText('Entrar como administrador')],
+    ['/', async () => (await screen.findAllByText('Sistema de gestão · Retífica Premium'))[0]],
+    ['/login', async () => (await screen.findAllByText('Sistema de gestão · Retífica Premium'))[0]],
+    ['/admin/login', async () => (await screen.findAllByText('Administração da plataforma'))[0]],
     ['/acesso-negado', async () => screen.findByRole('heading', { name: 'Acesso negado' })],
     ['/rota-inexistente', async () => screen.findByRole('heading', { name: 'Página não encontrada' })],
   ])('renders public route %s', async (path, findElement) => {
@@ -79,7 +79,7 @@ describe('App routes', () => {
 
   it('redirects the root route to the operational login for unauthenticated users', async () => {
     renderAt('/');
-    expect(await screen.findByText('Entrar na área do cliente')).toBeInTheDocument();
+    expect((await screen.findAllByText('Sistema de gestão · Retífica Premium'))[0]).toBeInTheDocument();
     await waitFor(() => expect(window.location.pathname).toBe('/login'));
     expect(screen.queryByText('Escolha o portal de acesso adequado para continuar.')).not.toBeInTheDocument();
   });

@@ -54,7 +54,7 @@ describe('App auth flow', () => {
   it('redirects the root route to the operational login', async () => {
     renderAt('/');
 
-    expect(await screen.findByText('Entrar na área do cliente')).toBeInTheDocument();
+    expect((await screen.findAllByText('Sistema de gestão · Retífica Premium'))[0]).toBeInTheDocument();
     await waitFor(() => expect(window.location.pathname).toBe('/login'));
     expect(screen.queryByText('Escolha o portal de acesso adequado para continuar.')).not.toBeInTheDocument();
   });
