@@ -1,6 +1,68 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-06-15
+Atualizado em: 2026-06-16
+
+---
+
+## HANDOFF Atual - 2026-06-16
+
+### Estado Git Confirmado
+
+- Foco atual: Retiflow. Descartar contexto Jira/DPA desta conversa ao continuar neste repositorio.
+- Repositorio local: `/Users/gabrielwilliamdepaulo/Documents/RetificaPremium/retiflow`.
+- Remote SSH confirmado: `github-gabriel:Gabrieldepaulo20/RetiFlow.git`.
+- Branch local observada: `codex/gmail-sync-model-hardening`.
+- Estado apos `git fetch --all --prune`:
+  - `HEAD` local: `ba151d1 feat: importacao por IA — envio em lote, auto-criacao e analise animada`.
+  - `origin/main` e `origin/HEAD` apontam para `ba151d1`.
+  - `origin/codex/gmail-sync-model-hardening` aponta para `e4fe0f2`.
+  - A branch local esta `ahead 2` da branch remota de feature, porque contem `666f133` e `ba151d1`, que ja aparecem em `origin/main`.
+  - Existe `tmp/` como arquivo/pasta untracked. Nao commitar nem apagar sem revisar o conteudo e confirmar que nao ha artefato util.
+- Confirmacao importante: `e4fe0f2` (`Adiciona voltar status em notas de entrada`) e ancestral de `origin/main`.
+
+### Ultimas Entregas Confirmadas Por Commit
+
+- `e4fe0f2`: adiciona acao clara de `Voltar status` em Notas de Entrada, alinhada ao botao de avancar.
+- `666f133`: importacao com IA em Contas a Pagar com varias contas, perguntas com botoes e parcelas irregulares.
+- `ba151d1`: importacao por IA com envio em lote, auto-criacao e analise animada.
+
+### Cuidados Para O Proximo Agente
+
+- Antes de nova mudanca, rodar:
+  - `git status --short --branch`
+  - `git log --oneline --decorate --graph --max-count=12 --all`
+- Ao relatar push/deploy, dizer exatamente o destino: `main`, branch de feature ou ambos. Nao usar apenas "subiu".
+- Como o usuario pediu "Sempre de push", apos mudancas aprovadas e validadas commitar e dar push via SSH.
+- Nao tocar em banco, RLS, Storage, Auth ou Edge Functions sem plano curto e risco explicado antes.
+- Nao usar nem expor secrets. A pasta `tmp/` pode conter dados sensiveis ou artefatos locais, entao tratar com cuidado.
+
+### Pedidos Recentes Que Devem Permanecer No Radar
+
+- Dashboard:
+  - KPIs mais uteis: entradas previstas, faturamento real, contas lancadas, contas pagas, falta pagar e lucro do periodo.
+  - Lucro do periodo = entrada/faturamento contabilizado menos contas pagas no periodo.
+  - Para lucro/faturamento/ticket/tempo/valor finalizado, manter a regra de corte contabil `01/06/2026`, salvo nova decisao do usuario.
+  - No mobile, o usuario quer cards em 3 por linha no Poco X6 Pro, com valores menores e layout mais denso.
+- Notas de Entrada:
+  - Botao de voltar status deve continuar simetrico ao avancar.
+  - Filtros por data devem evoluir alem de mes/ano.
+  - Dashboard deve contabilizar valor de notas como faturamento real apenas quando fizer sentido financeiro, principalmente O.S. finalizada/recebida conforme regra do fluxo.
+- Clientes:
+  - Filtro por CPF/CNPJ.
+  - Mobile mais compacto, escondendo endereco e informacoes secundarias dos cards.
+- Kanban:
+  - Problema pendente relatado: scroll horizontal no celular ainda dificulta arrastar lateralmente.
+- Fechamento:
+  - Modal/popup deve manter scroll fluido como Nota de Entrada.
+  - Mobile deve manter mes e ano na mesma linha e cards mais compactos.
+- Contas a Pagar:
+  - Nao deixar contas com titulo generico "duplicata"; reavaliar por IA/regra se sao parcelas, recorrencias ou contas distintas.
+  - Anexos de contas devem ir para bucket privado do Supabase, organizados por tenant/empresa e data.
+  - Sugestoes Gmail em modo suporte devem conectar/analisar o e-mail do cliente selecionado, nao o e-mail do suporte.
+  - IA deve analisar remetente, anexos, comprovantes, spam/golpe e nivel real de confianca; quando faltar dado, criar pendencia manual em vez de fingir certeza.
+- Storage/PDF:
+  - PDFs de notas da Retifica Premium devem estar no bucket `notas`, organizados por empresa, ano, mes por extenso e dia com dia da semana.
+  - Evitar organizacao marcada como `legacy` quando a nota ja faz parte do acervo normal da empresa.
 
 ---
 
