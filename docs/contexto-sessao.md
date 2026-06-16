@@ -806,6 +806,8 @@ Plano aprovado para executar em fases:
   - `formatNotaClientPrintName` agora preserva separadores comerciais entre os dois primeiros termos uteis;
   - regressao coberta para `SERT - CAR RETIFICA DE MOTORES LTDA` imprimir `Sert - Car`.
 - Sem migration, sem mudanca de RLS/policy/bucket privacy e sem service role no frontend.
+- Deploy remoto:
+  - `supabase functions deploy analisar-conta-pagar --no-verify-jwt` executado com sucesso no projeto `dqeoxxokvvcpssajycgq`.
 - Validacao executada nesta rodada:
   - testes direcionados de PDF/nome/importador passaram;
   - `npm test -- --run`: passou, 51 arquivos e 376 testes;
