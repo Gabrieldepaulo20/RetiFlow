@@ -47,8 +47,19 @@ type ImportDraft = {
   totalInstallments?: number;
 };
 
+type Clarification = {
+  id: string;
+  kind: 'account_count' | 'installments' | 'duplicate' | 'other';
+  question: string;
+  options: Array<{ label: string; value: string }>;
+};
+
 type AnalysisResult = {
   draft: ImportDraft;
+  /** Edge novo: uma entrada por conta detectada (parcela irregular = uma por parcela). */
+  drafts?: ImportDraft[];
+  accountCount?: number;
+  clarifications?: Clarification[];
   fields: ExtractedField[];
   warnings: string[];
   highlights: string[];
@@ -81,6 +92,10 @@ type ImportFileItem = {
   createdPayableId?: string;
   createdPayable?: AccountPayable;
   duplicatePayableId?: string;
+  /** Liga itens que vieram do MESMO arquivo (PDF com várias contas). */
+  groupId?: string;
+  /** Perguntas com botões da IA (mostradas no 1º item do grupo). */
+  clarifications?: Clarification[];
 };
 
 type CreateConfirmation = {
@@ -364,7 +379,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     setItems([]);
   }
 
-  async function analyzeItem(item: ImportFileItem): Promise<AnalysisResult | null> {
+  async function analyzeItem(item: ImportFileItem, expectedAccountCount?: number): Promise<AnalysisResult | null> {
     updateItem(item.id, { status: 'analyzing', progress: 12, error: undefined, expanded: true });
 
     try {
@@ -381,16 +396,54 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
           file: item.file,
           categories: payableCategories.map((category) => ({ id: category.id, name: category.name })),
           suppliers: payableSuppliers.map((supplier) => ({ id: supplier.id, name: supplier.name })),
+          expectedAccountCount,
         }) as AnalysisResult;
         updateItem(item.id, { progress: 88 });
       }
 
-      updateItem(item.id, {
+      // A IA pode detectar várias contas (PDF com 4 boletos) ou várias parcelas
+      // com datas irregulares. Cada conta/parcela vira um item próprio, reusando
+      // toda a revisão/criação. As perguntas (clarifications) ficam no 1º item.
+      const drafts = result.drafts && result.drafts.length > 0 ? result.drafts : [result.draft];
+      const clarifications = result.clarifications ?? [];
+
+      if (drafts.length <= 1) {
+        updateItem(item.id, {
+          status: 'success',
+          progress: 100,
+          analysis: { ...result, draft: drafts[0], drafts: undefined },
+          clarifications,
+          error: undefined,
+          expanded: false,
+        });
+        return result;
+      }
+
+      // Múltiplas contas → expande este item em N itens single-draft.
+      const groupId = item.groupId ?? item.id;
+      const expandedItems: ImportFileItem[] = drafts.map((d, index) => ({
+        ...item,
+        id: index === 0 ? item.id : `${groupId}::acc-${index}-${crypto.randomUUID?.() ?? Date.now()}`,
+        groupId,
         status: 'success',
         progress: 100,
-        analysis: result,
+        analysis: { draft: d, fields: result.fields, warnings: result.warnings, highlights: result.highlights },
+        clarifications: index === 0 ? clarifications : [],
         error: undefined,
         expanded: false,
+        draftEdits: {},
+        creating: false,
+        createdPayableId: undefined,
+        createdPayable: undefined,
+        duplicatePayableId: undefined,
+      }));
+
+      setItems((previous) => {
+        const idx = previous.findIndex((candidate) => candidate.id === item.id);
+        if (idx === -1) return previous;
+        const next = [...previous];
+        next.splice(idx, 1, ...expandedItems);
+        return next;
       });
       return result;
     } catch (error) {
@@ -401,6 +454,40 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
         expanded: true,
       });
       return null;
+    }
+  }
+
+  // Resposta a uma pergunta da IA (ex.: "são 2 contas"): re-analisa o MESMO
+  // arquivo informando a quantidade confirmada e refaz a separação.
+  async function reanalyzeWithCount(sourceItem: ImportFileItem, expectedAccountCount: number) {
+    const groupId = sourceItem.groupId ?? sourceItem.id;
+    const fresh = buildImportFileItem(sourceItem.file, sourceItem.source);
+    // Reaproveita o preview já existente para não vazar/duplicar object URL.
+    if (fresh.previewUrl && fresh.previewUrl !== sourceItem.previewUrl) URL.revokeObjectURL(fresh.previewUrl);
+    fresh.previewUrl = sourceItem.previewUrl;
+    fresh.groupId = groupId;
+
+    setItems((previous) => {
+      const idx = previous.findIndex((candidate) => (candidate.groupId ?? candidate.id) === groupId);
+      const withoutGroup = previous.filter((candidate) => (candidate.groupId ?? candidate.id) !== groupId);
+      const insertAt = idx === -1 ? withoutGroup.length : Math.min(idx, withoutGroup.length);
+      const next = [...withoutGroup];
+      next.splice(insertAt, 0, fresh);
+      return next;
+    });
+
+    await analyzeItem(fresh, expectedAccountCount);
+  }
+
+  // Clique numa opção de pergunta da IA. Se a opção indicar uma quantidade de
+  // contas (valor numérico), re-analisa com essa quantidade; senão, confirma e
+  // dispensa a pergunta (a separação atual fica valendo).
+  function handleClarify(item: ImportFileItem, value: string) {
+    const count = Number(value);
+    if (Number.isInteger(count) && count >= 1 && count <= 24) {
+      void reanalyzeWithCount(item, count);
+    } else {
+      updateItem(item.id, { clarifications: [] });
     }
   }
 
@@ -621,6 +708,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
             isAnalyzing={isAnalyzing}
             payableCategories={payableCategories}
             onSelect={() => fileInputRef.current?.click()}
+            onClarify={handleClarify}
             onCreateItem={(id, options) => void handleCreateItem(id, options)}
             onRetryItem={(id) => void handleRetryItem(id)}
             onEditDraft={(id, edits) => updateItem(id, { draftEdits: { ...items.find((i) => i.id === id)?.draftEdits, ...edits } })}
@@ -646,6 +734,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
             payableCategories={payableCategories}
             cameraMode
             onSelect={() => cameraInputRef.current?.click()}
+            onClarify={handleClarify}
             onCreateItem={(id, options) => void handleCreateItem(id, options)}
             onRetryItem={(id) => void handleRetryItem(id)}
             onEditDraft={(id, edits) => updateItem(id, { draftEdits: { ...items.find((i) => i.id === id)?.draftEdits, ...edits } })}
@@ -719,6 +808,7 @@ type ImportBodyProps = {
   payableCategories: Array<{ id: string; name: string }>;
   cameraMode?: boolean;
   onSelect: () => void;
+  onClarify: (item: ImportFileItem, value: string) => void;
   onCreateItem: (id: string, options?: { allowDuplicate?: boolean; confirmedReceipt?: boolean; confirmedDuplicate?: boolean }) => void;
   onRetryItem: (id: string) => void;
   onEditDraft: (id: string, edits: ImportDraftEdits) => void;
@@ -733,6 +823,7 @@ function ImportBody({
   payableCategories,
   cameraMode = false,
   onSelect,
+  onClarify,
   onCreateItem,
   onRetryItem,
   onEditDraft,
@@ -812,6 +903,7 @@ function ImportBody({
                 effectiveDraft={effectiveDraft}
                 categoryName={effectiveDraft ? payableCategories.find((c) => c.id === effectiveDraft.categoryId)?.name ?? 'Categoria sugerida' : null}
                 payableCategories={payableCategories}
+                onClarify={onClarify}
                 onRemove={onRemove}
                 onToggleExpanded={onToggleExpanded}
                 onCreateItem={onCreateItem}
@@ -830,6 +922,7 @@ type ImportFileCardProps = {
   effectiveDraft: ImportDraft | null;
   categoryName: string | null;
   payableCategories: Array<{ id: string; name: string }>;
+  onClarify: (item: ImportFileItem, value: string) => void;
   onRemove: (id: string) => void;
   onToggleExpanded: (id: string) => void;
   onCreateItem: (id: string, options?: { allowDuplicate?: boolean; confirmedReceipt?: boolean; confirmedDuplicate?: boolean }) => void;
@@ -860,6 +953,7 @@ function ImportFileCard({
   effectiveDraft,
   categoryName,
   payableCategories,
+  onClarify,
   onRemove,
   onToggleExpanded,
   onCreateItem,
@@ -868,9 +962,33 @@ function ImportFileCard({
 }: ImportFileCardProps) {
   const kind = getFileKind(item.file);
   const fieldPrefix = `payable-import-${item.id}`;
+  const clarifications = item.clarifications ?? [];
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border/60 bg-background">
+      {clarifications.length > 0 && (
+        <div className="space-y-3 border-b border-amber-200 bg-amber-50/70 p-4">
+          {clarifications.map((clarification) => (
+            <div key={clarification.id} className="space-y-2">
+              <p className="text-sm font-semibold text-amber-900">{clarification.question}</p>
+              <div className="flex flex-wrap gap-2">
+                {clarification.options.map((option) => (
+                  <Button
+                    key={`${clarification.id}-${option.value}`}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 border-amber-300 bg-white text-amber-900 hover:bg-amber-100"
+                    onClick={() => onClarify(item, option.value)}
+                  >
+                    {option.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="flex items-start gap-3 p-4">
         <FileTileIcon file={item.file} />
         <div className="min-w-0 flex-1">

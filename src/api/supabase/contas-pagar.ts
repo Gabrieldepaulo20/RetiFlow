@@ -219,23 +219,39 @@ export async function getAnexoContaPagarUrl(pathOrUrl: string) {
   return data.signedUrl;
 }
 
+export type PayableImportDraftIA = {
+  title: string;
+  supplierName: string;
+  categoryId: string;
+  dueDate: string;
+  issueDate?: string;
+  originalAmount: number;
+  paymentMethod: string;
+  recurrence: string;
+  docNumber?: string;
+  observations?: string;
+  isUrgent: boolean;
+  suggestedStatus: 'PAGO' | 'PENDENTE' | 'AGENDADO' | 'INCERTO';
+  recurrenceIndex?: number;
+  totalInstallments?: number;
+};
+
+export type PayableImportClarification = {
+  id: string;
+  kind: 'account_count' | 'installments' | 'duplicate' | 'other';
+  question: string;
+  options: Array<{ label: string; value: string }>;
+};
+
 export type AnalisarContaPagarResultado = {
-  draft: {
-    title: string;
-    supplierName: string;
-    categoryId: string;
-    dueDate: string;
-    issueDate?: string;
-    originalAmount: number;
-    paymentMethod: string;
-    recurrence: string;
-    docNumber?: string;
-    observations?: string;
-    isUrgent: boolean;
-    suggestedStatus: 'PAGO' | 'PENDENTE' | 'AGENDADO' | 'INCERTO';
-    recurrenceIndex?: number;
-    totalInstallments?: number;
-  };
+  /** Retrocompatível: primeira conta detectada. */
+  draft: PayableImportDraftIA;
+  /** Uma entrada por conta; parcelamento irregular = uma por parcela. (Edge novo.) */
+  drafts?: PayableImportDraftIA[];
+  /** Quantas contas distintas a IA detectou. (Edge novo.) */
+  accountCount?: number;
+  /** Perguntas com botões para desambiguar em vez de erro. (Edge novo.) */
+  clarifications?: PayableImportClarification[];
   fields: Array<{ label: string; value: string; confidence: number }>;
   warnings: string[];
   highlights: string[];
@@ -269,11 +285,16 @@ export async function analisarContaPagarComIA(params: {
   file: File;
   categories: Array<{ id: string; name: string }>;
   suppliers: Array<{ id: string; name: string }>;
+  /** Re-análise: quantidade de contas confirmada pelo usuário (resposta a uma pergunta). */
+  expectedAccountCount?: number;
 }) {
   const body = new FormData();
   body.append('file', params.file);
   body.append('categories', JSON.stringify(params.categories));
   body.append('suppliers', JSON.stringify(params.suppliers));
+  if (params.expectedAccountCount && params.expectedAccountCount >= 1) {
+    body.append('expected_account_count', String(params.expectedAccountCount));
+  }
 
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
   const accessToken = sessionData.session?.access_token;
