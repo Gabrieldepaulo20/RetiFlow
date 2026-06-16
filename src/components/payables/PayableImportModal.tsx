@@ -17,7 +17,7 @@ import {
 } from '@/services/domain/payables';
 import { buildImportedPayableAttachmentName } from '@/services/domain/payableAttachments';
 import { AccountPayable, PayableAttachmentFileType, PAYMENT_METHOD_LABELS, PaymentMethod, RecurrenceType } from '@/types';
-import { AlertTriangle, Camera, CheckCircle2, ChevronDown, FileScan, LoaderCircle, RotateCw, Trash2, Upload, XCircle } from 'lucide-react';
+import { AlertTriangle, Camera, CheckCircle2, ChevronDown, FileScan, LoaderCircle, RotateCw, Sparkles, Trash2, Upload, XCircle } from 'lucide-react';
 import { analisarContaPagarComIA, insertAnexoContaPagar, uploadAnexoContaPagar } from '@/api/supabase/contas-pagar';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
@@ -356,7 +356,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
 
     const newItems = selectedFiles.map((file) => buildImportFileItem(file, source));
     setItems((previous) => [...previous, ...newItems]);
-    void analyzeItems(newItems);
+    // Não analisa na hora: os arquivos ficam na fila até a usuária clicar "Enviar".
   }
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>, source: ImportSource) {
@@ -379,7 +379,9 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     setItems([]);
   }
 
-  async function analyzeItem(item: ImportFileItem, expectedAccountCount?: number): Promise<AnalysisResult | null> {
+  // Retorna os itens RESULTANTES da análise (1 conta = 1 item; várias contas =
+  // N itens). Devolver a lista evita ler estado desatualizado logo após setState.
+  async function analyzeItem(item: ImportFileItem, expectedAccountCount?: number): Promise<ImportFileItem[]> {
     updateItem(item.id, { status: 'analyzing', progress: 12, error: undefined, expanded: true });
 
     try {
@@ -408,15 +410,17 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
       const clarifications = result.clarifications ?? [];
 
       if (drafts.length <= 1) {
-        updateItem(item.id, {
+        const updated: ImportFileItem = {
+          ...item,
           status: 'success',
           progress: 100,
           analysis: { ...result, draft: drafts[0], drafts: undefined },
           clarifications,
           error: undefined,
           expanded: false,
-        });
-        return result;
+        };
+        setItems((previous) => previous.map((candidate) => candidate.id === item.id ? updated : candidate));
+        return [updated];
       }
 
       // Múltiplas contas → expande este item em N itens single-draft.
@@ -440,12 +444,12 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
 
       setItems((previous) => {
         const idx = previous.findIndex((candidate) => candidate.id === item.id);
-        if (idx === -1) return previous;
+        if (idx === -1) return [...previous, ...expandedItems];
         const next = [...previous];
         next.splice(idx, 1, ...expandedItems);
         return next;
       });
-      return result;
+      return expandedItems;
     } catch (error) {
       updateItem(item.id, {
         status: 'error',
@@ -453,8 +457,52 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
         error: error instanceof Error ? error.message : 'Erro desconhecido ao analisar documento.',
         expanded: true,
       });
-      return null;
+      return [];
     }
+  }
+
+  // Cria automaticamente UMA conta "limpa" e remove da lista. Retorna true se criou.
+  // Comprovante (PAGO), incerto, duplicidade ou erro NÃO são criados — ficam na lista.
+  async function autoCreateItem(item: ImportFileItem): Promise<boolean> {
+    if (!item.analysis) return false;
+    const merged = mergeDraftEdits(item);
+    if (!merged) return false;
+    if (merged.suggestedStatus === 'PAGO' || merged.suggestedStatus === 'INCERTO') return false;
+
+    const normalized = normalizeDraftForCreate(merged);
+    const duplicate = findPayableDuplicate(
+      { supplierName: normalized.supplierName, supplierId: undefined, docNumber: normalized.docNumber, originalAmount: normalized.originalAmount, dueDate: normalized.dueDate },
+      payables,
+    );
+    if (duplicate) {
+      updateItem(item.id, { status: 'error', expanded: true, duplicatePayableId: duplicate.id, error: `Parece já cadastrada: ${duplicate.title}. Confira antes de criar.` });
+      return false;
+    }
+
+    updateItem(item.id, { creating: true });
+    try {
+      const { payable } = await createPayableFromAnalysis(item, { ...item.analysis, draft: merged }, {});
+      onCreated?.(payable);
+      removeItem(item.id);
+      return true;
+    } catch (error) {
+      updateItem(item.id, { creating: false, status: 'error', progress: 0, expanded: true, error: error instanceof Error ? error.message : 'Não foi possível criar a conta.' });
+      return false;
+    }
+  }
+
+  // Auto-cria as contas limpas da leva; grupos com pergunta pendente são pulados
+  // (espera a usuária responder antes de criar). Retorna quantas criou.
+  async function autoCreateProduced(produced: ImportFileItem[]): Promise<number> {
+    const groupsWithQuestion = new Set(
+      produced.filter((i) => (i.clarifications?.length ?? 0) > 0).map((i) => i.groupId ?? i.id),
+    );
+    let created = 0;
+    for (const item of produced) {
+      if (groupsWithQuestion.has(item.groupId ?? item.id)) continue;
+      if (await autoCreateItem(item)) created += 1;
+    }
+    return created;
   }
 
   // Resposta a uma pergunta da IA (ex.: "são 2 contas"): re-analisa o MESMO
@@ -476,7 +524,8 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
       return next;
     });
 
-    await analyzeItem(fresh, expectedAccountCount);
+    const produced = await analyzeItem(fresh, expectedAccountCount);
+    await autoCreateProduced(produced);
   }
 
   // Clique numa opção de pergunta da IA. Se a opção indicar uma quantidade de
@@ -599,28 +648,33 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     return { payable };
   }
 
+  // Clique em "Enviar e analisar": dispara a análise de TODOS os pendentes de uma vez.
+  function handleSubmitAll() {
+    const pending = itemsRef.current.filter((candidate) => candidate.status === 'pending');
+    if (pending.length === 0) return;
+    void analyzeItems(pending);
+  }
+
   async function analyzeItems(targets: ImportFileItem[]) {
     if (targets.length === 0) return;
 
-    let errorCount = 0;
-    let analyzedCount = 0;
+    // Analisa todos os arquivos EM PARALELO (cada um pode virar várias contas).
+    const groups = await Promise.all(targets.map((item) => analyzeItem(item)));
+    const produced = groups.flat();
+    const failed = targets.length - groups.filter((g) => g.length > 0).length;
 
-    for (const item of targets) {
-      const analysis = await analyzeItem(item);
-      if (!analysis) {
-        errorCount += 1;
-        continue;
-      }
-      analyzedCount += 1;
-    }
+    // Cria sozinho as contas limpas (e some da lista); o resto fica para revisão.
+    const created = await autoCreateProduced(produced);
+    const pending = itemsRef.current.length;
 
     toast({
-      title: analyzedCount > 0 ? 'Análise concluída' : 'Análise precisa de revisão',
-      description: [
-        `${analyzedCount} rascunho${analyzedCount === 1 ? '' : 's'} pronto${analyzedCount === 1 ? '' : 's'} para confirmar`,
-        errorCount > 0 ? `${errorCount} arquivo${errorCount === 1 ? '' : 's'} com pendência` : null,
-      ].filter(Boolean).join(' • '),
-      variant: analyzedCount === 0 ? 'destructive' : undefined,
+      title: created > 0
+        ? `${created} conta${created === 1 ? '' : 's'} criada${created === 1 ? '' : 's'} automaticamente`
+        : 'Análise concluída',
+      description: pending > 0
+        ? `${pending} item${pending === 1 ? '' : 's'} na lista para você revisar${failed > 0 ? ` (${failed} com erro de leitura)` : ''}.`
+        : 'Tudo certo! As contas já estão na tela de Contas a Pagar.',
+      variant: created === 0 && pending > 0 ? 'destructive' : undefined,
     });
   }
 
@@ -708,6 +762,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
             isAnalyzing={isAnalyzing}
             payableCategories={payableCategories}
             onSelect={() => fileInputRef.current?.click()}
+            onSubmitAll={handleSubmitAll}
             onClarify={handleClarify}
             onCreateItem={(id, options) => void handleCreateItem(id, options)}
             onRetryItem={(id) => void handleRetryItem(id)}
@@ -734,6 +789,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
             payableCategories={payableCategories}
             cameraMode
             onSelect={() => cameraInputRef.current?.click()}
+            onSubmitAll={handleSubmitAll}
             onClarify={handleClarify}
             onCreateItem={(id, options) => void handleCreateItem(id, options)}
             onRetryItem={(id) => void handleRetryItem(id)}
@@ -808,6 +864,7 @@ type ImportBodyProps = {
   payableCategories: Array<{ id: string; name: string }>;
   cameraMode?: boolean;
   onSelect: () => void;
+  onSubmitAll: () => void;
   onClarify: (item: ImportFileItem, value: string) => void;
   onCreateItem: (id: string, options?: { allowDuplicate?: boolean; confirmedReceipt?: boolean; confirmedDuplicate?: boolean }) => void;
   onRetryItem: (id: string) => void;
@@ -823,6 +880,7 @@ function ImportBody({
   payableCategories,
   cameraMode = false,
   onSelect,
+  onSubmitAll,
   onClarify,
   onCreateItem,
   onRetryItem,
@@ -834,6 +892,7 @@ function ImportBody({
   const createdCount = items.filter((item) => item.status === 'created').length;
   const errorCount = items.filter((item) => item.status === 'error').length;
   const processingCount = items.filter((item) => item.status === 'analyzing' || item.creating).length;
+  const pendingCount = items.filter((item) => item.status === 'pending').length;
 
   return (
     <div className="space-y-4">
@@ -866,12 +925,18 @@ function ImportBody({
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
-          <Button onClick={onSelect} disabled={isAnalyzing} className="gap-2 sm:w-auto">
-            {isAnalyzing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-            {isAnalyzing ? 'Processando...' : cameraMode ? 'Tirar outra foto' : 'Adicionar arquivos'}
+          {pendingCount > 0 ? (
+            <Button onClick={onSubmitAll} disabled={isAnalyzing} className="gap-2 sm:w-auto">
+              {isAnalyzing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {isAnalyzing ? 'Analisando...' : `Enviar e analisar (${pendingCount})`}
+            </Button>
+          ) : null}
+          <Button variant={pendingCount > 0 ? 'outline' : 'default'} onClick={onSelect} disabled={isAnalyzing} className="gap-2 sm:w-auto">
+            {cameraMode ? <Camera className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
+            {cameraMode ? 'Tirar outra foto' : 'Adicionar arquivos'}
           </Button>
           {items.length > 0 ? (
-            <Button variant="outline" onClick={onClear} disabled={isAnalyzing} className="sm:w-auto">
+            <Button variant="ghost" onClick={onClear} disabled={isAnalyzing} className="sm:w-auto">
               Limpar
             </Button>
           ) : null}
@@ -946,6 +1011,47 @@ function StatusBadge({ status }: { status: ImportFileStatus }) {
   if (status === 'error') return <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" /> Erro</Badge>;
   if (status === 'analyzing') return <Badge variant="secondary" className="gap-1"><LoaderCircle className="h-3 w-3 animate-spin" /> Analisando</Badge>;
   return <Badge variant="outline">Pendente</Badge>;
+}
+
+const ANALYZING_MESSAGES = [
+  'Lendo o documento…',
+  'Identificando o fornecedor…',
+  'Conferindo valores e vencimentos…',
+  'Procurando parcelas e várias contas…',
+  'Organizando tudo pra você…',
+];
+
+function AnalyzingAnimation({ progress }: { progress: number }) {
+  const [msgIndex, setMsgIndex] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setMsgIndex((index) => (index + 1) % ANALYZING_MESSAGES.length);
+    }, 1400);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="mt-3 space-y-3 overflow-hidden rounded-xl border border-primary/20 bg-gradient-to-br from-primary/5 via-background to-accent/5 p-3">
+      <div className="flex items-center gap-3">
+        <div className="relative flex h-9 w-9 shrink-0 items-center justify-center">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/25" />
+          <span className="relative inline-flex h-9 w-9 items-center justify-center rounded-full bg-primary/15 text-primary">
+            <Sparkles className="h-4 w-4 animate-pulse" />
+          </span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-foreground">
+            <span key={msgIndex} className="inline-block animate-in fade-in slide-in-from-bottom-1 duration-300">
+              {ANALYZING_MESSAGES[msgIndex]}
+            </span>
+          </p>
+          <p className="text-xs text-muted-foreground">IA trabalhando — pode levar alguns segundos.</p>
+        </div>
+        <span className="text-xs font-semibold tabular-nums text-primary">{progress}%</span>
+      </div>
+      <Progress value={progress} className="h-1.5" />
+    </div>
+  );
 }
 
 function ImportFileCard({
@@ -1024,13 +1130,7 @@ function ImportFileCard({
           </div>
 
           {item.status === 'analyzing' ? (
-            <div className="mt-3 space-y-2">
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>Lendo documento e extraindo campos</span>
-                <span>{item.progress}%</span>
-              </div>
-              <Progress value={item.progress} />
-            </div>
+            <AnalyzingAnimation progress={item.progress} />
           ) : null}
 
           {item.status === 'error' && !item.expanded ? (
