@@ -33,6 +33,7 @@ const LEADING_CUSTOMER_TITLES = new Set([
 ]);
 
 const CUSTOMER_NAME_CONNECTORS = new Set(['da', 'das', 'de', 'do', 'dos', 'e']);
+const CUSTOMER_NAME_SEPARATORS = new Set(['-', '&', '+', '/']);
 
 function normalizeNameToken(token: string) {
   return token.replace(/[.]/g, '').toLocaleLowerCase('pt-BR');
@@ -48,8 +49,22 @@ export function formatNotaClientPrintName(value: string | null | undefined) {
     return !LEADING_CUSTOMER_TITLES.has(normalizeNameToken(token));
   });
 
-  const usefulTokens = withoutTitle.filter((token) => !CUSTOMER_NAME_CONNECTORS.has(normalizeNameToken(token)));
-  const printTokens = usefulTokens.slice(0, 2);
+  const usefulTokenIndexes = withoutTitle
+    .map((token, index) => ({ token, index, key: normalizeNameToken(token) }))
+    .filter(({ key }) => !CUSTOMER_NAME_CONNECTORS.has(key) && !CUSTOMER_NAME_SEPARATORS.has(key))
+    .slice(0, 2);
+
+  const printTokens = usefulTokenIndexes.length > 0
+    ? usefulTokenIndexes.flatMap(({ token, index }, selectedIndex) => {
+        const previous = usefulTokenIndexes[selectedIndex - 1];
+        if (!previous) return [token];
+
+        const separatorsBetween = withoutTitle
+          .slice(previous.index + 1, index)
+          .filter((candidate) => CUSTOMER_NAME_SEPARATORS.has(normalizeNameToken(candidate)));
+        return [...separatorsBetween, token];
+      })
+    : [];
 
   if (printTokens.length > 0) {
     return printTokens.join(' ');

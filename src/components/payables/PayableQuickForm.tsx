@@ -14,7 +14,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ChevronDown, Landmark, Paperclip, ReceiptText, Save, Sparkles } from 'lucide-react';
 import {
   AccountPayable,
-  PayableAttachmentFileType,
   PayableEntrySource,
   PAYMENT_METHOD_LABELS,
   PaymentMethod,
@@ -28,6 +27,7 @@ import {
   classifyPayableMatch,
   PAYABLE_FIELD_LIMITS,
 } from '@/services/domain/payables';
+import { inferPayableAttachmentType } from '@/services/domain/payableFiles';
 import {
   normalizeDecimalInputDraft,
   normalizeMoneyInput,
@@ -95,15 +95,6 @@ const PAYMENT_METHOD_OPTIONS: PaymentMethod[] = [
 
 function parseMoneyInput(value: string): number {
   return normalizeMoneyInput(value).value ?? 0;
-}
-
-function inferAttachmentType(file: File): PayableAttachmentFileType {
-  const lower = file.name.toLowerCase();
-  if (file.type === 'application/pdf' || lower.includes('boleto')) return 'BOLETO';
-  if (lower.includes('nota') || lower.includes('nf')) return 'NOTA_FISCAL';
-  if (lower.includes('comp') || lower.includes('recibo') || file.type.startsWith('image/')) return 'COMPROVANTE';
-  if (lower.includes('contrato')) return 'CONTRATO';
-  return 'OUTRO';
 }
 
 export default function PayableQuickForm({
@@ -294,7 +285,7 @@ export default function PayableQuickForm({
       );
 
       if (attachment) {
-        const type = inferAttachmentType(attachment);
+        const type = inferPayableAttachmentType(attachment);
         let url = `local-upload://${attachment.name}`;
         let attachmentSaved = true;
 
@@ -562,7 +553,7 @@ export default function PayableQuickForm({
                   {attachment ? (
                     <div className="mt-3 flex items-center justify-between rounded-xl border border-border/60 bg-background px-3 py-2 text-sm">
                       <span className="truncate">{attachment.name}</span>
-                      <Badge variant="secondary">{inferAttachmentType(attachment)}</Badge>
+                      <Badge variant="secondary">{inferPayableAttachmentType(attachment)}</Badge>
                     </div>
                   ) : null}
                 </div>

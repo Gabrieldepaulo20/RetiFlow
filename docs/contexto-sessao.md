@@ -776,6 +776,46 @@ Plano aprovado para executar em fases:
   - `npm run build`: passou, mantendo avisos conhecidos de Browserslist/chunks/import dinâmico.
   - `npm run test:integration`: não executado porque a alteração foi apenas de frontend, sem tocar banco, RPC, Storage ou Edge Function.
 
+## Contas A Pagar - PDFs Fora De Padrao E Nome No PDF Da O.S. - 2026-06-16
+
+- Pedido: investigar por que PDFs de boleto fora do padrao falham na importacao com IA e corrigir cliente que imprimia como `Sert -` em vez de `Sert - Car` na nota de entrada.
+- Diagnostico do arquivo `/Users/gabrielwilliamdepaulo/Downloads/Boleto_1 (1).pdf`:
+  - PDF A4 com 3 boletos/parcelas empilhados no mesmo arquivo;
+  - fornecedor: `SERRAF DISTRIBUIDORA DE PECAS P/A MOTORES LTDA`;
+  - pagador: `J. M. SILVA RETIFICA DE MOTORES LTDA`;
+  - documento base `76258`;
+  - parcelas detectadas:
+    - `001/003`, vencimento `08/07/2026`, valor `399,92`;
+    - `002/003`, vencimento `22/07/2026`, valor `399,92`;
+    - `003/003`, vencimento `05/08/2026`, valor `399,92`.
+- Comportamento esperado do importador para esse PDF:
+  - criar 3 rascunhos de contas, um por parcela, sem tratar `Recibo do Pagador` e `Ficha de Compensacao` como contas duplicadas;
+  - titulos sugeridos no padrao `SERRAF Distribuidora - Parcela 1/3`, `2/3`, `3/3` ou equivalente sem nome generico/duplicata;
+  - metodo `BOLETO`, recorrencia `NENHUMA`, status inicial pendente/incerto conforme confianca da leitura.
+- Frontend de Contas a Pagar:
+  - criado helper unico em `src/services/domain/payableFiles.ts` para reconhecer PDF/imagem/DOC por extensao quando o navegador envia MIME vazio, `application/octet-stream` ou `application/x-pdf`;
+  - upload para Storage agora normaliza `contentType` pelo helper, evitando salvar boleto PDF como octet-stream;
+  - modal de importacao e formulario rapido passaram a reutilizar o mesmo helper para preview e tipo de anexo.
+- Edge Function `analisar-conta-pagar`:
+  - aceita PDF/imagem/DOC/DOCX por extensao quando o MIME vem solto/generico;
+  - reenvia arquivo para OpenAI com MIME normalizado;
+  - prompt reforcado para boletos multiplos em uma pagina, especialmente `Parcela 001 / 003`, `002 / 003`, `003 / 003`;
+  - timeout da resposta OpenAI ampliado para 90s e output maximo para 8000 tokens;
+  - se a IA falhar, retorna rascunho seguro de revisao manual com status `INCERTO`, valor 0 e avisos, em vez de interromper o fluxo com erro seco.
+- Notas de Entrada / PDF:
+  - `formatNotaClientPrintName` agora preserva separadores comerciais entre os dois primeiros termos uteis;
+  - regressao coberta para `SERT - CAR RETIFICA DE MOTORES LTDA` imprimir `Sert - Car`.
+- Sem migration, sem mudanca de RLS/policy/bucket privacy e sem service role no frontend.
+- Validacao executada nesta rodada:
+  - testes direcionados de PDF/nome/importador passaram;
+  - `npm test -- --run`: passou, 51 arquivos e 376 testes;
+  - `npx tsc --noEmit`: passou;
+  - `npm run lint`: passou com warnings antigos de Fast Refresh;
+  - `npm run build`: passou com avisos conhecidos de Browserslist/chunks/import dinamico.
+  - `npm run test:integration`: passou, 17 arquivos e 55 testes.
+- Validacao nao executada:
+  - `deno check` da Edge Function nao foi executado porque `deno` nao esta instalado neste ambiente.
+
 ## Notas De Entrada - Filtros Mais Limpos - 2026-06-09
 
 - Pedido: remover duplicidade visual de paginação dentro de `Filtros da lista`.

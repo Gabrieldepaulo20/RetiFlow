@@ -15,5 +15,6 @@ describe('notaPrintLayout', () => {
 
   it('keeps company names compact without changing the stored customer name', () => {
     expect(formatNotaClientPrintName('RETIFICA PREMIUM SERVICOS AUTOMOTIVOS LTDA')).toBe('Retifica Premium');
+    expect(formatNotaClientPrintName('SERT - CAR RETIFICA DE MOTORES LTDA')).toBe('Sert - Car');
   });
 });

@@ -15,8 +15,9 @@ import {
   calculatePayableFinalAmount,
   findPayableDuplicate,
 } from '@/services/domain/payables';
+import { inferPayableAttachmentType, isPayableImageFile, isPayablePdfFile } from '@/services/domain/payableFiles';
 import { buildImportedPayableAttachmentName } from '@/services/domain/payableAttachments';
-import { AccountPayable, PayableAttachmentFileType, PAYMENT_METHOD_LABELS, PaymentMethod, RecurrenceType } from '@/types';
+import { AccountPayable, PAYMENT_METHOD_LABELS, PaymentMethod, RecurrenceType } from '@/types';
 import { AlertTriangle, Camera, CheckCircle2, ChevronDown, FileScan, LoaderCircle, RotateCw, Sparkles, Trash2, Upload, XCircle } from 'lucide-react';
 import { analisarContaPagarComIA, insertAnexoContaPagar, uploadAnexoContaPagar } from '@/api/supabase/contas-pagar';
 
@@ -137,7 +138,7 @@ function normalizeRecurrence(value: unknown): RecurrenceType {
 }
 
 function buildImportFileItem(file: File, source: ImportSource): ImportFileItem {
-  const shouldPreview = file.type.startsWith('image/') || file.type === 'application/pdf';
+  const shouldPreview = isPayableImageFile(file) || isPayablePdfFile(file);
   return {
     id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID?.() ?? Date.now()}`,
     file,
@@ -154,19 +155,10 @@ function buildImportFileItem(file: File, source: ImportSource): ImportFileItem {
 
 function getFileKind(file: File) {
   const extension = file.name.split('.').pop()?.toUpperCase() || 'ARQ';
-  if (file.type.startsWith('image/')) return { extension, label: 'Imagem', tone: 'from-sky-50 to-blue-100 text-blue-700 border-blue-200' };
-  if (file.type === 'application/pdf') return { extension: 'PDF', label: 'PDF', tone: 'from-rose-50 to-red-100 text-red-700 border-red-200' };
+  if (isPayableImageFile(file)) return { extension, label: 'Imagem', tone: 'from-sky-50 to-blue-100 text-blue-700 border-blue-200' };
+  if (isPayablePdfFile(file)) return { extension: 'PDF', label: 'PDF', tone: 'from-rose-50 to-red-100 text-red-700 border-red-200' };
   if (file.name.toLowerCase().endsWith('.doc') || file.name.toLowerCase().endsWith('.docx')) return { extension: 'DOC', label: 'Word', tone: 'from-indigo-50 to-blue-100 text-indigo-700 border-indigo-200' };
   return { extension, label: 'Arquivo', tone: 'from-slate-50 to-slate-100 text-slate-700 border-slate-200' };
-}
-
-function inferAttachmentType(file: File): PayableAttachmentFileType {
-  const lower = file.name.toLowerCase();
-  if (file.type === 'application/pdf' || lower.includes('boleto')) return 'BOLETO';
-  if (lower.includes('nota') || lower.includes('nf')) return 'NOTA_FISCAL';
-  if (lower.includes('comp') || lower.includes('recibo') || file.type.startsWith('image/')) return 'COMPROVANTE';
-  if (lower.includes('contrato')) return 'CONTRATO';
-  return 'OUTRO';
 }
 
 function getSuggestedCategory(filename: string) {
@@ -541,7 +533,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
   }
 
   async function persistImportedAttachment(item: ImportFileItem, payableId: string, draft: ImportDraft) {
-    const type = inferAttachmentType(item.file);
+    const type = inferPayableAttachmentType(item.file);
     const displayName = buildImportedPayableAttachmentName({
       title: draft.title,
       supplierName: draft.supplierName,
@@ -1176,7 +1168,7 @@ function ImportFileCard({
             </Alert>
           ) : null}
 
-          {item.previewUrl && item.file.type.startsWith('image/') ? (
+          {item.previewUrl && isPayableImageFile(item.file) ? (
             <div className="overflow-hidden rounded-2xl border border-border/60 bg-background">
               <img src={item.previewUrl} alt={item.file.name} className="max-h-[260px] w-full object-contain" />
             </div>

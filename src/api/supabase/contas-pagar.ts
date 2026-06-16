@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { readStoredSupportContext } from '@/services/auth/supportContext';
 import { getPerfil } from './auth';
 import { buildPayableAttachmentStoragePath } from '@/services/storage/storagePaths';
+import { resolvePayableFileMimeType } from '@/services/domain/payableFiles';
 
 export interface ContaPagar {
   id_contas_pagar: string;
@@ -192,7 +193,7 @@ export async function uploadAnexoContaPagar(params: {
     filename: params.file.name,
   });
   const { error } = await supabase.storage.from(PAYABLE_ATTACHMENTS_BUCKET).upload(path, params.file, {
-    contentType: params.file.type || 'application/octet-stream',
+    contentType: resolvePayableFileMimeType(params.file) || 'application/octet-stream',
     upsert: false,
   });
 
