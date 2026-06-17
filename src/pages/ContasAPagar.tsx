@@ -468,7 +468,7 @@ export default function ContasAPagar() {
     try {
       await updatePayable(selectedPayable.id, { deletedAt: new Date().toISOString() });
       addPayableHistoryEntry(buildPayableHistoryDescription({ payableId: selectedPayable.id, action: 'DELETED', userId: user?.id ?? 'user-2' }));
-      toast({ title: 'Conta removida da listagem', description: 'A exclusão foi lógica.' });
+      toast({ title: 'Conta excluída definitivamente', description: 'A conta e os anexos vinculados foram removidos.' });
       setDialogMode(null);
       window.setTimeout(clearDialogFields, 260);
     } catch (error) {
@@ -869,7 +869,7 @@ export default function ContasAPagar() {
       </Dialog>
 
       <Dialog open={dialogMode === 'delete'} onOpenChange={(open) => !open && resetDialogs()}>
-        <DialogContent className="max-w-md"><DialogHeader><DialogTitle>Excluir conta da listagem</DialogTitle><DialogDescription>Exclusão lógica: some da tela, mas mantém auditoria.</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={resetDialogs}>Cancelar</Button><Button variant="destructive" onClick={() => void handleDeleteSelectedPayable()}>Confirmar exclusão</Button></DialogFooter></DialogContent>
+        <DialogContent className="max-w-md"><DialogHeader><DialogTitle>Excluir conta definitivamente</DialogTitle><DialogDescription>A conta e os anexos salvos no Supabase serão apagados. Esta ação não pode ser desfeita.</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={resetDialogs}>Cancelar</Button><Button variant="destructive" onClick={() => void handleDeleteSelectedPayable()}>Confirmar exclusão</Button></DialogFooter></DialogContent>
       </Dialog>
     </>
   );

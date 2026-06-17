@@ -155,7 +155,53 @@ export async function cancelarContaPagar(idContasPagar: string) {
   await callRPC('cancelar_conta_pagar', { p_id_contas_pagar: idContasPagar });
 }
 
+const PAYABLE_ATTACHMENTS_BUCKET = import.meta.env.VITE_SUPABASE_PAYABLE_ATTACHMENTS_BUCKET || 'contas-pagar';
+
+function normalizePayableAttachmentStoragePath(pathOrUrl: string) {
+  const value = pathOrUrl.trim();
+  if (!value || value.startsWith('blob:') || value.startsWith('local-upload://')) {
+    return null;
+  }
+
+  if (!value.startsWith('http')) {
+    return value;
+  }
+
+  try {
+    const url = new URL(value);
+    const marker = `/${PAYABLE_ATTACHMENTS_BUCKET}/`;
+    const markerIndex = url.pathname.indexOf(marker);
+    if (markerIndex === -1) return null;
+    return decodeURIComponent(url.pathname.slice(markerIndex + marker.length));
+  } catch {
+    return null;
+  }
+}
+
+async function removeContaPagarStorageAttachments(pathsOrUrls: string[]) {
+  const paths = Array.from(new Set(
+    pathsOrUrls
+      .map(normalizePayableAttachmentStoragePath)
+      .filter((path): path is string => Boolean(path)),
+  ));
+
+  if (paths.length === 0) return;
+
+  if (readStoredSupportContext()) {
+    throw new Error(
+      'Exclusão definitiva de conta com anexo em modo suporte exige ação auditada no backend. Entre no tenant dono da conta para apagar o anexo com segurança.',
+    );
+  }
+
+  const { error } = await supabase.storage.from(PAYABLE_ATTACHMENTS_BUCKET).remove(paths);
+  if (error) {
+    throw new Error(`[excluirContaPagar] Não foi possível remover anexo(s) do Storage: ${error.message}`);
+  }
+}
+
 export async function excluirContaPagar(idContasPagar: string) {
+  const detalhes = await getContaPagarDetalhes(idContasPagar);
+  await removeContaPagarStorageAttachments(detalhes?.anexos.map((anexo) => anexo.url) ?? []);
   await callRPC('excluir_conta_pagar', { p_id_contas_pagar: idContasPagar });
 }
 
@@ -175,8 +221,6 @@ export async function updateAnexoContaPagarNome(params: {
 }) {
   await callRPC('update_anexo_conta_pagar_nome', params);
 }
-
-const PAYABLE_ATTACHMENTS_BUCKET = import.meta.env.VITE_SUPABASE_PAYABLE_ATTACHMENTS_BUCKET || 'contas-pagar';
 
 export async function uploadAnexoContaPagar(params: {
   contaPagarId: string;

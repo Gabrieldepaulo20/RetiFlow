@@ -67,6 +67,7 @@ describe.skipIf(skipIntegration)('Storage — PDFs e anexos privados com signed 
   it('anexo de conta a pagar é enviado, vinculado e lido por signed URL', async () => {
     const { testUserEmail, testUserPassword } = getTestEnv();
     const { client } = await signInAsTestUser();
+    const service = createServiceClient();
     const [{ supabase }, payablesApi] = await Promise.all([
       import('@/lib/supabase'),
       import('@/api/supabase/contas-pagar'),
@@ -124,6 +125,28 @@ describe.skipIf(skipIntegration)('Storage — PDFs e anexos privados com signed 
     const response = await fetch(signedUrl);
     expect(response.ok).toBe(true);
     expect(await response.text()).toBe('comprovante integração');
+
+    await payablesApi.excluirContaPagar(contaId);
+
+    const deletedPayable = await service
+      .schema('RetificaPremium')
+      .from('Contas_Pagar')
+      .select('id_contas_pagar')
+      .eq('id_contas_pagar', contaId);
+    expect(deletedPayable.error).toBeNull();
+    expect(deletedPayable.data).toHaveLength(0);
+
+    const deletedAttachmentRow = await service
+      .schema('RetificaPremium')
+      .from('Contas_Pagar_Anexos')
+      .select('id_anexo')
+      .eq('id_anexo', anexoId);
+    expect(deletedAttachmentRow.error).toBeNull();
+    expect(deletedAttachmentRow.data).toHaveLength(0);
+
+    const deletedObject = await service.storage.from('contas-pagar').download(path);
+    expect(deletedObject.data).toBeNull();
+    expect(deletedObject.error).toBeTruthy();
 
     await Promise.all([
       client.auth.signOut(),

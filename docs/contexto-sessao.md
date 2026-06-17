@@ -36,6 +36,32 @@ Atualizado em: 2026-06-17
 - Nao tocar em banco, RLS, Storage, Auth ou Edge Functions sem plano curto e risco explicado antes.
 - Nao usar nem expor secrets. A pasta `tmp/` pode conter dados sensiveis ou artefatos locais, entao tratar com cuidado.
 
+### Contas a Pagar - Exclusao Definitiva Com Anexos - 2026-06-17
+
+- Pedido: ao excluir uma conta, apagar definitivamente a conta e qualquer anexo salvo no Supabase Storage.
+- Diagnostico confirmado no remoto:
+  - RPCs `excluir_conta_pagar` e `excluir_conta_pagar_contexto_suporte` faziam soft-delete (`excluido_em`);
+  - UI tambem dizia "Exclusao logica";
+  - bucket `contas-pagar` usa policy por dono (`owner = auth.uid()`), entao suporte nao consegue apagar Storage de outro usuario direto pelo browser.
+- Alteracoes:
+  - `src/api/supabase/contas-pagar.ts` agora resolve paths/URLs de anexos, remove objetos do bucket `contas-pagar` e so depois chama a RPC;
+  - se houver anexo em modo suporte, o front bloqueia a exclusao definitiva com mensagem clara, para nao deixar arquivo orfao;
+  - `supabase/migrations/20260617133000_hard_delete_payables.sql` troca as RPCs para `DELETE` real em `Contas_Pagar`; anexos e historico somem por `ON DELETE CASCADE`;
+  - modal/toast em `src/pages/ContasAPagar.tsx` agora indicam exclusao definitiva e irreversivel.
+- Aplicacao remota:
+  - `supabase db push --dry-run` falhou por drift antigo: varias versoes remotas nao existem localmente;
+  - para nao reparar historico amplo nesta rodada, a migration idempotente foi aplicada via `supabase db query --linked < ...`;
+  - `supabase migration repair --status applied 20260617133000` executado somente para a nova migration;
+  - catalogo remoto confirmou que as duas RPCs usam `DELETE` e nao contem mais `excluido_em`.
+- Validacao:
+  - `npx tsc --noEmit`: passou;
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh;
+  - `npm test -- --run`: passou, 51 arquivos e 376 testes;
+  - `npm run build`: passou com avisos conhecidos de Browserslist/chunks/import dinamico;
+  - `npm run test:integration -- --run src/test/integration/storage.test.ts`: passou, criando conta com anexo, lendo signed URL, excluindo, e confirmando 0 linhas em `Contas_Pagar`/`Contas_Pagar_Anexos` e objeto indisponivel no bucket;
+  - `npm run test:integration`: passou completo, 17 arquivos e 55 testes (stderr esperado nos testes de logs que validam bloqueio de acesso indevido);
+  - `supabase db lint --linked`: sem erros nas RPCs novas; restaram os 4 warnings legados ja conhecidos em casts de `update_rel_nota_compra`, `novo_cliente`, `update_veiculo` e `update_rel_nota_servico`.
+
 ### Contas a Pagar - Parcelas Vinculadas e Importacao IA - 2026-06-17
 
 - Pedido: parcelas precisam continuar como contas separadas, mas uma parcela deve mostrar/navegar para as outras da mesma serie; importacao IA deve fechar o popup quando tudo der certo e manter aberto com itens em vermelho quando algo exigir correcao manual; nunca usar "duplicata" como nome de conta.
