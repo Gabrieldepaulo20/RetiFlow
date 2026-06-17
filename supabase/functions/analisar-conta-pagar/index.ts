@@ -539,10 +539,13 @@ function getPayableReasoningEffort() {
 
 function buildOpenAIRequestBody(base: Record<string, unknown>) {
   const model = getPayableAiModel();
+  const isGpt5 = /^gpt-5/i.test(model);
+  const requestBase = { ...base };
+  if (isGpt5) delete requestBase.temperature;
   return {
-    ...base,
+    ...requestBase,
     model,
-    ...(/^gpt-5/i.test(model)
+    ...(isGpt5
       ? { reasoning: { effort: getPayableReasoningEffort() } }
       : {}),
   };
@@ -838,7 +841,7 @@ Deno.serve(async (request) => {
         const text = await response.text();
         // Log o detalhe do provedor apenas no servidor; nunca devolver ao cliente (vaza internos da OpenAI).
         console.error(`[analisar-conta-pagar] OpenAI ${response.status}: ${text.slice(0, 500)}`);
-        throw new Error('Falha ao analisar o documento. Tente novamente em instantes.');
+        throw new Error(`Falha ao analisar o documento na IA (${response.status}).`);
       }
 
       const data = await response.json();

@@ -67,7 +67,7 @@ type AnalysisResult = {
 };
 
 type ImportSource = 'arquivo' | 'camera';
-type ImportFileStatus = 'pending' | 'analyzing' | 'success' | 'error' | 'created';
+type ImportFileStatus = 'pending' | 'analyzing' | 'success' | 'review' | 'error' | 'created';
 
 type ImportDraftEdits = {
   title?: string;
@@ -342,6 +342,16 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     };
   }
 
+  function markItemForReview(item: ImportFileItem, message?: string) {
+    updateItem(item.id, {
+      status: 'review',
+      progress: 100,
+      creating: false,
+      expanded: true,
+      error: message ?? item.error,
+    });
+  }
+
   function handleFileSelection(files: FileList | File[] | null, source: ImportSource) {
     const selectedFiles = Array.from(files ?? []);
     if (selectedFiles.length === 0) return;
@@ -459,9 +469,18 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     if (!item.analysis) return false;
     const merged = mergeDraftEdits(item);
     if (!merged) return false;
-    if (merged.suggestedStatus === 'PAGO' || merged.suggestedStatus === 'INCERTO') return false;
+    if (merged.suggestedStatus === 'PAGO' || merged.suggestedStatus === 'INCERTO') {
+      markItemForReview(item);
+      return false;
+    }
 
-    const normalized = normalizeDraftForCreate(merged);
+    let normalized: ImportDraft;
+    try {
+      normalized = normalizeDraftForCreate(merged);
+    } catch (error) {
+      markItemForReview(item, error instanceof Error ? error.message : 'Revise os dados antes de criar a conta.');
+      return false;
+    }
     const duplicate = findPayableDuplicate(
       { supplierName: normalized.supplierName, supplierId: undefined, docNumber: normalized.docNumber, originalAmount: normalized.originalAmount, dueDate: normalized.dueDate },
       payables,
@@ -491,7 +510,10 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     );
     let created = 0;
     for (const item of produced) {
-      if (groupsWithQuestion.has(item.groupId ?? item.id)) continue;
+      if (groupsWithQuestion.has(item.groupId ?? item.id)) {
+        markItemForReview(item);
+        continue;
+      }
       if (await autoCreateItem(item)) created += 1;
     }
     return created;
@@ -528,7 +550,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     if (Number.isInteger(count) && count >= 1 && count <= 24) {
       void reanalyzeWithCount(item, count);
     } else {
-      updateItem(item.id, { clarifications: [] });
+      updateItem(item.id, { clarifications: [], status: 'review', expanded: true });
     }
   }
 
@@ -662,11 +684,10 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     toast({
       title: created > 0
         ? `${created} conta${created === 1 ? '' : 's'} criada${created === 1 ? '' : 's'} automaticamente`
-        : 'Análise concluída',
+        : 'Análise pronta para revisão',
       description: pending > 0
-        ? `${pending} item${pending === 1 ? '' : 's'} na lista para você revisar${failed > 0 ? ` (${failed} com erro de leitura)` : ''}.`
+        ? `${pending} item${pending === 1 ? '' : 's'} aberto${pending === 1 ? '' : 's'} para confirmar antes de criar${failed > 0 ? ` (${failed} com erro de leitura)` : ''}.`
         : 'Tudo certo! As contas já estão na tela de Contas a Pagar.',
-      variant: created === 0 && pending > 0 ? 'destructive' : undefined,
     });
   }
 
@@ -882,7 +903,7 @@ function ImportBody({
   onToggleExpanded,
 }: ImportBodyProps) {
   const createdCount = items.filter((item) => item.status === 'created').length;
-  const errorCount = items.filter((item) => item.status === 'error').length;
+  const reviewCount = items.filter((item) => item.status === 'review' || item.status === 'error').length;
   const processingCount = items.filter((item) => item.status === 'analyzing' || item.creating).length;
   const pendingCount = items.filter((item) => item.status === 'pending').length;
 
@@ -913,7 +934,7 @@ function ImportBody({
           <p className="text-xs text-muted-foreground">
             {items.length === 0
               ? 'Nenhum arquivo selecionado.'
-              : `${items.length} arquivo${items.length === 1 ? '' : 's'} • ${processingCount} processando • ${createdCount} criado${createdCount === 1 ? '' : 's'} • ${errorCount} pendência${errorCount === 1 ? '' : 's'}`}
+              : `${items.length} arquivo${items.length === 1 ? '' : 's'} • ${processingCount} processando • ${createdCount} criado${createdCount === 1 ? '' : 's'} • ${reviewCount} pendência${reviewCount === 1 ? '' : 's'}`}
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
@@ -998,7 +1019,8 @@ function FileTileIcon({ file }: { file: File }) {
 }
 
 function StatusBadge({ status }: { status: ImportFileStatus }) {
-  if (status === 'success') return <Badge className="gap-1 bg-success text-success-foreground"><CheckCircle2 className="h-3 w-3" /> Sucesso</Badge>;
+  if (status === 'success') return <Badge className="gap-1 bg-success text-success-foreground"><CheckCircle2 className="h-3 w-3" /> Analisada</Badge>;
+  if (status === 'review') return <Badge className="gap-1 border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-100"><AlertTriangle className="h-3 w-3" /> Revisar</Badge>;
   if (status === 'created') return <Badge className="gap-1 bg-primary text-primary-foreground"><CheckCircle2 className="h-3 w-3" /> Conta criada</Badge>;
   if (status === 'error') return <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" /> Erro</Badge>;
   if (status === 'analyzing') return <Badge variant="secondary" className="gap-1"><LoaderCircle className="h-3 w-3 animate-spin" /> Analisando</Badge>;
@@ -1133,6 +1155,16 @@ function ImportFileCard({
 
       {item.expanded ? (
         <div className="border-t bg-muted/20 p-4 space-y-4">
+          {item.status === 'review' && item.analysis && !item.error ? (
+            <Alert className="border-amber-200 bg-amber-50/80 text-amber-950">
+              <AlertTriangle className="h-4 w-4 text-amber-700" />
+              <AlertTitle>Revise antes de criar</AlertTitle>
+              <AlertDescription>
+                A análise terminou, mas a conta ainda não foi cadastrada. Confira os campos e clique em Confirmar e criar.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
           {item.error ? (
             <Alert variant={item.duplicatePayableId ? 'default' : 'destructive'}>
               {item.duplicatePayableId ? <AlertTriangle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
@@ -1264,7 +1296,7 @@ function ImportFileCard({
                 <div className="flex flex-col gap-3 border-t border-border/50 pt-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="text-xs text-muted-foreground">
                     <span className="font-medium text-foreground">Categoria:</span> {categoryName} &nbsp;•&nbsp;
-                    <span className="font-medium text-foreground">Status:</span> {effectiveDraft?.suggestedStatus === 'PAGO' ? 'Já paga' : effectiveDraft?.suggestedStatus === 'AGENDADO' ? 'Agendada' : 'A pagar'}
+                    <span className="font-medium text-foreground">Status:</span> {effectiveDraft?.suggestedStatus === 'PAGO' ? 'Já paga' : effectiveDraft?.suggestedStatus === 'AGENDADO' ? 'Agendada' : effectiveDraft?.suggestedStatus === 'INCERTO' ? 'Revisar' : 'A pagar'}
                   </div>
                   <Button
                     size="sm"

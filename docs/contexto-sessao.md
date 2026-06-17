@@ -36,6 +36,21 @@ Atualizado em: 2026-06-16
 - Nao tocar em banco, RLS, Storage, Auth ou Edge Functions sem plano curto e risco explicado antes.
 - Nao usar nem expor secrets. A pasta `tmp/` pode conter dados sensiveis ou artefatos locais, entao tratar com cuidado.
 
+### Contas a Pagar - PDF Boleto SERRAF - 2026-06-16
+
+- Problema reportado: upload do PDF `Boleto_1 (1).pdf` aparecia como sucesso no front, mas nenhuma conta era criada/listada.
+- Diagnostico real:
+  - Antes da correcao, a Function `analisar-conta-pagar` retornava fallback manual com 1 rascunho `INCERTO`, fornecedor nao identificado e valor 0; por isso o front mostrava "Sucesso" de analise, mas nao criava conta.
+  - O PDF contem 3 boletos/parcelas SERRAF no mesmo arquivo, cada uma de R$ 399,92, vencendo em 08/07/2026, 22/07/2026 e 05/08/2026.
+- Correcao aplicada:
+  - Edge Functions `analisar-conta-pagar` e `gmail-scan-payables` removem `temperature` automaticamente quando o modelo configurado comeca com `gpt-5`, mantendo `reasoning.effort`.
+  - O front `PayableImportModal` separa "Analisada" de "Conta criada" e usa status `Revisar` quando a conta nao foi salva automaticamente; itens de revisao ficam abertos com campos e botao `Confirmar e criar`.
+  - Toast de importacao sem criacao automatica deixou de ser erro vermelho e passa a orientar revisao.
+- Validacao real:
+  - Teste direto na Function publicada com o PDF retornou `accountCount: 3`.
+  - Drafts retornados: `SERRAF DISTRIBUIDORA DE PEÇAS P/A MOTORES LTDA. · Parcela 1/3 · Doc 76258 1`, `Parcela 2/3` e `Parcela 3/3`, todos com valor R$ 399,92 e status `PENDENTE`.
+  - Sem migration, sem alteracao de banco/RLS/Storage.
+
 ### Pedidos Recentes Que Devem Permanecer No Radar
 
 - Dashboard:

@@ -61,10 +61,13 @@ function getScanConcurrency() {
 
 function buildOpenAIRequestBody(base: Record<string, unknown>) {
   const model = getPayableAiModel();
+  const isGpt5 = /^gpt-5/i.test(model);
+  const requestBase = { ...base };
+  if (isGpt5) delete requestBase.temperature;
   return {
-    ...base,
+    ...requestBase,
     model,
-    ...(/^gpt-5/i.test(model)
+    ...(isGpt5
       ? { reasoning: { effort: getPayableReasoningEffort() } }
       : {}),
   };
