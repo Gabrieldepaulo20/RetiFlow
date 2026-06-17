@@ -38,7 +38,7 @@ import {
 } from '@/api/supabase/contas-pagar';
 import { normalizeAttachmentDisplayName } from '@/services/domain/payableAttachments';
 import { toTitleCasePtBr } from '@/services/domain/textNormalization';
-import { ArrowUpRight, CalendarRange, CheckCircle2, Circle, Clock, Landmark, Layers3, Loader2, Paperclip, Pencil, PlusCircle, Sparkles, Wallet } from 'lucide-react';
+import { ArrowUpRight, CalendarRange, CheckCircle2, Circle, Clock, Layers3, Loader2, Paperclip, Pencil, PlusCircle } from 'lucide-react';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
@@ -341,7 +341,7 @@ export default function PayableDetailsModal({
       open={open}
       onOpenChange={onOpenChange}
       title={payable.title}
-      description="Visão consolidada da conta, com origem, anexos, histórico e preparação para fluxos bancários futuros."
+      description="Visão consolidada da conta, com origem, anexos e histórico."
       desktopClassName="sm:max-w-5xl"
     >
       <div className="space-y-6">
@@ -352,7 +352,7 @@ export default function PayableDetailsModal({
           <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Competência</p><p className="mt-2 text-sm font-medium">{payable.competencyDate ? format(parseISO(payable.competencyDate), 'MM/yyyy') : '—'}</p></CardContent></Card>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.05fr)_360px]">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_220px]">
           <div className="space-y-6">
             <Card>
               <CardContent className="p-5 space-y-4">
@@ -655,26 +655,6 @@ export default function PayableDetailsModal({
           </div>
 
           <div className="space-y-4">
-            <Card>
-              <CardContent className="p-5 space-y-4">
-                <div className="flex items-center gap-2">
-                  <Landmark className="h-4 w-4 text-primary" />
-                  <p className="text-sm font-semibold">Pagamento via banco</p>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  O módulo já está modelado para evoluir para Pix, boleto, agendamento e comprovante via provedor bancário.
-                </p>
-                <div className="grid gap-2">
-                  <Button disabled className="justify-between"><span>Pagar via API bancária</span><Sparkles className="h-4 w-4" /></Button>
-                  <Button disabled variant="outline" className="justify-between"><span>Agendar pagamento</span><ArrowUpRight className="h-4 w-4" /></Button>
-                  <Button disabled variant="outline" className="justify-between"><span>Baixar comprovante</span><Wallet className="h-4 w-4" /></Button>
-                </div>
-                <div className="rounded-2xl border border-dashed border-primary/20 bg-primary/5 p-4 text-xs text-muted-foreground">
-                  Próxima etapa: conectar um provedor como Stark Bank para Pix, boletos, concessionárias e conciliação.
-                </div>
-              </CardContent>
-            </Card>
-
             <div className="flex flex-col gap-2">
               {canEditPayable(payable) ? (
                 <Button variant="outline" onClick={() => onRequestEdit?.(payable)}>Editar dados</Button>

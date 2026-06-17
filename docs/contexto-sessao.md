@@ -36,6 +36,21 @@ Atualizado em: 2026-06-17
 - Nao tocar em banco, RLS, Storage, Auth ou Edge Functions sem plano curto e risco explicado antes.
 - Nao usar nem expor secrets. A pasta `tmp/` pode conter dados sensiveis ou artefatos locais, entao tratar com cuidado.
 
+### Contas a Pagar - Remocao De Blocos Bancarios Planejados - 2026-06-17
+
+- Pedido: retirar da conta a parte de "Pagamento via banco", porque ocupava espaco e nao servia no fluxo atual.
+- Alteracoes somente de frontend:
+  - `PayableDetailsModal` nao mostra mais o card `Pagamento via banco`, botoes desabilitados de API bancaria/agendamento/comprovante nem texto de provedor futuro;
+  - a descricao do modal ficou focada em origem, anexos e historico;
+  - a coluna lateral do detalhe foi reduzida de 360px para 220px, liberando mais espaco para os dados reais da conta;
+  - `PayableQuickForm` tambem perdeu o bloco informativo `Preparacao para financeiro robusto`, removendo a mensagem de futura integracao bancaria.
+- Sem mudanca de banco, RPC, Storage, Auth ou Edge Function.
+- Validacao executada:
+  - `npx tsc --noEmit`: passou;
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh;
+  - `npm test -- --run`: passou, 51 arquivos e 376 testes;
+  - `npm run build`: passou com avisos conhecidos de Browserslist/chunks/import dinamico.
+
 ### Contas a Pagar - Exclusao Definitiva Com Anexos - 2026-06-17
 
 - Pedido: ao excluir uma conta, apagar definitivamente a conta e qualquer anexo salvo no Supabase Storage.

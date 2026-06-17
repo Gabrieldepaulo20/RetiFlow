@@ -11,7 +11,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useToast } from '@/hooks/use-toast';
 import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { ChevronDown, Landmark, Paperclip, ReceiptText, Save, Sparkles } from 'lucide-react';
+import { ChevronDown, Paperclip, ReceiptText, Save, Sparkles } from 'lucide-react';
 import {
   AccountPayable,
   PayableEntrySource,
@@ -588,19 +588,6 @@ export default function PayableQuickForm({
               <p>Status inicial: <span className="font-medium text-foreground">{form.initialStatus === 'PAGO' ? 'Já pago' : 'A pagar'}</span></p>
               <p>Origem: <span className="font-medium text-foreground">{entrySource === 'CAMERA_CAPTURE' ? 'Foto / câmera' : entrySource === 'IA_IMPORT' ? 'Importação por IA' : entrySource === 'AUTO_SERIES' ? 'Série automática' : 'Cadastro manual'}</span></p>
             </div>
-          </div>
-
-          <div className="rounded-2xl border border-border/60 p-4 space-y-3">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <Landmark className="h-4 w-4 text-primary" />
-              Preparação para financeiro robusto
-            </div>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              <li>• Compatível com parcelas e recorrência desde o cadastro.</li>
-              <li>• Salários entram como Mão de Obra, com recorrência mensal e comprovante anexado.</li>
-              <li>• Estrutura pronta para anexar documentos e comprovantes.</li>
-              <li>• Pensado para futura integração com pagamento via API bancária.</li>
-            </ul>
           </div>
 
           {compact ? null : (
