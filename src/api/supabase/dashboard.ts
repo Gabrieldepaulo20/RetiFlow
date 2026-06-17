@@ -108,6 +108,7 @@ function dashboardContaToPayable(row: ContaPagar): AccountPayable {
     paidAt: row.pago_em ?? undefined,
     paidWith: (row.pago_com as PaymentMethod) ?? undefined,
     recurrence: (row.recorrencia as RecurrenceType) ?? 'NENHUMA',
+    recurrenceParentId: row.fk_conta_pai ?? undefined,
     recurrenceIndex: row.indice_recorrencia ?? undefined,
     totalInstallments: row.total_parcelas ?? undefined,
     isUrgent: row.urgente,

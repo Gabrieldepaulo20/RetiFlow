@@ -87,8 +87,18 @@ export default function PayableDetailsModal({
   const { toast } = useToast();
 
   const lastIdRef = useRef<string | null>(null);
-  if (payableId) lastIdRef.current = payableId;
-  const resolvedId = open ? payableId : lastIdRef.current;
+  const [activePayableId, setActivePayableId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setActivePayableId(payableId ?? null);
+    } else {
+      setActivePayableId(null);
+    }
+  }, [open, payableId]);
+
+  const resolvedId = open ? (activePayableId ?? payableId ?? null) : lastIdRef.current;
+  if (resolvedId) lastIdRef.current = resolvedId;
 
   const payable = resolvedId ? getPayable(resolvedId) : undefined;
   const payableIdForReset = payable?.id;
@@ -442,11 +452,17 @@ export default function PayableDetailsModal({
                       const isPaid = sibling.status === 'PAGO';
                       const isOverdue = isPayableOverdue(sibling);
                       return (
-                        <div
+                        <button
                           key={sibling.id}
+                          type="button"
+                          onClick={() => {
+                            if (!isCurrent) setActivePayableId(sibling.id);
+                          }}
                           className={cn(
-                            'flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition-colors',
-                            isCurrent ? 'border-primary/40 bg-primary/5' : 'border-border/50',
+                            'flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                            isCurrent
+                              ? 'cursor-default border-primary/40 bg-primary/5'
+                              : 'border-border/50 hover:border-primary/35 hover:bg-primary/5',
                           )}
                         >
                           <div className="shrink-0">
@@ -474,11 +490,14 @@ export default function PayableDetailsModal({
                             <p className="text-xs font-semibold tabular-nums">
                               {sibling.finalAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                             </p>
-                            <span className={cn('text-[10px] font-medium', PAYABLE_STATUS_COLORS[siblingStatus], 'rounded px-1 py-0.5')}>
-                              {PAYABLE_STATUS_LABELS[siblingStatus]}
-                            </span>
+                            <div className="flex items-center justify-end gap-1">
+                              <span className={cn('text-[10px] font-medium', PAYABLE_STATUS_COLORS[siblingStatus], 'rounded px-1 py-0.5')}>
+                                {PAYABLE_STATUS_LABELS[siblingStatus]}
+                              </span>
+                              {!isCurrent ? <ArrowUpRight className="h-3 w-3 text-muted-foreground" /> : null}
+                            </div>
                           </div>
-                        </div>
+                        </button>
                       );
                     })}
                   </div>

@@ -217,9 +217,8 @@ export default function PayableQuickForm({
       (supplier) => supplier.name.toLowerCase() === supplierName.toLowerCase(),
     );
 
-    // Classifica em vez de bloquear por igualdade exata: só pede confirmação em
-    // duplicidade provável. Parcela/recorrência/casos a revisar passam direto
-    // (parcelas legítimas não são tratadas como duplicata).
+    // Classifica em vez de bloquear por igualdade exata: só pede confirmação
+    // quando parece a mesma conta. Parcelas legítimas continuam independentes.
     const match = classifyPayableMatch(
       {
         supplierId: matchedSupplier?.id,

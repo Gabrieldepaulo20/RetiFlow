@@ -798,7 +798,7 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
     const disposition = classifyEmailSuggestionForReview(suggestion, payables, senderHistory);
     if (disposition.bucket === 'quarantine' || disposition.bucket === 'duplicate') {
       toast({
-        title: disposition.bucket === 'quarantine' ? 'Item em quarentena' : 'Possível duplicidade',
+        title: disposition.bucket === 'quarantine' ? 'Item em quarentena' : 'Conta parecida para revisar',
         description: 'Esta sugestão precisa ser revisada fora da lista principal antes de virar conta.',
         variant: 'destructive',
       });
@@ -1073,7 +1073,7 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
           <summary className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-emerald-800 hover:text-emerald-900">
             <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
             <BadgeCheck className="h-3.5 w-3.5" />
-            {alreadyRegistered.length} possível duplicidade — não recria automaticamente
+            {alreadyRegistered.length} conta parecida — não recria automaticamente
           </summary>
           <div className="mt-3 space-y-2">
             {alreadyRegistered.map(({ suggestion, disposition }) => (

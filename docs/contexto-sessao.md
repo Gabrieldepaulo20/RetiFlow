@@ -1,6 +1,6 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-06-16
+Atualizado em: 2026-06-17
 
 ---
 
@@ -35,6 +35,35 @@ Atualizado em: 2026-06-16
 - Como o usuario pediu "Sempre de push", apos mudancas aprovadas e validadas commitar e dar push via SSH.
 - Nao tocar em banco, RLS, Storage, Auth ou Edge Functions sem plano curto e risco explicado antes.
 - Nao usar nem expor secrets. A pasta `tmp/` pode conter dados sensiveis ou artefatos locais, entao tratar com cuidado.
+
+### Contas a Pagar - Parcelas Vinculadas e Importacao IA - 2026-06-17
+
+- Pedido: parcelas precisam continuar como contas separadas, mas uma parcela deve mostrar/navegar para as outras da mesma serie; importacao IA deve fechar o popup quando tudo der certo e manter aberto com itens em vermelho quando algo exigir correcao manual; nunca usar "duplicata" como nome de conta.
+- Frontend:
+  - `PayableImportModal` agrupa series parceladas por `groupId` e cria a primeira parcela como pai; as demais recebem `recurrenceParentId`, mantendo cada vencimento independente para sumir da lista quando for pago.
+  - Lotes importados com 100% de criacao automatica fecham o popup sozinhos; lotes com erro/revisao mantem o popup aberto, expandem os pendentes e destacam em vermelho o que precisa de correcao manual.
+  - Textos visiveis passaram a usar "conta parecida/repetida", nao "duplicata/duplicidade".
+  - `PayableDetailsModal` permite abrir as demais parcelas dentro do detalhe, com status e navegacao direta entre elas.
+- Banco/RPC:
+  - Migration local `20260617015524_return_payable_parent_links.sql` inclui `fk_conta_pai` nos JSONs de `get_contas_pagar`, `get_conta_pagar_detalhes` e respectivas variantes de suporte.
+  - Migration local `20260617020900_fix_support_email_suggestion_payable_signature.sql` corrige casts de enums em RPCs de suporte de Contas a Pagar e a chamada de `aceitar_sugestao_email_contexto_suporte` para o contrato atual de `insert_conta_pagar_contexto_suporte`.
+  - As duas migrations foram aplicadas no remoto com `supabase db query --linked -f ...`.
+  - `supabase db push --dry-run` continua bloqueado por drift antigo de historico remoto/local, entao nao usar como evidencia de aplicacao ate reparar esse historico.
+- Edge Functions:
+  - `analisar-conta-pagar` e `gmail-scan-payables` reforcam que "Duplicata" e apenas tipo de documento, nao nome/titulo; quando houver risco de repeticao, devem pedir revisao como conta parecida/repetida.
+  - Deploy remoto executado com sucesso:
+    - `supabase functions deploy analisar-conta-pagar --no-verify-jwt`
+    - `supabase functions deploy gmail-scan-payables`
+- Validacao executada:
+  - `npx tsc --noEmit`: passou.
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh.
+  - `npm test -- --run`: passou, 51 arquivos e 376 testes.
+  - `npm run build`: passou com avisos conhecidos de Browserslist/chunks/import dinamico.
+  - `npm run test:integration`: passou apos as migrations remotas, 17 arquivos e 55 testes.
+  - `supabase db lint --linked`: sem erros nas RPCs de Contas a Pagar; restaram apenas 4 warnings antigos de casts em funcoes legadas (`update_rel_nota_compra`, `novo_cliente`, `update_veiculo`, `update_rel_nota_servico`).
+  - Consulta remota confirmou que as RPCs de lista/detalhe retornam `fk_conta_pai` e que a RPC de suporte usa `p_favorecido_tipo` no contrato atual.
+- Validacao nao executada:
+  - `deno check` das Edge Functions nao foi executado porque `deno` nao esta instalado neste ambiente.
 
 ### Contas a Pagar - PDF Boleto SERRAF - 2026-06-16
 

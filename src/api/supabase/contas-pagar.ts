@@ -23,6 +23,7 @@ export interface ContaPagar {
   pago_em: string | null;
   pago_com: string | null;
   recorrencia: string;
+  fk_conta_pai: string | null;
   indice_recorrencia: number | null;
   total_parcelas: number | null;
   urgente: boolean;
@@ -93,6 +94,7 @@ export interface ContaPagarDetalhes {
   parcelas: Array<{
     id_contas_pagar: string;
     titulo: string;
+    fk_conta_pai?: string | null;
     indice_recorrencia: number | null;
     total_parcelas: number | null;
     data_vencimento: string;

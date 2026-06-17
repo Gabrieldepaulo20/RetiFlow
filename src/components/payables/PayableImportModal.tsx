@@ -9,6 +9,7 @@ import PayableModalShell from '@/components/payables/PayableModalShell';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useData } from '@/contexts/DataContext';
+import { cn } from '@/lib/utils';
 import {
   buildMeaningfulPayableTitle,
   buildPayableHistoryDescription,
@@ -101,7 +102,7 @@ type ImportFileItem = {
 
 type CreateConfirmation = {
   itemId: string;
-  type: 'receipt' | 'duplicate';
+  type: 'receipt' | 'similar';
 };
 
 function formatBytes(size: number) {
@@ -128,6 +129,16 @@ function parseMoneyDraft(value: string | undefined, fallback: number) {
   const parsed = Number(value.replace(/\./g, '').replace(',', '.').trim());
   return Number.isFinite(parsed) ? parsed : fallback;
 }
+
+type AutoCreateItemResult = {
+  created: boolean;
+  payable?: AccountPayable;
+};
+
+type AutoCreateBatchResult = {
+  created: number;
+  reviewed: number;
+};
 
 function normalizePaymentMethod(value: unknown): PaymentMethod {
   return VALID_PAYMENT_METHODS.includes(value as PaymentMethod) ? value as PaymentMethod : 'BOLETO';
@@ -243,7 +254,7 @@ function inferDraft(file: File): AnalysisResult {
     highlights: [
       'Anexo pronto para ficar vinculado à conta.',
       'Categoria, urgência e status sugeridos automaticamente.',
-      'Fluxo preparado para evitar duplicidade antes do cadastro.',
+      'Fluxo preparado para evitar contas repetidas antes do cadastro.',
     ],
   };
 }
@@ -375,10 +386,24 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
   }
 
   function clearItems() {
-    items.forEach((item) => {
+    itemsRef.current.forEach((item) => {
       if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
     });
     setItems([]);
+  }
+
+  function isInstallmentItem(item: ImportFileItem) {
+    const draft = item.analysis?.draft;
+    return Boolean(draft?.totalInstallments && draft.totalInstallments > 1);
+  }
+
+  function sortInstallmentItems(groupItems: ImportFileItem[]) {
+    return [...groupItems].sort((a, b) => {
+      const aIndex = a.analysis?.draft.recurrenceIndex ?? Number.MAX_SAFE_INTEGER;
+      const bIndex = b.analysis?.draft.recurrenceIndex ?? Number.MAX_SAFE_INTEGER;
+      if (aIndex !== bIndex) return aIndex - bIndex;
+      return a.id.localeCompare(b.id);
+    });
   }
 
   // Retorna os itens RESULTANTES da análise (1 conta = 1 item; várias contas =
@@ -463,15 +488,18 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     }
   }
 
-  // Cria automaticamente UMA conta "limpa" e remove da lista. Retorna true se criou.
-  // Comprovante (PAGO), incerto, duplicidade ou erro NÃO são criados — ficam na lista.
-  async function autoCreateItem(item: ImportFileItem): Promise<boolean> {
-    if (!item.analysis) return false;
+  // Cria automaticamente UMA conta "limpa" e remove da lista.
+  // Comprovante (PAGO), incerto, conta parecida ou erro NÃO são criados — ficam na lista.
+  async function autoCreateItem(
+    item: ImportFileItem,
+    options: { recurrenceParentId?: string; existingPayables?: AccountPayable[] } = {},
+  ): Promise<AutoCreateItemResult> {
+    if (!item.analysis) return { created: false };
     const merged = mergeDraftEdits(item);
-    if (!merged) return false;
+    if (!merged) return { created: false };
     if (merged.suggestedStatus === 'PAGO' || merged.suggestedStatus === 'INCERTO') {
       markItemForReview(item);
-      return false;
+      return { created: false };
     }
 
     let normalized: ImportDraft;
@@ -479,44 +507,86 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
       normalized = normalizeDraftForCreate(merged);
     } catch (error) {
       markItemForReview(item, error instanceof Error ? error.message : 'Revise os dados antes de criar a conta.');
-      return false;
+      return { created: false };
     }
     const duplicate = findPayableDuplicate(
       { supplierName: normalized.supplierName, supplierId: undefined, docNumber: normalized.docNumber, originalAmount: normalized.originalAmount, dueDate: normalized.dueDate },
-      payables,
+      [...payables, ...(options.existingPayables ?? [])],
     );
     if (duplicate) {
-      updateItem(item.id, { status: 'error', expanded: true, duplicatePayableId: duplicate.id, error: `Parece já cadastrada: ${duplicate.title}. Confira antes de criar.` });
-      return false;
+      updateItem(item.id, {
+        status: 'review',
+        expanded: true,
+        duplicatePayableId: duplicate.id,
+        error: `Encontrei uma conta parecida: ${duplicate.title}. Se for uma parcela ou cobrança separada, confirme como conta separada.`,
+      });
+      return { created: false };
     }
 
     updateItem(item.id, { creating: true });
     try {
-      const { payable } = await createPayableFromAnalysis(item, { ...item.analysis, draft: merged }, {});
-      onCreated?.(payable);
+      const { payable } = await createPayableFromAnalysis(item, { ...item.analysis, draft: merged }, {
+        recurrenceParentId: options.recurrenceParentId,
+      });
       removeItem(item.id);
-      return true;
+      return { created: true, payable };
     } catch (error) {
       updateItem(item.id, { creating: false, status: 'error', progress: 0, expanded: true, error: error instanceof Error ? error.message : 'Não foi possível criar a conta.' });
-      return false;
+      return { created: false };
     }
   }
 
   // Auto-cria as contas limpas da leva; grupos com pergunta pendente são pulados
-  // (espera a usuária responder antes de criar). Retorna quantas criou.
-  async function autoCreateProduced(produced: ImportFileItem[]): Promise<number> {
+  // (espera a usuária responder antes de criar).
+  async function autoCreateProduced(produced: ImportFileItem[]): Promise<AutoCreateBatchResult> {
     const groupsWithQuestion = new Set(
       produced.filter((i) => (i.clarifications?.length ?? 0) > 0).map((i) => i.groupId ?? i.id),
     );
+    const groups = new Map<string, ImportFileItem[]>();
+    produced.forEach((item) => {
+      const key = item.groupId ?? item.id;
+      groups.set(key, [...(groups.get(key) ?? []), item]);
+    });
+
     let created = 0;
-    for (const item of produced) {
-      if (groupsWithQuestion.has(item.groupId ?? item.id)) {
-        markItemForReview(item);
+    let reviewed = 0;
+    const createdInBatch: AccountPayable[] = [];
+
+    for (const [groupId, groupItems] of groups) {
+      if (groupsWithQuestion.has(groupId)) {
+        groupItems.forEach((item) => markItemForReview(item));
+        reviewed += groupItems.length;
         continue;
       }
-      if (await autoCreateItem(item)) created += 1;
+
+      const hasInstallmentSeries = groupItems.some(isInstallmentItem);
+      if (!hasInstallmentSeries) {
+        for (const item of groupItems) {
+          const result = await autoCreateItem(item, { existingPayables: createdInBatch });
+          if (result.created && result.payable) {
+            created += 1;
+            createdInBatch.push(result.payable);
+          } else {
+            reviewed += 1;
+          }
+        }
+        continue;
+      }
+
+      let recurrenceParentId: string | undefined;
+      for (const item of sortInstallmentItems(groupItems)) {
+        const result = await autoCreateItem(item, { recurrenceParentId });
+        if (result.created && result.payable) {
+          created += 1;
+          createdInBatch.push(result.payable);
+          recurrenceParentId ??= result.payable.id;
+        } else {
+          reviewed += 1;
+        }
+      }
     }
-    return created;
+
+    return { created, reviewed };
   }
 
   // Resposta a uma pergunta da IA (ex.: "são 2 contas"): re-analisa o MESMO
@@ -539,7 +609,15 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     });
 
     const produced = await analyzeItem(fresh, expectedAccountCount);
-    await autoCreateProduced(produced);
+    const result = await autoCreateProduced(produced);
+    if (produced.length > 0 && result.created === produced.length && result.reviewed === 0) {
+      toast({
+        title: `${result.created} conta${result.created === 1 ? '' : 's'} criada${result.created === 1 ? '' : 's'} automaticamente`,
+        description: 'Tudo certo! A fila foi concluída.',
+      });
+      clearItems();
+      onOpenChange(false);
+    }
   }
 
   // Clique numa opção de pergunta da IA. Se a opção indicar uma quantidade de
@@ -585,7 +663,11 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     return displayName;
   }
 
-  async function createPayableFromAnalysis(item: ImportFileItem, analysis: AnalysisResult, options: { allowDuplicate?: boolean } = {}) {
+  async function createPayableFromAnalysis(
+    item: ImportFileItem,
+    analysis: AnalysisResult,
+    options: { allowDuplicate?: boolean; recurrenceParentId?: string } = {},
+  ) {
     const draft = normalizeDraftForCreate(analysis.draft);
     let payable = item.createdPayable ?? (item.createdPayableId ? payables.find((candidate) => candidate.id === item.createdPayableId) : undefined);
 
@@ -603,14 +685,14 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
 
       if (duplicate && !options.allowDuplicate) {
         updateItem(item.id, {
-          status: 'error',
+          status: 'review',
           progress: 0,
           creating: false,
-          error: `Encontramos uma conta muito parecida: ${duplicate.title}. Revise antes de criar novamente.`,
+          error: `Encontramos uma conta parecida: ${duplicate.title}. Confirme se é outra parcela ou cobrança separada antes de salvar.`,
           duplicatePayableId: duplicate.id,
           expanded: true,
         });
-        throw new Error(`Encontramos uma conta muito parecida: ${duplicate.title}. Revise antes de criar novamente.`);
+        throw new Error(`Encontramos uma conta parecida: ${duplicate.title}. Confirme antes de criar uma conta separada.`);
       }
 
       const finalAmount = calculatePayableFinalAmount(draft.originalAmount);
@@ -632,6 +714,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
         paidAmount: treatAsPaid ? finalAmount : undefined,
         paidAt: treatAsPaid ? new Date().toISOString() : undefined,
         recurrence: draft.recurrence,
+        recurrenceParentId: options.recurrenceParentId,
         recurrenceIndex: draft.recurrenceIndex,
         totalInstallments: draft.totalInstallments,
         observations: draft.observations,
@@ -671,6 +754,8 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
 
   async function analyzeItems(targets: ImportFileItem[]) {
     if (targets.length === 0) return;
+    const targetIds = new Set(targets.map((item) => item.id));
+    const hadOtherItems = itemsRef.current.some((item) => !targetIds.has(item.id));
 
     // Analisa todos os arquivos EM PARALELO (cada um pode virar várias contas).
     const groups = await Promise.all(targets.map((item) => analyzeItem(item)));
@@ -678,7 +763,19 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     const failed = targets.length - groups.filter((g) => g.length > 0).length;
 
     // Cria sozinho as contas limpas (e some da lista); o resto fica para revisão.
-    const created = await autoCreateProduced(produced);
+    const result = await autoCreateProduced(produced);
+    const created = result.created;
+
+    if (!hadOtherItems && failed === 0 && produced.length > 0 && created === produced.length && result.reviewed === 0) {
+      toast({
+        title: `${created} conta${created === 1 ? '' : 's'} criada${created === 1 ? '' : 's'} automaticamente`,
+        description: 'Tudo certo! A importação terminou e a fila foi fechada.',
+      });
+      clearItems();
+      onOpenChange(false);
+      return;
+    }
+
     const pending = itemsRef.current.length;
 
     toast({
@@ -703,7 +800,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     }
 
     if (options.allowDuplicate && !options.confirmedDuplicate) {
-      setConfirmation({ itemId, type: 'duplicate' });
+      setConfirmation({ itemId, type: 'similar' });
       return;
     }
 
@@ -714,6 +811,11 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
         title: 'Conta criada',
         description: mergedDraft.title,
       });
+      removeItem(itemId);
+      const hasRemainingOpenItems = itemsRef.current.some((candidate) => candidate.id !== itemId && candidate.status !== 'created');
+      if (!hasRemainingOpenItems) {
+        onOpenChange(false);
+      }
       onCreated?.(created);
     } catch (error) {
       updateItem(itemId, {
@@ -818,12 +920,12 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            {confirmation?.type === 'receipt' ? 'Criar conta a partir de comprovante?' : 'Criar conta duplicada?'}
+            {confirmation?.type === 'receipt' ? 'Criar conta a partir de comprovante?' : 'Criar conta parecida separada?'}
           </DialogTitle>
           <DialogDescription>
             {confirmation?.type === 'receipt'
               ? 'Este arquivo parece ser comprovante/recibo. O caminho mais seguro é vincular a uma conta existente quando houver uma correspondente.'
-              : 'Já existe uma conta muito parecida. Confirme somente se estes lançamentos realmente devem conviver.'}
+              : 'Já existe uma conta muito parecida. Confirme somente se for outra parcela, outra cobrança ou um lançamento que deve ficar separado.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -837,7 +939,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
             </div>
             <Alert>
               <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>{confirmation?.type === 'receipt' ? 'Ação sensível' : 'Duplicidade confirmada pelo usuário'}</AlertTitle>
+              <AlertTitle>{confirmation?.type === 'receipt' ? 'Ação sensível' : 'Conta parecida confirmada'}</AlertTitle>
               <AlertDescription>
                 {confirmation?.type === 'receipt'
                   ? 'Ao confirmar, a conta será criada como paga e o anexo ficará vinculado ao novo lançamento.'
@@ -849,7 +951,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
 
         <DialogFooter>
           <Button variant="outline" onClick={() => setConfirmation(null)}>
-            {confirmation?.type === 'receipt' ? 'Não, voltar' : 'Não, usar existente'}
+            {confirmation?.type === 'receipt' ? 'Não, voltar' : 'Não, revisar melhor'}
           </Button>
           <Button
             variant={confirmation?.type === 'receipt' ? 'default' : 'destructive'}
@@ -862,7 +964,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
                 : { allowDuplicate: true, confirmedDuplicate: true, confirmedReceipt: true });
             }}
           >
-            {confirmation?.type === 'receipt' ? 'Sim, criar mesmo assim' : 'Sim, criar duplicada'}
+            {confirmation?.type === 'receipt' ? 'Sim, criar mesmo assim' : 'Sim, criar separada'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1083,9 +1185,18 @@ function ImportFileCard({
   const kind = getFileKind(item.file);
   const fieldPrefix = `payable-import-${item.id}`;
   const clarifications = item.clarifications ?? [];
+  const needsManualCorrection = item.status === 'error' || Boolean(item.error);
+  const needsReview = item.status === 'review';
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border/60 bg-background">
+    <div className={cn(
+      'overflow-hidden rounded-2xl border transition-colors',
+      needsManualCorrection
+        ? 'border-destructive/50 bg-destructive/5 shadow-sm shadow-destructive/10'
+        : needsReview
+          ? 'border-amber-300 bg-amber-50/50'
+          : 'border-border/60 bg-background',
+    )}>
       {clarifications.length > 0 && (
         <div className="space-y-3 border-b border-amber-200 bg-amber-50/70 p-4">
           {clarifications.map((clarification) => (
@@ -1166,9 +1277,9 @@ function ImportFileCard({
           ) : null}
 
           {item.error ? (
-            <Alert variant={item.duplicatePayableId ? 'default' : 'destructive'}>
+            <Alert variant="destructive">
               {item.duplicatePayableId ? <AlertTriangle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-              <AlertTitle>{item.duplicatePayableId ? 'Possível duplicidade encontrada' : 'Este arquivo precisa de revisão'}</AlertTitle>
+              <AlertTitle>{item.duplicatePayableId ? 'Conta parecida para revisar' : 'Este arquivo precisa de revisão'}</AlertTitle>
               <AlertDescription className="space-y-3">
                 <p>{item.error}</p>
                 <div className="flex flex-wrap gap-2">
@@ -1192,7 +1303,7 @@ function ImportFileCard({
                       onClick={() => onCreateItem(item.id, { allowDuplicate: true })}
                       disabled={item.creating || item.status === 'analyzing'}
                     >
-                      Criar mesmo assim
+                      Criar conta separada
                     </Button>
                   ) : null}
                 </div>
