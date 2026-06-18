@@ -16,7 +16,7 @@ import {
   type UserCompanySettings,
 } from '@/api/supabase/empresa';
 import { isHexColor } from '@/services/domain/documentCustomization';
-import { normalizeEmail, normalizeWhitespace, onlyDigits, toTitleCasePtBr } from '@/services/domain/textNormalization';
+import { normalizeCityName, normalizeEmail, normalizeWhitespace, onlyDigits, toTitleCasePtBr } from '@/services/domain/textNormalization';
 import { useToast } from '@/hooks/use-toast';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
@@ -70,7 +70,7 @@ function buildPayload(targetUserId: string | null | undefined, draft: CompanyDra
     idUsuarios: targetUserId ?? null,
     nomeFantasia: toTitleCasePtBr(draft.nomeFantasia),
     endereco: toTitleCasePtBr(draft.endereco),
-    cidade: toTitleCasePtBr(draft.cidade),
+    cidade: normalizeCityName(draft.cidade),
     estado: normalizeWhitespace(draft.estado).toUpperCase().slice(0, 2),
     cep: onlyDigits(draft.cep).slice(0, 8),
     telefone: onlyDigits(draft.telefone).slice(0, 11),

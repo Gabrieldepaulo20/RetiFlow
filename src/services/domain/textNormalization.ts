@@ -60,6 +60,25 @@ export function normalizePlate(value: string | null | undefined) {
   return String(value ?? '').replace(/[\s-]/g, '').trim().toUpperCase();
 }
 
+function removeDiacritics(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+export function normalizeCityName(value: string | null | undefined) {
+  const normalized = normalizeWhitespace(value);
+  if (!normalized) return '';
+
+  const compact = removeDiacritics(normalized)
+    .toLocaleLowerCase('pt-BR')
+    .replace(/[^a-z0-9]/g, '');
+
+  if (compact === 'sertaozinho' || compact === 'sertazinho') {
+    return 'Sertãozinho';
+  }
+
+  return toTitleCasePtBr(normalized);
+}
+
 export function normalizeDecimalInputDraft(value: string | null | undefined) {
   return String(value ?? '').replace(/[^\d.,]/g, '');
 }

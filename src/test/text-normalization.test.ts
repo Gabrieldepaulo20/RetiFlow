@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isValidBrazilianPlate,
+  normalizeCityName,
   normalizeDecimalInputDraft,
   normalizeEmail,
   normalizeMoneyInput,
@@ -24,6 +25,14 @@ describe('textNormalization', () => {
     expect(toTitleCasePtBr('empresa abc ltda')).toBe('Empresa ABC LTDA');
     expect(toTitleCasePtBr('  JOÃO   DA   SILVA  ')).toBe('João da Silva');
     expect(toTitleCasePtBr('motor ap 1.8 16v mwm')).toBe('Motor AP 1.8 16V MWM');
+  });
+
+  it('standardizes known Sertãozinho variants', () => {
+    expect(normalizeCityName('sertaozinho')).toBe('Sertãozinho');
+    expect(normalizeCityName('SERTAOZINHO')).toBe('Sertãozinho');
+    expect(normalizeCityName('Sertaõzinho')).toBe('Sertãozinho');
+    expect(normalizeCityName('Sertãzinho')).toBe('Sertãozinho');
+    expect(normalizeCityName('  ribeirão   preto  ')).toBe('Ribeirão Preto');
   });
 
   it('normalizes email, plate and digit-only fields', () => {

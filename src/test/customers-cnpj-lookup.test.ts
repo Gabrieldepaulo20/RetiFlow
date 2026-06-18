@@ -113,7 +113,7 @@ describe('sanitizeClientInput', () => {
     expect(result.name).toBe('CCM Retifica Premium');
     expect(result.tradeName).toBe('CCM');
     expect(result.email).toBe('contato@exemplo.com');
-    expect(result.city).toBe('Sertaozinho');
+    expect(result.city).toBe('Sertãozinho');
     expect(result.state).toBe('SP');
   });
 });

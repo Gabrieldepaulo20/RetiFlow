@@ -1,7 +1,7 @@
 import { Client, DocType } from '@/types';
 import { fetchCep, fetchCnpj } from '@/api/endpoints/brazilian';
 import { ApiError } from '@/api/errors';
-import { normalizeEmail, normalizeWhitespace, onlyDigits, toTitleCasePtBr } from './textNormalization';
+import { normalizeCityName, normalizeEmail, normalizeWhitespace, onlyDigits, toTitleCasePtBr } from './textNormalization';
 
 export const CUSTOMER_FIELD_LIMITS = {
   name: 80,
@@ -120,7 +120,7 @@ export function sanitizeClientInput(client: Omit<Client, 'id' | 'createdAt'>): O
     address: clamp(toTitleCasePtBr(client.address), CUSTOMER_FIELD_LIMITS.address),
     addressNumber: clamp(normalizeWhitespace(client.addressNumber || ''), CUSTOMER_FIELD_LIMITS.addressNumber),
     district: clamp(toTitleCasePtBr(client.district || ''), CUSTOMER_FIELD_LIMITS.district),
-    city: clamp(toTitleCasePtBr(client.city), CUSTOMER_FIELD_LIMITS.city),
+    city: clamp(normalizeCityName(client.city), CUSTOMER_FIELD_LIMITS.city),
     state: clamp(client.state.trim().toUpperCase(), CUSTOMER_FIELD_LIMITS.state),
     notes: clamp(normalizeWhitespace(client.notes), CUSTOMER_FIELD_LIMITS.notes),
   };
@@ -141,7 +141,7 @@ export async function lookupCep(cep: string, signal?: AbortSignal): Promise<CepL
       cep: formatCep(data.cep || digits),
       address: toTitleCasePtBr(data.logradouro || ''),
       district: toTitleCasePtBr(data.bairro || ''),
-      city: toTitleCasePtBr(data.localidade || ''),
+      city: normalizeCityName(data.localidade || ''),
       state: (data.uf || '').toUpperCase(),
     };
   } catch (error) {
@@ -183,7 +183,7 @@ export async function lookupCnpj(cnpj: string, signal?: AbortSignal): Promise<Cn
       address: clamp(toTitleCasePtBr(data.logradouro || cepAddress?.address || ''), CUSTOMER_FIELD_LIMITS.address),
       addressNumber: clamp(normalizeWhitespace(data.numero || ''), CUSTOMER_FIELD_LIMITS.addressNumber),
       district: clamp(toTitleCasePtBr(cepAddress?.district || data.bairro || ''), CUSTOMER_FIELD_LIMITS.district),
-      city: clamp(toTitleCasePtBr(cepAddress?.city || data.municipio || ''), CUSTOMER_FIELD_LIMITS.city),
+      city: clamp(normalizeCityName(cepAddress?.city || data.municipio || ''), CUSTOMER_FIELD_LIMITS.city),
       state: clamp((data.uf || cepAddress?.state || '').trim().toUpperCase(), CUSTOMER_FIELD_LIMITS.state),
     };
   } catch (error) {
