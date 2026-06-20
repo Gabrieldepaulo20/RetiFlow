@@ -30,6 +30,7 @@ import {
   renderTemplateText,
 } from '@/services/domain/documentCustomization';
 import { getNotaItemDetailLines } from '@/components/notes/notaItemDetails';
+import { formatCepForDisplay, formatDocumentForDisplay } from '@/services/domain/customers';
 
 const MAX_ROWS = NOTA_PRINT_MAX_ROWS;
 const LONG_MAX_ROWS = NOTA_PRINT_LONG_MAX_ROWS;
@@ -318,11 +319,11 @@ function PreviewVia({
           <PreviewField label="Cliente" value={formatNotaClientPrintName(cabecalho.cliente.nome)} />
         </div>
         <div className="mb-[3px] flex flex-wrap gap-x-[7px] gap-y-[3px]">
-          <PreviewField label="Documento" value={cabecalho.cliente.documento} />
+          <PreviewField label="Documento" value={formatDocumentForDisplay(cabecalho.cliente.documento)} />
           <PreviewField label="Endereço" value={cabecalho.cliente.endereco} />
         </div>
         <div className="mb-[3px] flex flex-wrap gap-x-[7px] gap-y-[3px]">
-          <PreviewField label="CEP" value={cabecalho.cliente.cep} />
+          <PreviewField label="CEP" value={formatCepForDisplay(cabecalho.cliente.cep)} />
           <PreviewField label="Cidade" value={cabecalho.cliente.cidade} />
           <PreviewField label="Placa" value={cabecalho.veiculo.placa} fallback="Não informada" />
           <PreviewField label="Veículo" value={cabecalho.veiculo.modelo} />

@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { lookupCnpj, sanitizeClientInput } from '@/services/domain/customers';
+import {
+  formatCepForDisplay,
+  formatDocumentForDisplay,
+  lookupCnpj,
+  sanitizeClientInput,
+} from '@/services/domain/customers';
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -115,5 +120,16 @@ describe('sanitizeClientInput', () => {
     expect(result.email).toBe('contato@exemplo.com');
     expect(result.city).toBe('Sertãozinho');
     expect(result.state).toBe('SP');
+  });
+});
+
+describe('customer display formatters', () => {
+  it('formats CPF, CNPJ and CEP for printed documents without changing unknown values', () => {
+    expect(formatDocumentForDisplay('12345678901')).toBe('123.456.789-01');
+    expect(formatDocumentForDisplay('12345678000195')).toBe('12.345.678/0001-95');
+    expect(formatDocumentForDisplay('RG 12.345')).toBe('RG 12.345');
+    expect(formatCepForDisplay('14177612')).toBe('14177-612');
+    expect(formatCepForDisplay('14177-612')).toBe('14177-612');
+    expect(formatCepForDisplay('SEM CEP')).toBe('SEM CEP');
   });
 });

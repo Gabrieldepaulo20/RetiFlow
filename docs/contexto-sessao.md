@@ -4,6 +4,26 @@ Atualizado em: 2026-06-20
 
 ---
 
+## O.S. / PDF - Documento E CEP Com Pontuacao - 2026-06-20
+
+- Pedido: nos dados da nota/O.S., `Documento` deve sair com pontuacao de CPF/CNPJ e `CEP` deve sair com hifen.
+- Alteracao somente de apresentacao:
+  - adicionados helpers `formatDocumentForDisplay` e `formatCepForDisplay` em `src/services/domain/customers.ts`;
+  - CPF com 11 digitos vira `000.000.000-00`, CNPJ com 14 digitos vira `00.000.000/0000-00`;
+  - CEP com 8 digitos vira `00000-000`;
+  - valores nao reconhecidos, como RG/texto livre, sao preservados;
+  - `NotaPDFTemplate` e `OSPreviewModal` usam os helpers nos campos `Documento` e `CEP`.
+- Sem mudanca de banco, RPC, Storage, Auth ou Edge Function.
+- Validacoes executadas:
+  - `npx tsc --noEmit`: passou;
+  - `npm run lint`: passou com 8 avisos antigos de Fast Refresh;
+  - `npm test -- --run src/test/customers-cnpj-lookup.test.ts`: passou;
+  - `npm test -- --run`: passou, 51 arquivos e 380 testes;
+  - `npm run build`: passou com avisos conhecidos de Browserslist/dynamic import/chunk size.
+- `npm run test:integration` nao foi executado porque nao houve mudanca em Supabase/Auth/Storage/Edge Function.
+
+---
+
 ## O.S. / PDF - Branding Retifica Premium E Legibilidade - 2026-06-20
 
 - Pedido critico: nenhuma O.S./nota da Retifica Premium deve sair com nome GAWI; texto `Ordem de Servico` deve manter cedilha; email ausente deve ficar em branco; cabecalho precisava descer um pouco; linhas apenas descritivas precisavam fonte maior.

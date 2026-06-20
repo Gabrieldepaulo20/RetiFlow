@@ -16,6 +16,7 @@ import {
   NOTA_PRINT_OBSERVATIONS,
 } from '@/components/notes/notaPrintLayout';
 import { getNotaItemDetailLines } from '@/components/notes/notaItemDetails';
+import { formatCepForDisplay, formatDocumentForDisplay } from '@/services/domain/customers';
 
 const MAX_ROWS = NOTA_PRINT_MAX_ROWS;
 const LONG_MAX_ROWS = NOTA_PRINT_LONG_MAX_ROWS;
@@ -472,12 +473,12 @@ function Via({
         </View>
 
         <View style={styles.line}>
-          <FieldValue label="Documento" value={cabecalho.cliente.documento} />
+          <FieldValue label="Documento" value={formatDocumentForDisplay(cabecalho.cliente.documento)} />
           <FieldValue label="Endereço" value={cabecalho.cliente.endereco} />
         </View>
 
         <View style={styles.line}>
-          <FieldValue label="CEP" value={cabecalho.cliente.cep} />
+          <FieldValue label="CEP" value={formatCepForDisplay(cabecalho.cliente.cep)} />
           <FieldValue label="Cidade" value={cabecalho.cliente.cidade} />
           <FieldValue label="Placa" value={cabecalho.veiculo.placa || 'Não informada'} />
           <FieldValue label="Veículo" value={cabecalho.veiculo.modelo} />

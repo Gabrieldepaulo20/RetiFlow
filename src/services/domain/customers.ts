@@ -74,6 +74,27 @@ export function formatCpfCnpj(value: string, docType: DocType) {
     .replace(/(\d{4})(\d)/, '$1-$2');
 }
 
+export function formatDocumentForDisplay(value: string | null | undefined) {
+  const raw = normalizeWhitespace(value);
+  if (!raw) return '';
+
+  const digits = stripDigits(raw);
+  if (digits.length === 11) return formatCpfCnpj(digits, 'CPF');
+  if (digits.length === 14) return formatCpfCnpj(digits, 'CNPJ');
+
+  return raw;
+}
+
+export function formatCepForDisplay(value: string | null | undefined) {
+  const raw = normalizeWhitespace(value);
+  if (!raw) return '';
+
+  const digits = stripDigits(raw);
+  if (digits.length === 8) return formatCep(digits);
+
+  return raw;
+}
+
 export function formatPhone(value: string) {
   const digits = stripDigits(value).slice(0, 11);
 
