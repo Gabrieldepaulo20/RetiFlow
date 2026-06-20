@@ -30,6 +30,30 @@ Atualizado em: 2026-06-20
 
 ---
 
+## Notas De Entrada - Contato Obrigatorio Na O.S. - 2026-06-20
+
+- Pedido: o contato do cliente informado na criação da nota de entrada/O.S. deve ser obrigatório e deve ficar gravado na nota; o telefone continua sendo o telefone cadastrado do cliente/empresa.
+- Frontend:
+  - `NoteFormCore` agora exige `Contato que trouxe o serviço` para O.S. de serviço;
+  - o campo `Telefone do contato` foi removido do formulário para não competir com o telefone oficial do cliente;
+  - compartilhamento por WhatsApp voltou a usar somente o telefone do cliente;
+  - previews e PDFs exibem `Contato` separado de `Telefone`.
+- Backend/Supabase:
+  - migration `20260620223410_require_note_contact_on_creation.sql` aplicada no remoto via `supabase db query --linked -f ...` e marcada como aplicada via `supabase migration repair --status applied 20260620223410`;
+  - `nova_nota` e `nova_nota_contexto_suporte` rejeitam O.S. de serviço sem `contato_nome`;
+  - as mesmas RPCs salvam `contato_nome` em `Notas_de_Servico`;
+  - `get_nota_servico_detalhes`, `get_nota_servico_detalhes_contexto_suporte` e `get_notas_servico_contexto_suporte` retornam os campos de contato.
+- Validacao executada:
+  - catalogo remoto confirmou `contato_nome` nas funcoes afetadas e obrigatoriedade nas RPCs de criacao;
+  - `npx tsc --noEmit`: passou;
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh;
+  - `npm test -- --run`: passou, 51 arquivos e 378 testes;
+  - `npm run build`: passou com avisos conhecidos de Browserslist/chunks/import dinamico;
+  - `npm run test:integration -- --run`: passou, 17 arquivos e 55 testes;
+  - `supabase db lint --linked`: sem erro novo; restaram 4 warnings legados de casts em `update_rel_nota_compra`, `novo_cliente`, `update_veiculo` e `update_rel_nota_servico`.
+
+---
+
 ## HANDOFF Atual - 2026-06-16
 
 ### Estado Git Confirmado

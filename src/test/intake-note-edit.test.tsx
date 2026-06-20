@@ -72,6 +72,7 @@ describe('Note edit flow', () => {
       km: 12345,
       complaint: 'Batendo válvula',
       observations: 'Observação antiga',
+      contatoNome: 'João Oficina',
       totalServices: 350,
       totalProducts: 0,
       totalAmount: 350,
@@ -208,6 +209,7 @@ describe('Note edit flow', () => {
           vehicleModel: 'Gol 1.6 Atualizado',
           complaint: 'Plaina Completa',
           totalAmount: 350,
+          contatoNome: 'João Oficina',
         }),
         expect.any(Array),
       );

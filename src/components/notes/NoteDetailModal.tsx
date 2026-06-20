@@ -199,6 +199,8 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
       total_produtos: note.totalProducts,
       criado_por_usuario: null,
       pdf_url: null,
+      contato_nome: note.contatoNome ?? null,
+      contato_telefone: null,
       cliente: { id: client.id, nome: client.name, documento: client.docNumber ?? '', endereco: null, cep: null, cidade: null, telefone: null, email: null },
       veiculo: { id: '', modelo: note.vehicleModel, placa: note.plate ?? null, km: note.km ?? 0, motor: note.engineType ?? '' },
       status: { id: 0, nome: note.status, index: 0, tipo_status: 'ativo' },

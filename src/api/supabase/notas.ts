@@ -52,6 +52,8 @@ export interface NovaNotaPayload {
   fk_clientes?: string;
   fk_notas_servico?: string;
   observacoes?: string;
+  contato_nome?: string | null;
+  contato_telefone?: string | null;
   total_servicos?: number;
   total_produtos?: number;
   total?: number;
@@ -109,6 +111,8 @@ export interface NotaServicoDetalhes {
     total_produtos: number;
     criado_por_usuario: string | null;
     pdf_url: string | null;
+    contato_nome?: string | null;
+    contato_telefone?: string | null;
     fk_template_documento?: string | null;
     documento_tema_snapshot?: Record<string, unknown> | null;
     documento_config_snapshot?: Record<string, unknown> | null;

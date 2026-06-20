@@ -136,6 +136,8 @@ function buildPdfDados(
       total_produtos: note.totalProducts,
       criado_por_usuario: note.createdByUserId || null,
       pdf_url: null,
+      contato_nome: note.contatoNome ?? null,
+      contato_telefone: null,
       cliente: {
         id: client?.id ?? note.clientId,
         nome: client?.name ?? 'Cliente',
@@ -323,6 +325,7 @@ function PreviewVia({
         <div className="flex flex-wrap gap-x-[7px] gap-y-[3px]">
           <PreviewField label="Email" value={cabecalho.cliente.email} />
           <PreviewField label="Telefone" value={cabecalho.cliente.telefone} />
+          <PreviewField label="Contato" value={cabecalho.contato_nome} />
         </div>
       </div>
 

@@ -205,7 +205,6 @@ export default function NoteFormCore({
   const [observations, setObservations] = useState('');
   const [responsavel, setResponsavel] = useState('');
   const [contatoNome, setContatoNome] = useState('');
-  const [contatoTelefone, setContatoTelefone] = useState('');
   const [items, setItems] = useState<ServiceItem[]>([newItem()]);
   const [clientSearch, setClientSearch] = useState('');
   const [clientResultsOpen, setClientResultsOpen] = useState(false);
@@ -234,7 +233,6 @@ export default function NoteFormCore({
     setObservations(editingNote.observations);
     setResponsavel(editingNote.responsavel || '');
     setContatoNome(editingNote.contatoNome || '');
-    setContatoTelefone(editingNote.contatoTelefone || '');
 
     // Seed items from local state as immediate fallback (real mode overwrites below)
     const localItems =
@@ -522,6 +520,15 @@ export default function NoteFormCore({
       toast({ title: 'Prazo inválido', description: 'O prazo não pode ser anterior à data de entrada.', variant: 'destructive' });
       return;
     }
+    const normalizedContatoNome = toTitleCasePtBr(contatoNome);
+    if (noteType === 'SERVICO' && !normalizedContatoNome) {
+      toast({
+        title: 'Informe o contato da O.S.',
+        description: 'Digite quem está levando o serviço na retífica.',
+        variant: 'destructive',
+      });
+      return;
+    }
     const normalizedPlate = normalizePlate(plate);
     if (normalizedPlate && !isValidBrazilianPlate(normalizedPlate)) {
       toast({ title: 'Placa inválida', description: 'Use o formato ABC-1234 ou ABC1D23 (Mercosul)', variant: 'destructive' });
@@ -590,8 +597,7 @@ export default function NoteFormCore({
       complaint: generatedComplaint || complaint.trim() || 'Serviços conforme descrição dos itens',
       observations: normalizeWhitespace(observations),
       responsavel: toTitleCasePtBr(responsavel) || undefined,
-      contatoNome: toTitleCasePtBr(contatoNome) || undefined,
-      contatoTelefone: contatoTelefone.trim() || undefined,
+      contatoNome: noteType === 'SERVICO' ? normalizedContatoNome : undefined,
       createdByUserId: editingNote?.createdByUserId || user!.id,
       totalServices: noteType === 'SERVICO' ? totalAmount : 0,
       totalProducts: noteType === 'COMPRA' ? totalAmount : 0,
@@ -959,24 +965,19 @@ export default function NoteFormCore({
           </div>
         </div>
       )}
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field label="Contato (nome)">
-          <Input
-            value={contatoNome}
-            onChange={(e) => setContatoNome(e.target.value)}
-            onBlur={() => setContatoNome(toTitleCasePtBr(contatoNome))}
-            placeholder="Funcionário / responsável que trouxe a peça"
-          />
-        </Field>
-        <Field label="Telefone do contato">
-          <Input
-            value={contatoTelefone}
-            onChange={(e) => setContatoTelefone(e.target.value)}
-            placeholder="(00) 00000-0000"
-            inputMode="tel"
-          />
-        </Field>
-      </div>
+      {noteType === 'SERVICO' && (
+        <div className="mt-4 grid grid-cols-1 gap-3">
+          <Field label="Contato que trouxe o serviço *">
+            <Input
+              value={contatoNome}
+              onChange={(e) => setContatoNome(e.target.value)}
+              onBlur={() => setContatoNome(toTitleCasePtBr(contatoNome))}
+              placeholder="Funcionário / responsável que trouxe a peça"
+              required
+            />
+          </Field>
+        </div>
+      )}
     </FormSection>
   );
 

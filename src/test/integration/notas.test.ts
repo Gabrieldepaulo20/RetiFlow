@@ -74,11 +74,34 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
     const clientId = createdClient.id_cliente as string;
     createdClientIds.add(clientId);
 
+    const missingContact = await callRpc(client, 'nova_nota', {
+      p_payload: {
+        tipo_nota: 'Serviço',
+        numero_nota: `${TEST_PREFIX} SEM-CONTATO-${suffix}`,
+        fk_clientes: clientId,
+        defeito: 'Tentativa sem contato',
+        total_servicos: 0,
+        total_produtos: 0,
+        total: 0,
+        veiculo: {
+          modelo: 'Motor de teste',
+          placa: null,
+          km: 0,
+          motor: 'Gasolina',
+        },
+        itens: [],
+      },
+    });
+    expect(missingContact.status).toBe(400);
+    expect(missingContact.code).toBe('invalid_payload');
+    expect(missingContact.mensagem).toContain('Contato é obrigatório');
+
     const createdNote = await callRpc(client, 'nova_nota', {
       p_payload: {
         tipo_nota: 'Serviço',
         numero_nota: `${TEST_PREFIX} OS-${suffix}`,
         fk_clientes: clientId,
+        contato_nome: `${TEST_PREFIX} Contato Sem Placa`,
         defeito: 'Serviço com observação descritiva',
         total_servicos: 0,
         total_produtos: 0,
@@ -139,6 +162,7 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
       p_id_nota_servico: noteId,
     });
     expect(details.status).toBe(200);
+    expect((details.cabecalho as { contato_nome: string | null }).contato_nome).toBe(`${TEST_PREFIX} Contato Sem Placa`);
     expect((details.cabecalho as { veiculo: { placa: string | null; id: string } }).veiculo.placa).toBeNull();
     createdVehicleIds.add((details.cabecalho as { veiculo: { id: string } }).veiculo.id);
     expect(details.itens_servico).toContainEqual(expect.objectContaining({
@@ -206,6 +230,7 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
         tipo_nota: 'Serviço',
         numero_nota: `${TEST_PREFIX} FECH-${suffix}`,
         fk_clientes: clientId,
+        contato_nome: `${TEST_PREFIX} Contato Fechamento`,
         defeito: 'Teste de fechamento',
         total_servicos: 120,
         total_produtos: 0,
@@ -339,6 +364,7 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
         tipo_nota: 'Serviço',
         numero_nota: `OS-${suffix}`,
         fk_clientes: clientId,
+        contato_nome: `${TEST_PREFIX} Contato Duplicidade`,
         defeito: 'Teste de duplicidade de O.S.',
         total_servicos: 0,
         total_produtos: 0,
@@ -375,6 +401,7 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
         tipo_nota: 'Serviço',
         numero_nota: `OS-${suffix}`,
         fk_clientes: clientId,
+        contato_nome: `${TEST_PREFIX} Contato Duplicidade`,
         defeito: 'Tentativa duplicada',
         total_servicos: 0,
         total_produtos: 0,
@@ -418,6 +445,7 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
         tipo_nota: 'Serviço',
         numero_nota: `000${osNumber}`,
         fk_clientes: clientId,
+        contato_nome: `${TEST_PREFIX} Contato Equivalente`,
         defeito: 'Teste de O.S. numericamente equivalente',
         total_servicos: 0,
         total_produtos: 0,
@@ -447,6 +475,7 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
         tipo_nota: 'Serviço',
         numero_nota: `OS-${osNumber}`,
         fk_clientes: clientId,
+        contato_nome: `${TEST_PREFIX} Contato Equivalente`,
         defeito: 'Tentativa numericamente equivalente',
         total_servicos: 0,
         total_produtos: 0,

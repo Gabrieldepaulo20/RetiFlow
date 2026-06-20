@@ -675,6 +675,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         fk_clientes: note.type === 'SERVICO' ? note.clientId : undefined,
         fk_notas_servico: note.type === 'COMPRA' ? note.parentNoteId : undefined,
         observacoes: note.observations || undefined,
+        contato_nome: note.contatoNome,
         total_servicos: note.totalServices,
         total_produtos: note.totalProducts,
         total: note.totalAmount,
@@ -733,6 +734,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (data.totalServices !== undefined) payload.total_servicos  = data.totalServices;
       if (data.totalProducts !== undefined) payload.total_produtos  = data.totalProducts;
       if (data.totalAmount  !== undefined) payload.total            = data.totalAmount;
+      if (data.contatoNome  !== undefined) payload.contato_nome     = data.contatoNome;
       if (data.vehicleModel !== undefined || data.plate !== undefined || data.km !== undefined || data.engineType !== undefined) {
         payload.veiculo = {
           modelo: data.vehicleModel,

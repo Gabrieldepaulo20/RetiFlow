@@ -109,7 +109,7 @@ export default function IntakeNoteDetail() {
       `Segue atualização da O.S. ${note.number}.`,
       note.pdfUrl ? 'O PDF da O.S. está disponível no sistema.' : null,
     ].filter(Boolean).join('\n');
-    const url = buildWhatsAppUrl(note.contatoTelefone || client?.phone, message);
+    const url = buildWhatsAppUrl(client?.phone, message);
 
     if (!url) {
       toast({

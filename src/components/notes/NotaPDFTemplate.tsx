@@ -469,6 +469,7 @@ function Via({
         <View style={styles.line}>
           <FieldValue label="Email" value={cabecalho.cliente.email} />
           <FieldValue label="Telefone" value={cabecalho.cliente.telefone} />
+          <FieldValue label="Contato" value={cabecalho.contato_nome} />
         </View>
       </View>
 
