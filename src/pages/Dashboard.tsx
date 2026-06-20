@@ -8,7 +8,7 @@ import { STATUS_LABELS, NoteStatus, FINAL_STATUSES } from '@/types';
 import {
   FileText, TrendingUp,
   CheckCircle2,
-  Info, Landmark, PiggyBank,
+  Info, Landmark, PiggyBank, Calculator,
   CalendarDays, Filter,
   Receipt,
 } from 'lucide-react';
@@ -17,33 +17,25 @@ import {
   CartesianGrid, Cell,
   AreaChart, Area,
 } from 'recharts';
-import { format, subMonths, startOfMonth, endOfMonth, differenceInDays, subDays, startOfDay, endOfDay, eachDayOfInterval } from 'date-fns';
+import { format, subMonths, startOfMonth, endOfMonth, differenceInDays, startOfDay, endOfDay, eachDayOfInterval } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DASHBOARD_ACCOUNTING_START_LABEL,
-  DASHBOARD_REVENUE_STATUSES,
   clampDashboardAccountingRange,
   getDashboardRevenueDate,
   getFinalizedRevenueNotesInRange,
   getPaidPayablesInRange,
   getPayablePaidAmount,
-  isDashboardAccountingDate,
+  isDashboardRevenueEligibleNote,
 } from '@/services/domain/dashboardFinance';
 import { SectionEmptyState, SectionErrorState } from '@/components/ui/section-state';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const REVENUE_RECOGNIZED_STATUSES = DASHBOARD_REVENUE_STATUSES;
-
-type DashboardRangePreset = '30d' | '90d' | 'month' | `year-${number}` | 'custom';
-
-const RANGE_OPTIONS: Array<{ value: DashboardRangePreset; label: string }> = [
-  { value: '30d', label: '30 dias' },
-  { value: '90d', label: '90 dias' },
-  { value: 'month', label: 'Este mês' },
-];
+type DashboardRangePreset = 'month' | `year-${number}` | 'custom';
 
 const BAR_COLORS: Partial<Record<NoteStatus, string>> = {
   ABERTO: 'hsl(var(--info))',
@@ -109,46 +101,27 @@ const financialMetricIconClass = 'hidden h-7 w-7 shrink-0 items-center justify-c
 export default function Dashboard() {
   const { notes, payables } = useData();
   const navigate = useNavigate();
-  const [rangePreset, setRangePreset] = useState<DashboardRangePreset>('30d');
-  const [customStartDate, setCustomStartDate] = useState(() => format(subDays(new Date(), 29), 'yyyy-MM-dd'));
+  const [rangePreset, setRangePreset] = useState<DashboardRangePreset>('month');
+  const [customStartDate, setCustomStartDate] = useState(() => format(startOfMonth(new Date()), 'yyyy-MM-dd'));
   const [customEndDate, setCustomEndDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
 
   const now = useMemo(() => new Date(), []);
   const availableFinancialYears = useMemo(() => {
-    const years = new Set<number>();
+    const years = new Set<number>([now.getFullYear()]);
     notes.forEach((note) => {
       const createdYear = new Date(note.createdAt).getFullYear();
       if (Number.isFinite(createdYear)) years.add(createdYear);
-      if (REVENUE_RECOGNIZED_STATUSES.has(note.status)) {
+      if (isDashboardRevenueEligibleNote(note)) {
         const revenueYear = new Date(getDashboardRevenueDate(note)).getFullYear();
         if (Number.isFinite(revenueYear)) years.add(revenueYear);
       }
     });
     return Array.from(years).sort((a, b) => b - a);
-  }, [notes]);
-
-  const periodRangeOptions = useMemo(
-    () => [
-      ...RANGE_OPTIONS,
-      ...availableFinancialYears.map((year) => ({
-        value: `year-${year}` as DashboardRangePreset,
-        label: String(year),
-      })),
-      { value: 'custom' as DashboardRangePreset, label: 'Personalizado' },
-    ],
-    [availableFinancialYears],
-  );
+  }, [notes, now]);
+  const selectedYearFilterValue = rangePreset.startsWith('year-') ? rangePreset : 'none';
 
   const selectedPeriod = useMemo(() => {
     const todayEnd = endOfDay(now);
-
-    if (rangePreset === '90d') {
-      return {
-        start: startOfDay(subDays(now, 89)),
-        end: todayEnd,
-        label: 'últimos 90 dias',
-      };
-    }
 
     if (rangePreset === 'month') {
       return {
@@ -170,7 +143,7 @@ export default function Dashboard() {
     }
 
     if (rangePreset === 'custom') {
-      const fallbackStart = startOfDay(subDays(now, 29));
+      const fallbackStart = startOfMonth(now);
       const fallbackEnd = todayEnd;
       const parsedStart = startOfDay(parseDateInput(customStartDate, fallbackStart));
       const parsedEnd = endOfDay(parseDateInput(customEndDate, fallbackEnd));
@@ -184,9 +157,9 @@ export default function Dashboard() {
     }
 
     return {
-      start: startOfDay(subDays(now, 29)),
+      start: startOfMonth(now),
       end: todayEnd,
-      label: 'últimos 30 dias',
+      label: format(now, "MMMM 'de' yyyy", { locale: ptBR }),
     };
   }, [customEndDate, customStartDate, now, rangePreset]);
 
@@ -204,7 +177,12 @@ export default function Dashboard() {
     () => new Date(selectedAccountingRange.startTime),
     [selectedAccountingRange.startTime],
   );
-  const isInSelectedPeriod = useCallback((value?: string | null) => {
+  const isInSelectedCalendarPeriod = useCallback((value?: string | null) => {
+    if (!value) return false;
+    const time = new Date(value).getTime();
+    return Number.isFinite(time) && time >= selectedRange.startTime && time <= selectedRange.endTime;
+  }, [selectedRange.endTime, selectedRange.startTime]);
+  const isInSelectedAccountingPeriod = useCallback((value?: string | null) => {
     if (!value) return false;
     const time = new Date(value).getTime();
     return Number.isFinite(time) && time >= selectedAccountingRange.startTime && time <= selectedAccountingRange.endTime;
@@ -212,10 +190,7 @@ export default function Dashboard() {
 
   // ── Core metrics ────────────────────────────────────────────────────────
   const revenueRecognizedNotes = useMemo(
-    () => notes.filter(n => (
-      REVENUE_RECOGNIZED_STATUSES.has(n.status)
-      && isDashboardAccountingDate(getDashboardRevenueDate(n))
-    )),
+    () => notes.filter(isDashboardRevenueEligibleNote),
     [notes],
   );
 
@@ -271,14 +246,16 @@ export default function Dashboard() {
   );
 
   const periodNotes = useMemo(
-    () => notes.filter((note) => note.status !== 'EXCLUIDA' && isInSelectedPeriod(note.createdAt)),
-    [isInSelectedPeriod, notes],
+    () => notes.filter((note) => note.status !== 'EXCLUIDA' && isInSelectedCalendarPeriod(note.createdAt)),
+    [isInSelectedCalendarPeriod, notes],
   );
 
   const periodPotentialAmount = useMemo(
     () => periodNotes.reduce((sum, note) => sum + note.totalAmount, 0),
     [periodNotes],
   );
+
+  const periodAverageTicket = periodNotes.length > 0 ? periodPotentialAmount / periodNotes.length : 0;
 
   const periodDeliveredNotes = useMemo(
     () => getFinalizedRevenueNotesInRange(revenueRecognizedNotes, selectedAccountingRange),
@@ -293,9 +270,9 @@ export default function Dashboard() {
   const periodPayables = useMemo(
     () => activePayables.filter((payable) => (
       payable.status !== 'CANCELADO'
-      && isInSelectedPeriod(payable.competencyDate ?? payable.dueDate ?? payable.createdAt)
+      && isInSelectedAccountingPeriod(payable.competencyDate ?? payable.dueDate ?? payable.createdAt)
     )),
-    [activePayables, isInSelectedPeriod],
+    [activePayables, isInSelectedAccountingPeriod],
   );
 
   const periodPayablesTotal = useMemo(
@@ -383,6 +360,22 @@ export default function Dashboard() {
     [revenueRecognizedNotes, startYear, endYear],
   );
 
+  const yearlyCreatedNotes = useMemo(
+    () => notes.filter((note) => {
+      if (note.status === 'EXCLUIDA') return false;
+      const createdTime = new Date(note.createdAt).getTime();
+      return Number.isFinite(createdTime) && createdTime >= startYear && createdTime <= endYear;
+    }),
+    [notes, startYear, endYear],
+  );
+
+  const yearlyPotentialRevenue = useMemo(
+    () => yearlyCreatedNotes.reduce((sum, note) => sum + note.totalAmount, 0),
+    [yearlyCreatedNotes],
+  );
+
+  const yearlyAverageTicket = yearlyCreatedNotes.length > 0 ? yearlyPotentialRevenue / yearlyCreatedNotes.length : 0;
+
   const yearlyExpenses = useMemo(
     () => getPaidPayablesInRange(activePayables, clampDashboardAccountingRange({ startTime: startYear, endTime: endYear }))
       .reduce((s, p) => s + getPayablePaidAmount(p), 0),
@@ -432,22 +425,58 @@ export default function Dashboard() {
             </div>
 
             <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
-              <div className="flex flex-wrap gap-1.5 rounded-xl border border-border/70 bg-background p-1">
-                {periodRangeOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setRangePreset(option.value)}
+              <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-border/70 bg-background p-1">
+                <button
+                  type="button"
+                  onClick={() => setRangePreset('month')}
+                  className={cn(
+                    'h-8 rounded-lg px-3 text-xs font-medium transition',
+                    rangePreset === 'month'
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                  )}
+                >
+                  Este mês
+                </button>
+
+                <Select
+                  value={selectedYearFilterValue}
+                  onValueChange={(value) => {
+                    if (value !== 'none') setRangePreset(value as DashboardRangePreset);
+                  }}
+                >
+                  <SelectTrigger
                     className={cn(
-                      'h-8 rounded-lg px-3 text-xs font-medium transition',
-                      rangePreset === option.value
-                        ? 'bg-primary text-primary-foreground shadow-sm'
-                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                      'h-8 w-[86px] rounded-lg border-0 px-3 text-xs font-medium shadow-none focus:ring-0',
+                      rangePreset.startsWith('year-')
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground',
                     )}
                   >
-                    {option.label}
-                  </button>
-                ))}
+                    <SelectValue placeholder="Ano" />
+                  </SelectTrigger>
+                  <SelectContent align="end">
+                    <SelectItem value="none" disabled>Ano</SelectItem>
+                    {availableFinancialYears.map((year) => (
+                      <SelectItem key={year} value={`year-${year}`}>
+                        {year}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <button
+                  type="button"
+                  onClick={() => setRangePreset('custom')}
+                  className={cn(
+                    'h-8 rounded-lg px-3 text-xs font-medium transition',
+                    rangePreset === 'custom'
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                  )}
+                >
+                  Personalizado
+                </button>
               </div>
 
               {rangePreset === 'custom' ? (
@@ -475,7 +504,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-1.5 p-2 sm:gap-2 sm:p-3 xl:grid-cols-3 xl:gap-3 xl:p-4 2xl:grid-cols-6">
+          <div className="grid grid-cols-3 gap-1.5 p-2 sm:gap-2 sm:p-3 xl:grid-cols-3 xl:gap-3 xl:p-4 2xl:grid-cols-7">
             <button
               type="button"
               onClick={() => navigate('/notas-entrada')}
@@ -507,7 +536,7 @@ export default function Dashboard() {
                 <div className="min-w-0">
                   <p className={financialMetricLabelClass}>
                     Faturamento real
-                    <InlineInfo label={`Entrada de fato: soma das O.S. que entraram na regra contábil do Dashboard, com data a partir de ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
+                    <InlineInfo label={`Entrada de fato: soma das O.S. faturáveis. A competência prioriza o prazo da O.S.; se não houver prazo, usa a finalização. O.S. de legado com prazo/criação antes de ${DASHBOARD_ACCOUNTING_START_LABEL} ficam fora.`} />
                   </p>
                   <p className={cn(financialMetricValueClass, 'text-emerald-700')}>R$ {fmtBRL(periodDeliveredAmount)}</p>
                 </div>
@@ -516,7 +545,29 @@ export default function Dashboard() {
                 </div>
               </div>
               <p className="mt-3 hidden text-xs text-muted-foreground sm:block">
-                {periodDeliveredNotes.length} O.S. finalizada{periodDeliveredNotes.length !== 1 ? 's' : ''} · desde {DASHBOARD_ACCOUNTING_START_LABEL}: R$ {fmtBRL(totalRevenue)}
+                {periodDeliveredNotes.length} O.S. faturável{periodDeliveredNotes.length !== 1 ? 'eis' : ''} · desde {DASHBOARD_ACCOUNTING_START_LABEL}: R$ {fmtBRL(totalRevenue)}
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigate('/notas-entrada')}
+              className={cn(financialMetricButtonClass, 'hover:border-violet-200 hover:bg-violet-50/50')}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className={financialMetricLabelClass}>
+                    Ticket médio
+                    <InlineInfo label="Média das O.S. lançadas no período selecionado, considerando todas as notas do sistema exceto excluídas." />
+                  </p>
+                  <p className={cn(financialMetricValueClass, 'text-violet-700')}>R$ {fmtBRL(periodAverageTicket)}</p>
+                </div>
+                <div className={cn(financialMetricIconClass, 'bg-violet-50 text-violet-700')}>
+                  <Calculator className="h-4 w-4" />
+                </div>
+              </div>
+              <p className="mt-3 hidden text-xs text-muted-foreground sm:block">
+                Base: {periodNotes.length} O.S. lançada{periodNotes.length !== 1 ? 's' : ''}
               </p>
             </button>
 
@@ -766,7 +817,12 @@ export default function Dashboard() {
             </div>
             <div className="flex flex-wrap gap-6 text-sm">
               <div className="text-center">
-                <p className="text-xs text-muted-foreground">Entradas no ano</p>
+                <p className="text-xs text-muted-foreground">O.S. criadas no ano</p>
+                <p className="mt-1 font-semibold text-sky-700">R$ {fmtBRL(yearlyPotentialRevenue)}</p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">{yearlyCreatedNotes.length} O.S.</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-muted-foreground">Faturamento real</p>
                 <p className="mt-1 font-semibold text-success">R$ {fmtBRL(yearlyRevenue)}</p>
               </div>
               <div className="text-center">
@@ -774,8 +830,8 @@ export default function Dashboard() {
                 <p className="mt-1 font-semibold text-destructive">R$ {fmtBRL(yearlyExpenses)}</p>
               </div>
               <div className="text-center">
-                <p className="text-xs text-muted-foreground">Margem estimada</p>
-                <p className="mt-1 font-semibold">{yearlyRevenue > 0 ? `${((yearlyResult / yearlyRevenue) * 100).toFixed(1)}%` : '—'}</p>
+                <p className="text-xs text-muted-foreground">Ticket médio</p>
+                <p className="mt-1 font-semibold">R$ {fmtBRL(yearlyAverageTicket)}</p>
               </div>
             </div>
           </div>

@@ -75,7 +75,7 @@ describe('dashboardFinance', () => {
 
   it('usa a data de finalização para reconhecer entradas de O.S. a partir da base contábil', () => {
     const notes = [
-      note({ id: 'finalized-in-month', totalAmount: 100, finalizedAt: '2026-06-10T12:00:00.000Z' }),
+      note({ id: 'finalized-in-month', totalAmount: 100, createdAt: '2026-06-02T12:00:00.000Z', finalizedAt: '2026-06-10T12:00:00.000Z' }),
       note({ id: 'created-in-month-but-finalized-later', totalAmount: 200, createdAt: '2026-06-10T12:00:00.000Z', finalizedAt: '2026-07-01T12:00:00.000Z' }),
       note({ id: 'not-finalized', status: 'EM_EXECUCAO', totalAmount: 300, finalizedAt: undefined, updatedAt: '2026-06-10T12:00:00.000Z' }),
     ];
@@ -84,6 +84,37 @@ describe('dashboardFinance', () => {
 
     expect(result.map((item) => item.id)).toEqual(['finalized-in-month']);
     expect(result.reduce((sum, item) => sum + item.totalAmount, 0)).toBe(100);
+  });
+
+  it('usa o prazo para posicionar O.S. legada no mês correto e evita falso positivo de legado antigo', () => {
+    const notes = [
+      note({
+        id: 'legacy-created-may-deadline-june',
+        totalAmount: 150,
+        createdAt: '2026-05-25T12:00:00.000Z',
+        deadline: '2026-06-05',
+        finalizedAt: '2026-06-20T12:00:00.000Z',
+      }),
+      note({
+        id: 'legacy-created-may-deadline-may-finalized-june',
+        totalAmount: 250,
+        createdAt: '2026-05-10T12:00:00.000Z',
+        deadline: '2026-05-28',
+        finalizedAt: '2026-06-12T12:00:00.000Z',
+      }),
+      note({
+        id: 'legacy-created-may-without-deadline-finalized-june',
+        totalAmount: 350,
+        createdAt: '2026-05-10T12:00:00.000Z',
+        finalizedAt: '2026-06-12T12:00:00.000Z',
+      }),
+    ];
+
+    const result = getFinalizedRevenueNotesInRange(notes, june2026);
+
+    expect(result.map((item) => item.id)).toEqual(['legacy-created-may-deadline-june']);
+    expect(result.reduce((sum, item) => sum + item.totalAmount, 0)).toBe(150);
+    expect(getDashboardRevenueDate(result[0])).toBe('2026-06-05');
   });
 
   it('usa somente contas pagas com paidAt dentro do período para calcular saída', () => {

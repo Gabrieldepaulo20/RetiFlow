@@ -1,6 +1,32 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-06-17
+Atualizado em: 2026-06-20
+
+---
+
+## Dashboard - Corte Real De Faturamento E Ticket Medio - 2026-06-20
+
+- Pedido: corrigir falso positivo em `Faturamento real`, porque O.S. legadas criadas/prazo antes de 01/06/2026 estavam sendo finalizadas agora e inflando o mês atual.
+- Regra aplicada em `src/services/domain/dashboardFinance.ts`:
+  - faturamento real continua exigindo status faturável (`ENTREGUE`, `RECUSADO`, `SEM_CONSERTO`);
+  - data de competência do Dashboard agora prioriza `deadline`/prazo da O.S.; sem prazo, usa `finalizedAt`, depois `updatedAt`, depois `createdAt`;
+  - a O.S. só é elegível para faturamento se `deadline >= 01/06/2026`; se não houver prazo, exige `createdAt >= 01/06/2026`;
+  - caso esperado: O.S. criada em maio com prazo em junho entra no mês 06; O.S. criada/prazo em maio e finalizada agora fica fora.
+- `src/pages/Dashboard.tsx`:
+  - filtro do resultado financeiro removeu `30 dias` e `90 dias`;
+  - controles ficaram: `Este mês`, dropdown de ano e `Personalizado`;
+  - default do Dashboard passou a ser `Este mês`;
+  - `Entradas previstas` e `Ticket médio` usam o período normal de criação da O.S. e excluem apenas `EXCLUIDA`;
+  - faturamento, contas pagas e lucro continuam usando a base contábil a partir de 01/06/2026;
+  - adicionado card `Ticket médio`;
+  - card anual agora mostra também O.S. criadas no ano e ticket médio anual.
+- Teste novo em `src/test/dashboard-finance.test.ts` cobre legado criado em maio com prazo em junho versus legado antigo com prazo em maio.
+- Sem mudança de banco, RPC, Storage, Auth ou Edge Function.
+- Validação executada:
+  - `npx tsc --noEmit`: passou;
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh;
+  - `npm test -- --run`: passou, 51 arquivos e 378 testes;
+  - `npm run build`: passou com avisos conhecidos de Browserslist/chunks/import dinamico.
 
 ---
 

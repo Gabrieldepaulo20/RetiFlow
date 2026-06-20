@@ -12,8 +12,8 @@ export type DashboardDateRange = {
   endTime: number;
 };
 
-export function getDashboardRevenueDate(note: Pick<IntakeNote, 'finalizedAt' | 'updatedAt' | 'createdAt'>): string {
-  return note.finalizedAt ?? note.updatedAt ?? note.createdAt;
+export function getDashboardRevenueDate(note: Pick<IntakeNote, 'deadline' | 'finalizedAt' | 'updatedAt' | 'createdAt'>): string {
+  return note.deadline ?? note.finalizedAt ?? note.updatedAt ?? note.createdAt;
 }
 
 function isDateInsideRange(value: string | null | undefined, range: DashboardDateRange): boolean {
@@ -35,13 +35,21 @@ export function clampDashboardAccountingRange(range: DashboardDateRange): Dashbo
   };
 }
 
-export function getFinalizedRevenueNotesInRange<T extends Pick<IntakeNote, 'status' | 'finalizedAt' | 'updatedAt' | 'createdAt'>>(
+export function isDashboardRevenueEligibleNote<T extends Pick<IntakeNote, 'status' | 'deadline' | 'finalizedAt' | 'updatedAt' | 'createdAt'>>(
+  note: T,
+): boolean {
+  const operationalDate = note.deadline ?? note.createdAt;
+  return DASHBOARD_REVENUE_STATUSES.has(note.status)
+    && isDashboardAccountingDate(operationalDate)
+    && isDashboardAccountingDate(getDashboardRevenueDate(note));
+}
+
+export function getFinalizedRevenueNotesInRange<T extends Pick<IntakeNote, 'status' | 'deadline' | 'finalizedAt' | 'updatedAt' | 'createdAt'>>(
   notes: T[],
   range: DashboardDateRange,
 ): T[] {
   return notes.filter((note) => (
-    DASHBOARD_REVENUE_STATUSES.has(note.status)
-    && isDashboardAccountingDate(getDashboardRevenueDate(note))
+    isDashboardRevenueEligibleNote(note)
     && isDateInsideRange(getDashboardRevenueDate(note), range)
   ));
 }
