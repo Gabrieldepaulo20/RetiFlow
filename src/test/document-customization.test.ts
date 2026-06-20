@@ -5,9 +5,11 @@ import {
   extractTemplateVariables,
   getDefaultDocumentTemplateConfig,
   getInvalidTemplateVariables,
+  normalizeDocumentCompanyName,
   isHexColor,
   normalizeDocumentTemplateConfig,
   normalizeHexColor,
+  normalizeServiceOrderText,
   renderTemplateText,
   sanitizeDocumentText,
   validateDocumentTemplateConfig,
@@ -72,6 +74,14 @@ describe('document customization domain helpers', () => {
     expect(fallback.fkUsuarios).toBe('user-1');
     expect(fallback.documentType).toBe('closing_report');
     expect(fallback.template).toBeNull();
+    expect(fallback.company.nomeFantasia).toBe('Retífica Premium');
     expect(fallback.resolvedConfig.title).toBe('Fechamento');
+  });
+
+  it('normalizes service document branding text', () => {
+    expect(normalizeDocumentCompanyName('GAWI')).toBe('Retífica Premium');
+    expect(normalizeDocumentCompanyName('Retifica Premium')).toBe('Retífica Premium');
+    expect(normalizeServiceOrderText('ordem de servico')).toBe('ordem de serviço');
+    expect(normalizeServiceOrderText('ORDEM DE SERVICO')).toBe('ORDEM DE SERVIÇO');
   });
 });

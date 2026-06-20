@@ -23,7 +23,12 @@ import { generateNotaPdfBlob } from '@/lib/notaPdf';
 import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 import type { OsTemplateMode } from '@/api/supabase/modelos';
 import type { ResolvedDocumentCustomization, TemplateVariableKey } from '@/services/domain/documentCustomization';
-import { getDocumentAccentColor, renderTemplateText } from '@/services/domain/documentCustomization';
+import {
+  getDocumentAccentColor,
+  normalizeDocumentCompanyName,
+  normalizeServiceOrderText,
+  renderTemplateText,
+} from '@/services/domain/documentCustomization';
 import { getNotaItemDetailLines } from '@/components/notes/notaItemDetails';
 
 const MAX_ROWS = NOTA_PRINT_MAX_ROWS;
@@ -201,9 +206,9 @@ function PreviewVia({
   const config = documentSettings?.resolvedConfig;
   const company = documentSettings?.company;
   const effectiveAccent = getDocumentAccentColor(documentSettings, accentColor);
-  const companyName = company?.nomeFantasia?.trim() || 'PREMIUM';
-  const subtitle = config?.subtitle?.trim() || 'RETÍFICA DE CABEÇOTE';
-  const documentTitle = config?.title?.trim() || 'Ordem de Serviço';
+  const companyName = normalizeDocumentCompanyName(company?.nomeFantasia);
+  const subtitle = normalizeServiceOrderText(config?.subtitle, 'RETÍFICA DE CABEÇOTE');
+  const documentTitle = normalizeServiceOrderText(config?.title, 'Ordem de Serviço');
   const companyAddress = [company?.endereco, company?.cidade && company?.estado ? `${company.cidade}/${company.estado}` : company?.cidade]
     .filter(Boolean)
     .join(' · ');
@@ -246,7 +251,7 @@ function PreviewVia({
         fullPage ? 'min-h-[126px]' : 'min-h-[92px]',
       )}>
         <div className="flex w-[48%] flex-col items-center justify-center p-2 text-center">
-          <h2 className={cn('m-0 font-bold leading-tight', fullPage ? 'text-[30px]' : 'text-[21px]')} style={{ color: effectiveAccent }}>
+          <h2 className={cn('m-0 mt-[5px] font-bold leading-tight', fullPage ? 'text-[30px]' : 'text-[21px]')} style={{ color: effectiveAccent }}>
             {companyName}
           </h2>
           <p className={cn('m-0 text-neutral-700', fullPage ? 'text-[18px]' : 'text-[14px]')}>
@@ -323,7 +328,7 @@ function PreviewVia({
           <PreviewField label="Veículo" value={cabecalho.veiculo.modelo} />
         </div>
         <div className="flex flex-wrap gap-x-[7px] gap-y-[3px]">
-          <PreviewField label="Email" value={cabecalho.cliente.email} />
+          <PreviewField label="Email" value={cabecalho.cliente.email} fallback="" />
           <PreviewField label="Telefone" value={cabecalho.cliente.telefone} />
           <PreviewField label="Contato" value={cabecalho.contato_nome} />
         </div>
@@ -354,11 +359,16 @@ function PreviewVia({
                 <tr key={item.id_rel}>
                   <td className="h-[21px] border border-[#dddddd] px-1 py-[3px] text-center">{informational ? '' : item.quantidade}</td>
                   <td className="h-[21px] border border-[#dddddd] px-1 py-[3px] align-top">
-                    <div>{item.descricao}</div>
+                    <div className={cn(informational && 'text-[14px] font-semibold leading-snug')}>
+                      {item.descricao}
+                    </div>
                     {detailLines.map((line, index) => (
                       <div
                         key={`${item.id_rel}-detail-${index}`}
-                        className="ml-3 mt-1 border-l border-[#d2d8de] pl-2 text-[11px] leading-snug text-neutral-600"
+                        className={cn(
+                          'ml-3 mt-1 border-l border-[#d2d8de] pl-2 leading-snug text-neutral-600',
+                          informational ? 'text-[12px]' : 'text-[11px]',
+                        )}
                       >
                         {line}
                       </div>

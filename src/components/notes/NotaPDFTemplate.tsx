@@ -3,7 +3,12 @@ import type { Style } from '@react-pdf/types';
 import type { NotaServicoDetalhes, NotaServicoDetalhesItem } from '@/api/supabase/notas';
 import type { OsTemplateMode } from '@/api/supabase/modelos';
 import type { ResolvedDocumentCustomization, TemplateVariableKey } from '@/services/domain/documentCustomization';
-import { getDocumentAccentColor, renderTemplateText } from '@/services/domain/documentCustomization';
+import {
+  getDocumentAccentColor,
+  normalizeDocumentCompanyName,
+  normalizeServiceOrderText,
+  renderTemplateText,
+} from '@/services/domain/documentCustomization';
 import {
   formatNotaClientPrintName,
   NOTA_PRINT_LONG_MAX_ROWS,
@@ -75,6 +80,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 14.5,
+    marginTop: 5,
     marginBottom: 2,
     fontWeight: 700,
   },
@@ -214,6 +220,11 @@ const styles = StyleSheet.create({
     fontSize: 8.3,
     lineHeight: 1.25,
   },
+  informationalDescription: {
+    fontSize: 9.2,
+    lineHeight: 1.3,
+    fontWeight: 600,
+  },
   detailLine: {
     marginTop: 2,
     marginLeft: 9,
@@ -224,6 +235,10 @@ const styles = StyleSheet.create({
     color: '#555555',
     fontSize: 7.4,
     lineHeight: 1.25,
+  },
+  informationalDetailLine: {
+    fontSize: 8.3,
+    lineHeight: 1.3,
   },
   emptyRow: {
     color: '#ffffff',
@@ -345,14 +360,16 @@ const chunkItems = <T,>(items: T[], size: number) => {
 function FieldValue({
   label,
   value,
+  fallback = '—',
 }: {
   label: string;
   value: string | null | undefined;
+  fallback?: string;
 }) {
   return (
     <Text style={styles.fieldText}>
       <Text style={styles.labelStrong}>{label}: </Text>
-      {value?.trim() ? value : '—'}
+      {value?.trim() ? value : fallback}
     </Text>
   );
 }
@@ -379,9 +396,9 @@ function Via({
   const resolvedConfig = documentSettings?.resolvedConfig;
   const company = documentSettings?.company;
   const effectiveAccent = getDocumentAccentColor(documentSettings, accentColor);
-  const documentTitle = resolvedConfig?.title?.trim() || 'ORDEM DE SERVIÇO';
-  const companyName = company?.nomeFantasia?.trim() || 'PREMIUM';
-  const companySubtitle = resolvedConfig?.subtitle?.trim() || 'RETÍFICA DE CABEÇOTE';
+  const documentTitle = normalizeServiceOrderText(resolvedConfig?.title, 'ORDEM DE SERVIÇO');
+  const companyName = normalizeDocumentCompanyName(company?.nomeFantasia);
+  const companySubtitle = normalizeServiceOrderText(resolvedConfig?.subtitle, 'RETÍFICA DE CABEÇOTE');
   const companyAddress = [company?.endereco, company?.cidade && company?.estado ? `${company.cidade}/${company.estado}` : company?.cidade]
     .filter(Boolean)
     .join(' · ');
@@ -467,7 +484,7 @@ function Via({
         </View>
 
         <View style={styles.line}>
-          <FieldValue label="Email" value={cabecalho.cliente.email} />
+          <FieldValue label="Email" value={cabecalho.cliente.email} fallback="" />
           <FieldValue label="Telefone" value={cabecalho.cliente.telefone} />
           <FieldValue label="Contato" value={cabecalho.contato_nome} />
         </View>
@@ -490,9 +507,14 @@ function Via({
               <View key={item.id_rel} style={styles.row}>
                 <Text style={[styles.td, styles.qtyCol]}>{informational ? '' : item.quantidade}</Text>
                 <View style={[styles.td, styles.descCol, styles.descCell]}>
-                  <Text style={styles.mainDescription}>{item.descricao}</Text>
+                  <Text style={sx(styles.mainDescription, informational && styles.informationalDescription)}>
+                    {item.descricao}
+                  </Text>
                   {detailLines.map((line, index) => (
-                    <Text key={`${item.id_rel}-detail-${index}`} style={styles.detailLine}>
+                    <Text
+                      key={`${item.id_rel}-detail-${index}`}
+                      style={sx(styles.detailLine, informational && styles.informationalDetailLine)}
+                    >
                       {line}
                     </Text>
                   ))}

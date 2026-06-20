@@ -361,6 +361,32 @@ export function renderTemplateText(
   });
 }
 
+function stripAccents(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function withServicoAccent(match: string) {
+  if (match === match.toUpperCase()) return 'SERVIÇO';
+  if (match[0] === match[0]?.toUpperCase()) return 'Serviço';
+  return 'serviço';
+}
+
+export function normalizeDocumentCompanyName(value: string | null | undefined) {
+  const trimmed = sanitizeDocumentText(value, 120);
+  const normalized = stripAccents(trimmed).toLowerCase();
+
+  if (!trimmed || normalized === 'gawi' || normalized === 'retifica premium') {
+    return 'Retífica Premium';
+  }
+
+  return trimmed;
+}
+
+export function normalizeServiceOrderText(value: string | null | undefined, fallback = 'Ordem de Serviço') {
+  const trimmed = sanitizeDocumentText(value, 120) || fallback;
+  return trimmed.replace(/\bservico\b/gi, withServicoAccent);
+}
+
 export function getDefaultDocumentTemplateConfig(documentType: DocumentType): DocumentTemplateConfig {
   if (documentType === 'closing_report') {
     return {
@@ -514,18 +540,18 @@ export function validateDocumentTemplateConfig(config: PartialDocumentTemplateCo
 export function buildFallbackCompanySettings(fkUsuarios = 'current'): CompanyDocumentSettings {
   return {
     fkUsuarios,
-    razaoSocial: '59.540.218 GABRIEL WILLIAM DE PAULO',
-    nomeFantasia: 'GAWI',
-    cnpj: '59.540.218/0001-81',
+    razaoSocial: 'Retífica Premium',
+    nomeFantasia: 'Retífica Premium',
+    cnpj: '',
     inscricaoEstadual: '',
     inscricaoMunicipal: '',
     endereco: '',
     cidade: '',
     estado: '',
     cep: '',
-    telefone: '(16) 98840-5275',
+    telefone: '(16) 3524-4661',
     whatsapp: '',
-    email: 'gabrielwilliam208@gmail.com',
+    email: '',
     site: '',
     instagram: '',
     horarioAtendimento: '',

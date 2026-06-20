@@ -26,13 +26,13 @@ describe('Supabase company settings wrappers', () => {
     mocks.callRPC.mockReset();
   });
 
-  it('keeps GAWI as the safe default company settings', () => {
+  it('keeps Retifica Premium as the safe default company settings', () => {
     expect(DEFAULT_USER_COMPANY_SETTINGS).toMatchObject({
-      razaoSocial: '59.540.218 GABRIEL WILLIAM DE PAULO',
-      nomeFantasia: 'GAWI',
-      cnpj: '59.540.218/0001-81',
-      telefone: '(16) 98840-5275',
-      email: 'gabrielwilliam208@gmail.com',
+      razaoSocial: 'Retífica Premium',
+      nomeFantasia: 'Retífica Premium',
+      cnpj: '',
+      telefone: '(16) 3524-4661',
+      email: '',
     });
   });
 

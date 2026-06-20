@@ -4,6 +4,32 @@ Atualizado em: 2026-06-20
 
 ---
 
+## O.S. / PDF - Branding Retifica Premium E Legibilidade - 2026-06-20
+
+- Pedido critico: nenhuma O.S./nota da Retifica Premium deve sair com nome GAWI; texto `Ordem de Servico` deve manter cedilha; email ausente deve ficar em branco; cabecalho precisava descer um pouco; linhas apenas descritivas precisavam fonte maior.
+- Frontend:
+  - `buildFallbackCompanySettings` agora usa Retifica Premium como fallback, sem identidade GAWI;
+  - helpers `normalizeDocumentCompanyName` e `normalizeServiceOrderText` evitam `GAWI` e corrigem `Servico` -> `Serviço` em renderizacao;
+  - `NotaPDFTemplate` e `OSPreviewModal` usam os mesmos helpers, deixam email vazio sem traco, deslocam o nome da empresa 5px para baixo e aumentam fonte das linhas informativas/sem valor.
+- Banco/Supabase:
+  - migration `20260620233405_fix_retifica_document_branding.sql` aplicada via `supabase db query --linked -f` porque `db push --dry-run` segue bloqueado por drift historico antigo;
+  - migration marcada como aplicada com `supabase migration repair --status applied 20260620233405`;
+  - defaults de `Configuracoes_Empresa_Usuario` e fallbacks das RPCs `get_configuracao_empresa_usuario`, `get_configuracao_empresa_cliente` e `upsert_configuracao_empresa_usuario` nao retornam mais GAWI;
+  - linha da Retifica Premium (`retificapremium5@gmail.com`) normalizada para `Retífica Premium`.
+- Validacao remota ja feita:
+  - consulta confirmou `retificapremium5@gmail.com` com `razao_social` e `nome_fantasia` = `Retífica Premium`;
+  - defaults remotos confirmados como `Retífica Premium`, telefone da retifica e email vazio;
+  - historico remoto contem `20260620233405`.
+- Validacoes executadas:
+  - `npx tsc --noEmit`: passou;
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh;
+  - `npm test -- --run src/test/document-customization.test.ts`: passou;
+  - `npm test -- --run`: passou, 51 arquivos e 379 testes;
+  - `npm run build`: passou com avisos conhecidos de Browserslist/chunks/import dinamico/chunks grandes;
+  - `npm run test:integration`: primeira execucao teve timeout remoto transiente em `storage.test.ts`; rerun do arquivo passou e rerun completo passou, 17 arquivos e 55 testes.
+
+---
+
 ## Dashboard - Corte Real De Faturamento E Ticket Medio - 2026-06-20
 
 - Pedido: corrigir falso positivo em `Faturamento real`, porque O.S. legadas criadas/prazo antes de 01/06/2026 estavam sendo finalizadas agora e inflando o mês atual.
