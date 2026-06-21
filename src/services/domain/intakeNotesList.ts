@@ -1,7 +1,28 @@
-import type { IntakeNote } from '@/types';
+import type { IntakeNote, NoteStatus } from '@/types';
+import { BILLABLE_STATUSES } from '@/types';
 
 export type IntakeNoteSortField = 'date' | 'os';
 export type IntakeNoteSortDirection = 'asc' | 'desc';
+
+export const ACTIVE_INTAKE_NOTE_STATUSES = new Set<NoteStatus>([
+  'ABERTO',
+  'EM_ANALISE',
+  'ORCAMENTO',
+  'APROVADO',
+  'EM_EXECUCAO',
+  'AGUARDANDO_COMPRA',
+  'PRONTA',
+  'ENTREGUE',
+]);
+
+export type IntakeNotesSummary = {
+  totalCount: number;
+  activeCount: number;
+  billableCount: number;
+  totalAmount: number;
+  billableAmount: number;
+  latestDate: Date | null;
+};
 
 export const INTAKE_NOTE_MONTHS = [
   { value: '01', label: 'Janeiro' },
@@ -93,4 +114,31 @@ export function compareIntakeNotes(
   if (fallbackDate !== 0) return fallbackDate;
 
   return osCollator.compare(b.number, a.number);
+}
+
+export function calculateIntakeNotesSummary(notes: IntakeNote[]): IntakeNotesSummary {
+  return notes.reduce<IntakeNotesSummary>((summary, note) => {
+    const createdTime = new Date(note.createdAt).getTime();
+    const isBillable = BILLABLE_STATUSES.has(note.status);
+
+    summary.totalCount += 1;
+    summary.totalAmount += note.totalAmount;
+    if (ACTIVE_INTAKE_NOTE_STATUSES.has(note.status)) summary.activeCount += 1;
+    if (isBillable) {
+      summary.billableCount += 1;
+      summary.billableAmount += note.totalAmount;
+    }
+    if (Number.isFinite(createdTime) && (!summary.latestDate || createdTime > summary.latestDate.getTime())) {
+      summary.latestDate = new Date(createdTime);
+    }
+
+    return summary;
+  }, {
+    totalCount: 0,
+    activeCount: 0,
+    billableCount: 0,
+    totalAmount: 0,
+    billableAmount: 0,
+    latestDate: null,
+  });
 }

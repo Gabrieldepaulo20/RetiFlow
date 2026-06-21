@@ -4,6 +4,32 @@ Atualizado em: 2026-06-21
 
 ---
 
+## Notas De Entrada - Cards Do Dashboard Do Modulo Com Filtro Completo - 2026-06-21
+
+- Pedido: corrigir o dashboard/cards do modulo de Notas de Entrada, porque ao filtrar faturamento por meses os calculos ficavam errados.
+- Causa encontrada:
+  - em ambiente real, a lista de O.S. usa paginacao server-side de 50 registros;
+  - os cards do topo estavam calculando totais em cima da pagina atual (`filtered`) em vez do conjunto completo filtrado;
+  - por isso meses com mais de 50 O.S. mostravam contagem e valores parciais.
+- Correcoes:
+  - `src/services/domain/intakeNotesList.ts` ganhou `calculateIntakeNotesSummary`, centralizando contagem total, O.S. em andamento, O.S. faturaveis, valor total, valor faturavel e data mais recente;
+  - `src/pages/IntakeNotes.tsx` agora calcula os cards a partir de todas as O.S. carregadas no contexto com os filtros locais aplicados, enquanto a tabela/lista continua paginada;
+  - o card financeiro agora exibe `Faturamento do filtro` usando somente o valor faturavel/finalizado; o total bruto das O.S. filtradas aparece apenas como contexto secundario;
+  - quando o filtro nao pode ser completamente resolvido pelo servidor, a tela usa paginacao local para manter lista e totais consistentes;
+  - o filtro por cliente tambem passa a ser respeitado nos calculos locais em ambiente real.
+- Teste adicionado:
+  - `src/test/intake-notes-list.test.ts` cobre o caso de 80 O.S. filtradas no mes, garantindo que os cards somem o conjunto completo e nao apenas a primeira pagina de 50.
+- Sem mudanca de banco, RPC, Storage, Auth ou Edge Function.
+- Validacoes executadas:
+  - `npx tsc --noEmit`: passou;
+  - `npm run lint`: passou com 8 avisos antigos de Fast Refresh;
+  - `npm test -- --run src/test/intake-notes-list.test.ts`: passou, 5 testes;
+  - `npm test -- --run`: passou, 52 arquivos e 385 testes;
+  - `npm run build`: passou com avisos conhecidos de Browserslist/dynamic import/chunk size.
+- `npm run test:integration` nao foi executado porque nao houve alteracao em Supabase/Auth/Storage/Edge Function.
+
+---
+
 ## O.S. Legadas - Observacoes Iguais Ao Sistema Antigo - 2026-06-21
 
 - Pedido: as observacoes exibidas/impressas na nota/O.S. nao estavam iguais ao sistema antigo; precisavam vir exatamente do campo `servico.observacoes` do RDS legado.

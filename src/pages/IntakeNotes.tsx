@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -49,6 +49,7 @@ import { generateNotaPdfBlob } from '@/lib/notaPdf';
 import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 import { createPdfPreviewWindow, openPdfInBrowser } from '@/lib/printPdf';
 import {
+  calculateIntakeNotesSummary,
   compareIntakeNotes,
   getCurrentIntakeMonthInput,
   getIntakeMonthRange,
@@ -62,16 +63,6 @@ const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
 const NOTES_PAGE_SIZE = 50;
 type NoteDatePreset = 'all' | 'today' | '7d' | '30d' | 'thisMonth' | 'month' | 'custom';
-const ACTIVE_NOTE_STATUSES = new Set<NoteStatus>([
-  'ABERTO',
-  'EM_ANALISE',
-  'ORCAMENTO',
-  'APROVADO',
-  'EM_EXECUCAO',
-  'AGUARDANDO_COMPRA',
-  'PRONTA',
-  'ENTREGUE',
-]);
 
 function formatCurrency(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -307,6 +298,10 @@ export default function IntakeNotes() {
     () => statusFiltersAppliedLocally ? statusFilters : new Set<string>(),
     [statusFilters, statusFiltersAppliedLocally],
   );
+  const isServerPaginationActive = IS_REAL_AUTH
+    && paymentFilter === 'all'
+    && statusFilters.size <= 1
+    && (!selectedStatus || selectedStatusId !== undefined);
 
   const serverNotesQuery = useQuery({
     queryKey: [
@@ -340,24 +335,24 @@ export default function IntakeNotes() {
         total,
       };
     },
-    enabled: IS_REAL_AUTH && (!selectedStatus || selectedStatusId !== undefined),
+    enabled: isServerPaginationActive,
     staleTime: 20_000,
     gcTime: 5 * 60_000,
     placeholderData: (previous) => previous,
   });
 
   const sourceNotes = useMemo(
-    () => IS_REAL_AUTH ? (serverNotesQuery.data?.notes ?? []) : notes,
-    [notes, serverNotesQuery.data?.notes],
+    () => isServerPaginationActive ? (serverNotesQuery.data?.notes ?? []) : notes,
+    [isServerPaginationActive, notes, serverNotesQuery.data?.notes],
   );
   const serverTotal = IS_REAL_AUTH
     ? (serverNotesQuery.data?.total ?? 0)
     : notes.length;
 
-  const filtered = useMemo(() => {
-    return sourceNotes.filter(n => {
+  const filterNotes = useCallback((items: IntakeNote[]) => {
+    return items.filter(n => {
       if (effectiveStatusFilters.size > 0 && !effectiveStatusFilters.has(n.status)) return false;
-      if (!IS_REAL_AUTH && clientFilter !== 'all' && n.clientId !== clientFilter) return false;
+      if (clientFilter !== 'all' && n.clientId !== clientFilter) return false;
       if (paymentFilter !== 'all') {
         if (!BILLABLE_STATUSES.has(n.status) || n.paymentStatus !== paymentFilter) return false;
       }
@@ -377,16 +372,26 @@ export default function IntakeNotes() {
         return noteMatchesNumericQuery(n.number, q) || client?.name.toLowerCase().includes(q) || false;
       }
       return true;
-    }).sort((a, b) => compareIntakeNotes(a, b, sortField, sortDirection));
-  }, [sourceNotes, debouncedSearch, effectiveStatusFilters, clientFilter, paymentFilter, dateRange, clients, sortField, sortDirection]);
+    });
+  }, [clients, clientFilter, dateRange, debouncedSearch, effectiveStatusFilters, paymentFilter]);
+
+  const filtered = useMemo(() => {
+    return filterNotes(sourceNotes)
+      .sort((a, b) => compareIntakeNotes(a, b, sortField, sortDirection));
+  }, [filterNotes, sourceNotes, sortField, sortDirection]);
+
+  const summaryFiltered = useMemo(() => {
+    const summarySource = IS_REAL_AUTH ? notes : sourceNotes;
+    return filterNotes(summarySource);
+  }, [filterNotes, sourceNotes, notes]);
 
   const paginatedNotes = useMemo(() => {
-    if (IS_REAL_AUTH) return filtered;
+    if (isServerPaginationActive) return filtered;
     const start = (currentPage - 1) * NOTES_PAGE_SIZE;
     return filtered.slice(start, start + NOTES_PAGE_SIZE);
-  }, [currentPage, filtered]);
+  }, [currentPage, filtered, isServerPaginationActive]);
 
-  const totalForPagination = IS_REAL_AUTH
+  const totalForPagination = isServerPaginationActive
     ? serverTotal
     : filtered.length;
   const totalPages = Math.max(1, Math.ceil(totalForPagination / NOTES_PAGE_SIZE));
@@ -408,48 +413,36 @@ export default function IntakeNotes() {
   };
   const isLoadingNotesPage = IS_REAL_AUTH && serverNotesQuery.isFetching;
   const hasUnsupportedMultiStatusFilter = IS_REAL_AUTH && statusFilters.size > 1;
-  const listedTotalAmount = useMemo(
-    () => filtered.reduce((sum, note) => sum + note.totalAmount, 0),
-    [filtered],
+  const notesSummary = useMemo(
+    () => calculateIntakeNotesSummary(summaryFiltered),
+    [summaryFiltered],
   );
-  const pageOpenCount = useMemo(
-    () => filtered.filter((note) => ACTIVE_NOTE_STATUSES.has(note.status)).length,
-    [filtered],
-  );
-  const pageFinishedCount = useMemo(
-    () => filtered.filter((note) => BILLABLE_STATUSES.has(note.status)).length,
-    [filtered],
-  );
-  const latestNoteDate = useMemo(() => {
-    const latestTime = filtered.reduce((max, note) => Math.max(max, new Date(note.createdAt).getTime()), 0);
-    return latestTime ? format(new Date(latestTime), 'dd/MM/yyyy') : '—';
-  }, [filtered]);
   const summaryCards = [
     {
-      label: IS_REAL_AUTH ? 'No banco' : 'Listadas',
-      value: totalForPagination.toLocaleString('pt-BR'),
-      sub: `${filtered.length} nesta visualização`,
+      label: 'O.S. filtradas',
+      value: notesSummary.totalCount.toLocaleString('pt-BR'),
+      sub: `${paginatedNotes.length} nesta página`,
       icon: ClipboardList,
       tone: 'text-primary bg-primary/10',
     },
     {
       label: 'Em andamento',
-      value: pageOpenCount.toLocaleString('pt-BR'),
+      value: notesSummary.activeCount.toLocaleString('pt-BR'),
       sub: 'O.S. ainda acionáveis',
       icon: Clock3,
-      tone: pageOpenCount > 0 ? 'text-amber-700 bg-amber-50' : 'text-emerald-700 bg-emerald-50',
+      tone: notesSummary.activeCount > 0 ? 'text-amber-700 bg-amber-50' : 'text-emerald-700 bg-emerald-50',
     },
     {
       label: 'Finalizadas',
-      value: pageFinishedCount.toLocaleString('pt-BR'),
-      sub: 'Serviços concluídos',
+      value: notesSummary.billableCount.toLocaleString('pt-BR'),
+      sub: 'O.S. faturáveis',
       icon: Check,
       tone: 'text-emerald-700 bg-emerald-50',
     },
     {
-      label: 'Valor listado',
-      value: formatCurrency(listedTotalAmount),
-      sub: `Mais recente: ${latestNoteDate}`,
+      label: 'Faturamento do filtro',
+      value: formatCurrency(notesSummary.billableAmount),
+      sub: `${formatCurrency(notesSummary.totalAmount)} em O.S. filtradas`,
       icon: Banknote,
       tone: 'text-sky-700 bg-sky-50',
     },

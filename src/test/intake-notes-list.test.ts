@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { IntakeNote } from '@/types';
 import {
+  calculateIntakeNotesSummary,
   compareIntakeNotes,
   getCurrentIntakeMonthInput,
   getIntakeMonthRange,
@@ -69,5 +70,26 @@ describe('intake notes list sorting', () => {
     expect(range?.endInput).toBe('2026-02-28');
     expect(range?.label).toBe('Fevereiro de 2026');
     expect(getIntakeMonthRange('2026-13')).toBeNull();
+  });
+
+  it('summarizes the entire filtered set instead of a paginated page', () => {
+    const allFilteredMonthNotes = Array.from({ length: 80 }, (_, index) => note({
+      id: `month-${index + 1}`,
+      number: `OS-${index + 1}`,
+      status: index < 60 ? 'ENTREGUE' : 'ABERTO',
+      totalAmount: 100,
+      createdAt: `2026-06-${String((index % 28) + 1).padStart(2, '0')}T12:00:00.000Z`,
+    }));
+    const firstPageOnly = allFilteredMonthNotes.slice(0, 50);
+
+    const fullSummary = calculateIntakeNotesSummary(allFilteredMonthNotes);
+    const firstPageSummary = calculateIntakeNotesSummary(firstPageOnly);
+
+    expect(firstPageSummary.totalCount).toBe(50);
+    expect(firstPageSummary.totalAmount).toBe(5000);
+    expect(fullSummary.totalCount).toBe(80);
+    expect(fullSummary.totalAmount).toBe(8000);
+    expect(fullSummary.billableCount).toBe(60);
+    expect(fullSummary.billableAmount).toBe(6000);
   });
 });
