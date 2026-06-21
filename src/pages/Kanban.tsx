@@ -43,6 +43,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 /* ─── Status color maps ─── */
 
+/** Dica curta sob o nome da etapa (ex.: Aprovado = espera para execução). */
+const STEP_HINT: Partial<Record<NoteStatus, string>> = {
+  APROVADO: 'Espera para execução',
+};
+
 const COLUMN_ACCENT: Record<NoteStatus, string> = {
   ABERTO: "bg-blue-500",
   EM_ANALISE: "bg-amber-500",
@@ -667,14 +672,21 @@ export default function Kanban() {
                     COLUMN_ACCENT[col.status],
                   )}
                 />
-                <h2 className="text-[13px] font-semibold text-foreground tracking-tight leading-none">
-                  {col.label}
-                  {FINAL_STATUSES.has(col.status) && (
-                    <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">
-                      final
-                    </span>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-[13px] font-semibold text-foreground tracking-tight leading-none">
+                    {col.label}
+                    {FINAL_STATUSES.has(col.status) && (
+                      <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">
+                        final
+                      </span>
+                    )}
+                  </h2>
+                  {STEP_HINT[col.status] && (
+                    <p className="mt-1 text-[10px] font-normal leading-none text-muted-foreground/70">
+                      {STEP_HINT[col.status]}
+                    </p>
                   )}
-                </h2>
+                </div>
                 <span
                   className={cn(
                     "ml-auto text-[11px] font-semibold rounded-md px-1.5 py-0.5 leading-none tabular-nums",
