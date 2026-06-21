@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { endOfMonth, format, parseISO, startOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { motion } from 'framer-motion';
-import { AlertCircle, AlertTriangle, Building2, CalendarCheck, CalendarClock, CheckCircle2, ChevronDown, ChevronRight, Clock, Copy, FileText, Layers, MailOpen, MoreHorizontal, Pencil, PlusCircle, Repeat, Search, Sparkles, Trash2, Users, Wallet, XCircle } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Building2, CalendarCheck, CalendarClock, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, FileText, Layers, MailOpen, MoreHorizontal, Pencil, PlusCircle, Repeat, Search, Sparkles, Trash2, Users, Wallet, XCircle } from 'lucide-react';
 import { getCategoryIcon } from '@/lib/payableCategoryIcon';
 import { SupplierAvatar } from '@/components/payables/SupplierAvatar';
 import { useAuth } from '@/contexts/AuthContext';
@@ -93,6 +93,7 @@ export default function ContasAPagar() {
   const [favorecidoFilter, setFavorecidoFilter] = useState<FavorecidoFilter>('all');
   const [groupBy, setGroupBy] = useState<GroupByOption>('none');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
+  const [page, setPage] = useState(1);
   const [searchRaw, setSearchRaw] = useState('');
   const search = useDebounce(searchRaw, 250);
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
@@ -197,6 +198,19 @@ export default function ContasAPagar() {
       : groupPayables(filtered, groupBy, (id) => categoryById.get(id)?.name)),
     [filtered, groupBy, categoryById],
   );
+
+  // Paginação da lista plana (a visão agrupada usa grupos recolhíveis no lugar).
+  const PAGE_SIZE = 24;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pagedPayables = useMemo(
+    () => filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+    [filtered, safePage],
+  );
+  // Volta para a 1ª página quando filtros/busca/agrupamento mudam.
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter, categoryFilter, favorecidoFilter, originFilter, periodFilter, groupBy]);
 
   const hasDueToday = dueToday.length > 0;
   const hasOverdue = overduePayables.length > 0;
@@ -873,9 +887,27 @@ export default function ContasAPagar() {
                 })}
               </div>
             ) : (
-              <div className="grid items-start gap-2 p-2.5 sm:gap-3 sm:p-3 sm:grid-cols-2 xl:grid-cols-3">
-                {filtered.map((payable, index) => renderPayableCard(payable, index))}
-              </div>
+              <>
+                <div className="grid items-start gap-2 p-2.5 sm:gap-3 sm:p-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {pagedPayables.map((payable, index) => renderPayableCard(payable, index))}
+                </div>
+                {totalPages > 1 ? (
+                  <div className="flex items-center justify-between gap-2 border-t border-border/60 px-3 py-2.5">
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)} de {filtered.length} contas
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" className="h-8 gap-1 px-2.5" disabled={safePage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                        <ChevronLeft className="h-4 w-4" /><span className="hidden sm:inline">Anterior</span>
+                      </Button>
+                      <span className="text-xs font-medium tabular-nums text-muted-foreground">{safePage}/{totalPages}</span>
+                      <Button variant="outline" size="sm" className="h-8 gap-1 px-2.5" disabled={safePage >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
+                        <span className="hidden sm:inline">Próxima</span><ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </>
             )}
           </CardContent>
         </Card>
