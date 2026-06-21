@@ -6,6 +6,9 @@ import {
   getCurrentIntakeMonthInput,
   getIntakeMonthRange,
   getIntakeNoteSortLabel,
+  isIntakeNoteInValueRange,
+  normalizeIntakeNoteValueRange,
+  parseIntakeNoteValueFilter,
 } from '@/services/domain/intakeNotesList';
 
 function note(overrides: Partial<IntakeNote>): IntakeNote {
@@ -91,5 +94,18 @@ describe('intake notes list sorting', () => {
     expect(fullSummary.totalAmount).toBe(8000);
     expect(fullSummary.billableCount).toBe(60);
     expect(fullSummary.billableAmount).toBe(6000);
+  });
+
+  it('parses and applies service order value filters', () => {
+    expect(parseIntakeNoteValueFilter('R$ 1.250,50')).toBe(1250.5);
+    expect(parseIntakeNoteValueFilter('1.250')).toBe(1250);
+    expect(parseIntakeNoteValueFilter('1250.75')).toBe(1250.75);
+    expect(parseIntakeNoteValueFilter('abc')).toBeNull();
+
+    const range = normalizeIntakeNoteValueRange('2.000,00', '1.000,00');
+    expect(range).toEqual({ min: 1000, max: 2000 });
+    expect(isIntakeNoteInValueRange(note({ totalAmount: 1500 }), range)).toBe(true);
+    expect(isIntakeNoteInValueRange(note({ totalAmount: 999.99 }), range)).toBe(false);
+    expect(isIntakeNoteInValueRange(note({ totalAmount: 2000.01 }), range)).toBe(false);
   });
 });

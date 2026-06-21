@@ -24,6 +24,11 @@ export type IntakeNotesSummary = {
   latestDate: Date | null;
 };
 
+export type IntakeNoteValueRange = {
+  min?: number;
+  max?: number;
+};
+
 export const INTAKE_NOTE_MONTHS = [
   { value: '01', label: 'Janeiro' },
   { value: '02', label: 'Fevereiro' },
@@ -114,6 +119,53 @@ export function compareIntakeNotes(
   if (fallbackDate !== 0) return fallbackDate;
 
   return osCollator.compare(b.number, a.number);
+}
+
+export function parseIntakeNoteValueFilter(value: string) {
+  const raw = value.trim();
+  if (!raw) return null;
+
+  const cleaned = raw
+    .replace(/\s/g, '')
+    .replace(/[R$]/gi, '')
+    .replace(/[^\d,.-]/g, '');
+  if (!cleaned || cleaned === '-' || cleaned === ',' || cleaned === '.') return null;
+
+  const hasComma = cleaned.includes(',');
+  let normalized = cleaned;
+
+  if (hasComma) {
+    normalized = cleaned.replace(/\./g, '').replace(',', '.');
+  } else {
+    const dotCount = (cleaned.match(/\./g) ?? []).length;
+    if (dotCount > 1) {
+      normalized = cleaned.replace(/\./g, '');
+    } else if (dotCount === 1) {
+      const [, decimals = ''] = cleaned.split('.');
+      if (decimals.length === 3) normalized = cleaned.replace('.', '');
+    }
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+export function normalizeIntakeNoteValueRange(minInput: string, maxInput: string): IntakeNoteValueRange {
+  const min = parseIntakeNoteValueFilter(minInput);
+  const max = parseIntakeNoteValueFilter(maxInput);
+
+  if (min === null && max === null) return {};
+  if (min !== null && max !== null) {
+    return min <= max ? { min, max } : { min: max, max: min };
+  }
+
+  return min !== null ? { min } : { max: max ?? undefined };
+}
+
+export function isIntakeNoteInValueRange(note: IntakeNote, range: IntakeNoteValueRange) {
+  if (range.min !== undefined && note.totalAmount < range.min) return false;
+  if (range.max !== undefined && note.totalAmount > range.max) return false;
+  return true;
 }
 
 export function calculateIntakeNotesSummary(notes: IntakeNote[]): IntakeNotesSummary {

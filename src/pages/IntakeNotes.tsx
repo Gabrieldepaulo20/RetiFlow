@@ -55,6 +55,8 @@ import {
   getIntakeMonthRange,
   getIntakeNoteSortLabel,
   INTAKE_NOTE_MONTHS,
+  isIntakeNoteInValueRange,
+  normalizeIntakeNoteValueRange,
   type IntakeNoteSortDirection,
   type IntakeNoteSortField,
 } from '@/services/domain/intakeNotesList';
@@ -95,6 +97,8 @@ export default function IntakeNotes() {
   const [datePreset, setDatePreset] = useState<NoteDatePreset>('all');
   const [monthFilter, setMonthFilter] = useState(currentMonthInput);
   const [paymentFilter, setPaymentFilter] = useState<'all' | 'PAGO' | 'PENDENTE'>('all');
+  const [minValueFilter, setMinValueFilter] = useState('');
+  const [maxValueFilter, setMaxValueFilter] = useState('');
   const [customStartDate, setCustomStartDate] = useState(() => format(subDays(new Date(), 29), 'yyyy-MM-dd'));
   const [customEndDate, setCustomEndDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [sortField, setSortField] = useState<IntakeNoteSortField>('date');
@@ -105,6 +109,8 @@ export default function IntakeNotes() {
   const [draftDatePreset, setDraftDatePreset] = useState<NoteDatePreset>(datePreset);
   const [draftMonthFilter, setDraftMonthFilter] = useState(monthFilter);
   const [draftPaymentFilter, setDraftPaymentFilter] = useState<'all' | 'PAGO' | 'PENDENTE'>(paymentFilter);
+  const [draftMinValueFilter, setDraftMinValueFilter] = useState(minValueFilter);
+  const [draftMaxValueFilter, setDraftMaxValueFilter] = useState(maxValueFilter);
   const [draftCustomStartDate, setDraftCustomStartDate] = useState(customStartDate);
   const [draftCustomEndDate, setDraftCustomEndDate] = useState(customEndDate);
   const [draftSortField, setDraftSortField] = useState<IntakeNoteSortField>(sortField);
@@ -147,6 +153,8 @@ export default function IntakeNotes() {
     setDraftDatePreset(datePreset);
     setDraftMonthFilter(monthFilter);
     setDraftPaymentFilter(paymentFilter);
+    setDraftMinValueFilter(minValueFilter);
+    setDraftMaxValueFilter(maxValueFilter);
     setDraftCustomStartDate(customStartDate);
     setDraftCustomEndDate(customEndDate);
     setDraftSortField(sortField);
@@ -168,6 +176,8 @@ export default function IntakeNotes() {
     setDraftDatePreset('all');
     setDraftMonthFilter(currentMonthInput);
     setDraftPaymentFilter('all');
+    setDraftMinValueFilter('');
+    setDraftMaxValueFilter('');
     setDraftCustomStartDate(format(subDays(new Date(), 29), 'yyyy-MM-dd'));
     setDraftCustomEndDate(format(new Date(), 'yyyy-MM-dd'));
     setDraftSortField('date');
@@ -180,6 +190,8 @@ export default function IntakeNotes() {
     setDatePreset(draftDatePreset);
     setMonthFilter(draftMonthFilter);
     setPaymentFilter(draftPaymentFilter);
+    setMinValueFilter(draftMinValueFilter);
+    setMaxValueFilter(draftMaxValueFilter);
     setCustomStartDate(draftCustomStartDate);
     setCustomEndDate(draftCustomEndDate);
     setSortField(draftSortField);
@@ -190,7 +202,7 @@ export default function IntakeNotes() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearch, statusFilters, clientFilter, datePreset, monthFilter, paymentFilter, customStartDate, customEndDate, sortField, sortDirection]);
+  }, [debouncedSearch, statusFilters, clientFilter, datePreset, monthFilter, paymentFilter, minValueFilter, maxValueFilter, customStartDate, customEndDate, sortField, sortDirection]);
 
   const allStatuses: Array<{ key: NoteStatus; label: string }> = NOTE_STATUS_ORDER.map(s => ({
     key: s,
@@ -247,6 +259,11 @@ export default function IntakeNotes() {
       label: 'Todo o período',
     };
   }, [currentMonthInput, customEndDate, customStartDate, datePreset, monthFilter]);
+  const valueRange = useMemo(
+    () => normalizeIntakeNoteValueRange(minValueFilter, maxValueFilter),
+    [minValueFilter, maxValueFilter],
+  );
+  const hasValueFilter = valueRange.min !== undefined || valueRange.max !== undefined;
 
   const datePresetOptions: Array<{ value: NoteDatePreset; label: string }> = [
     { value: 'all', label: 'Todo período' },
@@ -300,6 +317,7 @@ export default function IntakeNotes() {
   );
   const isServerPaginationActive = IS_REAL_AUTH
     && paymentFilter === 'all'
+    && !hasValueFilter
     && statusFilters.size <= 1
     && (!selectedStatus || selectedStatusId !== undefined);
 
@@ -356,6 +374,7 @@ export default function IntakeNotes() {
       if (paymentFilter !== 'all') {
         if (!BILLABLE_STATUSES.has(n.status) || n.paymentStatus !== paymentFilter) return false;
       }
+      if (!isIntakeNoteInValueRange(n, valueRange)) return false;
 
       if (dateRange.start && dateRange.end) {
         const noteDate = new Date(n.createdAt);
@@ -373,7 +392,7 @@ export default function IntakeNotes() {
       }
       return true;
     });
-  }, [clients, clientFilter, dateRange, debouncedSearch, effectiveStatusFilters, paymentFilter]);
+  }, [clients, clientFilter, dateRange, debouncedSearch, effectiveStatusFilters, paymentFilter, valueRange]);
 
   const filtered = useMemo(() => {
     return filterNotes(sourceNotes)
@@ -400,6 +419,7 @@ export default function IntakeNotes() {
     (clientFilter !== 'all' ? 1 : 0) +
     (datePreset !== 'all' ? 1 : 0) +
     (paymentFilter !== 'all' ? 1 : 0) +
+    (hasValueFilter ? 1 : 0) +
     (sortField !== 'date' || sortDirection !== 'desc' ? 1 : 0);
   const clearAllFilters = () => {
     setStatusFilters(new Set());
@@ -407,6 +427,8 @@ export default function IntakeNotes() {
     setDatePreset('all');
     setMonthFilter(currentMonthInput);
     setPaymentFilter('all');
+    setMinValueFilter('');
+    setMaxValueFilter('');
     setSortField('date');
     setSortDirection('desc');
     setCurrentPage(1);
@@ -447,6 +469,14 @@ export default function IntakeNotes() {
       tone: 'text-sky-700 bg-sky-50',
     },
   ];
+  const valueFilterLabel = useMemo(() => {
+    if (!hasValueFilter) return null;
+    if (valueRange.min !== undefined && valueRange.max !== undefined) {
+      return `${formatCurrency(valueRange.min)} até ${formatCurrency(valueRange.max)}`;
+    }
+    if (valueRange.min !== undefined) return `A partir de ${formatCurrency(valueRange.min)}`;
+    return `Até ${formatCurrency(valueRange.max ?? 0)}`;
+  }, [hasValueFilter, valueRange]);
 
   const refreshNotesPage = () => {
     queryClient.invalidateQueries({ queryKey: ['notas-servico', 'page'] });
@@ -832,6 +862,30 @@ export default function IntakeNotes() {
                       </div>
                     </div>
 
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-2">
+                      <div className="space-y-1.5">
+                        <p className="text-xs font-semibold text-foreground">Valor mínimo</p>
+                        <Input
+                          inputMode="decimal"
+                          value={draftMinValueFilter}
+                          onChange={(event) => setDraftMinValueFilter(event.target.value)}
+                          placeholder="R$ 0,00"
+                          className="h-9 rounded-xl text-sm"
+                        />
+                      </div>
+                      <span className="pb-2 text-xs text-muted-foreground">até</span>
+                      <div className="space-y-1.5">
+                        <p className="text-xs font-semibold text-foreground">Valor máximo</p>
+                        <Input
+                          inputMode="decimal"
+                          value={draftMaxValueFilter}
+                          onChange={(event) => setDraftMaxValueFilter(event.target.value)}
+                          placeholder="R$ 0,00"
+                          className="h-9 rounded-xl text-sm"
+                        />
+                      </div>
+                    </div>
+
                     {draftDatePreset === 'month' && (
                       <div className="grid grid-cols-2 gap-2">
                         <Select
@@ -930,6 +984,18 @@ export default function IntakeNotes() {
                   {paymentFilter !== 'all' && (
                     <Badge variant="secondary" className="gap-1.5 px-2.5 py-1 rounded-full text-xs cursor-pointer" onClick={() => setPaymentFilter('all')}>
                       {paymentFilter === 'PAGO' ? 'Pago' : 'A receber'}
+                    </Badge>
+                  )}
+                  {valueFilterLabel && (
+                    <Badge
+                      variant="secondary"
+                      className="gap-1.5 px-2.5 py-1 rounded-full text-xs cursor-pointer"
+                      onClick={() => {
+                        setMinValueFilter('');
+                        setMaxValueFilter('');
+                      }}
+                    >
+                      Valor: {valueFilterLabel}
                     </Badge>
                   )}
                   {(sortField !== 'date' || sortDirection !== 'desc') && (

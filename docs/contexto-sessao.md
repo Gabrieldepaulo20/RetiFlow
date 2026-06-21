@@ -4,6 +4,33 @@ Atualizado em: 2026-06-21
 
 ---
 
+## Notas De Entrada - Filtro Por Valor Da O.S. - 2026-06-21
+
+- Pedido: adicionar filtro para buscar O.S. por valores.
+- Frontend:
+  - `src/pages/IntakeNotes.tsx` adicionou `Valor minimo` e `Valor maximo` no modal de filtros;
+  - o intervalo fica em rascunho e so aplica ao clicar em `Confirmar filtros`, seguindo o contrato dos demais filtros;
+  - o filtro aceita formatos brasileiros como `500`, `500,00`, `1.250` e `R$ 1.250,50`;
+  - quando minimo e maximo sao informados invertidos, o dominio normaliza o intervalo automaticamente;
+  - com filtro de valor ativo, a tela usa a lista local carregada no contexto para evitar totais/paginacao errados, ja que a RPC atual nao filtra por valor;
+  - o badge `Valor: ...` aparece nos filtros ativos e pode ser clicado para limpar o intervalo.
+- Dominio/testes:
+  - `src/services/domain/intakeNotesList.ts` ganhou helpers `parseIntakeNoteValueFilter`, `normalizeIntakeNoteValueRange` e `isIntakeNoteInValueRange`;
+  - `src/test/intake-notes-list.test.ts` cobre parsing de moeda BR, normalizacao do intervalo e inclusao/exclusao por valor total da O.S.
+- Validacao visual local:
+  - ambiente mock abriu `/notas-entrada` e o modal exibiu os campos `Valor minimo` e `Valor maximo`;
+  - o navegador local nao registrou erros de console no carregamento/abertura do modal.
+- Sem mudanca de banco, RPC, Storage, Auth ou Edge Function.
+- Validacoes executadas:
+  - `npx tsc --noEmit`: passou;
+  - `npm run lint`: passou com 8 avisos antigos de Fast Refresh;
+  - `npm test -- --run src/test/intake-notes-list.test.ts`: passou, 6 testes;
+  - `npm test -- --run`: passou, 52 arquivos e 386 testes;
+  - `npm run build`: passou com avisos conhecidos de Browserslist/dynamic import/chunk size.
+- `npm run test:integration` nao foi executado porque nao houve alteracao em Supabase/Auth/Storage/Edge Function.
+
+---
+
 ## Notas De Entrada - Cards Do Dashboard Do Modulo Com Filtro Completo - 2026-06-21
 
 - Pedido: corrigir o dashboard/cards do modulo de Notas de Entrada, porque ao filtrar faturamento por meses os calculos ficavam errados.
