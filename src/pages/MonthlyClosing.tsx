@@ -940,7 +940,11 @@ export default function MonthlyClosing() {
 
       <Card>
         <CardContent className="p-3 sm:p-4">
-          <p className="mb-2 text-sm font-medium">Novo rascunho de fechamento</p>
+          <p className="text-sm font-medium">Novo rascunho de fechamento</p>
+          <p className="mb-2 mt-0.5 text-xs text-muted-foreground">
+            Agrupa as O.S. pela data de finalização/entrega (competência). Isso pode diferir do Dashboard,
+            que conta o faturamento pela data de entrada da O.S.
+          </p>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(220px,1fr)_160px_110px_auto] lg:items-end">
             <div className="flex-1 min-w-[180px]">
               <label className="mb-1.5 block text-xs text-muted-foreground">Cliente</label>
