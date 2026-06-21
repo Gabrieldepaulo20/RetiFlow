@@ -173,10 +173,6 @@ export default function Dashboard() {
     () => clampDashboardAccountingRange(selectedRange),
     [selectedRange],
   );
-  const selectedAccountingStartDate = useMemo(
-    () => new Date(selectedAccountingRange.startTime),
-    [selectedAccountingRange.startTime],
-  );
   const isInSelectedCalendarPeriod = useCallback((value?: string | null) => {
     if (!value) return false;
     const time = new Date(value).getTime();
@@ -258,8 +254,8 @@ export default function Dashboard() {
   const periodAverageTicket = periodNotes.length > 0 ? periodPotentialAmount / periodNotes.length : 0;
 
   const periodDeliveredNotes = useMemo(
-    () => getFinalizedRevenueNotesInRange(revenueRecognizedNotes, selectedAccountingRange),
-    [revenueRecognizedNotes, selectedAccountingRange],
+    () => getFinalizedRevenueNotesInRange(revenueRecognizedNotes, selectedRange),
+    [revenueRecognizedNotes, selectedRange],
   );
 
   const periodDeliveredAmount = useMemo(
@@ -305,11 +301,11 @@ export default function Dashboard() {
   const periodProfitMargin = periodDeliveredAmount > 0 ? (periodProfit / periodDeliveredAmount) * 100 : null;
 
   const periodFinancialData = useMemo(() => {
-    if (selectedAccountingRange.startTime > selectedAccountingRange.endTime) {
+    if (selectedRange.startTime > selectedRange.endTime) {
       return [];
     }
 
-    const periodStart = selectedAccountingStartDate;
+    const periodStart = selectedPeriod.start;
     const periodEnd = selectedPeriod.end;
     const days = Math.max(0, differenceInDays(periodEnd, periodStart));
     const groupByMonth = days > 70;
@@ -344,7 +340,7 @@ export default function Dashboard() {
     return Array.from(rows.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([, row]) => ({ ...row, lucro: row.entrada - row.saida }));
-  }, [periodDeliveredNotes, periodPaidPayables, selectedAccountingRange.endTime, selectedAccountingRange.startTime, selectedAccountingStartDate, selectedPeriod.end]);
+  }, [periodDeliveredNotes, periodPaidPayables, selectedPeriod.end, selectedPeriod.start, selectedRange.endTime, selectedRange.startTime]);
 
   const hasPeriodFinancialData = periodFinancialData.some((item) => item.entrada > 0 || item.saida > 0);
 
@@ -410,7 +406,7 @@ export default function Dashboard() {
                 <div>
                   <h2 className="text-sm font-semibold leading-tight">Resultado financeiro</h2>
                   <p className="text-[11px] text-muted-foreground">
-                    Período: {selectedPeriod.label} · base contábil desde {DASHBOARD_ACCOUNTING_START_LABEL}
+                    Período: {selectedPeriod.label} · faturamento por entrada da O.S.
                   </p>
                 </div>
                 <Badge className={cn(
@@ -514,7 +510,7 @@ export default function Dashboard() {
                 <div className="min-w-0">
                   <p className={financialMetricLabelClass}>
                     Entradas previstas
-                    <InlineInfo label={`Valor potencial das O.S. lançadas no período, sem contar O.S. excluídas. É uma previsão: só vira faturamento quando a O.S. entra na regra contábil.`} />
+                    <InlineInfo label="Valor potencial das O.S. lançadas no período, sem contar O.S. excluídas. É uma previsão: só vira faturamento quando a O.S. fica em um status faturável." />
                   </p>
                   <p className={financialMetricValueClass}>R$ {fmtBRL(periodPotentialAmount)}</p>
                 </div>
@@ -529,14 +525,14 @@ export default function Dashboard() {
 
             <button
               type="button"
-              onClick={() => navigate('/notas-entrada?status=FINALIZADO')}
+              onClick={() => navigate('/notas-entrada?status=ENTREGUE')}
               className={cn(financialMetricButtonClass, 'hover:border-emerald-300 hover:bg-emerald-50/60')}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className={financialMetricLabelClass}>
                     Faturamento real
-                    <InlineInfo label={`Entrada de fato: soma das O.S. faturáveis. A competência prioriza o prazo da O.S.; se não houver prazo, usa a finalização. O.S. de legado com prazo/criação antes de ${DASHBOARD_ACCOUNTING_START_LABEL} ficam fora.`} />
+                    <InlineInfo label="Entrada de fato: soma das O.S. faturáveis pela data em que a O.S. foi criada/lançada. Prazo, pagamento ou finalização posterior não mudam o mês do faturamento." />
                   </p>
                   <p className={cn(financialMetricValueClass, 'text-emerald-700')}>R$ {fmtBRL(periodDeliveredAmount)}</p>
                 </div>
@@ -545,7 +541,7 @@ export default function Dashboard() {
                 </div>
               </div>
               <p className="mt-1.5 hidden text-[11px] leading-snug text-muted-foreground">
-                {periodDeliveredNotes.length} O.S. faturável{periodDeliveredNotes.length !== 1 ? 'eis' : ''} · desde {DASHBOARD_ACCOUNTING_START_LABEL}: R$ {fmtBRL(totalRevenue)}
+                {periodDeliveredNotes.length} O.S. faturável{periodDeliveredNotes.length !== 1 ? 'eis' : ''} no período · total geral R$ {fmtBRL(totalRevenue)}
               </p>
             </button>
 
@@ -647,7 +643,7 @@ export default function Dashboard() {
                 <div className="min-w-0">
                   <p className={financialMetricLabelClass}>
                     Lucro do período
-                    <InlineInfo label={`Cálculo: faturamento real menos contas pagas no mesmo período. Ambos começam somente em ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
+                    <InlineInfo label={`Cálculo: faturamento real por data de entrada da O.S. menos contas pagas no mesmo período. Contas pagas continuam usando a data real de pagamento e a base a partir de ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
                   </p>
                   <p className={cn(financialMetricValueClass, periodProfit >= 0 ? 'text-primary' : 'text-red-700')}>
                     R$ {fmtBRLFull(periodProfit)}
@@ -685,7 +681,7 @@ export default function Dashboard() {
                       cursor={{ fill: 'hsl(var(--muted) / 0.35)' }}
                       formatter={(value: number, name: string) => [
                         `R$ ${value.toLocaleString('pt-BR')}`,
-                        name === 'entrada' ? 'O.S. finalizadas' : name === 'saida' ? 'Contas pagas' : 'Lucro',
+                        name === 'entrada' ? 'Faturamento por entrada' : name === 'saida' ? 'Contas pagas' : 'Lucro',
                       ]}
                       contentStyle={{
                         border: '1px solid hsl(var(--border))',
@@ -702,7 +698,7 @@ export default function Dashboard() {
             ) : (
               <SectionEmptyState
                 title="Sem movimentação no período"
-                description={`Escolha outro intervalo a partir de ${DASHBOARD_ACCOUNTING_START_LABEL} para ver O.S. finalizadas, contas pagas e lucro.`}
+                description="Escolha outro intervalo para ver faturamento por entrada da O.S., contas pagas e lucro."
                 className="min-h-[220px] border-0 bg-transparent px-2"
               />
             )}
@@ -789,7 +785,7 @@ export default function Dashboard() {
             ) : (
               <SectionEmptyState
                 title="Sem histórico de faturamento"
-                description="O gráfico mensal começa a preencher depois das primeiras O.S. finalizadas."
+                description="O gráfico mensal começa a preencher depois das primeiras O.S. faturáveis."
                 className="min-h-[210px] border-0 bg-transparent px-2"
               />
             )}

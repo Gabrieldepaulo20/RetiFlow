@@ -4,6 +4,33 @@ Atualizado em: 2026-06-21
 
 ---
 
+## Dashboard - Faturamento Pela Data De Entrada Da O.S. - 2026-06-21
+
+- Pedido/regra final esclarecida:
+  - faturamento da O.S. deve pertencer ao mes em que a O.S. foi criada/lancada no sistema;
+  - prazo, pagamento, atualizacao ou finalizacao posterior nao podem mover faturamento para outro mes;
+  - exemplo: O.S. criada em 29/05 com prazo em 03/06 e finalizada/paga em junho entra no faturamento de maio;
+  - fechamento em lote de O.S. legadas/importadas nao pode inflar o dia/mes em que o lote foi finalizado.
+- Frontend/dominio:
+  - `src/services/domain/dashboardFinance.ts` agora usa somente `createdAt` como data de competencia do faturamento;
+  - O.S. faturavel continua limitada aos status `ENTREGUE`, `RECUSADO` e `SEM_CONSERTO`;
+  - o corte de `01/06/2026` permanece apenas para contas pagas/lucro, porque as saidas anteriores nao tem base completa;
+  - `src/pages/Dashboard.tsx` calcula `Faturamento real`, grafico financeiro e resultado anual pela data de entrada da O.S.;
+  - textos/tooltip do Dashboard foram ajustados para explicar que prazo/finalizacao/pagamento nao alteram o mes de faturamento;
+  - o atalho do card `Faturamento real` deixou de usar o status antigo `FINALIZADO` e agora abre `ENTREGUE`.
+- Teste:
+  - `src/test/dashboard-finance.test.ts` cobre O.S. criada em maio com prazo/finalizacao em junho, O.S. criada em junho finalizada em julho e lote legado finalizado em junho.
+- Sem mudanca de banco, RPC, Storage, Auth ou Edge Function.
+- Validacoes executadas:
+  - `npm test -- --run src/test/dashboard-finance.test.ts`: passou, 5 testes;
+  - `npx tsc --noEmit`: passou;
+  - `npm run lint`: passou com 8 avisos antigos de Fast Refresh;
+  - `npm test -- --run`: passou, 52 arquivos e 386 testes;
+  - `npm run build`: passou com avisos conhecidos de Browserslist/dynamic import/chunk size.
+- `npm run test:integration` nao foi executado porque nao houve alteracao em Supabase/Auth/Storage/Edge Function.
+
+---
+
 ## Notas De Entrada - Filtro Por Valor Da O.S. - 2026-06-21
 
 - Pedido: adicionar filtro para buscar O.S. por valores.

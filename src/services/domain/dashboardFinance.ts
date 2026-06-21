@@ -2,7 +2,7 @@ import type { AccountPayable, IntakeNote, NoteStatus, PayableStatus } from '@/ty
 
 export const DASHBOARD_REVENUE_STATUSES = new Set<NoteStatus>(['ENTREGUE', 'RECUSADO', 'SEM_CONSERTO']);
 export const DASHBOARD_PAID_PAYABLE_STATUSES = new Set<PayableStatus>(['PAGO', 'PARCIAL']);
-// Marco real de operação do Retiflow: dados anteriores não têm base histórica completa para lucro/faturamento.
+// Marco real de operação do Retiflow para contas pagas/lucro: antes disso não há base completa de saídas.
 export const DASHBOARD_ACCOUNTING_START_DATE = '2026-06-01';
 export const DASHBOARD_ACCOUNTING_START_LABEL = '01/06/2026';
 export const DASHBOARD_ACCOUNTING_START_TIME = new Date(`${DASHBOARD_ACCOUNTING_START_DATE}T00:00:00`).getTime();
@@ -12,8 +12,8 @@ export type DashboardDateRange = {
   endTime: number;
 };
 
-export function getDashboardRevenueDate(note: Pick<IntakeNote, 'deadline' | 'finalizedAt' | 'updatedAt' | 'createdAt'>): string {
-  return note.deadline ?? note.finalizedAt ?? note.updatedAt ?? note.createdAt;
+export function getDashboardRevenueDate(note: Pick<IntakeNote, 'createdAt'>): string {
+  return note.createdAt;
 }
 
 function isDateInsideRange(value: string | null | undefined, range: DashboardDateRange): boolean {
@@ -35,16 +35,14 @@ export function clampDashboardAccountingRange(range: DashboardDateRange): Dashbo
   };
 }
 
-export function isDashboardRevenueEligibleNote<T extends Pick<IntakeNote, 'status' | 'deadline' | 'finalizedAt' | 'updatedAt' | 'createdAt'>>(
+export function isDashboardRevenueEligibleNote<T extends Pick<IntakeNote, 'status' | 'createdAt'>>(
   note: T,
 ): boolean {
-  const operationalDate = note.deadline ?? note.createdAt;
   return DASHBOARD_REVENUE_STATUSES.has(note.status)
-    && isDashboardAccountingDate(operationalDate)
-    && isDashboardAccountingDate(getDashboardRevenueDate(note));
+    && Number.isFinite(new Date(getDashboardRevenueDate(note)).getTime());
 }
 
-export function getFinalizedRevenueNotesInRange<T extends Pick<IntakeNote, 'status' | 'deadline' | 'finalizedAt' | 'updatedAt' | 'createdAt'>>(
+export function getFinalizedRevenueNotesInRange<T extends Pick<IntakeNote, 'status' | 'createdAt'>>(
   notes: T[],
   range: DashboardDateRange,
 ): T[] {
