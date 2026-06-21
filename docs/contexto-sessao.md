@@ -4,6 +4,34 @@ Atualizado em: 2026-06-21
 
 ---
 
+## O.S. Legadas - Observacoes Iguais Ao Sistema Antigo - 2026-06-21
+
+- Pedido: as observacoes exibidas/impressas na nota/O.S. nao estavam iguais ao sistema antigo; precisavam vir exatamente do campo `servico.observacoes` do RDS legado.
+- Causa encontrada:
+  - `scripts/oneoff/import-legacy-notes-company5.mjs` montava `observacoes` com texto extra de auditoria:
+    `Solicitante legado...` e `Importado da base antiga...`.
+- Correcoes:
+  - o importador legado agora grava somente a observacao original do legado, preservando quebras de linha e removendo apenas espacos externos;
+  - criado script `scripts/oneoff/sync-legacy-note-observations-company5.mjs`, com dry-run por padrao e `--apply` explicito;
+  - o script sincroniza somente O.S. com correspondencia segura entre RDS e Retiflow:
+    match exato de O.S. ou match numerico unico dos dois lados;
+  - conflitos de numeracao/zero a esquerda e O.S. faltantes no Retiflow ficam fora da alteracao.
+- Execucao real aplicada em 2026-06-21:
+  - `node scripts/oneoff/sync-legacy-note-observations-company5.mjs --apply`;
+  - 866 O.S. da Retifica Premium atualizadas;
+  - 864 tinham marcador de importacao;
+  - 2 estavam com observacao vazia e receberam a observacao do legado;
+  - 0 falhas;
+  - dry-run posterior confirmou `866` como `already_equal` e `0` atualizacoes pendentes;
+  - consulta remota confirmou `0` notas da Retifica Premium ainda com marcador `Importado da base antiga Retifica Premium` em `observacoes`.
+- Relatorios locais gerados em:
+  - `outputs/relatorios/2026-06-21T01-43-42-431Z-sync-observacoes-legado-retifica-premium/summary.json`;
+  - `outputs/relatorios/2026-06-21T01-43-42-431Z-sync-observacoes-legado-retifica-premium/observacoes-depara.csv`;
+  - `outputs/relatorios/2026-06-21T01-44-29-849Z-sync-observacoes-legado-retifica-premium/summary.json`.
+- Sem migration, sem mudanca de RLS/Storage/Auth/Edge Function. Foi uma correcao de dados remota e pontual em `Notas_de_Servico.observacoes`.
+
+---
+
 ## Auditoria RDS Legado x Retiflow - De/Para De O.S. - 2026-06-21
 
 - Pedido: validar se todas as O.S. da Retifica Premium que ainda estao no sistema antigo AWS/RDS,

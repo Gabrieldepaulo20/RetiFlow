@@ -282,13 +282,12 @@ async function ensureServiceItem(description, destination) {
 }
 
 function buildObservations(service) {
-  const chunks = [];
-  const solicitante = cleanText(service.solicitante);
-  const observacoes = cleanText(service.observacoes);
-  if (solicitante) chunks.push(`Solicitante legado: ${solicitante}`);
-  if (observacoes) chunks.push(observacoes);
-  chunks.push(`Importado da base antiga Retifica Premium. ID legado: ${service.id_servico}.`);
-  return chunks.join('\n');
+  return normalizeLegacyObservation(service.observacoes);
+}
+
+function normalizeLegacyObservation(value) {
+  const normalized = String(value ?? '').replace(/\r\n?/g, '\n').trim();
+  return normalized || null;
 }
 
 async function importNote({ service, client, vehicle, items, ownerId, statusId, destination, createdVehicleByLegacyId, motorId }) {
