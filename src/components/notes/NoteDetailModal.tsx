@@ -30,6 +30,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   STATUS_LABELS,
+  STATUS_DESCRIPTIONS,
+  PAYMENT_STATUS_LABELS,
+  PAYMENT_METHOD_LABELS,
   FINAL_STATUSES,
   ALLOWED_TRANSITIONS,
   NoteStatus,
@@ -60,6 +63,13 @@ import {
   Hammer,
   Printer,
   X,
+  FileWarning,
+  Calendar,
+  Flag,
+  CalendarCheck,
+  Wallet,
+  Phone,
+  CheckCircle2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -124,21 +134,6 @@ const STATUS_DOT: Record<NoteStatus, string> = {
   EXCLUIDA: 'bg-zinc-400',
 };
 
-/** 3px accent bar color at the very top of the modal */
-const STATUS_ACCENT: Record<NoteStatus, string> = {
-  ABERTO: 'bg-blue-500',
-  EM_ANALISE: 'bg-amber-500',
-  ORCAMENTO: 'bg-orange-500',
-  APROVADO: 'bg-emerald-500',
-  EM_EXECUCAO: 'bg-violet-500',
-  AGUARDANDO_COMPRA: 'bg-yellow-400',
-  PRONTA: 'bg-teal-500',
-  ENTREGUE: 'bg-sky-500',
-  RECUSADO: 'bg-red-500',
-  SEM_CONSERTO: 'bg-rose-500',
-  EXCLUIDA: 'bg-zinc-400',
-};
-
 const STATUS_TEXT: Record<NoteStatus, string> = {
   ABERTO: 'text-blue-600',
   EM_ANALISE: 'text-amber-600',
@@ -152,6 +147,34 @@ const STATUS_TEXT: Record<NoteStatus, string> = {
   SEM_CONSERTO: 'text-rose-600',
   EXCLUIDA: 'text-zinc-500',
 };
+
+/** Tinta de fundo suave do cabeçalho por status (substitui a antiga listra colorida no topo). */
+const STATUS_SOFT: Record<NoteStatus, string> = {
+  ABERTO: 'from-blue-50',
+  EM_ANALISE: 'from-amber-50',
+  ORCAMENTO: 'from-orange-50',
+  APROVADO: 'from-emerald-50',
+  EM_EXECUCAO: 'from-violet-50',
+  AGUARDANDO_COMPRA: 'from-yellow-50',
+  PRONTA: 'from-teal-50',
+  ENTREGUE: 'from-sky-50',
+  RECUSADO: 'from-red-50',
+  SEM_CONSERTO: 'from-rose-50',
+  EXCLUIDA: 'from-zinc-100',
+};
+
+/** Dica curta exibida junto ao nome da etapa (ex.: Aprovado = espera para execução). */
+const STEP_HINT: Partial<Record<NoteStatus, string>> = {
+  APROVADO: 'Espera para execução',
+};
+
+/** Data BR; datas "só data" (YYYY-MM-DD) viram meia-noite local para não regredir um dia em UTC-3. */
+function fmtDate(value?: string | null): string {
+  if (!value) return '—';
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value;
+  const date = new Date(normalized);
+  return Number.isFinite(date.getTime()) ? date.toLocaleDateString('pt-BR') : '—';
+}
 
 interface NoteDetailModalProps {
   noteId: string | null;
@@ -326,63 +349,75 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
       <DialogContent className="w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] gap-0 overflow-hidden p-0 sm:max-w-2xl lg:max-w-4xl">
         <DialogTitle className="sr-only">Detalhes da nota {note.number}</DialogTitle>
         <div className="flex max-h-[92vh] flex-col">
-          {/* ── Status accent bar ── */}
-          <div className={cn('h-0.5 w-full shrink-0', STATUS_ACCENT[note.status] ?? 'bg-primary')} />
-
-          {/* ── Header ── */}
-          {/* pr-14 reserves space for the auto-rendered Dialog close button */}
-          <div className="shrink-0 px-4 pb-4 pt-4 pr-12 sm:px-6 sm:pr-14">
-            <div className="flex items-start gap-3">
-              <div className="min-w-0 flex-1">
-                {/* Number + type + status pill in one row */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-mono text-base font-bold tracking-tight text-foreground sm:text-lg">
-                    {note.number}
-                  </span>
+          {/* ── Header (fundo suave por status; sem a antiga listra no topo) ── */}
+          {/* pr-12/14 reserva espaço para o botão de fechar do Dialog */}
+          <div
+            className={cn(
+              'shrink-0 border-b bg-gradient-to-b to-background px-4 pb-3.5 pt-4 pr-12 sm:px-6 sm:pr-14',
+              STATUS_SOFT[note.status] ?? 'from-muted/30',
+            )}
+          >
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-mono text-lg font-bold tracking-tight text-foreground sm:text-xl">
+                {note.number}
+              </span>
+              <span
+                className={cn(
+                  'text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-widest leading-none',
+                  note.type === 'COMPRA' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700',
+                )}
+              >
+                {note.type === 'COMPRA' ? 'Compra' : 'Serviço'}
+              </span>
+              {/* Status badge (com dica de etapa, ex.: Aprovado · Espera para execução) */}
+              {(() => {
+                const Icon = STATUS_ICON[note.status] ?? FolderOpen;
+                const bgClass = STATUS_DOT[note.status].replace('-500', '-100').replace('-400', '-100');
+                return (
                   <span
                     className={cn(
-                      'text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-widest leading-none',
-                      note.type === 'COMPRA'
-                        ? 'bg-amber-50 text-amber-600'
-                        : 'bg-blue-50 text-blue-600',
+                      'inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-1 rounded-full',
+                      bgClass, STATUS_TEXT[note.status],
                     )}
                   >
-                    {note.type === 'COMPRA' ? 'Compra' : 'Serviço'}
+                    <Icon className="w-3.5 h-3.5 shrink-0" />
+                    {STATUS_LABELS[note.status]}
+                    {STEP_HINT[note.status] && (
+                      <span className="font-medium opacity-70">· {STEP_HINT[note.status]}</span>
+                    )}
+                    {isFinal && <span className="opacity-50 text-[10px]">· final</span>}
                   </span>
-                  {/* Status badge */}
-                  {(() => {
-                    const Icon = STATUS_ICON[note.status] ?? FolderOpen;
-                    const bgClass = STATUS_DOT[note.status]
-                      .replace('-500', '-100').replace('-400', '-100');
-                    return (
-                      <span
-                        className={cn(
-                          'ml-0.5 inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-1 rounded-full',
-                          bgClass, STATUS_TEXT[note.status],
-                        )}
-                      >
-                        <Icon className="w-3.5 h-3.5 shrink-0" />
-                        {STATUS_LABELS[note.status]}
-                        {isFinal && <span className="opacity-50 text-[10px]">· final</span>}
-                      </span>
-                    );
-                  })()}
-                </div>
-                {/* Client + vehicle subtitle */}
-                <p className="mt-1 text-xs text-muted-foreground leading-snug">
-                  {client.name}
-                  {note.vehicleModel ? <span className="opacity-60"> · {note.vehicleModel}</span> : ''}
-                  {note.plate ? <span className="font-mono opacity-50"> · {note.plate}</span> : ''}
-                </p>
-              </div>
+                );
+              })()}
+              {/* Eixo financeiro (recebimento) */}
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full',
+                  note.paymentStatus === 'PAGO'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-amber-100 text-amber-700',
+                )}
+              >
+                {note.paymentStatus === 'PAGO' ? <CheckCircle2 className="w-3 h-3" /> : <Wallet className="w-3 h-3" />}
+                {PAYMENT_STATUS_LABELS[note.paymentStatus]}
+              </span>
             </div>
+            {/* Cliente · veículo · placa */}
+            <p className="mt-1.5 text-xs text-muted-foreground leading-snug">
+              {client.name}
+              {note.vehicleModel ? <span className="opacity-60"> · {note.vehicleModel}</span> : ''}
+              {note.plate ? <span className="font-mono opacity-50"> · {note.plate}</span> : ''}
+            </p>
           </div>
 
           {/* ── Timeline band (truly edge-to-edge) ── */}
           <div className="shrink-0 border-t border-b bg-muted/20">
-            <div className="px-4 pt-3 pb-0.5 sm:px-6">
-              <p className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-[0.12em]">
+            <div className="flex items-baseline justify-between gap-3 px-4 pt-3 pb-0.5 sm:px-6">
+              <p className="shrink-0 text-[9px] font-bold text-muted-foreground/60 uppercase tracking-[0.12em]">
                 Progresso
+              </p>
+              <p className="truncate text-right text-[10px] leading-tight text-muted-foreground/70">
+                {STATUS_DESCRIPTIONS[note.status]}
               </p>
             </div>
             {/* overflow-x-auto only on mobile; on larger screens fills 100% */}
@@ -414,18 +449,30 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                             )}
                           />
                         </div>
-                        <span
-                          className={cn(
-                            'text-[8px] whitespace-nowrap leading-none',
-                            isPast
-                              ? 'text-primary/60 font-medium'
-                              : isCurrent
-                                ? 'text-primary font-bold'
-                                : 'text-muted-foreground/35 font-medium',
+                        <div className="flex max-w-[72px] flex-col items-center gap-0.5">
+                          <span
+                            className={cn(
+                              'text-[8px] whitespace-nowrap leading-none',
+                              isPast
+                                ? 'text-primary/60 font-medium'
+                                : isCurrent
+                                  ? 'text-primary font-bold'
+                                  : 'text-muted-foreground/35 font-medium',
+                            )}
+                          >
+                            {STATUS_LABELS[s]}
+                          </span>
+                          {STEP_HINT[s] && (
+                            <span
+                              className={cn(
+                                'text-center text-[7px] leading-[1.15]',
+                                isCurrent ? 'text-primary/70 font-semibold' : 'text-muted-foreground/40',
+                              )}
+                            >
+                              {STEP_HINT[s]}
+                            </span>
                           )}
-                        >
-                          {STATUS_LABELS[s]}
-                        </span>
+                        </div>
                       </div>
                       {/* Connector — flex-1 fills remaining space */}
                       {!isLast && (
@@ -511,6 +558,21 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                 </div>
               )}
 
+              {/* Queixa / Defeito relatado */}
+              {note.complaint && (
+                <div className="rounded-xl border border-border/60 bg-background p-3.5">
+                  <div className="mb-1.5 flex items-center gap-1.5">
+                    <FileWarning className="h-3.5 w-3.5 text-muted-foreground/50" />
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Queixa / Defeito relatado
+                    </p>
+                  </div>
+                  <p className="whitespace-pre-line text-sm leading-relaxed text-foreground/85">
+                    {note.complaint}
+                  </p>
+                </div>
+              )}
+
               {/* Client + Vehicle grid */}
               <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                 {/* Client */}
@@ -529,6 +591,13 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                     {client.docNumber && (
                       <p className="text-[10px] text-muted-foreground/40 font-mono truncate">
                         {client.docNumber}
+                      </p>
+                    )}
+                    {note.contatoNome && (
+                      <p className="mt-1 flex items-center gap-1 text-[11px] text-foreground/70">
+                        <Phone className="h-3 w-3 shrink-0 text-muted-foreground/40" />
+                        <span className="text-muted-foreground/60">Contato:</span>
+                        <span className="font-medium truncate">{note.contatoNome}</span>
                       </p>
                     )}
                   </div>
@@ -576,25 +645,81 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                 </div>
               )}
 
-              {/* Days in status */}
-              <div
-                className={cn(
-                  'flex items-center gap-2 px-3 py-2 rounded-lg',
-                  daysInStatus >= 7
-                    ? 'bg-red-50/70 text-red-700'
-                    : daysInStatus >= 4
-                      ? 'bg-amber-50/70 text-amber-700'
-                      : 'bg-muted/20 text-muted-foreground',
-                )}
-              >
-                <Clock className="w-3.5 h-3.5 shrink-0 opacity-70" />
-                <span className="text-xs font-medium">
-                  {daysInStatus === 0
-                    ? 'Atualizado hoje'
-                    : `${daysInStatus} dia${daysInStatus !== 1 ? 's' : ''} nesta etapa`}
-                </span>
-                {daysInStatus >= 7 && (
-                  <span className="ml-auto text-[10px] font-bold uppercase tracking-wide opacity-80">Atenção</span>
+              {/* Datas & prazo + tempo na etapa */}
+              <div className="rounded-xl bg-muted/30 p-3">
+                <p className="mb-2 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Datas & prazo
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-muted-foreground/50">
+                      <Calendar className="h-3 w-3" /> Aberta
+                    </span>
+                    <span className="text-xs font-semibold text-foreground/80">{fmtDate(note.createdAt)}</span>
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-muted-foreground/50">
+                      <Flag className="h-3 w-3" /> Prazo
+                    </span>
+                    <span className="text-xs font-semibold text-foreground/80">{fmtDate(note.deadline)}</span>
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-muted-foreground/50">
+                      <CalendarCheck className="h-3 w-3" /> Entregue
+                    </span>
+                    <span className="text-xs font-semibold text-foreground/80">{fmtDate(note.finalizedAt)}</span>
+                  </div>
+                </div>
+                <div
+                  className={cn(
+                    'mt-2.5 flex items-center gap-2 rounded-lg px-2.5 py-1.5',
+                    daysInStatus >= 7
+                      ? 'bg-red-50 text-red-700'
+                      : daysInStatus >= 4
+                        ? 'bg-amber-50 text-amber-700'
+                        : 'bg-background/60 text-muted-foreground',
+                  )}
+                >
+                  <Clock className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                  <span className="text-xs font-medium">
+                    {daysInStatus === 0
+                      ? 'Atualizado hoje'
+                      : `${daysInStatus} dia${daysInStatus !== 1 ? 's' : ''} nesta etapa`}
+                  </span>
+                  {daysInStatus >= 7 && (
+                    <span className="ml-auto text-[10px] font-bold uppercase tracking-wide opacity-80">Atenção</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Pagamento (eixo financeiro, separado do fluxo) */}
+              <div className="flex items-center gap-2.5 rounded-xl bg-muted/30 p-3">
+                <div
+                  className={cn(
+                    'flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
+                    note.paymentStatus === 'PAGO' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600',
+                  )}
+                >
+                  {note.paymentStatus === 'PAGO' ? <CheckCircle2 className="h-4 w-4" /> : <Wallet className="h-4 w-4" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Pagamento</p>
+                  <p
+                    className={cn(
+                      'text-sm font-semibold leading-tight',
+                      note.paymentStatus === 'PAGO' ? 'text-emerald-700' : 'text-amber-700',
+                    )}
+                  >
+                    {PAYMENT_STATUS_LABELS[note.paymentStatus]}
+                  </p>
+                </div>
+                {note.paymentStatus === 'PAGO' && (
+                  <div className="text-right">
+                    <p className="text-xs font-medium text-foreground/80">{fmtDate(note.paidAt)}</p>
+                    {note.paidWith && (
+                      <p className="text-[10px] text-muted-foreground/60">{PAYMENT_METHOD_LABELS[note.paidWith]}</p>
+                    )}
+                  </div>
                 )}
               </div>
 
