@@ -4,6 +4,35 @@ Atualizado em: 2026-06-20
 
 ---
 
+## Notas De Entrada - Filtros Em Modal E Ordenacao - 2026-06-20
+
+- Pedido urgente: filtro de Notas de Entrada deve abrir em pop-up responsivo para computador/celular; filtros so devem aplicar ao clicar em `Confirmar filtros`; adicionar ordenacao por O.S. e por data.
+- Frontend:
+  - `src/pages/IntakeNotes.tsx` trocou o popover pequeno por `Dialog` responsivo com rascunho de filtros separado dos filtros aplicados;
+  - cliente, periodo, pagamento, status e ordenacao agora ficam no modal e so filtram depois de confirmar;
+  - ordenacao nova: `Data mais recente`, `Data mais antiga`, `O.S. maior primeiro`, `O.S. menor primeiro`;
+  - selo de ordenacao aparece quando foge do padrao e `Limpar tudo` volta para `Data mais recente`;
+  - helper `src/services/domain/intakeNotesList.ts` centraliza comparacao natural de O.S. e data.
+- Banco/Supabase:
+  - migration `20260620124500_order_notas_servico_filters.sql` adiciona parametros opcionais `p_ordem_campo` e `p_ordem_direcao` nas RPCs `get_notas_servico` e `get_notas_servico_contexto_suporte`;
+  - valores aceitos sao `data`/`os` e `asc`/`desc`; valor invalido cai para data descendente;
+  - aplicada remotamente via `supabase db query --linked -f ...` porque `supabase db push --dry-run` segue bloqueado pelo drift historico antigo;
+  - migration marcada como aplicada com `supabase migration repair --status applied 20260620124500`;
+  - catalogo remoto confirmou as duas assinaturas novas.
+- Validacao visual:
+  - desktop mock: modal abriu, confirmou `O.S. menor primeiro`, fechou e lista passou a iniciar por `OS-1`;
+  - mobile 393x873: modal ficou dentro da tela, botao `Confirmar filtros` visivel e sem overflow horizontal.
+- Validacoes executadas:
+  - `npx tsc --noEmit`: passou;
+  - `npm run lint`: passou com 8 avisos antigos de Fast Refresh;
+  - `npm test -- --run src/test/intake-notes-list.test.ts`: passou;
+  - `npm test -- --run`: passou, 52 arquivos e 383 testes;
+  - `npm run build`: passou com avisos conhecidos de Browserslist/dynamic import/chunk size;
+  - `npm run test:integration -- --run src/test/integration/notas.test.ts`: passou, 4 testes;
+  - `npm run test:integration -- --run`: passou, 17 arquivos e 55 testes.
+
+---
+
 ## O.S. / PDF - Documento E CEP Com Pontuacao - 2026-06-20
 
 - Pedido: nos dados da nota/O.S., `Documento` deve sair com pontuacao de CPF/CNPJ e `CEP` deve sair com hifen.

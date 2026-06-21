@@ -141,6 +141,8 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
       p_data_inicio: yesterday.toISOString().slice(0, 10),
       p_data_fim: tomorrow.toISOString().slice(0, 10),
       p_limite: 5,
+      p_ordem_campo: 'os',
+      p_ordem_direcao: 'asc',
     });
     expect(filteredToday.status).toBe(200);
     expect(filteredToday.total).toBeGreaterThanOrEqual(1);

@@ -9,7 +9,14 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { STATUS_LABELS, STATUS_COLORS, NoteStatus, NOTE_STATUS_ORDER, BILLABLE_STATUSES, PAYMENT_STATUS_COLORS, PAYMENT_STATUS_LABELS, IntakeNote } from '@/types';
@@ -41,6 +48,12 @@ import {
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
 import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 import { createPdfPreviewWindow, openPdfInBrowser } from '@/lib/printPdf';
+import {
+  compareIntakeNotes,
+  getIntakeNoteSortLabel,
+  type IntakeNoteSortDirection,
+  type IntakeNoteSortField,
+} from '@/services/domain/intakeNotesList';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
@@ -88,6 +101,17 @@ export default function IntakeNotes() {
   const [paymentFilter, setPaymentFilter] = useState<'all' | 'PAGO' | 'PENDENTE'>('all');
   const [customStartDate, setCustomStartDate] = useState(() => format(subDays(new Date(), 29), 'yyyy-MM-dd'));
   const [customEndDate, setCustomEndDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+  const [sortField, setSortField] = useState<IntakeNoteSortField>('date');
+  const [sortDirection, setSortDirection] = useState<IntakeNoteSortDirection>('desc');
+  const [filterDialogOpen, setFilterDialogOpen] = useState(false);
+  const [draftStatusFilters, setDraftStatusFilters] = useState<Set<string>>(() => new Set(statusFilters));
+  const [draftClientFilter, setDraftClientFilter] = useState(clientFilter);
+  const [draftDatePreset, setDraftDatePreset] = useState<NoteDatePreset>(datePreset);
+  const [draftPaymentFilter, setDraftPaymentFilter] = useState<'all' | 'PAGO' | 'PENDENTE'>(paymentFilter);
+  const [draftCustomStartDate, setDraftCustomStartDate] = useState(customStartDate);
+  const [draftCustomEndDate, setDraftCustomEndDate] = useState(customEndDate);
+  const [draftSortField, setDraftSortField] = useState<IntakeNoteSortField>(sortField);
+  const [draftSortDirection, setDraftSortDirection] = useState<IntakeNoteSortDirection>(sortDirection);
   const [previewNoteId, setPreviewNoteId] = useState<string | null>(null);
   const [detailNoteId, setDetailNoteId] = useState<string | null>(null);
   const [newNoteOpen, setNewNoteOpen] = useState(false);
@@ -120,9 +144,64 @@ export default function IntakeNotes() {
     });
   };
 
+  const syncDraftFilters = () => {
+    setDraftStatusFilters(new Set(statusFilters));
+    setDraftClientFilter(clientFilter);
+    setDraftDatePreset(datePreset);
+    setDraftPaymentFilter(paymentFilter);
+    setDraftCustomStartDate(customStartDate);
+    setDraftCustomEndDate(customEndDate);
+    setDraftSortField(sortField);
+    setDraftSortDirection(sortDirection);
+  };
+
+  const handleFilterDialogOpenChange = (open: boolean) => {
+    if (open) syncDraftFilters();
+    setFilterDialogOpen(open);
+  };
+
+  const toggleDraftStatusFilter = (key: string) => {
+    setDraftStatusFilters(prev => {
+      if (IS_REAL_AUTH) {
+        return prev.has(key) ? new Set() : new Set([key]);
+      }
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const resetDraftFilters = () => {
+    setDraftStatusFilters(new Set());
+    setDraftClientFilter('all');
+    setDraftDatePreset('all');
+    setDraftPaymentFilter('all');
+    setDraftCustomStartDate(format(subDays(new Date(), 29), 'yyyy-MM-dd'));
+    setDraftCustomEndDate(format(new Date(), 'yyyy-MM-dd'));
+    setDraftSortField('date');
+    setDraftSortDirection('desc');
+  };
+
+  const applyDraftFilters = () => {
+    setStatusFilters(new Set(draftStatusFilters));
+    setClientFilter(draftClientFilter);
+    setDatePreset(draftDatePreset);
+    setPaymentFilter(draftPaymentFilter);
+    setCustomStartDate(draftCustomStartDate);
+    setCustomEndDate(draftCustomEndDate);
+    setSortField(draftSortField);
+    setSortDirection(draftSortDirection);
+    setCurrentPage(1);
+    setFilterDialogOpen(false);
+  };
+
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearch, statusFilters, clientFilter, datePreset, paymentFilter, customStartDate, customEndDate]);
+  }, [debouncedSearch, statusFilters, clientFilter, datePreset, paymentFilter, customStartDate, customEndDate, sortField, sortDirection]);
 
   const allStatuses: Array<{ key: NoteStatus; label: string }> = NOTE_STATUS_ORDER.map(s => ({
     key: s,
@@ -212,6 +291,8 @@ export default function IntakeNotes() {
       selectedStatusId,
       dateRange.startInput,
       dateRange.endInput,
+      sortField,
+      sortDirection,
     ],
     queryFn: async () => {
       const { dados, total } = await getNotasServico({
@@ -222,6 +303,8 @@ export default function IntakeNotes() {
         p_fk_status: selectedStatusId,
         p_data_inicio: dateRange.startInput,
         p_data_fim: dateRange.endInput,
+        p_ordem_campo: sortField,
+        p_ordem_direcao: sortDirection,
       });
 
       return {
@@ -266,8 +349,8 @@ export default function IntakeNotes() {
         return noteMatchesNumericQuery(n.number, q) || client?.name.toLowerCase().includes(q) || false;
       }
       return true;
-    }).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [sourceNotes, debouncedSearch, effectiveStatusFilters, clientFilter, paymentFilter, dateRange, clients]);
+    }).sort((a, b) => compareIntakeNotes(a, b, sortField, sortDirection));
+  }, [sourceNotes, debouncedSearch, effectiveStatusFilters, clientFilter, paymentFilter, dateRange, clients, sortField, sortDirection]);
 
   const paginatedNotes = useMemo(() => {
     if (IS_REAL_AUTH) return filtered;
@@ -283,12 +366,16 @@ export default function IntakeNotes() {
     statusFilters.size +
     (clientFilter !== 'all' ? 1 : 0) +
     (datePreset !== 'all' ? 1 : 0) +
-    (paymentFilter !== 'all' ? 1 : 0);
+    (paymentFilter !== 'all' ? 1 : 0) +
+    (sortField !== 'date' || sortDirection !== 'desc' ? 1 : 0);
   const clearAllFilters = () => {
     setStatusFilters(new Set());
     setClientFilter('all');
     setDatePreset('all');
     setPaymentFilter('all');
+    setSortField('date');
+    setSortDirection('desc');
+    setCurrentPage(1);
   };
   const isLoadingNotesPage = IS_REAL_AUTH && serverNotesQuery.isFetching;
   const hasUnsupportedMultiStatusFilter = IS_REAL_AUTH && statusFilters.size > 1;
@@ -305,8 +392,8 @@ export default function IntakeNotes() {
     [filtered],
   );
   const latestNoteDate = useMemo(() => {
-    const latest = filtered[0]?.createdAt;
-    return latest ? format(new Date(latest), 'dd/MM/yyyy') : '—';
+    const latestTime = filtered.reduce((max, note) => Math.max(max, new Date(note.createdAt).getTime()), 0);
+    return latestTime ? format(new Date(latestTime), 'dd/MM/yyyy') : '—';
   }, [filtered]);
   const summaryCards = [
     {
@@ -587,117 +674,179 @@ export default function IntakeNotes() {
                 />
               </div>
 
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      'h-10 w-10 shrink-0 gap-2 rounded-xl border-border/70 bg-background px-0 shadow-sm sm:h-11 sm:w-auto sm:px-4',
-                      activeFilterCount > 0 && 'border-primary/40 text-primary',
-                    )}
-                    aria-label="Abrir filtros"
-                  >
-                    <SlidersHorizontal className="w-4 h-4" />
-                    <span className="hidden sm:inline">Filtros</span>
-                    {activeFilterCount > 0 && (
-                      <span className="bg-primary/10 text-primary text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none tabular-nums">
-                        {activeFilterCount}
-                      </span>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="w-[300px] space-y-3 p-3">
-                  <div className="space-y-1.5">
-                    <p className="text-xs font-semibold text-foreground">Cliente</p>
-                    <Select value={clientFilter} onValueChange={setClientFilter}>
-                      <SelectTrigger className="h-10 rounded-xl">
-                        <SelectValue placeholder="Cliente" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todos os clientes</SelectItem>
-                        {activeClients.map((client) => (
-                          <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+              <Button
+                variant="outline"
+                className={cn(
+                  'h-10 w-10 shrink-0 gap-2 rounded-xl border-border/70 bg-background px-0 shadow-sm sm:h-11 sm:w-auto sm:px-4',
+                  activeFilterCount > 0 && 'border-primary/40 text-primary',
+                )}
+                aria-label="Abrir filtros"
+                onClick={() => handleFilterDialogOpenChange(true)}
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+                <span className="hidden sm:inline">Filtros</span>
+                {activeFilterCount > 0 && (
+                  <span className="bg-primary/10 text-primary text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none tabular-nums">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </Button>
 
-                  <div className="space-y-1.5">
-                    <p className="text-xs font-semibold text-foreground">Período</p>
-                    <Select value={datePreset} onValueChange={(value) => setDatePreset(value as NoteDatePreset)}>
-                      <SelectTrigger className="h-10 rounded-xl">
-                        <SelectValue placeholder="Período" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {datePresetOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {datePreset === 'custom' && (
-                      <div className="flex items-center gap-2 pt-1">
-                        <Input type="date" value={customStartDate} onChange={(e) => setCustomStartDate(e.target.value)} className="h-9 rounded-xl text-sm" />
-                        <span className="text-xs text-muted-foreground">até</span>
-                        <Input type="date" value={customEndDate} onChange={(e) => setCustomEndDate(e.target.value)} className="h-9 rounded-xl text-sm" />
-                      </div>
-                    )}
-                  </div>
+              <Dialog open={filterDialogOpen} onOpenChange={handleFilterDialogOpenChange}>
+                <DialogContent className="max-w-2xl gap-0 overflow-hidden p-0 sm:max-h-[min(760px,calc(100vh-2rem))]">
+                  <DialogHeader className="border-b border-border/70 px-4 py-4 text-left sm:px-5">
+                    <DialogTitle className="text-lg">Filtros da lista</DialogTitle>
+                    <DialogDescription>
+                      Ajuste a visualização e confirme para atualizar as O.S.
+                    </DialogDescription>
+                  </DialogHeader>
 
-                  <div className="space-y-1.5">
-                    <p className="text-xs font-semibold text-foreground">Pagamento</p>
-                    <Select value={paymentFilter} onValueChange={(v) => setPaymentFilter(v as 'all' | 'PAGO' | 'PENDENTE')}>
-                      <SelectTrigger className="h-10 rounded-xl">
-                        <SelectValue placeholder="Pagamento" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todos</SelectItem>
-                        <SelectItem value="PENDENTE">A receber</SelectItem>
-                        <SelectItem value="PAGO">Recebido</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-semibold text-foreground">Status</p>
-                      {statusFilters.size > 0 && (
-                        <button onClick={() => setStatusFilters(new Set())} className="text-[11px] font-medium text-primary hover:underline">
-                          Limpar
-                        </button>
-                      )}
-                    </div>
-                    <div className="max-h-[200px] space-y-0.5 overflow-y-auto">
-                      {allStatuses.map(status => {
-                        const active = statusFilters.has(status.key);
-                        return (
+                  <div className="max-h-[calc(100dvh-13rem)] space-y-4 overflow-y-auto px-4 py-4 sm:max-h-[calc(100vh-15rem)] sm:px-5">
+                    <section className="rounded-2xl border border-border/70 bg-muted/20 p-3">
+                      <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">Ordenar por</p>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        {([
+                          ['date', 'Data'],
+                          ['os', 'Número da O.S.'],
+                        ] as const).map(([value, label]) => (
                           <button
-                            key={status.key}
-                            onClick={() => toggleStatusFilter(status.key)}
+                            key={value}
+                            type="button"
+                            onClick={() => setDraftSortField(value)}
                             className={cn(
-                              'flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-sm transition-colors',
-                              active ? 'bg-emerald-50 text-emerald-700' : 'text-foreground hover:bg-muted',
+                              'rounded-xl border px-3 py-2 text-left text-sm font-semibold transition-colors',
+                              draftSortField === value
+                                ? 'border-primary/50 bg-primary/10 text-primary'
+                                : 'border-border/70 bg-background text-foreground hover:bg-muted/60',
                             )}
                           >
-                            <span className="flex min-w-0 items-center gap-2">
-                              {active ? <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" /> : <span className="h-3.5 w-3.5 shrink-0" />}
-                              <span className="truncate">{status.label}</span>
-                            </span>
-                            <span className={cn('text-xs tabular-nums', active ? 'font-semibold text-emerald-600' : 'text-muted-foreground')}>
-                              {statusCounts[status.key] || 0}
-                            </span>
+                            {label}
                           </button>
-                        );
-                      })}
+                        ))}
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        {([
+                          ['desc', draftSortField === 'os' ? 'Maior primeiro' : 'Mais recente'],
+                          ['asc', draftSortField === 'os' ? 'Menor primeiro' : 'Mais antiga'],
+                        ] as const).map(([value, label]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setDraftSortDirection(value)}
+                            className={cn(
+                              'rounded-xl border px-3 py-2 text-left text-sm font-semibold transition-colors',
+                              draftSortDirection === value
+                                ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                                : 'border-border/70 bg-background text-foreground hover:bg-muted/60',
+                            )}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <p className="text-xs font-semibold text-foreground">Cliente</p>
+                        <Select value={draftClientFilter} onValueChange={setDraftClientFilter}>
+                          <SelectTrigger className="h-10 rounded-xl">
+                            <SelectValue placeholder="Cliente" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Todos os clientes</SelectItem>
+                            {activeClients.map((client) => (
+                              <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <p className="text-xs font-semibold text-foreground">Pagamento</p>
+                        <Select value={draftPaymentFilter} onValueChange={(v) => setDraftPaymentFilter(v as 'all' | 'PAGO' | 'PENDENTE')}>
+                          <SelectTrigger className="h-10 rounded-xl">
+                            <SelectValue placeholder="Pagamento" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Todos</SelectItem>
+                            <SelectItem value="PENDENTE">A receber</SelectItem>
+                            <SelectItem value="PAGO">Recebido</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-semibold text-foreground">Período</p>
+                      <Select value={draftDatePreset} onValueChange={(value) => setDraftDatePreset(value as NoteDatePreset)}>
+                        <SelectTrigger className="h-10 rounded-xl">
+                          <SelectValue placeholder="Período" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {datePresetOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {draftDatePreset === 'custom' && (
+                        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 pt-1">
+                          <Input type="date" value={draftCustomStartDate} onChange={(e) => setDraftCustomStartDate(e.target.value)} className="h-9 rounded-xl text-sm" />
+                          <span className="text-xs text-muted-foreground">até</span>
+                          <Input type="date" value={draftCustomEndDate} onChange={(e) => setDraftCustomEndDate(e.target.value)} className="h-9 rounded-xl text-sm" />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs font-semibold text-foreground">Status</p>
+                        {draftStatusFilters.size > 0 && (
+                          <button onClick={() => setDraftStatusFilters(new Set())} className="text-[11px] font-medium text-primary hover:underline">
+                            Limpar status
+                          </button>
+                        )}
+                      </div>
+                      <div className="max-h-[240px] space-y-1 overflow-y-auto rounded-2xl border border-border/70 bg-background p-1.5">
+                        {allStatuses.map(status => {
+                          const active = draftStatusFilters.has(status.key);
+                          return (
+                            <button
+                              key={status.key}
+                              type="button"
+                              onClick={() => toggleDraftStatusFilter(status.key)}
+                              className={cn(
+                                'flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-sm transition-colors',
+                                active ? 'bg-emerald-50 text-emerald-700' : 'text-foreground hover:bg-muted',
+                              )}
+                            >
+                              <span className="flex min-w-0 items-center gap-2">
+                                {active ? <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" /> : <span className="h-3.5 w-3.5 shrink-0" />}
+                                <span className="truncate">{status.label}</span>
+                              </span>
+                              <span className={cn('text-xs tabular-nums', active ? 'font-semibold text-emerald-600' : 'text-muted-foreground')}>
+                                {statusCounts[status.key] || 0}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
 
-                  {activeFilterCount > 0 && (
-                    <Button variant="ghost" size="sm" className="w-full" onClick={clearAllFilters}>
-                      Limpar filtros
+                  <DialogFooter className="border-t border-border/70 bg-background px-4 py-3 sm:px-5">
+                    <Button variant="ghost" onClick={resetDraftFilters}>
+                      Limpar
                     </Button>
-                  )}
-                </PopoverContent>
-              </Popover>
+                    <Button variant="outline" onClick={() => setFilterDialogOpen(false)}>
+                      Cancelar
+                    </Button>
+                    <Button onClick={applyDraftFilters}>
+                      Confirmar filtros
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
 
             {/* Active filter badges */}
@@ -738,6 +887,18 @@ export default function IntakeNotes() {
                   {paymentFilter !== 'all' && (
                     <Badge variant="secondary" className="gap-1.5 px-2.5 py-1 rounded-full text-xs cursor-pointer" onClick={() => setPaymentFilter('all')}>
                       {paymentFilter === 'PAGO' ? 'Recebido' : 'A receber'}
+                    </Badge>
+                  )}
+                  {(sortField !== 'date' || sortDirection !== 'desc') && (
+                    <Badge
+                      variant="secondary"
+                      className="gap-1.5 px-2.5 py-1 rounded-full text-xs cursor-pointer"
+                      onClick={() => {
+                        setSortField('date');
+                        setSortDirection('desc');
+                      }}
+                    >
+                      {getIntakeNoteSortLabel(sortField, sortDirection)}
                     </Badge>
                   )}
                   <button

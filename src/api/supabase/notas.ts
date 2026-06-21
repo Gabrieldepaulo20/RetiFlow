@@ -4,6 +4,7 @@ import { readStoredSupportContext } from '@/services/auth/supportContext';
 import { getPerfil } from './auth';
 import { buildNotePdfStoragePath } from '@/services/storage/storagePaths';
 import type { ResolvedDocumentCustomization } from '@/services/domain/documentCustomization';
+import type { IntakeNoteSortDirection, IntakeNoteSortField } from '@/services/domain/intakeNotesList';
 
 const NOTAS_BUCKET = 'notas';
 const DEFAULT_NOTA_PDF_SIGNED_URL_TTL = 60 * 60;
@@ -81,6 +82,8 @@ export async function getNotasServico(params?: {
   p_data_inicio?: string;
   p_data_fim?: string;
   p_apenas_sem_fechamento?: boolean;
+  p_ordem_campo?: IntakeNoteSortField;
+  p_ordem_direcao?: IntakeNoteSortDirection;
 }) {
   const env = await callRPC<NotaServico[]>('get_notas_servico', params);
   return { dados: env.dados ?? [], total: env.total ?? 0 };
