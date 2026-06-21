@@ -78,6 +78,7 @@ export function makeDataCtx(overrides: Partial<DataCtx> = {}): DataCtx {
     payableHistory: [],
     addPayable: vi.fn(),
     updatePayable: vi.fn(),
+    updateCategoriaClasse: vi.fn(),
     getPayable: vi.fn(),
     addPayableAttachment: vi.fn(),
     addPayableHistoryEntry: vi.fn(),
