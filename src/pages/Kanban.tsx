@@ -306,7 +306,8 @@ export default function Kanban() {
   /* ── Filtered notes ── */
 
   const filteredNotes = useMemo(() => {
-    let result = notes;
+    // EXCLUIDA é soft-delete: fora do board e fora do contador do topo.
+    let result = notes.filter((n) => n.status !== 'EXCLUIDA');
 
     // Period filter
     if (periodFilter !== "all") {

@@ -27,6 +27,12 @@ const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
 
 /** Estágios do fluxo principal (sem os finais alternativos) para a timeline */
 const MAIN_FLOW: NoteStatus[] = ['ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'AGUARDANDO_COMPRA', 'PRONTA', 'ENTREGUE'];
+/**
+ * Fluxo linear para "Voltar status". Exclui AGUARDANDO_COMPRA: essa pausa só é
+ * válida quando criada via nota de compra (grava previousStatus + filha que retoma).
+ * Voltar manualmente para ela deixaria a O.S. em pausa órfã, sem retomada automática.
+ */
+const BACK_FLOW: NoteStatus[] = ['ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'PRONTA', 'ENTREGUE'];
 
 export default function IntakeNoteDetail() {
   const { id } = useParams();
@@ -79,8 +85,8 @@ export default function IntakeNoteDetail() {
     || can('kanban.manage');
   const canAdvance = canManageWorkflowStatus && !isFinal && !isAguardando && nextMainStatus !== undefined;
 
-  const mainFlowIdx = MAIN_FLOW.indexOf(note.status);
-  const canGoBack = canManageWorkflowStatus && mainFlowIdx > 0 && !isFinal && !isAguardando;
+  const backFlowIdx = BACK_FLOW.indexOf(note.status);
+  const canGoBack = canManageWorkflowStatus && backFlowIdx > 0 && !isFinal && !isAguardando;
 
   const advance = () => {
     if (canAdvance && nextMainStatus) {
@@ -90,7 +96,7 @@ export default function IntakeNoteDetail() {
   };
   const goBack = () => {
     if (canGoBack) {
-      const prevStatus = MAIN_FLOW[mainFlowIdx - 1];
+      const prevStatus = BACK_FLOW[backFlowIdx - 1];
       updateNoteStatus(note.id, prevStatus);
       toast({ title: `Voltou para ${STATUS_LABELS[prevStatus]}` });
     }

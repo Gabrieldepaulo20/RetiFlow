@@ -80,6 +80,22 @@ const MAIN_FLOW: NoteStatus[] = [
   'ENTREGUE',
 ];
 
+/**
+ * Linear flow used for "Voltar status". Excludes AGUARDANDO_COMPRA on purpose:
+ * that pause is only valid when created via a purchase note (which stamps
+ * previousStatus + a child note that auto-resumes the parent). Stepping back
+ * into it manually would leave the O.S. in an orphan pause with nothing to resume.
+ */
+const BACK_FLOW: NoteStatus[] = [
+  'ABERTO',
+  'EM_ANALISE',
+  'ORCAMENTO',
+  'APROVADO',
+  'EM_EXECUCAO',
+  'PRONTA',
+  'ENTREGUE',
+];
+
 const STATUS_ICON: Record<NoteStatus, LucideIcon> = {
   ABERTO: FolderOpen,
   EM_ANALISE: ScanSearch,
@@ -262,9 +278,9 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
     || can('notes.manage')
     || can('kanban.manage');
   const canAdvance = canManageWorkflowStatus && !isFinal && !isAguardando && nextMainStatus !== undefined;
-  const mainFlowIdx = MAIN_FLOW.indexOf(note.status);
+  const backFlowIdx = BACK_FLOW.indexOf(note.status);
   const canGoBack =
-    canManageWorkflowStatus && mainFlowIdx > 0 && !isFinal && !isAguardando;
+    canManageWorkflowStatus && backFlowIdx > 0 && !isFinal && !isAguardando;
   const daysInStatus = Math.floor(
     (Date.now() - new Date(note.updatedAt).getTime()) / (1000 * 60 * 60 * 24),
   );
@@ -281,7 +297,7 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
 
   const goBack = () => {
     if (canGoBack) {
-      const prevStatus = MAIN_FLOW[mainFlowIdx - 1];
+      const prevStatus = BACK_FLOW[backFlowIdx - 1];
       updateNoteStatus(note.id, prevStatus);
       toast({ title: `Voltou para ${STATUS_LABELS[prevStatus]}` });
     }

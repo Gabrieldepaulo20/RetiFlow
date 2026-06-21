@@ -198,7 +198,11 @@ export default function Dashboard() {
   // ── Status distribution ──────────────────────────────────────────────────
   const statusData = useMemo(() => {
     const counts = new Map<NoteStatus, number>();
-    for (const n of notes) counts.set(n.status, (counts.get(n.status) ?? 0) + 1);
+    // EXCLUIDA é soft-delete: não entra na distribuição de status.
+    for (const n of notes) {
+      if (n.status === 'EXCLUIDA') continue;
+      counts.set(n.status, (counts.get(n.status) ?? 0) + 1);
+    }
     return Array.from(counts.entries())
       .filter(([, count]) => count > 0)
       .map(([status, count]) => ({
