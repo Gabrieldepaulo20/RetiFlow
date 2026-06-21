@@ -30,6 +30,8 @@ import {
   getFinalizedRevenueNotesInRange,
   getPaidPayablesInRange,
   getPayablePaidAmount,
+  getReceivedNotesInRange,
+  getReceivableNotes,
   isDashboardRevenueEligibleNote,
   toComparableTime,
 } from '@/services/domain/dashboardFinance';
@@ -303,6 +305,28 @@ export default function Dashboard() {
 
   const periodProfit = periodDeliveredAmount - periodPaidExpenses;
   const periodProfitMargin = periodDeliveredAmount > 0 ? (periodProfit / periodDeliveredAmount) * 100 : null;
+
+  // ── Caixa (regime de caixa: dinheiro que entrou/saiu de fato) ────────────
+  const periodReceivedNotes = useMemo(
+    () => getReceivedNotesInRange(notes, selectedAccountingRange),
+    [notes, selectedAccountingRange],
+  );
+  const periodReceived = useMemo(
+    () => periodReceivedNotes.reduce((sum, note) => sum + note.totalAmount, 0),
+    [periodReceivedNotes],
+  );
+  const cashBalance = periodReceived - periodPaidExpenses;
+  // Posição em aberto (snapshot, não escopado ao período):
+  const openReceivableAmount = useMemo(
+    () => getReceivableNotes(notes).reduce((sum, note) => sum + note.totalAmount, 0),
+    [notes],
+  );
+  const openPayableAmount = useMemo(
+    () => activePayables
+      .filter((payable) => payable.status !== 'PAGO' && payable.status !== 'CANCELADO')
+      .reduce((sum, payable) => sum + Math.max(0, payable.finalAmount - (payable.paidAmount ?? 0)), 0),
+    [activePayables],
+  );
 
   const periodFinancialData = useMemo(() => {
     if (selectedRange.startTime > selectedRange.endTime) {
@@ -710,6 +734,54 @@ export default function Dashboard() {
                 className="min-h-[220px] border-0 bg-transparent px-2"
               />
             )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Caixa do período (regime de caixa) ── */}
+      <Card>
+        <CardContent className="p-3 sm:p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <div className="rounded-lg bg-emerald-500/10 p-1.5 text-emerald-600">
+              <Landmark className="h-3.5 w-3.5" />
+            </div>
+            <div>
+              <h2 className="flex items-center gap-1 text-sm font-semibold leading-tight">
+                Caixa do período
+                <InlineInfo label={`Dinheiro de fato (regime de caixa): Recebido = O.S. faturáveis pagas, pela data de pagamento; Pago = contas pagas no período. Diferente do faturamento (competência). Base de caixa a partir de ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
+              </h2>
+              <p className="text-[11px] text-muted-foreground">{selectedPeriod.label} · entrou × saiu</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-xl bg-emerald-50/60 p-2.5 sm:p-3">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-emerald-700/70">Recebido</p>
+              <p className="mt-1 text-base font-display font-bold tabular-nums text-emerald-700 sm:text-xl">R$ {fmtBRLFull(periodReceived)}</p>
+            </div>
+            <div className="rounded-xl bg-red-50/60 p-2.5 sm:p-3">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-red-700/70">Pago</p>
+              <p className="mt-1 text-base font-display font-bold tabular-nums text-red-700 sm:text-xl">R$ {fmtBRLFull(periodPaidExpenses)}</p>
+            </div>
+            <div className={cn('rounded-xl p-2.5 sm:p-3', cashBalance >= 0 ? 'bg-primary/5' : 'bg-red-50/60')}>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Saldo</p>
+              <p className={cn('mt-1 text-base font-display font-bold tabular-nums sm:text-xl', cashBalance >= 0 ? 'text-primary' : 'text-red-700')}>R$ {fmtBRLFull(cashBalance)}</p>
+            </div>
+          </div>
+          <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
+                A receber <span className="text-[10px] opacity-60">(em aberto)</span>
+              </span>
+              <span className="text-sm font-semibold tabular-nums text-foreground/80">R$ {fmtBRL(openReceivableAmount)}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Receipt className="h-3.5 w-3.5 text-red-500" />
+                A pagar <span className="text-[10px] opacity-60">(em aberto)</span>
+              </span>
+              <span className="text-sm font-semibold tabular-nums text-foreground/80">R$ {fmtBRL(openPayableAmount)}</span>
+            </div>
           </div>
         </CardContent>
       </Card>

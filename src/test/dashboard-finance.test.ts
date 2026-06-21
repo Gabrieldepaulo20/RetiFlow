@@ -5,6 +5,8 @@ import {
   getFinalizedRevenueNotesInRange,
   getPaidPayablesInRange,
   getPayablePaidAmount,
+  getReceivedNotesInRange,
+  getReceivableNotes,
   toComparableTime,
 } from '@/services/domain/dashboardFinance';
 
@@ -203,6 +205,29 @@ describe('toComparableTime', () => {
   it('retorna NaN para valor vazio', () => {
     expect(Number.isNaN(toComparableTime(undefined))).toBe(true);
     expect(Number.isNaN(toComparableTime(null))).toBe(true);
+  });
+});
+
+describe('getReceivedNotesInRange (caixa entrou)', () => {
+  it('inclui só faturável PAGO com paidAt dentro do período', () => {
+    const notes = [
+      note({ id: 'pago-no-mes', paymentStatus: 'PAGO', paidAt: '2026-06-12T12:00:00.000Z' }),
+      note({ id: 'pago-fora-do-mes', paymentStatus: 'PAGO', paidAt: '2026-07-02T12:00:00.000Z' }),
+      note({ id: 'pendente', paymentStatus: 'PENDENTE', paidAt: undefined }),
+      note({ id: 'pago-mas-nao-faturavel', status: 'EM_EXECUCAO', paymentStatus: 'PAGO', paidAt: '2026-06-12T12:00:00.000Z' }),
+    ];
+    expect(getReceivedNotesInRange(notes, june2026).map((n) => n.id)).toEqual(['pago-no-mes']);
+  });
+});
+
+describe('getReceivableNotes (a receber em aberto)', () => {
+  it('inclui faturável não pago e ignora pago / não faturável', () => {
+    const notes = [
+      note({ id: 'a-receber', status: 'ENTREGUE', paymentStatus: 'PENDENTE' }),
+      note({ id: 'recebido', status: 'ENTREGUE', paymentStatus: 'PAGO' }),
+      note({ id: 'em-andamento', status: 'EM_EXECUCAO', paymentStatus: 'PENDENTE' }),
+    ];
+    expect(getReceivableNotes(notes).map((n) => n.id)).toEqual(['a-receber']);
   });
 });
 

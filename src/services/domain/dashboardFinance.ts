@@ -84,6 +84,32 @@ export function getFinalizedRevenueNotesInRange<T extends Pick<IntakeNote, 'stat
   ));
 }
 
+/**
+ * Caixa que ENTROU no período: notas faturáveis, pagas, pela data real de recebimento.
+ * É o regime de caixa do lado das entradas — distinto do faturamento (competência).
+ */
+export function getReceivedNotesInRange<T extends Pick<IntakeNote, 'status' | 'paymentStatus' | 'paidAt'>>(
+  notes: T[],
+  range: DashboardDateRange,
+): T[] {
+  return notes.filter((note) => (
+    DASHBOARD_REVENUE_STATUSES.has(note.status)
+    && note.paymentStatus === 'PAGO'
+    && isDateInsideRange(note.paidAt, range)
+  ));
+}
+
+/**
+ * A receber (posição em aberto): notas faturáveis que o cliente ainda não pagou.
+ * Snapshot — não é escopado a período (é saldo de recebíveis no momento).
+ */
+export function getReceivableNotes<T extends Pick<IntakeNote, 'status' | 'paymentStatus'>>(notes: T[]): T[] {
+  return notes.filter((note) => (
+    DASHBOARD_REVENUE_STATUSES.has(note.status)
+    && note.paymentStatus !== 'PAGO'
+  ));
+}
+
 export function getPaidPayablesInRange<T extends Pick<AccountPayable, 'status' | 'paidAt' | 'deletedAt'>>(
   payables: T[],
   range: DashboardDateRange,
