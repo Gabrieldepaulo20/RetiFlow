@@ -25,7 +25,7 @@ import { debouncedSaveToStorage, loadStateFromStorage, type PersistedData } from
 import { generateId } from '@/lib/generateId';
 import { logError } from '@/lib/monitoring';
 import { formatNoteNumber, getNextNoteCounter, parseNoteNumberValue } from '@/lib/noteNumbers';
-import { applyNoteStatusTransition, applyNotePayment, revertNotePayment } from '@/services/domain/intakeNotes';
+import { applyNoteStatusTransition, applyNotePayment, revertNotePayment, isDirectStatusTransitionAllowed } from '@/services/domain/intakeNotes';
 import {
   getClientes,
   novoCliente,
@@ -757,6 +757,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const getNote = useCallback((id: string) => noteById.get(id), [noteById]);
 
   const updateNoteStatus = useCallback((id: string, status: NoteStatus) => {
+    // AGUARDANDO_COMPRA só entra via fluxo de nota de compra (grava previousStatus +
+    // nota-filha que retoma). Trocar status direto para cá deixaria a O.S. em pausa órfã.
+    if (!isDirectStatusTransitionAllowed(status)) {
+      if (import.meta.env.DEV) {
+        console.warn(`[updateNoteStatus] Bloqueada transição direta para ${status}; use o fluxo de nota de compra.`);
+      }
+      toast({
+        title: 'Ação não permitida',
+        description: 'Para pausar aguardando compra, use o fluxo de nota de compra.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const changedAt = new Date().toISOString();
     const previousNotes = notes;
 

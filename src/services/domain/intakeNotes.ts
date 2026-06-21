@@ -24,11 +24,29 @@ export function resolveNoteFinalizedAt(note: IntakeNote): string | null {
   return note.updatedAt || note.createdAt;
 }
 
+/**
+ * AGUARDANDO_COMPRA é uma pausa que só pode ser criada pelo fluxo de nota de compra
+ * (`createPurchaseNote`/edição que grava `previousStatus` + cria a nota-filha que
+ * retoma a O.S. automaticamente quando a compra é finalizada). Entrar nesse status
+ * por uma troca direta de status — avançar, voltar, drag — deixaria a O.S. em pausa
+ * órfã, sem `previousStatus` e sem nada para retomá-la. Por isso a transição direta
+ * é proibida no domínio; todo caller de `updateNoteStatus` deve pré-checar isto.
+ */
+export function isDirectStatusTransitionAllowed(nextStatus: NoteStatus): boolean {
+  return nextStatus !== 'AGUARDANDO_COMPRA';
+}
+
 export function applyNoteStatusTransition({
   nextStatus,
   previousNote,
   changedAt = new Date().toISOString(),
 }: StatusTransitionInput): IntakeNote {
+  if (!isDirectStatusTransitionAllowed(nextStatus)) {
+    throw new Error(
+      'Transição direta para AGUARDANDO_COMPRA não é permitida; use o fluxo de nota de compra.',
+    );
+  }
+
   const isTransitioningToBillable = isBillableNoteStatus(nextStatus);
   const isLeavingBillable = isBillableNoteStatus(previousNote.status) && !isBillableNoteStatus(nextStatus);
 

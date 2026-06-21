@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyNoteStatusTransition, isTerminalNoteStatus, resolveNoteFinalizedAt } from '@/services/domain/intakeNotes';
+import { applyNoteStatusTransition, isTerminalNoteStatus, resolveNoteFinalizedAt, isDirectStatusTransitionAllowed } from '@/services/domain/intakeNotes';
 import { ALLOWED_TRANSITIONS, FINAL_STATUSES, NoteStatus } from '@/types';
 import type { IntakeNote } from '@/types';
 
@@ -98,6 +98,35 @@ describe('applyNoteStatusTransition', () => {
       previousNote: note,
     });
     expect(result.finalizedAt).toBeUndefined();
+  });
+
+  it('throws when targeting AGUARDANDO_COMPRA (orphan-pause guard)', () => {
+    const note = buildNote({ status: 'EM_EXECUCAO' });
+    expect(() =>
+      applyNoteStatusTransition({ nextStatus: 'AGUARDANDO_COMPRA', previousNote: note }),
+    ).toThrow();
+  });
+
+  it('still allows admin backward transitions (ENTREGUE -> EM_EXECUCAO)', () => {
+    const note = buildNote({ status: 'ENTREGUE', finalizedAt: '2026-02-20T00:00:00.000Z' });
+    const result = applyNoteStatusTransition({ nextStatus: 'EM_EXECUCAO', previousNote: note });
+    expect(result.status).toBe('EM_EXECUCAO');
+  });
+});
+
+describe('isDirectStatusTransitionAllowed', () => {
+  it('blocks only AGUARDANDO_COMPRA', () => {
+    expect(isDirectStatusTransitionAllowed('AGUARDANDO_COMPRA')).toBe(false);
+  });
+
+  it('allows every other status as a direct target', () => {
+    const others: NoteStatus[] = [
+      'ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO',
+      'PRONTA', 'ENTREGUE', 'RECUSADO', 'SEM_CONSERTO', 'EXCLUIDA',
+    ];
+    for (const status of others) {
+      expect(isDirectStatusTransitionAllowed(status)).toBe(true);
+    }
   });
 });
 
