@@ -5,6 +5,7 @@ import {
   getFinalizedRevenueNotesInRange,
   getPaidPayablesInRange,
   getPayablePaidAmount,
+  toComparableTime,
 } from '@/services/domain/dashboardFinance';
 
 const may2026 = {
@@ -153,5 +154,36 @@ describe('dashboardFinance', () => {
       finalizedAt: '2026-06-15T12:00:00.000Z',
       updatedAt: '2026-06-20T12:00:00.000Z',
     }))).toBe('2026-05-20T12:00:00.000Z');
+  });
+});
+
+describe('toComparableTime', () => {
+  it('interpreta data "só data" como meia-noite local (não UTC)', () => {
+    // Sem a normalização, new Date('2026-06-01') seria meia-noite UTC e em BR (UTC-3)
+    // cairia em 31/05 21:00, vazando a conta para o mês anterior.
+    expect(toComparableTime('2026-06-01')).toBe(new Date('2026-06-01T00:00:00').getTime());
+  });
+
+  it('mantém timestamps completos inalterados', () => {
+    expect(toComparableTime('2026-06-01T12:00:00.000Z')).toBe(new Date('2026-06-01T12:00:00.000Z').getTime());
+  });
+
+  it('retorna NaN para valor vazio', () => {
+    expect(Number.isNaN(toComparableTime(undefined))).toBe(true);
+    expect(Number.isNaN(toComparableTime(null))).toBe(true);
+  });
+});
+
+describe('getPayablePaidAmount', () => {
+  it('usa paidAmount quando presente', () => {
+    expect(getPayablePaidAmount({ status: 'PARCIAL', paidAmount: 30, finalAmount: 100 })).toBe(30);
+  });
+
+  it('PARCIAL sem paidAmount não assume o valor cheio', () => {
+    expect(getPayablePaidAmount({ status: 'PARCIAL', paidAmount: undefined, finalAmount: 100 })).toBe(0);
+  });
+
+  it('PAGO sem paidAmount equivale ao finalAmount', () => {
+    expect(getPayablePaidAmount({ status: 'PAGO', paidAmount: undefined, finalAmount: 100 })).toBe(100);
   });
 });

@@ -24,12 +24,14 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DASHBOARD_ACCOUNTING_START_LABEL,
+  DASHBOARD_ACCOUNTING_START_TIME,
   clampDashboardAccountingRange,
   getDashboardRevenueDate,
   getFinalizedRevenueNotesInRange,
   getPaidPayablesInRange,
   getPayablePaidAmount,
   isDashboardRevenueEligibleNote,
+  toComparableTime,
 } from '@/services/domain/dashboardFinance';
 import { SectionEmptyState, SectionErrorState } from '@/components/ui/section-state';
 
@@ -174,13 +176,11 @@ export default function Dashboard() {
     [selectedRange],
   );
   const isInSelectedCalendarPeriod = useCallback((value?: string | null) => {
-    if (!value) return false;
-    const time = new Date(value).getTime();
+    const time = toComparableTime(value);
     return Number.isFinite(time) && time >= selectedRange.startTime && time <= selectedRange.endTime;
   }, [selectedRange.endTime, selectedRange.startTime]);
   const isInSelectedAccountingPeriod = useCallback((value?: string | null) => {
-    if (!value) return false;
-    const time = new Date(value).getTime();
+    const time = toComparableTime(value);
     return Number.isFinite(time) && time >= selectedAccountingRange.startTime && time <= selectedAccountingRange.endTime;
   }, [selectedAccountingRange.endTime, selectedAccountingRange.startTime]);
 
@@ -227,13 +227,13 @@ export default function Dashboard() {
       const end = endOfMonth(d).getTime();
       const valor = revenueRecognizedNotes
         .filter(n => {
-          const t = new Date(getDashboardRevenueDate(n)).getTime();
+          const t = toComparableTime(getDashboardRevenueDate(n));
           return t >= start && t <= end;
         })
         .reduce((sum, n) => sum + n.totalAmount, 0);
       const count = revenueRecognizedNotes
         .filter(n => {
-          const t = new Date(getDashboardRevenueDate(n)).getTime();
+          const t = toComparableTime(getDashboardRevenueDate(n));
           return t >= start && t <= end;
         }).length;
       return { month: format(d, 'MMM', { locale: ptBR }), valor, count };
@@ -383,6 +383,10 @@ export default function Dashboard() {
   );
 
   const yearlyResult = yearlyRevenue - yearlyExpenses;
+  // Saídas só têm base completa a partir do corte contábil; se o corte cai dentro do
+  // ano, "Saídas no ano" e o resultado são parciais — a UI precisa avisar (não somar
+  // receita do ano cheio contra despesa parcial sem deixar isso explícito).
+  const yearlyExpensesPartial = startYear < DASHBOARD_ACCOUNTING_START_TIME && endYear >= DASHBOARD_ACCOUNTING_START_TIME;
 
   const hasStatusData = statusData.length > 0;
   const hasRevenueHistory = monthlyData.some((item) => item.valor > 0);
@@ -828,6 +832,9 @@ export default function Dashboard() {
               <div className="text-center">
                 <p className="text-xs text-muted-foreground">Saídas no ano</p>
                 <p className="mt-1 font-semibold text-destructive">R$ {fmtBRL(yearlyExpenses)}</p>
+                {yearlyExpensesPartial && (
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">desde {DASHBOARD_ACCOUNTING_START_LABEL}</p>
+                )}
               </div>
               <div className="text-center">
                 <p className="text-xs text-muted-foreground">Ticket médio</p>
