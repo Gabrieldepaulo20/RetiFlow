@@ -4,6 +4,28 @@ Atualizado em: 2026-06-21
 
 ---
 
+## Notas De Entrada - Entregue Verde Sem Recebido - 2026-06-21
+
+- Pedido: retirar a palavra `Recebido` exibida abaixo de `Entregue`; quando a O.S. estiver entregue/finalizada, o proprio status `Entregue` deve ficar verde.
+- Frontend:
+  - `src/types/index.ts` alterou `STATUS_COLORS.ENTREGUE` para usar o tom verde de sucesso;
+  - `PAYMENT_STATUS_LABELS.PAGO` passou de `Recebido` para `Pago`, evitando a palavra antiga em fluxos de pagamento de O.S.;
+  - `src/pages/IntakeNotes.tsx` deixou de renderizar o selo financeiro ao lado do status na listagem mobile e desktop;
+  - no card mobile/tablet da O.S., a mini-informacao `Pagamento` foi removida para nao duplicar o status visual.
+- Validacao visual local:
+  - ambiente mock em mobile 393x873 abriu `/notas-entrada`;
+  - badges `Entregue` apareceram verdes (`rgb(41, 163, 122)`) com texto branco;
+  - a pagina de Notas de Entrada nao continha `Recebido` nem selo financeiro duplicado.
+- Sem mudanca de banco, RPC, Storage, Auth ou Edge Function.
+- Validacoes executadas:
+  - `npx tsc --noEmit`: passou;
+  - `npm run lint`: passou com 8 avisos antigos de Fast Refresh;
+  - `npm test -- --run`: passou, 52 arquivos e 384 testes;
+  - `npm run build`: passou com avisos conhecidos de Browserslist/dynamic import/chunk size;
+  - `npm run test:integration` nao foi executado porque nao houve alteracao em Supabase/Auth/Storage/Edge Function.
+
+---
+
 ## Dashboard - Cards Financeiros Mais Compactos - 2026-06-21
 
 - Pedido: reduzir o tamanho visual dos cards do Dashboard, que estavam grandes demais.

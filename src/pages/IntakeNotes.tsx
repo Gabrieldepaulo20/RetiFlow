@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { STATUS_LABELS, STATUS_COLORS, NoteStatus, NOTE_STATUS_ORDER, BILLABLE_STATUSES, PAYMENT_STATUS_COLORS, PAYMENT_STATUS_LABELS, IntakeNote } from '@/types';
+import { STATUS_LABELS, STATUS_COLORS, NoteStatus, NOTE_STATUS_ORDER, BILLABLE_STATUSES, IntakeNote } from '@/types';
 import { getNoteStatusIcon } from '@/lib/noteStatusIcon';
 import {
   PlusCircle, Search, Share2, Download, Eye, FileText, ClipboardList,
@@ -800,7 +800,7 @@ export default function IntakeNotes() {
                           <SelectContent>
                             <SelectItem value="all">Todos</SelectItem>
                             <SelectItem value="PENDENTE">A receber</SelectItem>
-                            <SelectItem value="PAGO">Recebido</SelectItem>
+                            <SelectItem value="PAGO">Pago</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -936,7 +936,7 @@ export default function IntakeNotes() {
                   )}
                   {paymentFilter !== 'all' && (
                     <Badge variant="secondary" className="gap-1.5 px-2.5 py-1 rounded-full text-xs cursor-pointer" onClick={() => setPaymentFilter('all')}>
-                      {paymentFilter === 'PAGO' ? 'Recebido' : 'A receber'}
+                      {paymentFilter === 'PAGO' ? 'Pago' : 'A receber'}
                     </Badge>
                   )}
                   {(sortField !== 'date' || sortDirection !== 'desc') && (
@@ -1097,27 +1097,16 @@ export default function IntakeNotes() {
                       <StatusIcon className="h-3.5 w-3.5 shrink-0" />
                       {STATUS_LABELS[n.status as NoteStatus]}
                     </Badge>
-                    {BILLABLE_STATUSES.has(n.status) && (
-                      <Badge className={cn(PAYMENT_STATUS_COLORS[n.paymentStatus], 'rounded-full px-2 py-0.5 text-[10px] font-semibold shadow-none sm:hidden')}>
-                        {PAYMENT_STATUS_LABELS[n.paymentStatus]}
-                      </Badge>
-                    )}
                     <div className="text-right">
                       <p className="text-[11px] text-muted-foreground">Total</p>
                       <p className="font-bold tabular-nums text-foreground">{formatCurrency(n.totalAmount)}</p>
                     </div>
                   </div>
 
-                  <div className="mt-3 hidden grid-cols-3 gap-2 border-t border-border/50 pt-3 text-xs sm:grid">
+                  <div className="mt-3 hidden grid-cols-2 gap-2 border-t border-border/50 pt-3 text-xs sm:grid">
                     <div className="min-w-0 rounded-lg bg-muted/25 px-2.5 py-2">
                       <p className="text-[10px] font-semibold uppercase text-muted-foreground">Motor</p>
                       <p className="mt-0.5 truncate font-medium text-foreground">{n.engineType || '—'}</p>
-                    </div>
-                    <div className="min-w-0 rounded-lg bg-muted/25 px-2.5 py-2">
-                      <p className="text-[10px] font-semibold uppercase text-muted-foreground">Pagamento</p>
-                      <p className="mt-0.5 truncate font-medium text-foreground">
-                        {BILLABLE_STATUSES.has(n.status) ? PAYMENT_STATUS_LABELS[n.paymentStatus] : 'Não faturável'}
-                      </p>
                     </div>
                     <div className="min-w-0 rounded-lg bg-muted/25 px-2.5 py-2">
                       <p className="text-[10px] font-semibold uppercase text-muted-foreground">Entrada</p>
@@ -1232,11 +1221,6 @@ export default function IntakeNotes() {
                               </Badge>
                             );
                           })()}
-                          {BILLABLE_STATUSES.has(n.status) && (
-                            <Badge className={cn(PAYMENT_STATUS_COLORS[n.paymentStatus], 'rounded-full px-2.5 py-0.5 text-[11px] font-semibold shadow-none')}>
-                              {PAYMENT_STATUS_LABELS[n.paymentStatus]}
-                            </Badge>
-                          )}
                         </div>
                       </TableCell>
                       <TableCell className="hidden py-4 text-right align-middle md:table-cell">

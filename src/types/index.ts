@@ -227,7 +227,7 @@ export const STATUS_COLORS: Record<NoteStatus, string> = {
   EM_EXECUCAO: 'bg-accent text-accent-foreground',
   AGUARDANDO_COMPRA: 'bg-yellow-100 text-yellow-800',
   PRONTA: 'bg-success text-success-foreground',
-  ENTREGUE: 'bg-secondary text-secondary-foreground',
+  ENTREGUE: 'bg-success text-success-foreground',
   RECUSADO: 'bg-rose-100 text-rose-800',
   SEM_CONSERTO: 'bg-zinc-200 text-zinc-700',
   EXCLUIDA: 'bg-destructive text-destructive-foreground',
@@ -265,7 +265,7 @@ export const STATUS_CUSTOMER_LABELS: Record<NoteStatus, string> = {
 
 export const PAYMENT_STATUS_LABELS: Record<NotePaymentStatus, string> = {
   PENDENTE: 'A receber',
-  PAGO: 'Recebido',
+  PAGO: 'Pago',
 };
 
 export const PAYMENT_STATUS_COLORS: Record<NotePaymentStatus, string> = {
