@@ -1,6 +1,28 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-06-20
+Atualizado em: 2026-06-21
+
+---
+
+## Dashboard - Cards Financeiros Mais Compactos - 2026-06-21
+
+- Pedido: reduzir o tamanho visual dos cards do Dashboard, que estavam grandes demais.
+- Frontend:
+  - `src/pages/Dashboard.tsx` reduziu altura minima, padding, tamanho dos valores, labels e icones dos cards financeiros;
+  - grid dos KPIs passou a usar 7 colunas ja em desktop largo (`xl`), deixando os cards menos largos e mais parecidos com painel executivo;
+  - subtitulos longos dos KPIs ficaram escondidos para nao inflar altura; detalhes principais continuam nos icones de informacao;
+  - card de resultado anual tambem teve padding, icone e escala tipografica reduzidos.
+- Validacao visual local:
+  - ambiente mock em mobile 393x873 abriu `/dashboard` sem overflow horizontal;
+  - cards principais medidos com altura de 64px no mobile;
+  - desktop 1440x900 mediu cards em 7 colunas com cerca de 152px de largura e 86px de altura.
+- Sem mudanca de banco, RPC, Storage, Auth ou Edge Function.
+- Validacoes executadas:
+  - `npx tsc --noEmit`: passou;
+  - `npm run lint`: passou com 8 avisos antigos de Fast Refresh;
+  - `npm test -- --run`: passou, 52 arquivos e 384 testes;
+  - `npm run build`: passou com avisos conhecidos de Browserslist/dynamic import/chunk size;
+  - `npm run test:integration` nao foi executado porque nao houve alteracao em Supabase/Auth/Storage/Edge Function.
 
 ---
 

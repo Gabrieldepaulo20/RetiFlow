@@ -91,10 +91,10 @@ function InlineInfo({ label }: { label: string }) {
   );
 }
 
-const financialMetricButtonClass = 'min-h-[88px] rounded-lg border border-border/70 bg-background p-2 text-left transition sm:min-h-[112px] sm:rounded-xl sm:p-3 lg:min-h-[136px] lg:rounded-2xl lg:p-4';
-const financialMetricLabelClass = 'flex items-start gap-0.5 text-[10px] font-medium leading-tight text-muted-foreground sm:gap-1.5 sm:text-xs';
-const financialMetricValueClass = 'mt-1.5 truncate text-[15px] font-display font-bold leading-none sm:mt-2 sm:text-xl lg:text-2xl';
-const financialMetricIconClass = 'hidden h-7 w-7 shrink-0 items-center justify-center rounded-lg sm:flex lg:h-9 lg:w-9 lg:rounded-xl';
+const financialMetricButtonClass = 'min-h-[64px] rounded-lg border border-border/70 bg-background p-1.5 text-left transition sm:min-h-[74px] sm:rounded-xl sm:p-2.5 lg:min-h-[82px] lg:p-3';
+const financialMetricLabelClass = 'flex items-start gap-0.5 text-[9px] font-medium leading-tight text-muted-foreground sm:gap-1 sm:text-[11px]';
+const financialMetricValueClass = 'mt-1 truncate text-[13px] font-display font-bold leading-none sm:text-lg lg:text-xl';
+const financialMetricIconClass = 'hidden h-6 w-6 shrink-0 items-center justify-center rounded-lg sm:flex lg:h-7 lg:w-7';
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -401,15 +401,15 @@ export default function Dashboard() {
 
       <Card className="overflow-hidden border-primary/20 shadow-sm">
         <CardContent className="p-0">
-          <div className="flex flex-col gap-4 border-b border-border/70 bg-muted/20 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-3 border-b border-border/70 bg-muted/20 p-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <Filter className="h-4 w-4" />
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Filter className="h-3.5 w-3.5" />
                 </div>
                 <div>
-                  <h2 className="text-base font-semibold leading-tight">Resultado financeiro</h2>
-                  <p className="text-xs text-muted-foreground">
+                  <h2 className="text-sm font-semibold leading-tight">Resultado financeiro</h2>
+                  <p className="text-[11px] text-muted-foreground">
                     Período: {selectedPeriod.label} · base contábil desde {DASHBOARD_ACCOUNTING_START_LABEL}
                   </p>
                 </div>
@@ -425,7 +425,7 @@ export default function Dashboard() {
             </div>
 
             <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
-              <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-border/70 bg-background p-1">
+              <div className="flex flex-wrap items-center gap-1 rounded-xl border border-border/70 bg-background p-1">
                 <button
                   type="button"
                   onClick={() => setRangePreset('month')}
@@ -504,13 +504,13 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-1.5 p-2 sm:gap-2 sm:p-3 xl:grid-cols-3 xl:gap-3 xl:p-4 2xl:grid-cols-7">
+          <div className="grid grid-cols-3 gap-1.5 p-1.5 sm:gap-2 sm:p-2.5 md:grid-cols-4 xl:grid-cols-7 xl:p-3">
             <button
               type="button"
               onClick={() => navigate('/notas-entrada')}
               className={cn(financialMetricButtonClass, 'hover:border-primary/30 hover:bg-primary/5')}
             >
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className={financialMetricLabelClass}>
                     Entradas previstas
@@ -522,7 +522,7 @@ export default function Dashboard() {
                   <FileText className="h-4 w-4" />
                 </div>
               </div>
-              <p className="mt-3 hidden text-xs text-muted-foreground sm:block">
+              <p className="mt-1.5 hidden text-[11px] leading-snug text-muted-foreground">
                 {periodNotes.length} O.S. lançada{periodNotes.length !== 1 ? 's' : ''} no período
               </p>
             </button>
@@ -532,7 +532,7 @@ export default function Dashboard() {
               onClick={() => navigate('/notas-entrada?status=FINALIZADO')}
               className={cn(financialMetricButtonClass, 'hover:border-emerald-300 hover:bg-emerald-50/60')}
             >
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className={financialMetricLabelClass}>
                     Faturamento real
@@ -544,7 +544,7 @@ export default function Dashboard() {
                   <CheckCircle2 className="h-4 w-4" />
                 </div>
               </div>
-              <p className="mt-3 hidden text-xs text-muted-foreground sm:block">
+              <p className="mt-1.5 hidden text-[11px] leading-snug text-muted-foreground">
                 {periodDeliveredNotes.length} O.S. faturável{periodDeliveredNotes.length !== 1 ? 'eis' : ''} · desde {DASHBOARD_ACCOUNTING_START_LABEL}: R$ {fmtBRL(totalRevenue)}
               </p>
             </button>
@@ -554,7 +554,7 @@ export default function Dashboard() {
               onClick={() => navigate('/notas-entrada')}
               className={cn(financialMetricButtonClass, 'hover:border-violet-200 hover:bg-violet-50/50')}
             >
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className={financialMetricLabelClass}>
                     Ticket médio
@@ -566,7 +566,7 @@ export default function Dashboard() {
                   <Calculator className="h-4 w-4" />
                 </div>
               </div>
-              <p className="mt-3 hidden text-xs text-muted-foreground sm:block">
+              <p className="mt-1.5 hidden text-[11px] leading-snug text-muted-foreground">
                 Base: {periodNotes.length} O.S. lançada{periodNotes.length !== 1 ? 's' : ''}
               </p>
             </button>
@@ -576,7 +576,7 @@ export default function Dashboard() {
               onClick={() => navigate('/contas-a-pagar')}
               className={cn(financialMetricButtonClass, 'hover:border-orange-200 hover:bg-orange-50/50')}
             >
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className={financialMetricLabelClass}>
                     Contas lançadas
@@ -588,7 +588,7 @@ export default function Dashboard() {
                   <Receipt className="h-4 w-4" />
                 </div>
               </div>
-              <p className="mt-3 hidden text-xs text-muted-foreground sm:block">
+              <p className="mt-1.5 hidden text-[11px] leading-snug text-muted-foreground">
                 {periodPayables.length} conta{periodPayables.length !== 1 ? 's' : ''} · pago R$ {fmtBRL(periodPayablesPaidPart)}
               </p>
             </button>
@@ -598,7 +598,7 @@ export default function Dashboard() {
               onClick={() => navigate('/contas-a-pagar')}
               className={cn(financialMetricButtonClass, 'hover:border-red-200 hover:bg-red-50/50')}
             >
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className={financialMetricLabelClass}>
                     Contas pagas
@@ -610,7 +610,7 @@ export default function Dashboard() {
                   <Landmark className="h-4 w-4" />
                 </div>
               </div>
-              <p className="mt-3 hidden text-xs text-muted-foreground sm:block">
+              <p className="mt-1.5 hidden text-[11px] leading-snug text-muted-foreground">
                 {periodPaidPayables.length} pagamento{periodPaidPayables.length !== 1 ? 's' : ''} no período · desde {DASHBOARD_ACCOUNTING_START_LABEL}
               </p>
             </button>
@@ -620,7 +620,7 @@ export default function Dashboard() {
               onClick={() => navigate('/contas-a-pagar?status=pendente')}
               className={cn(financialMetricButtonClass, 'hover:border-amber-200 hover:bg-amber-50/50')}
             >
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className={financialMetricLabelClass}>
                     Falta pagar
@@ -632,7 +632,7 @@ export default function Dashboard() {
                   <Landmark className="h-4 w-4" />
                 </div>
               </div>
-              <p className="mt-3 hidden text-xs text-muted-foreground sm:block">
+              <p className="mt-1.5 hidden text-[11px] leading-snug text-muted-foreground">
                 Dentro das contas lançadas no período
               </p>
             </button>
@@ -643,7 +643,7 @@ export default function Dashboard() {
                 ? 'border-primary/25 bg-primary/5'
                 : 'border-red-200 bg-red-50/60',
             )}>
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className={financialMetricLabelClass}>
                     Lucro do período
@@ -657,7 +657,7 @@ export default function Dashboard() {
                   <PiggyBank className="h-4 w-4" />
                 </div>
               </div>
-              <p className="mt-3 hidden text-xs text-muted-foreground sm:block">
+              <p className="mt-1.5 hidden text-[11px] leading-snug text-muted-foreground">
                 Faturamento real - contas pagas{periodProfitMargin !== null ? ` · margem ${periodProfitMargin.toFixed(1)}%` : ''}
               </p>
             </div>
@@ -801,21 +801,21 @@ export default function Dashboard() {
 
       {/* Resultado Anual */}
       <Card className="border-primary/20 bg-gradient-to-r from-primary/5 via-background to-background overflow-hidden">
-        <CardContent className="p-5">
+        <CardContent className="p-3 sm:p-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-primary/10 p-2.5 text-primary">
-                <PiggyBank className="h-5 w-5" />
+              <div className="rounded-lg bg-primary/10 p-2 text-primary">
+                <PiggyBank className="h-4 w-4" />
               </div>
               <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Resultado de {currentYear}</p>
-                <p className={`text-2xl font-display font-bold tracking-tight ${yearlyResult >= 0 ? 'text-success' : 'text-destructive'}`}>
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Resultado de {currentYear}</p>
+                <p className={`text-xl font-display font-bold tracking-tight sm:text-2xl ${yearlyResult >= 0 ? 'text-success' : 'text-destructive'}`}>
                   R$ {fmtBRLFull(Math.abs(yearlyResult))}
                   <span className="ml-1.5 text-sm font-normal text-muted-foreground">{yearlyResult >= 0 ? 'de resultado positivo' : 'de resultado negativo'}</span>
                 </p>
               </div>
             </div>
-            <div className="flex flex-wrap gap-6 text-sm">
+            <div className="flex flex-wrap gap-4 text-sm sm:gap-5">
               <div className="text-center">
                 <p className="text-xs text-muted-foreground">O.S. criadas no ano</p>
                 <p className="mt-1 font-semibold text-sky-700">R$ {fmtBRL(yearlyPotentialRevenue)}</p>
