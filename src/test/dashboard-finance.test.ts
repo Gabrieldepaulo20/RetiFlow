@@ -61,37 +61,40 @@ function payable(overrides: Partial<AccountPayable>): AccountPayable {
 }
 
 describe('dashboardFinance', () => {
-  it('reconhece faturamento pelo mês de criação da O.S., não por prazo ou finalização', () => {
+  it('regra de corte: legado usa prazo (ignora batch); novo usa entrega', () => {
     const notes = [
+      // Legada (criada antes de 01/06): usa o prazo (maio); a finalização em lote (junho) é ignorada.
       note({
-        id: 'created-may-deadline-june-finalized-june',
+        id: 'legacy-deadline-may-finalized-june-batch',
         totalAmount: 150,
         createdAt: '2026-05-29T12:00:00.000Z',
-        deadline: '2026-06-03',
+        deadline: '2026-05-30',
         finalizedAt: '2026-06-10T12:00:00.000Z',
       }),
+      // Nova (>= 01/06): usa a entrega real (junho).
       note({
-        id: 'created-june-finalized-july',
+        id: 'new-finalized-june',
         totalAmount: 200,
-        createdAt: '2026-06-20T12:00:00.000Z',
-        finalizedAt: '2026-07-05T12:00:00.000Z',
+        createdAt: '2026-06-05T12:00:00.000Z',
+        deadline: undefined,
+        finalizedAt: '2026-06-20T12:00:00.000Z',
       }),
+      // Nova criada em junho mas entregue em julho: cai em julho, não em junho.
       note({
-        id: 'created-june-not-billable-yet',
-        status: 'EM_EXECUCAO',
+        id: 'new-created-june-finalized-july',
         totalAmount: 300,
-        createdAt: '2026-06-20T12:00:00.000Z',
-        finalizedAt: undefined,
-        updatedAt: '2026-06-20T12:00:00.000Z',
+        createdAt: '2026-06-25T12:00:00.000Z',
+        deadline: undefined,
+        finalizedAt: '2026-07-05T12:00:00.000Z',
       }),
     ];
 
     const mayResult = getFinalizedRevenueNotesInRange(notes, may2026);
     const juneResult = getFinalizedRevenueNotesInRange(notes, june2026);
 
-    expect(mayResult.map((item) => item.id)).toEqual(['created-may-deadline-june-finalized-june']);
+    expect(mayResult.map((item) => item.id)).toEqual(['legacy-deadline-may-finalized-june-batch']);
     expect(mayResult.reduce((sum, item) => sum + item.totalAmount, 0)).toBe(150);
-    expect(juneResult.map((item) => item.id)).toEqual(['created-june-finalized-july']);
+    expect(juneResult.map((item) => item.id)).toEqual(['new-finalized-june']);
     expect(juneResult.reduce((sum, item) => sum + item.totalAmount, 0)).toBe(200);
   });
 
@@ -147,13 +150,42 @@ describe('dashboardFinance', () => {
     expect(result.reduce((sum, item) => sum + getPayablePaidAmount(item), 0)).toBe(45);
   });
 
-  it('mantém a data de entrada mesmo quando prazo, atualização e finalização existem', () => {
+  it('legado usa o prazo como competência (não a finalização em lote)', () => {
     expect(getDashboardRevenueDate(note({
       createdAt: '2026-05-20T12:00:00.000Z',
       deadline: '2026-06-05',
       finalizedAt: '2026-06-15T12:00:00.000Z',
       updatedAt: '2026-06-20T12:00:00.000Z',
+    }))).toBe('2026-06-05');
+  });
+
+  it('legado sem prazo cai na data de criação', () => {
+    expect(getDashboardRevenueDate(note({
+      createdAt: '2026-05-20T12:00:00.000Z',
+      deadline: undefined,
+      finalizedAt: '2026-06-15T12:00:00.000Z',
     }))).toBe('2026-05-20T12:00:00.000Z');
+  });
+
+  it('O.S. nova usa a entrega real (finalizedAt)', () => {
+    expect(getDashboardRevenueDate(note({
+      createdAt: '2026-06-10T12:00:00.000Z',
+      deadline: '2026-06-12',
+      finalizedAt: '2026-06-15T12:00:00.000Z',
+    }))).toBe('2026-06-15T12:00:00.000Z');
+  });
+
+  it('O.S. nova sem finalização cai no prazo e depois na criação', () => {
+    expect(getDashboardRevenueDate(note({
+      createdAt: '2026-06-10T12:00:00.000Z',
+      deadline: '2026-06-12',
+      finalizedAt: undefined,
+    }))).toBe('2026-06-12');
+    expect(getDashboardRevenueDate(note({
+      createdAt: '2026-06-10T12:00:00.000Z',
+      deadline: undefined,
+      finalizedAt: undefined,
+    }))).toBe('2026-06-10T12:00:00.000Z');
   });
 });
 

@@ -333,11 +333,11 @@ export default function Dashboard() {
     }
 
     periodDeliveredNotes.forEach((note) => {
-      const row = ensure(new Date(getDashboardRevenueDate(note)));
+      const row = ensure(new Date(toComparableTime(getDashboardRevenueDate(note))));
       row.entrada += note.totalAmount;
     });
     periodPaidPayables.forEach((payable) => {
-      const row = ensure(new Date(payable.paidAt!));
+      const row = ensure(new Date(toComparableTime(payable.paidAt)));
       row.saida += getPayablePaidAmount(payable);
     });
 
@@ -355,7 +355,7 @@ export default function Dashboard() {
 
   const yearlyRevenue = useMemo(
     () => revenueRecognizedNotes
-      .filter(n => { const t = new Date(getDashboardRevenueDate(n)).getTime(); return t >= startYear && t <= endYear; })
+      .filter(n => { const t = toComparableTime(getDashboardRevenueDate(n)); return t >= startYear && t <= endYear; })
       .reduce((s, n) => s + n.totalAmount, 0),
     [revenueRecognizedNotes, startYear, endYear],
   );
@@ -414,7 +414,7 @@ export default function Dashboard() {
                 <div>
                   <h2 className="text-sm font-semibold leading-tight">Resultado financeiro</h2>
                   <p className="text-[11px] text-muted-foreground">
-                    Período: {selectedPeriod.label} · faturamento por entrada da O.S.
+                    Período: {selectedPeriod.label} · faturamento por entrega da O.S.
                   </p>
                 </div>
                 <Badge className={cn(
@@ -540,7 +540,7 @@ export default function Dashboard() {
                 <div className="min-w-0">
                   <p className={financialMetricLabelClass}>
                     Faturamento real
-                    <InlineInfo label="Entrada de fato: soma das O.S. faturáveis pela data em que a O.S. foi criada/lançada. Prazo, pagamento ou finalização posterior não mudam o mês do faturamento." />
+                    <InlineInfo label="Receita por competência: soma das O.S. faturáveis pela data de entrega/finalização (fato gerador). O.S. legadas, anteriores a 01/06/2026, usam o prazo, porque foram finalizadas em lote na migração. O pagamento posterior não muda o mês." />
                   </p>
                   <p className={cn(financialMetricValueClass, 'text-emerald-700')}>R$ {fmtBRL(periodDeliveredAmount)}</p>
                 </div>
@@ -651,7 +651,7 @@ export default function Dashboard() {
                 <div className="min-w-0">
                   <p className={financialMetricLabelClass}>
                     Lucro do período
-                    <InlineInfo label={`Cálculo: faturamento real por data de entrada da O.S. menos contas pagas no mesmo período. Contas pagas continuam usando a data real de pagamento e a base a partir de ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
+                    <InlineInfo label={`Cálculo: faturamento real (por entrega da O.S.) menos contas pagas no mesmo período. Contas pagas usam a data real de pagamento e a base a partir de ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
                   </p>
                   <p className={cn(financialMetricValueClass, periodProfit >= 0 ? 'text-primary' : 'text-red-700')}>
                     R$ {fmtBRLFull(periodProfit)}
@@ -689,7 +689,7 @@ export default function Dashboard() {
                       cursor={{ fill: 'hsl(var(--muted) / 0.35)' }}
                       formatter={(value: number, name: string) => [
                         `R$ ${value.toLocaleString('pt-BR')}`,
-                        name === 'entrada' ? 'Faturamento por entrada' : name === 'saida' ? 'Contas pagas' : 'Lucro',
+                        name === 'entrada' ? 'Faturamento' : name === 'saida' ? 'Contas pagas' : 'Lucro',
                       ]}
                       contentStyle={{
                         border: '1px solid hsl(var(--border))',
@@ -706,7 +706,7 @@ export default function Dashboard() {
             ) : (
               <SectionEmptyState
                 title="Sem movimentação no período"
-                description="Escolha outro intervalo para ver faturamento por entrada da O.S., contas pagas e lucro."
+                description="Escolha outro intervalo para ver faturamento por entrega da O.S., contas pagas e lucro."
                 className="min-h-[220px] border-0 bg-transparent px-2"
               />
             )}

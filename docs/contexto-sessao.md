@@ -4,6 +4,32 @@ Atualizado em: 2026-06-21
 
 ---
 
+## Dashboard - Competência Da Receita Por Regra De Corte (Cutover) - 2026-06-21
+
+- SUPERA a regra anterior de faturar por `createdAt`. A cliente pediu padrão profissional
+  (SAP/TOTVS): receita reconhecida na entrega (fato gerador). Problema: O.S. legadas (sistema
+  antigo) entraram como ABERTO e foram finalizadas em LOTE num único dia, então `finalizedAt`
+  delas é o dia do batch e empilharia tudo num mês só.
+- Regra implementada em `getDashboardRevenueDate` (`src/services/domain/dashboardFinance.ts`),
+  usando o corte contabil `01/06/2026` (`DASHBOARD_ACCOUNTING_START_TIME`):
+  - O.S. legada (`createdAt < 01/06/2026`): competência = `deadline` (prazo); sem prazo, `createdAt`.
+    NUNCA `finalizedAt` (foi batch).
+  - O.S. nova (`createdAt >= 01/06/2026`): competência = `finalizedAt` (entrega real); fallback
+    `deadline`, depois `createdAt`.
+- Tudo continua limitado a `BILLABLE_STATUSES` (ENTREGUE/RECUSADO/SEM_CONSERTO). Datas "só data"
+  (prazo) normalizadas por `toComparableTime` (meia-noite local, evita vazamento de mês em UTC-3).
+- Textos/tooltips do Dashboard atualizados de "por entrada da O.S." para "por entrega da O.S.
+  (legado: prazo)". Gráfico financeiro e resultado anual usam a mesma data de competência.
+- Decisão relacionada: Dashboard (entrega) x Fechamento (finalizedAt) seguem com semântica
+  próxima; Fechamento ganhou legenda explicando que agrupa por finalização/entrega.
+- Documento de arquitetura financeira (2 regimes, DRE, fluxo de caixa, estoque/CMV futuro,
+  roadmap) gerado como artifact para a cliente.
+- Sem mudança de banco/RPC/Storage/Auth/Edge Function. Validado: tsc, lint, 399 testes, build.
+- Pendente combinado: Fase 1 = bloco Caixa no Dashboard (Recebido x Pago -> Saldo, A receber/A
+  pagar). Fase 2 = DRE + plano de contas (custo x despesa). Fase 3 = estoque + CMV (custo médio).
+
+---
+
 ## Dashboard - Faturamento Pela Data De Entrada Da O.S. - 2026-06-21
 
 - Pedido/regra final esclarecida:

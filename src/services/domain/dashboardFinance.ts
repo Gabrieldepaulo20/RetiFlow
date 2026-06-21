@@ -30,8 +30,24 @@ export function toComparableTime(value: string | null | undefined): number {
   return new Date(normalized).getTime();
 }
 
-export function getDashboardRevenueDate(note: Pick<IntakeNote, 'createdAt'>): string {
-  return note.createdAt;
+/**
+ * Data de competência da receita — regra de corte (cutover) de migração.
+ *
+ * - O.S. legadas (criadas antes do corte contábil, trazidas do sistema antigo) usam o
+ *   PRAZO como competência; sem prazo, a data de criação. NUNCA a finalização: o legado
+ *   foi finalizado em lote num único dia, então `finalizedAt` empilharia tudo no mês do
+ *   lote, distorcendo o histórico.
+ * - O.S. nascidas no RetiFlow (a partir do corte) usam a ENTREGA real (`finalizedAt`) —
+ *   o fato gerador padrão (SAP/TOTVS); fallback para prazo e depois criação.
+ */
+export function getDashboardRevenueDate(
+  note: Pick<IntakeNote, 'createdAt' | 'deadline' | 'finalizedAt'>,
+): string {
+  const isLegacy = toComparableTime(note.createdAt) < DASHBOARD_ACCOUNTING_START_TIME;
+  if (isLegacy) {
+    return note.deadline ?? note.createdAt;
+  }
+  return note.finalizedAt ?? note.deadline ?? note.createdAt;
 }
 
 function isDateInsideRange(value: string | null | undefined, range: DashboardDateRange): boolean {
@@ -51,14 +67,14 @@ export function clampDashboardAccountingRange(range: DashboardDateRange): Dashbo
   };
 }
 
-export function isDashboardRevenueEligibleNote<T extends Pick<IntakeNote, 'status' | 'createdAt'>>(
+export function isDashboardRevenueEligibleNote<T extends Pick<IntakeNote, 'status' | 'createdAt' | 'deadline' | 'finalizedAt'>>(
   note: T,
 ): boolean {
   return DASHBOARD_REVENUE_STATUSES.has(note.status)
     && Number.isFinite(toComparableTime(getDashboardRevenueDate(note)));
 }
 
-export function getFinalizedRevenueNotesInRange<T extends Pick<IntakeNote, 'status' | 'createdAt'>>(
+export function getFinalizedRevenueNotesInRange<T extends Pick<IntakeNote, 'status' | 'createdAt' | 'deadline' | 'finalizedAt'>>(
   notes: T[],
   range: DashboardDateRange,
 ): T[] {
