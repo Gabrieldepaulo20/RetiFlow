@@ -115,6 +115,8 @@ function supabaseToAccountPayable(row: ContaPagar): AccountPayable {
   };
 }
 
+const PAYABLE_CLASS_VALUES = new Set(['CUSTO', 'DESPESA', 'IMPOSTO', 'FINANCEIRO']);
+
 function supabaseToPayableCategory(cat: Categoria): PayableCategory {
   return {
     id: cat.id_categorias,
@@ -122,6 +124,9 @@ function supabaseToPayableCategory(cat: Categoria): PayableCategory {
     color: cat.cor,
     icon: cat.icone,
     isActive: cat.ativo,
+    classe: cat.classe && PAYABLE_CLASS_VALUES.has(cat.classe)
+      ? (cat.classe as PayableCategory['classe'])
+      : undefined,
     createdAt: cat.created_at,
   };
 }

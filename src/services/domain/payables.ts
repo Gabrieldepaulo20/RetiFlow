@@ -106,14 +106,14 @@ export function buildMeaningfulPayableTitle(input: {
 // IDs estáveis para seed — não alterar sem migrar os registros existentes.
 
 export const DEFAULT_PAYABLE_CATEGORIES: Omit<PayableCategory, 'createdAt'>[] = [
-  { id: 'paycat-1', name: 'Peças e Materiais',  color: 'bg-blue-100 text-blue-800',    icon: 'Wrench',         isActive: true },
-  { id: 'paycat-2', name: 'Utilities',           color: 'bg-yellow-100 text-yellow-800', icon: 'Zap',            isActive: true },
-  { id: 'paycat-3', name: 'Aluguel',             color: 'bg-purple-100 text-purple-800', icon: 'Building2',      isActive: true },
-  { id: 'paycat-4', name: 'Impostos e Taxas',    color: 'bg-red-100 text-red-800',       icon: 'Landmark',       isActive: true },
-  { id: 'paycat-5', name: 'Mão de Obra',         color: 'bg-green-100 text-green-800',   icon: 'Users',          isActive: true },
-  { id: 'paycat-6', name: 'Equipamentos',        color: 'bg-cyan-100 text-cyan-800',     icon: 'Package',        isActive: true },
-  { id: 'paycat-7', name: 'Serviços Gerais',     color: 'bg-gray-100 text-gray-800',     icon: 'Settings2',      isActive: true },
-  { id: 'paycat-8', name: 'Outros',              color: 'bg-slate-100 text-slate-800',   icon: 'MoreHorizontal', isActive: true },
+  { id: 'paycat-1', name: 'Peças e Materiais',  color: 'bg-blue-100 text-blue-800',    icon: 'Wrench',         isActive: true, classe: 'CUSTO' },
+  { id: 'paycat-2', name: 'Utilities',           color: 'bg-yellow-100 text-yellow-800', icon: 'Zap',            isActive: true, classe: 'DESPESA' },
+  { id: 'paycat-3', name: 'Aluguel',             color: 'bg-purple-100 text-purple-800', icon: 'Building2',      isActive: true, classe: 'DESPESA' },
+  { id: 'paycat-4', name: 'Impostos e Taxas',    color: 'bg-red-100 text-red-800',       icon: 'Landmark',       isActive: true, classe: 'IMPOSTO' },
+  { id: 'paycat-5', name: 'Mão de Obra',         color: 'bg-green-100 text-green-800',   icon: 'Users',          isActive: true, classe: 'CUSTO' },
+  { id: 'paycat-6', name: 'Equipamentos',        color: 'bg-cyan-100 text-cyan-800',     icon: 'Package',        isActive: true, classe: 'DESPESA' },
+  { id: 'paycat-7', name: 'Serviços Gerais',     color: 'bg-gray-100 text-gray-800',     icon: 'Settings2',      isActive: true, classe: 'DESPESA' },
+  { id: 'paycat-8', name: 'Outros',              color: 'bg-slate-100 text-slate-800',   icon: 'MoreHorizontal', isActive: true, classe: 'DESPESA' },
 ];
 
 // ─── Tipo auxiliar de urgência de vencimento ─────────────────────────────────

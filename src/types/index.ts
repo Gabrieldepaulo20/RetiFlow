@@ -478,6 +478,22 @@ export interface AccountPayable {
   createdByUserId: string;
 }
 
+/**
+ * Classe contábil da categoria (plano de contas — base do DRE/Fase 2):
+ * - CUSTO: peças/insumos + mão de obra direta → entra no CMV/CSP (antes do Lucro Bruto).
+ * - DESPESA: estrutura operacional (aluguel, admin, pró-labore) → depois do Lucro Bruto.
+ * - IMPOSTO: tributos sobre serviço → dedução da receita.
+ * - FINANCEIRO: juros, multas, tarifas → resultado financeiro.
+ */
+export type PayableCategoryClass = 'CUSTO' | 'DESPESA' | 'IMPOSTO' | 'FINANCEIRO';
+
+export const PAYABLE_CATEGORY_CLASS_LABELS: Record<PayableCategoryClass, string> = {
+  CUSTO: 'Custo',
+  DESPESA: 'Despesa',
+  IMPOSTO: 'Imposto',
+  FINANCEIRO: 'Financeiro',
+};
+
 export interface PayableCategory {
   id: string;
   name: string;
@@ -486,6 +502,8 @@ export interface PayableCategory {
   /** Nome do ícone Lucide (string). Ex: "Wrench", "Zap" */
   icon: string;
   isActive: boolean;
+  /** Classe contábil para o DRE. Indefinida = ainda não classificada. */
+  classe?: PayableCategoryClass;
   createdAt: string;
 }
 

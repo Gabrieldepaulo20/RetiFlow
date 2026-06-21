@@ -6,6 +6,8 @@ export interface Categoria {
   cor: string;
   icone: string;
   ativo: boolean;
+  /** Classe contábil (DRE). Pode vir ausente até a migration de classe ser aplicada. */
+  classe?: string | null;
   created_at: string;
 }
 

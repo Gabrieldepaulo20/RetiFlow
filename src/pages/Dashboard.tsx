@@ -35,6 +35,7 @@ import {
   isDashboardRevenueEligibleNote,
   toComparableTime,
 } from '@/services/domain/dashboardFinance';
+import { computeDRE, sumPayablesByClass } from '@/services/domain/dre';
 import { SectionEmptyState, SectionErrorState } from '@/components/ui/section-state';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -100,10 +101,46 @@ const financialMetricLabelClass = 'flex items-start gap-0.5 text-[9px] font-medi
 const financialMetricValueClass = 'mt-1 truncate text-[13px] font-display font-bold leading-none sm:text-lg lg:text-xl';
 const financialMetricIconClass = 'hidden h-6 w-6 shrink-0 items-center justify-center rounded-lg sm:flex lg:h-7 lg:w-7';
 
+function DRERow({ label, amount, deduction, subtotal, final }: {
+  label: string;
+  amount: number;
+  deduction?: boolean;
+  subtotal?: boolean;
+  final?: boolean;
+}) {
+  const negative = amount < 0;
+  const signed = subtotal || final;
+  return (
+    <div className={cn(
+      'flex items-center justify-between gap-3 px-3 py-1.5',
+      (subtotal || final) && 'border-t border-border/50',
+      final && 'bg-primary/[0.05]',
+    )}>
+      <span className={cn(
+        final ? 'text-sm font-bold text-foreground' : 'text-xs',
+        subtotal && 'font-semibold text-foreground',
+        deduction && 'text-muted-foreground',
+        !final && !subtotal && !deduction && 'text-foreground',
+      )}>
+        {label}
+      </span>
+      <span className={cn(
+        'shrink-0 tabular-nums',
+        final ? cn('text-sm font-display font-bold', negative ? 'text-red-700' : 'text-primary')
+          : deduction ? 'text-xs text-red-600'
+            : subtotal ? 'text-xs font-semibold text-foreground'
+              : 'text-xs text-foreground',
+      )}>
+        {signed && negative ? '−' : ''}R$ {fmtBRLFull(Math.abs(amount))}
+      </span>
+    </div>
+  );
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
-  const { notes, payables } = useData();
+  const { notes, payables, payableCategories } = useData();
   const navigate = useNavigate();
   const [rangePreset, setRangePreset] = useState<DashboardRangePreset>('month');
   const [customStartDate, setCustomStartDate] = useState(() => format(startOfMonth(new Date()), 'yyyy-MM-dd'));
@@ -327,6 +364,19 @@ export default function Dashboard() {
       .reduce((sum, payable) => sum + Math.max(0, payable.finalAmount - (payable.paidAmount ?? 0)), 0),
     [activePayables],
   );
+
+  // ── DRE (regime de competência) ──────────────────────────────────────────
+  // Receita = faturamento por entrega no período; saídas = contas por competência,
+  // classificadas pela classe contábil da categoria (Fase 2).
+  const categoryClasseById = useMemo(
+    () => new Map(payableCategories.map((category) => [category.id, category.classe])),
+    [payableCategories],
+  );
+  const dreSums = useMemo(
+    () => sumPayablesByClass(periodPayables, (id) => categoryClasseById.get(id)),
+    [periodPayables, categoryClasseById],
+  );
+  const dre = useMemo(() => computeDRE(periodDeliveredAmount, dreSums), [periodDeliveredAmount, dreSums]);
 
   const periodFinancialData = useMemo(() => {
     if (selectedRange.startTime > selectedRange.endTime) {
@@ -783,6 +833,51 @@ export default function Dashboard() {
               <span className="text-sm font-semibold tabular-nums text-foreground/80">R$ {fmtBRL(openPayableAmount)}</span>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* ── DRE do período (regime de competência) ── */}
+      <Card>
+        <CardContent className="p-3 sm:p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <div className="rounded-lg bg-primary/10 p-1.5 text-primary">
+              <Calculator className="h-3.5 w-3.5" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="flex items-center gap-1 text-sm font-semibold leading-tight">
+                DRE — resultado do período
+                <InlineInfo label="Demonstração de Resultado (competência): Receita − Impostos = Receita Líquida; − Custos (peças + mão de obra) = Lucro Bruto; − Despesas = Resultado Operacional; − Financeiro = Lucro Líquido. As saídas entram pela classe contábil da categoria." />
+              </h2>
+              <p className="text-[11px] text-muted-foreground">{selectedPeriod.label} · por competência</p>
+            </div>
+            {dre.margemLiquida !== null ? (
+              <span className="ml-auto shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                margem líq. {dre.margemLiquida.toFixed(1)}%
+              </span>
+            ) : null}
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-border/60">
+            <DRERow label="Receita bruta de serviços" amount={dre.receitaBruta} />
+            <DRERow label="(−) Impostos sobre serviço" amount={dre.impostos} deduction />
+            <DRERow label="= Receita líquida" amount={dre.receitaLiquida} subtotal />
+            <DRERow label="(−) Custos — peças + mão de obra" amount={dre.custos} deduction />
+            <DRERow label="= Lucro bruto" amount={dre.lucroBruto} subtotal />
+            <DRERow label="(−) Despesas operacionais" amount={dre.despesas} deduction />
+            <DRERow label="= Resultado operacional" amount={dre.resultadoOperacional} subtotal />
+            <DRERow label="(−) Despesas financeiras" amount={dre.financeiro} deduction />
+            <DRERow label="= Lucro líquido" amount={dre.lucroLiquido} final />
+          </div>
+
+          {dre.naoClassificado > 0 ? (
+            <div className="mt-2 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                R$ {fmtBRL(dre.naoClassificado)} em contas com categoria sem classe contábil — somadas como despesa.
+                Classifique as categorias (custo / despesa / imposto / financeiro) para o resultado ficar exato.
+              </span>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
