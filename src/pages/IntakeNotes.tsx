@@ -151,7 +151,7 @@ export default function IntakeNotes() {
   };
 
   const syncDraftFilters = () => {
-    setDraftStatusFilters(new Set(statusFilters));
+    setDraftStatusFilters(statusFilters.size === 1 ? new Set(statusFilters) : new Set());
     setDraftClientFilter(clientFilter);
     setDraftDatePreset(datePreset);
     setDraftMonthFilter(monthFilter);
@@ -167,19 +167,8 @@ export default function IntakeNotes() {
     setFilterDialogOpen(open);
   };
 
-  const toggleDraftStatusFilter = (key: string) => {
-    setDraftStatusFilters(prev => {
-      if (IS_REAL_AUTH) {
-        return prev.has(key) ? new Set() : new Set([key]);
-      }
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
+  const setDraftStatusFilter = (key: string) => {
+    setDraftStatusFilters(key === 'all' ? new Set() : new Set([key]));
   };
 
   const resetDraftFilters = () => {
@@ -302,6 +291,9 @@ export default function IntakeNotes() {
   const draftMonthParts = /^(\d{4})-(\d{2})$/.exec(draftMonthFilter);
   const draftMonthYear = draftMonthParts?.[1] ?? currentMonthInput.slice(0, 4);
   const draftMonthValue = draftMonthParts?.[2] ?? currentMonthInput.slice(5, 7);
+  const draftStatusValue = draftStatusFilters.size === 1
+    ? ([...draftStatusFilters][0] as NoteStatus)
+    : 'all';
   const updateDraftMonthFilter = (year: string, month: string) => {
     setDraftMonthFilter(`${year}-${month}`);
   };
@@ -730,18 +722,18 @@ export default function IntakeNotes() {
               </Button>
 
               <Dialog open={filterDialogOpen} onOpenChange={handleFilterDialogOpenChange}>
-                <DialogContent className="max-w-2xl gap-0 overflow-hidden p-0 sm:max-h-[min(760px,calc(100vh-2rem))]">
-                  <DialogHeader className="border-b border-border/70 px-4 py-4 text-left sm:px-5">
-                    <DialogTitle className="text-lg">Filtros da lista</DialogTitle>
+                <DialogContent className="max-w-xl gap-0 overflow-visible p-0">
+                  <DialogHeader className="border-b border-border/70 px-4 py-3 text-left sm:px-5">
+                    <DialogTitle className="text-base sm:text-lg">Filtros da lista</DialogTitle>
                     <DialogDescription>
                       Ajuste a visualização e confirme para atualizar as O.S.
                     </DialogDescription>
                   </DialogHeader>
 
-                  <div className="max-h-[calc(100dvh-13rem)] space-y-4 overflow-y-auto px-4 py-4 sm:max-h-[calc(100vh-15rem)] sm:px-5">
-                    <section className="rounded-2xl border border-border/70 bg-muted/20 p-3">
+                  <div className="space-y-3 px-4 py-3 sm:px-5">
+                    <section className="rounded-2xl border border-border/70 bg-muted/20 p-2.5">
                       <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">Ordenar por</p>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
+                      <div className="mt-2 grid grid-cols-2 gap-2">
                         {([
                           ['date', 'Data'],
                           ['os', 'Número da O.S.'],
@@ -751,7 +743,7 @@ export default function IntakeNotes() {
                             type="button"
                             onClick={() => setDraftSortField(value)}
                             className={cn(
-                              'rounded-xl border px-3 py-2 text-left text-sm font-semibold transition-colors',
+                              'rounded-xl border px-3 py-1.5 text-left text-xs font-semibold transition-colors sm:text-sm',
                               draftSortField === value
                                 ? 'border-primary/50 bg-primary/10 text-primary'
                                 : 'border-border/70 bg-background text-foreground hover:bg-muted/60',
@@ -771,7 +763,7 @@ export default function IntakeNotes() {
                             type="button"
                             onClick={() => setDraftSortDirection(value)}
                             className={cn(
-                              'rounded-xl border px-3 py-2 text-left text-sm font-semibold transition-colors',
+                              'rounded-xl border px-3 py-1.5 text-left text-xs font-semibold transition-colors sm:text-sm',
                               draftSortDirection === value
                                 ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
                                 : 'border-border/70 bg-background text-foreground hover:bg-muted/60',
@@ -783,11 +775,11 @@ export default function IntakeNotes() {
                       </div>
                     </section>
 
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-2 sm:grid-cols-2">
                       <div className="space-y-1.5">
                         <p className="text-xs font-semibold text-foreground">Cliente</p>
                         <Select value={draftClientFilter} onValueChange={setDraftClientFilter}>
-                          <SelectTrigger className="h-10 rounded-xl">
+                          <SelectTrigger className="h-9 rounded-xl">
                             <SelectValue placeholder="Cliente" />
                           </SelectTrigger>
                           <SelectContent>
@@ -802,7 +794,7 @@ export default function IntakeNotes() {
                       <div className="space-y-1.5">
                         <p className="text-xs font-semibold text-foreground">Pagamento</p>
                         <Select value={draftPaymentFilter} onValueChange={(v) => setDraftPaymentFilter(v as 'all' | 'PAGO' | 'PENDENTE')}>
-                          <SelectTrigger className="h-10 rounded-xl">
+                          <SelectTrigger className="h-9 rounded-xl">
                             <SelectValue placeholder="Pagamento" />
                           </SelectTrigger>
                           <SelectContent>
@@ -814,40 +806,61 @@ export default function IntakeNotes() {
                       </div>
                     </div>
 
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-semibold text-foreground">Período</p>
-                      <Select value={draftDatePreset} onValueChange={(value) => setDraftDatePreset(value as NoteDatePreset)}>
-                        <SelectTrigger className="h-10 rounded-xl">
-                          <SelectValue placeholder="Período" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {datePresetOptions.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {draftDatePreset === 'month' && (
-                        <div className="grid grid-cols-2 gap-2 pt-1">
-                          <Select
-                            value={draftMonthValue}
-                            onValueChange={(value) => updateDraftMonthFilter(draftMonthYear, value)}
-                          >
-                            <SelectTrigger className="h-9 rounded-xl">
-                              <SelectValue placeholder="Mês" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {INTAKE_NOTE_MONTHS.map((month) => (
-                                <SelectItem key={month.value} value={month.value}>
-                                  {month.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <p className="text-xs font-semibold text-foreground">Período</p>
+                        <Select value={draftDatePreset} onValueChange={(value) => setDraftDatePreset(value as NoteDatePreset)}>
+                          <SelectTrigger className="h-9 rounded-xl">
+                            <SelectValue placeholder="Período" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {datePresetOptions.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
 
-                          <Select
-                            value={draftMonthYear}
-                            onValueChange={(value) => updateDraftMonthFilter(value, draftMonthValue)}
-                          >
+                      <div className="space-y-1.5">
+                        <p className="text-xs font-semibold text-foreground">Status</p>
+                        <Select value={draftStatusValue} onValueChange={setDraftStatusFilter}>
+                          <SelectTrigger className="h-9 rounded-xl">
+                            <SelectValue placeholder="Status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Todos os status</SelectItem>
+                            {allStatuses.map((status) => (
+                              <SelectItem key={status.key} value={status.key}>
+                                {status.label} ({statusCounts[status.key] || 0})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    {draftDatePreset === 'month' && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <Select
+                          value={draftMonthValue}
+                          onValueChange={(value) => updateDraftMonthFilter(draftMonthYear, value)}
+                        >
+                          <SelectTrigger className="h-9 rounded-xl">
+                            <SelectValue placeholder="Mês" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {INTAKE_NOTE_MONTHS.map((month) => (
+                              <SelectItem key={month.value} value={month.value}>
+                                {month.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+
+                        <Select
+                          value={draftMonthYear}
+                          onValueChange={(value) => updateDraftMonthFilter(value, draftMonthValue)}
+                        >
                             <SelectTrigger className="h-9 rounded-xl">
                               <SelectValue placeholder="Ano" />
                             </SelectTrigger>
@@ -859,54 +872,19 @@ export default function IntakeNotes() {
                               ))}
                             </SelectContent>
                           </Select>
-                        </div>
-                      )}
-                      {draftDatePreset === 'custom' && (
-                        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 pt-1">
-                          <Input type="date" value={draftCustomStartDate} onChange={(e) => setDraftCustomStartDate(e.target.value)} className="h-9 rounded-xl text-sm" />
-                          <span className="text-xs text-muted-foreground">até</span>
-                          <Input type="date" value={draftCustomEndDate} onChange={(e) => setDraftCustomEndDate(e.target.value)} className="h-9 rounded-xl text-sm" />
-                        </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
 
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-xs font-semibold text-foreground">Status</p>
-                        {draftStatusFilters.size > 0 && (
-                          <button onClick={() => setDraftStatusFilters(new Set())} className="text-[11px] font-medium text-primary hover:underline">
-                            Limpar status
-                          </button>
-                        )}
+                    {draftDatePreset === 'custom' && (
+                      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+                        <Input type="date" value={draftCustomStartDate} onChange={(e) => setDraftCustomStartDate(e.target.value)} className="h-9 rounded-xl text-sm" />
+                        <span className="text-xs text-muted-foreground">até</span>
+                        <Input type="date" value={draftCustomEndDate} onChange={(e) => setDraftCustomEndDate(e.target.value)} className="h-9 rounded-xl text-sm" />
                       </div>
-                      <div className="max-h-[240px] space-y-1 overflow-y-auto rounded-2xl border border-border/70 bg-background p-1.5">
-                        {allStatuses.map(status => {
-                          const active = draftStatusFilters.has(status.key);
-                          return (
-                            <button
-                              key={status.key}
-                              type="button"
-                              onClick={() => toggleDraftStatusFilter(status.key)}
-                              className={cn(
-                                'flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-sm transition-colors',
-                                active ? 'bg-emerald-50 text-emerald-700' : 'text-foreground hover:bg-muted',
-                              )}
-                            >
-                              <span className="flex min-w-0 items-center gap-2">
-                                {active ? <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" /> : <span className="h-3.5 w-3.5 shrink-0" />}
-                                <span className="truncate">{status.label}</span>
-                              </span>
-                              <span className={cn('text-xs tabular-nums', active ? 'font-semibold text-emerald-600' : 'text-muted-foreground')}>
-                                {statusCounts[status.key] || 0}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    )}
                   </div>
 
-                  <DialogFooter className="border-t border-border/70 bg-background px-4 py-3 sm:px-5">
+                  <DialogFooter className="border-t border-border/70 bg-background px-4 py-2.5 sm:px-5">
                     <Button variant="ghost" onClick={resetDraftFilters}>
                       Limpar
                     </Button>

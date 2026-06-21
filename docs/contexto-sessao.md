@@ -4,6 +4,29 @@ Atualizado em: 2026-06-20
 
 ---
 
+## Notas De Entrada - Status Em Dropdown No Filtro - 2026-06-20
+
+- Pedido: dentro do pop-up de filtros, `Status` deve ser apenas um dropdown e o conteudo deve caber sem scroll interno.
+- Frontend:
+  - `src/pages/IntakeNotes.tsx` trocou a lista multi-selecao de status por um `Select` unico com `Todos os status` + status com contagem;
+  - ao abrir o modal, se havia mais de um status ativo por estado antigo, o rascunho volta para `Todos os status`, preservando o novo contrato de selecao unica;
+  - o modal foi compactado em espacamentos, header/footer, controles e grade para caber melhor em mobile e desktop;
+  - o corpo do dialog nao usa mais container com `overflow-y-auto`; os filtros continuam aplicando somente em `Confirmar filtros`.
+- Validacao visual:
+  - ambiente mock local em viewport mobile 393x873 abriu Notas de Entrada e o pop-up de filtros;
+  - dialog medido com `overflowY: visible`, altura 631px em viewport de 873px e largura 358px;
+  - `Status` apareceu como combobox `Todos os status`, e o dropdown abriu com as opcoes e contagens;
+  - a lista antiga de botoes de status nao apareceu no corpo do modal.
+- Sem mudanca de banco, RPC, Storage, Auth ou Edge Function.
+- Validacoes executadas:
+  - `npx tsc --noEmit`: passou;
+  - `npm run lint`: passou com 8 avisos antigos de Fast Refresh;
+  - `npm test -- --run`: passou, 52 arquivos e 384 testes;
+  - `npm run build`: passou com avisos conhecidos de Browserslist/dynamic import/chunk size;
+  - `npm run test:integration` nao foi executado porque nao houve alteracao em Supabase/Auth/Storage/Edge Function.
+
+---
+
 ## Notas De Entrada - Filtro Por Mes - 2026-06-20
 
 - Pedido: adicionar filtro por mes em Notas de Entrada para conseguir combinar facilmente cliente + mes e saber quantas/quanto teve em cada mes.
