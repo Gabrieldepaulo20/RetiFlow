@@ -4,6 +4,39 @@ Atualizado em: 2026-06-21
 
 ---
 
+## Auditoria RDS Legado x Retiflow - De/Para De O.S. - 2026-06-21
+
+- Pedido: validar se todas as O.S. da Retifica Premium que ainda estao no sistema antigo AWS/RDS,
+  empresa legado `id=5`, existem no Retiflow antes de desligar o antigo.
+- Alteracao de suporte/auditoria:
+  - criado script read-only `scripts/oneoff/validate-legacy-notes-depara-company5.mjs`;
+  - o script consulta RDS legado e Supabase, nao grava dados, nao move PDFs e nao altera Storage;
+  - compara O.S. por valor exato e, quando seguro, por numero normalizado;
+  - match numerico so e aceito se o numero for unico no legado e unico no Retiflow;
+  - se existir conflito de zero a esquerda ou duplicidade numerica, o script separa como conflito,
+    sem validar automaticamente.
+- Execucao read-only realizada com a conta `retificapremium5@gmail.com`:
+  - legado RDS: 904 O.S. totais, sendo 897 ativas e 7 excluidas no legado;
+  - Retiflow: 933 O.S. na conta Retifica Premium;
+  - 845 matches limpos;
+  - 21 matches com alerta, incluindo 2 encontrados por numero normalizado seguro;
+  - 10 O.S. ativas do legado nao encontradas no Retiflow;
+  - 2 registros com O.S. duplicada exatamente no legado (`3364`);
+  - 19 registros com conflito de numeracao/zero a esquerda, nao validados automaticamente;
+  - 67 O.S. existem apenas no Retiflow, provavelmente criadas depois da migracao;
+  - PDFs do Retiflow: 0 ausentes e 0 paths faltando no bucket `notas` para os registros verificados.
+- Relatorios locais gerados em:
+  - `outputs/relatorios/2026-06-21T01-37-23-759Z-depara-os-retifica-premium/summary.json`;
+  - `outputs/relatorios/2026-06-21T01-37-23-759Z-depara-os-retifica-premium/depara-os.csv`;
+  - `outputs/relatorios/2026-06-21T01-37-23-759Z-depara-os-retifica-premium/faltantes-no-retiflow.csv`;
+  - `outputs/relatorios/2026-06-21T01-37-23-759Z-depara-os-retifica-premium/duplicidades-e-conflitos.csv`;
+  - `outputs/relatorios/2026-06-21T01-37-23-759Z-depara-os-retifica-premium/divergencias.csv`;
+  - `outputs/relatorios/2026-06-21T01-37-23-759Z-depara-os-retifica-premium/apenas-no-retiflow.csv`.
+- Os relatorios com dados de clientes foram mantidos fora do commit. Proxima etapa segura:
+  revisar as 10 faltantes e os 21 conflitos/alertas antes de qualquer importacao complementar.
+
+---
+
 ## Notas De Entrada - Entregue Verde Sem Recebido - 2026-06-21
 
 - Pedido: retirar a palavra `Recebido` exibida abaixo de `Entregue`; quando a O.S. estiver entregue/finalizada, o proprio status `Entregue` deve ficar verde.
