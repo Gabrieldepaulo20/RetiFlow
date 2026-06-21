@@ -4,6 +4,32 @@ Atualizado em: 2026-06-21
 
 ---
 
+## Fase 2 (DRE) - Classe Contabil Nas Categorias + DRE No Dashboard - 2026-06-21
+
+- Objetivo: padrao profissional (SAP/TOTVS) - separar custo de despesa para existir Lucro Bruto/DRE.
+- **BACKEND APLICADO (2026-06-21):** migration `20260621183000_payable_category_accounting_class.sql`.
+  - `Categorias_Contas_Pagar` ganhou coluna `classe text` (CHECK: NULL ou CUSTO/DESPESA/IMPOSTO/FINANCEIRO).
+  - Backfill por nome aplicado: distribuicao remota confirmada CUSTO=2, DESPESA=5, IMPOSTO=1 (0 nulas).
+  - `get_categorias_conta_pagar` agora retorna `classe` (corpo identico ao dump remoto + a coluna; nao ha
+    variante de suporte dessa GET). `insert/update_categoria_conta_pagar` NAO foram alterados (write-path).
+  - Aditivo, idempotente, reversivel (rollback no .sql). Aplicado via `supabase db query --linked -f` +
+    `migration repair --status applied 20260621183000`. `db lint` so com os 4 warnings legados conhecidos.
+    `test:integration` passou (17 arquivos, 55 testes).
+- Frontend:
+  - `PayableCategoryClass` + `classe?` em `PayableCategory` + `PAYABLE_CATEGORY_CLASS_LABELS` (`src/types`).
+  - adapter `supabaseToPayableCategory` mapeia `classe` (tolerante a ausencia); seed
+    `DEFAULT_PAYABLE_CATEGORIES` classificado.
+  - `src/services/domain/dre.ts`: `sumPayablesByClass` + `computeDRE` (puros, testados em `dre.test.ts`).
+  - `src/pages/Dashboard.tsx`: card "DRE do periodo" (competencia) - Receita - Impostos = Liquida;
+    - Custos = Lucro Bruto; - Despesas = Operacional; - Despesas financeiras = Lucro Liquido; + margens.
+    Contas com categoria sem classe entram como despesa com aviso ambar (transparencia).
+- **Pendente (Fase 2 - parte 2):** UI para RECLASSIFICAR categorias (write-path) - exige estender
+  `update_categoria_conta_pagar` (+ variante de suporte) com `p_classe` e uma tela de gestao de categorias
+  (hoje nao existe UI de CRUD de categoria). Ate la, a classe vem do backfill por nome.
+- Branch: `feat/fase2-dre`. Validado: tsc, lint, 408 testes unit, build, test:integration.
+
+---
+
 ## Dashboard - Competência Da Receita Por Regra De Corte (Cutover) - 2026-06-21
 
 - SUPERA a regra anterior de faturar por `createdAt`. A cliente pediu padrão profissional
