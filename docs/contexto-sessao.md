@@ -4,6 +4,33 @@ Atualizado em: 2026-06-20
 
 ---
 
+## Notas De Entrada - Filtro Por Mes - 2026-06-20
+
+- Pedido: adicionar filtro por mes em Notas de Entrada para conseguir combinar facilmente cliente + mes e saber quantas/quanto teve em cada mes.
+- Frontend:
+  - `src/pages/IntakeNotes.tsx` manteve o modal responsivo de filtros e adicionou `Escolher mes` no campo de periodo;
+  - quando `Escolher mes` e selecionado, aparecem dois seletores compactos: mes e ano;
+  - o filtro mensal continua sendo rascunho dentro do modal e so aplica depois de `Confirmar filtros`;
+  - `Este mes` continua existindo como atalho separado;
+  - o selo ativo mostra o mes por extenso, por exemplo `Fevereiro de 2026`;
+  - o filtro mensal combina com cliente, pagamento, status e ordenacao ja existentes.
+- Dominio/testes:
+  - `src/services/domain/intakeNotesList.ts` agora centraliza os nomes dos meses e o calculo do intervalo completo do mes (`YYYY-MM-01` ate ultimo dia);
+  - `src/test/intake-notes-list.test.ts` cobre mes atual e intervalo completo, inclusive fevereiro.
+- Sem mudanca de banco, RPC, Storage, Auth ou Edge Function: o front usa `p_data_inicio`/`p_data_fim` ja existentes.
+- Validacao visual:
+  - ambiente mock local abriu Notas de Entrada, abriu o modal, selecionou `Escolher mes` e exibiu controles de mes/ano dentro do dialog.
+  - o seletor de cliente coexistiu no mesmo modal; a interacao completa cliente + mes no in-app browser ficou limitada pela altura do popup do Radix, mas o fluxo usa os mesmos seletores controlados e o filtro so aplica no confirmar.
+- Validacoes executadas:
+  - `npx tsc --noEmit`: passou;
+  - `npm test -- --run src/test/intake-notes-list.test.ts`: passou, 4 testes;
+  - `npm run lint`: passou com 8 avisos antigos de Fast Refresh;
+  - `npm test -- --run`: passou, 52 arquivos e 384 testes;
+  - `npm run build`: passou com avisos conhecidos de Browserslist/dynamic import/chunk size.
+- `npm run test:integration` nao foi executado porque nao houve alteracao em Supabase/Auth/Storage/Edge Function.
+
+---
+
 ## Notas De Entrada - Filtros Em Modal E Ordenacao - 2026-06-20
 
 - Pedido urgente: filtro de Notas de Entrada deve abrir em pop-up responsivo para computador/celular; filtros so devem aplicar ao clicar em `Confirmar filtros`; adicionar ordenacao por O.S. e por data.

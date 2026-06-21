@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { IntakeNote } from '@/types';
-import { compareIntakeNotes, getIntakeNoteSortLabel } from '@/services/domain/intakeNotesList';
+import {
+  compareIntakeNotes,
+  getCurrentIntakeMonthInput,
+  getIntakeMonthRange,
+  getIntakeNoteSortLabel,
+} from '@/services/domain/intakeNotesList';
 
 function note(overrides: Partial<IntakeNote>): IntakeNote {
   return {
@@ -54,5 +59,15 @@ describe('intake notes list sorting', () => {
   it('describes selected ordering in user-facing language', () => {
     expect(getIntakeNoteSortLabel('date', 'desc')).toBe('Data mais recente');
     expect(getIntakeNoteSortLabel('os', 'asc')).toBe('O.S. menor primeiro');
+  });
+
+  it('builds a full month range for note filters', () => {
+    expect(getCurrentIntakeMonthInput(new Date(2026, 5, 20))).toBe('2026-06');
+
+    const range = getIntakeMonthRange('2026-02');
+    expect(range?.startInput).toBe('2026-02-01');
+    expect(range?.endInput).toBe('2026-02-28');
+    expect(range?.label).toBe('Fevereiro de 2026');
+    expect(getIntakeMonthRange('2026-13')).toBeNull();
   });
 });

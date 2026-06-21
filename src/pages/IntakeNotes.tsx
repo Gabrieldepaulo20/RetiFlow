@@ -50,7 +50,10 @@ import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/u
 import { createPdfPreviewWindow, openPdfInBrowser } from '@/lib/printPdf';
 import {
   compareIntakeNotes,
+  getCurrentIntakeMonthInput,
+  getIntakeMonthRange,
   getIntakeNoteSortLabel,
+  INTAKE_NOTE_MONTHS,
   type IntakeNoteSortDirection,
   type IntakeNoteSortField,
 } from '@/services/domain/intakeNotesList';
@@ -58,7 +61,7 @@ import {
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
 const NOTES_PAGE_SIZE = 50;
-type NoteDatePreset = 'all' | 'today' | '7d' | '30d' | 'month' | 'custom';
+type NoteDatePreset = 'all' | 'today' | '7d' | '30d' | 'thisMonth' | 'month' | 'custom';
 const ACTIVE_NOTE_STATUSES = new Set<NoteStatus>([
   'ABERTO',
   'EM_ANALISE',
@@ -93,11 +96,13 @@ export default function IntakeNotes() {
   const { data: templateSettings } = useDocumentTemplateSettings();
   const { data: documentSettings } = useDocumentCustomization('entry_note');
   const [urlParams] = useSearchParams();
+  const currentMonthInput = useMemo(() => getCurrentIntakeMonthInput(), []);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 250);
   const [statusFilters, setStatusFilters] = useState<Set<string>>(() => initStatusFilters(urlParams));
   const [clientFilter, setClientFilter] = useState<string>('all');
   const [datePreset, setDatePreset] = useState<NoteDatePreset>('all');
+  const [monthFilter, setMonthFilter] = useState(currentMonthInput);
   const [paymentFilter, setPaymentFilter] = useState<'all' | 'PAGO' | 'PENDENTE'>('all');
   const [customStartDate, setCustomStartDate] = useState(() => format(subDays(new Date(), 29), 'yyyy-MM-dd'));
   const [customEndDate, setCustomEndDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
@@ -107,6 +112,7 @@ export default function IntakeNotes() {
   const [draftStatusFilters, setDraftStatusFilters] = useState<Set<string>>(() => new Set(statusFilters));
   const [draftClientFilter, setDraftClientFilter] = useState(clientFilter);
   const [draftDatePreset, setDraftDatePreset] = useState<NoteDatePreset>(datePreset);
+  const [draftMonthFilter, setDraftMonthFilter] = useState(monthFilter);
   const [draftPaymentFilter, setDraftPaymentFilter] = useState<'all' | 'PAGO' | 'PENDENTE'>(paymentFilter);
   const [draftCustomStartDate, setDraftCustomStartDate] = useState(customStartDate);
   const [draftCustomEndDate, setDraftCustomEndDate] = useState(customEndDate);
@@ -148,6 +154,7 @@ export default function IntakeNotes() {
     setDraftStatusFilters(new Set(statusFilters));
     setDraftClientFilter(clientFilter);
     setDraftDatePreset(datePreset);
+    setDraftMonthFilter(monthFilter);
     setDraftPaymentFilter(paymentFilter);
     setDraftCustomStartDate(customStartDate);
     setDraftCustomEndDate(customEndDate);
@@ -179,6 +186,7 @@ export default function IntakeNotes() {
     setDraftStatusFilters(new Set());
     setDraftClientFilter('all');
     setDraftDatePreset('all');
+    setDraftMonthFilter(currentMonthInput);
     setDraftPaymentFilter('all');
     setDraftCustomStartDate(format(subDays(new Date(), 29), 'yyyy-MM-dd'));
     setDraftCustomEndDate(format(new Date(), 'yyyy-MM-dd'));
@@ -190,6 +198,7 @@ export default function IntakeNotes() {
     setStatusFilters(new Set(draftStatusFilters));
     setClientFilter(draftClientFilter);
     setDatePreset(draftDatePreset);
+    setMonthFilter(draftMonthFilter);
     setPaymentFilter(draftPaymentFilter);
     setCustomStartDate(draftCustomStartDate);
     setCustomEndDate(draftCustomEndDate);
@@ -201,7 +210,7 @@ export default function IntakeNotes() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearch, statusFilters, clientFilter, datePreset, paymentFilter, customStartDate, customEndDate, sortField, sortDirection]);
+  }, [debouncedSearch, statusFilters, clientFilter, datePreset, monthFilter, paymentFilter, customStartDate, customEndDate, sortField, sortDirection]);
 
   const allStatuses: Array<{ key: NoteStatus; label: string }> = NOTE_STATUS_ORDER.map(s => ({
     key: s,
@@ -229,8 +238,17 @@ export default function IntakeNotes() {
       return build(subDays(today, 29), today, 'Últimos 30 dias');
     }
 
-    if (datePreset === 'month') {
+    if (datePreset === 'thisMonth') {
       return build(startOfMonth(today), today, `Este mês até ${format(today, 'dd/MM')}`);
+    }
+
+    if (datePreset === 'month') {
+      const monthRange = getIntakeMonthRange(monthFilter) ?? getIntakeMonthRange(currentMonthInput);
+      if (monthRange) {
+        return {
+          ...monthRange,
+        };
+      }
     }
 
     if (datePreset === 'custom') {
@@ -248,14 +266,15 @@ export default function IntakeNotes() {
       endInput: undefined,
       label: 'Todo o período',
     };
-  }, [customEndDate, customStartDate, datePreset]);
+  }, [currentMonthInput, customEndDate, customStartDate, datePreset, monthFilter]);
 
   const datePresetOptions: Array<{ value: NoteDatePreset; label: string }> = [
     { value: 'all', label: 'Todo período' },
     { value: 'today', label: 'Hoje' },
     { value: '7d', label: '7 dias' },
     { value: '30d', label: '30 dias' },
-    { value: 'month', label: 'Este mês' },
+    { value: 'thisMonth', label: 'Este mês' },
+    { value: 'month', label: 'Escolher mês' },
     { value: 'custom', label: 'Personalizado' },
   ];
 
@@ -269,6 +288,23 @@ export default function IntakeNotes() {
     () => clients.filter((client) => client.isActive).sort((a, b) => a.name.localeCompare(b.name)),
     [clients],
   );
+  const availableFilterYears = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const years = new Set<number>(
+      Array.from({ length: 7 }, (_, index) => currentYear - index),
+    );
+    notes.forEach((note) => {
+      const year = new Date(note.createdAt).getFullYear();
+      if (Number.isFinite(year)) years.add(year);
+    });
+    return [...years].sort((a, b) => b - a);
+  }, [notes]);
+  const draftMonthParts = /^(\d{4})-(\d{2})$/.exec(draftMonthFilter);
+  const draftMonthYear = draftMonthParts?.[1] ?? currentMonthInput.slice(0, 4);
+  const draftMonthValue = draftMonthParts?.[2] ?? currentMonthInput.slice(5, 7);
+  const updateDraftMonthFilter = (year: string, month: string) => {
+    setDraftMonthFilter(`${year}-${month}`);
+  };
 
   const selectedStatus = statusFilters.size === 1
     ? ([...statusFilters][0] as NoteStatus)
@@ -372,6 +408,7 @@ export default function IntakeNotes() {
     setStatusFilters(new Set());
     setClientFilter('all');
     setDatePreset('all');
+    setMonthFilter(currentMonthInput);
     setPaymentFilter('all');
     setSortField('date');
     setSortDirection('desc');
@@ -789,6 +826,41 @@ export default function IntakeNotes() {
                           ))}
                         </SelectContent>
                       </Select>
+                      {draftDatePreset === 'month' && (
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <Select
+                            value={draftMonthValue}
+                            onValueChange={(value) => updateDraftMonthFilter(draftMonthYear, value)}
+                          >
+                            <SelectTrigger className="h-9 rounded-xl">
+                              <SelectValue placeholder="Mês" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {INTAKE_NOTE_MONTHS.map((month) => (
+                                <SelectItem key={month.value} value={month.value}>
+                                  {month.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+
+                          <Select
+                            value={draftMonthYear}
+                            onValueChange={(value) => updateDraftMonthFilter(value, draftMonthValue)}
+                          >
+                            <SelectTrigger className="h-9 rounded-xl">
+                              <SelectValue placeholder="Ano" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {availableFilterYears.map((year) => (
+                                <SelectItem key={year} value={String(year)}>
+                                  {year}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
                       {draftDatePreset === 'custom' && (
                         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 pt-1">
                           <Input type="date" value={draftCustomStartDate} onChange={(e) => setDraftCustomStartDate(e.target.value)} className="h-9 rounded-xl text-sm" />
