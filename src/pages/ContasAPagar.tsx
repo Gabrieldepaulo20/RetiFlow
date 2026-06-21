@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { endOfMonth, format, parseISO, startOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { motion } from 'framer-motion';
-import { AlertCircle, AlertTriangle, CalendarCheck, CalendarClock, CheckCircle2, Clock, Copy, FileText, MailOpen, MoreHorizontal, Pencil, PlusCircle, Repeat, Search, Sparkles, Trash2, Wallet, XCircle } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Building2, CalendarCheck, CalendarClock, CheckCircle2, ChevronDown, ChevronRight, Clock, Copy, FileText, Layers, MailOpen, MoreHorizontal, Pencil, PlusCircle, Repeat, Search, Sparkles, Trash2, Users, Wallet, XCircle } from 'lucide-react';
 import { getCategoryIcon } from '@/lib/payableCategoryIcon';
 import { SupplierAvatar } from '@/components/payables/SupplierAvatar';
 import { useAuth } from '@/contexts/AuthContext';
@@ -22,7 +22,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { AccountPayable, PaymentMethod, PAYABLE_STATUS_COLORS, PAYABLE_STATUS_LABELS, PAYMENT_METHOD_LABELS, RECURRENCE_TYPE_LABELS } from '@/types';
-import { buildPayableHistoryDescription, calculatePayableFinalAmount, calculatePayableRemainingBalance, canCancelPayable, canEditPayable, canRegisterPayment, formatPayableDueDateLabel, getContextualQuestion, getDueDateUrgencyLevel, getPayableDisplayStatus, isPayableEditRestricted, isPayableOverdue, type ContextualActionKind } from '@/services/domain/payables';
+import { buildPayableHistoryDescription, calculatePayableFinalAmount, calculatePayableRemainingBalance, canCancelPayable, canEditPayable, canRegisterPayment, formatPayableDueDateLabel, getContextualQuestion, getDueDateUrgencyLevel, getPayableDisplayStatus, groupPayables, isPayableEditRestricted, isPayableOverdue, type ContextualActionKind, type PayableGroupBy } from '@/services/domain/payables';
 import { calculatePayablesCashFlowSummary } from '@/services/domain/payablesCashFlow';
 import { ContextualQuestionBanner } from '@/components/payables/ContextualQuestionBanner';
 import { getGmailOAuthFeedback } from '@/services/domain/gmailOAuth';
@@ -46,6 +46,8 @@ function fmtBRL(value: number) {
 type StatusFilter = 'all' | 'pendente' | 'vencido' | 'pago' | 'cancelado';
 type PeriodFilter = 'all' | 'current-month' | 'next-30' | 'overdue';
 type OriginFilter = 'all' | 'MANUAL' | 'IA_IMPORT' | 'CAMERA_CAPTURE' | 'AUTO_SERIES' | 'recurring' | 'installment';
+type FavorecidoFilter = 'all' | 'FORNECEDOR' | 'FUNCIONARIO';
+type GroupByOption = 'none' | PayableGroupBy;
 type DialogMode = 'payment' | 'edit' | 'cancel' | 'delete' | null;
 
 function parseMoneyInput(value: string) {
@@ -88,6 +90,9 @@ export default function ContasAPagar() {
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all');
   const [originFilter, setOriginFilter] = useState<OriginFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [favorecidoFilter, setFavorecidoFilter] = useState<FavorecidoFilter>('all');
+  const [groupBy, setGroupBy] = useState<GroupByOption>('none');
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const [searchRaw, setSearchRaw] = useState('');
   const search = useDebounce(searchRaw, 250);
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
@@ -161,6 +166,9 @@ export default function ContasAPagar() {
       result = result.filter((payable) => payable.title.toLowerCase().includes(query) || (payable.supplierName?.toLowerCase().includes(query) ?? false) || (payable.docNumber?.toLowerCase().includes(query) ?? false));
     }
     if (categoryFilter !== 'all') result = result.filter((payable) => payable.categoryId === categoryFilter);
+    if (favorecidoFilter !== 'all') {
+      result = result.filter((payable) => (payable.favorecidoTipo ?? 'FORNECEDOR') === favorecidoFilter);
+    }
     if (originFilter !== 'all') {
       result = result.filter((payable) => {
         if (originFilter === 'recurring') return payable.recurrence !== 'NENHUMA';
@@ -180,7 +188,15 @@ export default function ContasAPagar() {
       });
     }
     return [...result].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-  }, [activePayables, categoryFilter, endCurrentMonth, now, originFilter, periodFilter, search, startCurrentMonth, statusFilter]);
+  }, [activePayables, categoryFilter, endCurrentMonth, favorecidoFilter, now, originFilter, periodFilter, search, startCurrentMonth, statusFilter]);
+
+  // Agrupamento opcional da lista (por categoria, favorecido ou fornecedor) com subtotais.
+  const payableGroups = useMemo(
+    () => (groupBy === 'none'
+      ? null
+      : groupPayables(filtered, groupBy, (id) => categoryById.get(id)?.name)),
+    [filtered, groupBy, categoryById],
+  );
 
   const hasDueToday = dueToday.length > 0;
   const hasOverdue = overduePayables.length > 0;
@@ -499,6 +515,154 @@ export default function ContasAPagar() {
     );
   }
 
+  function toggleGroup(key: string) {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  function renderPayableCard(payable: AccountPayable, index: number) {
+    const urgency = getDueDateUrgencyLevel(payable);
+    const displayStatus = getPayableDisplayStatus(payable);
+    const overdue = isPayableOverdue(payable);
+    const category = categoryById.get(payable.categoryId);
+    const CategoryIcon = getCategoryIcon(category?.icon);
+    const isPaid = displayStatus === 'PAGO';
+    const isCancelled = displayStatus === 'CANCELADO';
+    const isFuncionario = payable.favorecidoTipo === 'FUNCIONARIO';
+    const contextualQuestion = getContextualQuestion(payable, now);
+
+    const rail = overdue
+      ? 'bg-destructive'
+      : urgency === 'critical' || payable.isUrgent
+        ? 'bg-amber-500'
+        : isPaid
+          ? 'bg-emerald-500'
+          : isCancelled
+            ? 'bg-muted-foreground/50'
+            : displayStatus === 'AGENDADO'
+              ? 'bg-cyan-500'
+              : 'bg-primary/70';
+
+    const valueColor = overdue
+      ? 'text-destructive'
+      : isPaid
+        ? 'text-emerald-700'
+        : isCancelled
+          ? 'text-muted-foreground line-through decoration-2 decoration-muted-foreground/40'
+          : 'text-foreground';
+
+    const primaryAction = canRegisterPayment(payable)
+      ? { label: 'Registrar pagamento', onClick: () => openPayment(payable) }
+      : canEditPayable(payable)
+        ? { label: 'Editar', onClick: () => openEdit(payable) }
+        : null;
+
+    return (
+      <motion.div
+        key={payable.id}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: Math.min(index, 8) * 0.03, duration: 0.22 }}
+        whileHover={{ y: -2 }}
+        className={cn(
+          'group relative flex h-fit overflow-hidden rounded-xl border bg-card shadow-sm transition-shadow hover:shadow-md sm:rounded-2xl',
+          overdue && 'border-destructive/40',
+          isCancelled && 'opacity-70',
+        )}
+      >
+        <div className={cn('w-1.5 shrink-0', rail)} />
+        <div className="flex min-w-0 flex-1 flex-col gap-2 p-2.5 sm:gap-2.5 sm:p-3.5">
+          <div className="flex items-start gap-2.5">
+            <SupplierAvatar name={payable.supplierName} categoryIcon={category?.icon} size={30} />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1">
+                    {payable.isUrgent ? <AlertCircle className="h-3 w-3 shrink-0 text-destructive" aria-label="Urgente" /> : null}
+                    <p className="truncate text-sm font-semibold text-foreground leading-tight">{payable.title}</p>
+                  </div>
+                  {payable.supplierName ? (
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">{payable.supplierName}</p>
+                  ) : null}
+                </div>
+                <p className={cn('max-w-[46%] truncate text-right text-sm font-display font-bold tabular-nums tracking-tight sm:text-base', valueColor)}>
+                  {fmtBRL(payable.finalAmount)}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            <PayableStatusBadge payable={payable} />
+            {isFuncionario ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700">
+                <Users className="h-3 w-3" />
+                Funcionário
+              </span>
+            ) : null}
+            {category ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                <CategoryIcon className="h-3 w-3" />
+                {category.name}
+              </span>
+            ) : null}
+            {(payable.totalInstallments ?? 0) > 1 ? (
+              <Badge variant="outline" className="gap-1 text-[11px]">
+                <Repeat className="h-3 w-3" />
+                {payable.recurrenceIndex ?? 1}/{payable.totalInstallments}
+              </Badge>
+            ) : null}
+            {payable.recurrence !== 'NENHUMA' ? (
+              <Badge variant="outline" className="text-[11px]">{RECURRENCE_TYPE_LABELS[payable.recurrence]}</Badge>
+            ) : null}
+            {payable.entrySource === 'IA_IMPORT' ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                <Sparkles className="h-3 w-3" /> IA
+              </span>
+            ) : null}
+          </div>
+
+          <div className="flex items-center gap-1.5 text-xs leading-tight">
+            <CalendarClock className={cn(
+              'h-3.5 w-3.5 shrink-0',
+              overdue ? 'text-destructive' : urgency === 'critical' ? 'text-amber-600' : 'text-muted-foreground',
+            )} />
+            <DueDateLabel payable={payable} />
+          </div>
+
+          {contextualQuestion && !dismissedQuestions.has(payable.id) ? (
+            <ContextualQuestionBanner
+              question={contextualQuestion}
+              payableId={payable.id}
+              onAction={handleContextualAction}
+              onDismiss={dismissContextualQuestion}
+            />
+          ) : null}
+
+          <div className="mt-auto flex flex-wrap items-center gap-2 pt-0.5">
+            <Button
+              variant="outline"
+              size="sm"
+              className="min-w-0 flex-1 basis-[calc(50%-0.25rem)]"
+              onClick={() => updateRouteModal('details', payable.id)}
+            >
+              Ver detalhes
+            </Button>
+            {primaryAction ? (
+              <Button size="sm" className="min-w-0 flex-1 basis-[calc(50%-0.25rem)]" onClick={primaryAction.onClick}>
+                {primaryAction.label}
+              </Button>
+            ) : null}
+            <div className="ml-auto shrink-0">{renderActions(payable)}</div>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
   return (
     <>
       <div className="space-y-4 overflow-x-hidden sm:space-y-6">
@@ -667,150 +831,50 @@ export default function ContasAPagar() {
                   <TabsTrigger value="cancelado" className="hidden text-xs sm:flex">Canceladas</TabsTrigger>
                 </TabsList>
               </Tabs>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
-                <div className="relative min-w-0"><Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><Input value={searchRaw} onChange={(event) => setSearchRaw(event.target.value)} placeholder="Buscar conta..." className="h-9 pl-8 text-sm" /></div>
+              <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
+                <div className="relative col-span-2 min-w-0 lg:col-span-1"><Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><Input value={searchRaw} onChange={(event) => setSearchRaw(event.target.value)} placeholder="Buscar conta..." className="h-9 pl-8 text-sm" /></div>
+                <Select value={favorecidoFilter} onValueChange={(value) => setFavorecidoFilter(value as FavorecidoFilter)}><SelectTrigger className="h-9 min-w-0 text-xs sm:text-sm"><SelectValue placeholder="Favorecido" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os favorecidos</SelectItem><SelectItem value="FORNECEDOR">Fornecedores</SelectItem><SelectItem value="FUNCIONARIO">Funcionários (salários)</SelectItem></SelectContent></Select>
                 <Select value={categoryFilter} onValueChange={setCategoryFilter}><SelectTrigger className="h-9 min-w-0 text-xs sm:text-sm"><SelectValue placeholder="Categorias" /></SelectTrigger><SelectContent><SelectItem value="all">Todas as categorias</SelectItem>{payableCategories.filter((category) => category.isActive).map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select>
                 <Select value={originFilter} onValueChange={(value) => setOriginFilter(value as OriginFilter)}><SelectTrigger className="h-9 min-w-0 text-xs sm:text-sm"><SelectValue placeholder="Origens" /></SelectTrigger><SelectContent><SelectItem value="all">Todas as origens</SelectItem><SelectItem value="MANUAL">Cadastro manual</SelectItem><SelectItem value="IA_IMPORT">Importadas por IA</SelectItem><SelectItem value="CAMERA_CAPTURE">Captura por câmera</SelectItem><SelectItem value="AUTO_SERIES">Geradas em série</SelectItem><SelectItem value="recurring">Recorrentes</SelectItem><SelectItem value="installment">Parceladas</SelectItem></SelectContent></Select>
                 <Select value={periodFilter} onValueChange={(value) => setPeriodFilter(value as PeriodFilter)}><SelectTrigger className="h-9 min-w-0 text-xs sm:text-sm"><SelectValue placeholder="Período" /></SelectTrigger><SelectContent><SelectItem value="all">Todo o período</SelectItem><SelectItem value="current-month">Vencimento neste mês</SelectItem><SelectItem value="next-30">Próximos 30 dias</SelectItem><SelectItem value="overdue">Somente vencidas</SelectItem></SelectContent></Select>
+                <Select value={groupBy} onValueChange={(value) => setGroupBy(value as GroupByOption)}><SelectTrigger className="h-9 min-w-0 gap-1 text-xs sm:text-sm"><Layers className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /><SelectValue placeholder="Agrupar" /></SelectTrigger><SelectContent><SelectItem value="none">Sem agrupamento</SelectItem><SelectItem value="category">Agrupar por categoria</SelectItem><SelectItem value="favorecido">Agrupar por favorecido</SelectItem><SelectItem value="supplier">Agrupar por fornecedor</SelectItem></SelectContent></Select>
               </div>
             </div>
 
             {filtered.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-4 py-24 text-center"><Wallet className="h-10 w-10 text-muted-foreground" /><div className="max-w-sm"><h3 className="text-base font-semibold">Nenhuma conta encontrada</h3><p className="text-sm text-muted-foreground">Ajuste os filtros ou cadastre a primeira conta.</p></div><Button variant="outline" onClick={() => { setStatusFilter('all'); setPeriodFilter('all'); setOriginFilter('all'); setCategoryFilter('all'); setSearchRaw(''); }}>Limpar filtros</Button></div>
-            ) : (
-              <div className="grid items-start gap-2 p-2.5 sm:gap-3 sm:p-3 sm:grid-cols-2 xl:grid-cols-3">
-                {filtered.map((payable, index) => {
-                  const urgency = getDueDateUrgencyLevel(payable);
-                  const displayStatus = getPayableDisplayStatus(payable);
-                  const overdue = isPayableOverdue(payable);
-                  const category = categoryById.get(payable.categoryId);
-                  const CategoryIcon = getCategoryIcon(category?.icon);
-                  const isPaid = displayStatus === 'PAGO';
-                  const isCancelled = displayStatus === 'CANCELADO';
-                  const contextualQuestion = getContextualQuestion(payable, now);
-
-                  const rail = overdue
-                    ? 'bg-destructive'
-                    : urgency === 'critical' || payable.isUrgent
-                      ? 'bg-amber-500'
-                      : isPaid
-                        ? 'bg-emerald-500'
-                        : isCancelled
-                          ? 'bg-muted-foreground/50'
-                          : displayStatus === 'AGENDADO'
-                            ? 'bg-cyan-500'
-                            : 'bg-primary/70';
-
-                  const valueColor = overdue
-                    ? 'text-destructive'
-                    : isPaid
-                      ? 'text-emerald-700'
-                      : isCancelled
-                        ? 'text-muted-foreground line-through decoration-2 decoration-muted-foreground/40'
-                        : 'text-foreground';
-
-                  const primaryAction = canRegisterPayment(payable)
-                    ? { label: 'Registrar pagamento', onClick: () => openPayment(payable) }
-                    : canEditPayable(payable)
-                      ? { label: 'Editar', onClick: () => openEdit(payable) }
-                      : null;
-
+              <div className="flex flex-col items-center justify-center gap-4 py-24 text-center"><Wallet className="h-10 w-10 text-muted-foreground" /><div className="max-w-sm"><h3 className="text-base font-semibold">Nenhuma conta encontrada</h3><p className="text-sm text-muted-foreground">Ajuste os filtros ou cadastre a primeira conta.</p></div><Button variant="outline" onClick={() => { setStatusFilter('all'); setPeriodFilter('all'); setOriginFilter('all'); setCategoryFilter('all'); setFavorecidoFilter('all'); setGroupBy('none'); setSearchRaw(''); }}>Limpar filtros</Button></div>
+            ) : payableGroups ? (
+              <div className="space-y-2 p-2.5 sm:p-3">
+                {payableGroups.map((group) => {
+                  const collapsed = collapsedGroups.has(group.key);
+                  const GroupIcon = groupBy === 'favorecido'
+                    ? (group.key === 'FUNCIONARIO' ? Users : Building2)
+                    : Layers;
                   return (
-                    <motion.div
-                      key={payable.id}
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: Math.min(index, 8) * 0.03, duration: 0.22 }}
-                      whileHover={{ y: -2 }}
-                      className={cn(
-                        'group relative flex h-fit overflow-hidden rounded-xl border bg-card shadow-sm transition-shadow hover:shadow-md sm:rounded-2xl',
-                        overdue && 'border-destructive/40',
-                        isCancelled && 'opacity-70',
-                      )}
-                    >
-                      <div className={cn('w-1.5 shrink-0', rail)} />
-                      <div className="flex min-w-0 flex-1 flex-col gap-2 p-2.5 sm:gap-2.5 sm:p-3.5">
-                        <div className="flex items-start gap-2.5">
-                          <SupplierAvatar name={payable.supplierName} categoryIcon={category?.icon} size={30} />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-1">
-                                  {payable.isUrgent ? <AlertCircle className="h-3 w-3 shrink-0 text-destructive" aria-label="Urgente" /> : null}
-                                  <p className="truncate text-sm font-semibold text-foreground leading-tight">{payable.title}</p>
-                                </div>
-                                {payable.supplierName ? (
-                                  <p className="mt-0.5 truncate text-xs text-muted-foreground">{payable.supplierName}</p>
-                                ) : null}
-                              </div>
-                              <p className={cn('max-w-[46%] truncate text-right text-sm font-display font-bold tabular-nums tracking-tight sm:text-base', valueColor)}>
-                                {fmtBRL(payable.finalAmount)}
-                              </p>
-                            </div>
-                          </div>
+                    <div key={group.key} className="overflow-hidden rounded-xl border border-border/60">
+                      <button
+                        type="button"
+                        onClick={() => toggleGroup(group.key)}
+                        className="flex w-full items-center gap-2 bg-muted/40 px-3 py-2 text-left transition-colors hover:bg-muted/60"
+                      >
+                        {collapsed ? <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                        <GroupIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span className="truncate text-sm font-semibold text-foreground">{group.label}</span>
+                        <span className="shrink-0 rounded-full bg-background px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">{group.items.length}</span>
+                        <span className="ml-auto shrink-0 text-sm font-display font-bold tabular-nums text-foreground/80">{fmtBRL(group.subtotal)}</span>
+                      </button>
+                      {!collapsed ? (
+                        <div className="grid items-start gap-2 p-2.5 sm:gap-3 sm:p-3 sm:grid-cols-2 xl:grid-cols-3">
+                          {group.items.map((payable, index) => renderPayableCard(payable, index))}
                         </div>
-
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <PayableStatusBadge payable={payable} />
-                          {category ? (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                              <CategoryIcon className="h-3 w-3" />
-                              {category.name}
-                            </span>
-                          ) : null}
-                          {(payable.totalInstallments ?? 0) > 1 ? (
-                            <Badge variant="outline" className="gap-1 text-[11px]">
-                              <Repeat className="h-3 w-3" />
-                              {payable.recurrenceIndex ?? 1}/{payable.totalInstallments}
-                            </Badge>
-                          ) : null}
-                          {payable.recurrence !== 'NENHUMA' ? (
-                            <Badge variant="outline" className="text-[11px]">{RECURRENCE_TYPE_LABELS[payable.recurrence]}</Badge>
-                          ) : null}
-                          {payable.entrySource === 'IA_IMPORT' ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-                              <Sparkles className="h-3 w-3" /> IA
-                            </span>
-                          ) : null}
-                        </div>
-
-                        <div className="flex items-center gap-1.5 text-xs leading-tight">
-                          <CalendarClock className={cn(
-                            'h-3.5 w-3.5 shrink-0',
-                            overdue ? 'text-destructive' : urgency === 'critical' ? 'text-amber-600' : 'text-muted-foreground',
-                          )} />
-                          <DueDateLabel payable={payable} />
-                        </div>
-
-                        {contextualQuestion && !dismissedQuestions.has(payable.id) ? (
-                          <ContextualQuestionBanner
-                            question={contextualQuestion}
-                            payableId={payable.id}
-                            onAction={handleContextualAction}
-                            onDismiss={dismissContextualQuestion}
-                          />
-                        ) : null}
-
-                        <div className="mt-auto flex flex-wrap items-center gap-2 pt-0.5">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="min-w-0 flex-1 basis-[calc(50%-0.25rem)]"
-                            onClick={() => updateRouteModal('details', payable.id)}
-                          >
-                            Ver detalhes
-                          </Button>
-                          {primaryAction ? (
-                            <Button size="sm" className="min-w-0 flex-1 basis-[calc(50%-0.25rem)]" onClick={primaryAction.onClick}>
-                              {primaryAction.label}
-                            </Button>
-                          ) : null}
-                          <div className="ml-auto shrink-0">{renderActions(payable)}</div>
-                        </div>
-                      </div>
-                    </motion.div>
+                      ) : null}
+                    </div>
                   );
                 })}
+              </div>
+            ) : (
+              <div className="grid items-start gap-2 p-2.5 sm:gap-3 sm:p-3 sm:grid-cols-2 xl:grid-cols-3">
+                {filtered.map((payable, index) => renderPayableCard(payable, index))}
               </div>
             )}
           </CardContent>

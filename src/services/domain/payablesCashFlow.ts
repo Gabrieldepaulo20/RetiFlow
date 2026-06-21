@@ -22,6 +22,9 @@ function isPendingCashFlowPayable(payable: AccountPayable) {
 }
 
 export function isLaborRelatedPayable(payable: AccountPayable, categoryName?: string | null) {
+  // Campo estruturado tem prioridade; a keyword é só fallback para contas legadas
+  // que ainda não têm favorecidoTipo preenchido.
+  if (payable.favorecidoTipo === 'FUNCIONARIO') return true;
   const haystack = `${payable.title} ${payable.supplierName ?? ''} ${categoryName ?? ''}`.toLowerCase();
   return LABOR_KEYWORDS.some((keyword) => haystack.includes(keyword));
 }

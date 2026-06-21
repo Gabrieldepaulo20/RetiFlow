@@ -869,3 +869,45 @@ export function getContextualQuestion(payable: AccountPayable, now: Date = new D
 
   return null;
 }
+
+export type PayableGroupBy = 'category' | 'favorecido' | 'supplier';
+
+export interface PayableGroup<T> {
+  key: string;
+  label: string;
+  items: T[];
+  subtotal: number;
+}
+
+/**
+ * Agrupa contas a pagar para visualizacao por tipo (categoria, favorecido ou fornecedor),
+ * com subtotal por grupo. Grupos ordenados por subtotal desc. `categoryName` resolve o nome
+ * da categoria (o dominio nao conhece o catalogo de categorias da empresa).
+ */
+export function groupPayables<T extends Pick<AccountPayable, 'categoryId' | 'favorecidoTipo' | 'supplierName' | 'finalAmount'>>(
+  payables: T[],
+  mode: PayableGroupBy,
+  categoryName: (categoryId: string) => string | undefined,
+): PayableGroup<T>[] {
+  const groups = new Map<string, PayableGroup<T>>();
+  for (const payable of payables) {
+    let key: string;
+    let label: string;
+    if (mode === 'category') {
+      key = payable.categoryId || 'sem-categoria';
+      label = categoryName(payable.categoryId) || 'Sem categoria';
+    } else if (mode === 'favorecido') {
+      key = payable.favorecidoTipo === 'FUNCIONARIO' ? 'FUNCIONARIO' : 'FORNECEDOR';
+      label = key === 'FUNCIONARIO' ? 'Funcionários (salários)' : 'Fornecedores';
+    } else {
+      const name = payable.supplierName?.trim();
+      key = name ? name.toLowerCase() : 'sem-fornecedor';
+      label = name || 'Sem fornecedor';
+    }
+    const group = groups.get(key) ?? { key, label, items: [], subtotal: 0 };
+    group.items.push(payable);
+    group.subtotal += payable.finalAmount;
+    groups.set(key, group);
+  }
+  return Array.from(groups.values()).sort((a, b) => b.subtotal - a.subtotal);
+}
