@@ -15,6 +15,7 @@ import {
   Palette,
   Settings as SettingsIcon,
   Shield,
+  Calculator,
   TrendingUp,
   Users,
   Wallet,
@@ -36,6 +37,7 @@ import { DocumentTemplatesPanel } from '@/components/settings/DocumentTemplatesP
 import { DocumentThemesPanel } from '@/components/settings/DocumentThemesPanel';
 import { SettingsAuditPanel } from '@/components/settings/SettingsAuditPanel';
 import StatusGlossarySection from '@/components/settings/StatusGlossarySection';
+import { PlanoDeContasPanel } from '@/components/settings/PlanoDeContasPanel';
 import { callAdminUsersFunction } from '@/api/supabase/admin-users';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -67,6 +69,7 @@ const SETTINGS_TABS = new Set([
   'historico',
   'modulos',
   'status',
+  'plano-contas',
   'seguranca',
   'usuarios',
 ]);
@@ -264,6 +267,7 @@ export default function SettingsPage() {
           <TabsTrigger value="historico" className="shrink-0 gap-1.5"><FileClock className="h-4 w-4" /> Histórico</TabsTrigger>
           <TabsTrigger value="modulos" className="shrink-0 gap-1.5"><LayoutGrid className="h-4 w-4" /> Módulos</TabsTrigger>
           <TabsTrigger value="status" className="shrink-0 gap-1.5"><Workflow className="h-4 w-4" /> Status & Fluxo</TabsTrigger>
+          <TabsTrigger value="plano-contas" className="shrink-0 gap-1.5"><Calculator className="h-4 w-4" /> Plano de contas</TabsTrigger>
           <TabsTrigger value="seguranca" className="shrink-0 gap-1.5"><Lock className="h-4 w-4" /> Segurança</TabsTrigger>
           <TabsTrigger value="usuarios" className="shrink-0 gap-1.5"><Users className="h-4 w-4" /> Usuários</TabsTrigger>
         </TabsList>
@@ -305,6 +309,10 @@ export default function SettingsPage() {
 
         <TabsContent value="status">
           <StatusGlossarySection />
+        </TabsContent>
+
+        <TabsContent value="plano-contas">
+          <PlanoDeContasPanel />
         </TabsContent>
 
         <TabsContent value="seguranca">

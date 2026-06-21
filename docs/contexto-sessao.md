@@ -23,10 +23,17 @@ Atualizado em: 2026-06-21
   - `src/pages/Dashboard.tsx`: card "DRE do periodo" (competencia) - Receita - Impostos = Liquida;
     - Custos = Lucro Bruto; - Despesas = Operacional; - Despesas financeiras = Lucro Liquido; + margens.
     Contas com categoria sem classe entram como despesa com aviso ambar (transparencia).
-- **Pendente (Fase 2 - parte 2):** UI para RECLASSIFICAR categorias (write-path) - exige estender
-  `update_categoria_conta_pagar` (+ variante de suporte) com `p_classe` e uma tela de gestao de categorias
-  (hoje nao existe UI de CRUD de categoria). Ate la, a classe vem do backfill por nome.
-- Branch: `feat/fase2-dre`. Validado: tsc, lint, 408 testes unit, build, test:integration.
+- **Fase 2 parte 2 APLICADA (2026-06-21):** migration `20260621193000_payable_category_classe_write.sql`.
+  `insert_categoria_conta_pagar` e `update_categoria_conta_pagar` ganharam `p_classe` (DROP da assinatura
+  antiga + CREATE da nova p/ evitar overload duplicado; re-grant `authenticated`+`service_role`, revoga
+  `public`; validacao de classe; rollback no .sql). Catalogo remoto confirmou 1 overload de cada com
+  `p_classe` e ACL correto. `db lint` so com os 4 warnings legados; `test:integration` ok (17 arq, 55).
+  Variantes `*_contexto_suporte` NAO foram alteradas (follow-up) — UI desabilita reclassificacao em suporte.
+  Front: `categorias.ts` (insert/update aceitam `p_classe`), `DataContext.updateCategoriaClasse`
+  (otimista + reverte em erro), aba "Plano de contas" em Configuracoes (`PlanoDeContasPanel`) lista as
+  categorias e edita a classe; desabilitada em modo suporte.
+- Branches: `feat/fase2-dre` (parte 1), `feat/fase2-dre-classify` (parte 2). Validado: tsc, lint, 408
+  testes unit, build, test:integration.
 
 ---
 

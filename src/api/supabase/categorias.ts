@@ -20,6 +20,7 @@ export async function insertCategoria(params: {
   p_nome: string;
   p_cor?: string;
   p_icone?: string;
+  p_classe?: string;
 }) {
   const env = await callRPC('insert_categoria_conta_pagar', params);
   return env.id_categorias as string;
@@ -27,7 +28,7 @@ export async function insertCategoria(params: {
 
 export async function updateCategoria(
   idCategorias: string,
-  dados: Partial<{ p_nome: string; p_cor: string; p_icone: string; p_ativo: boolean }>,
+  dados: Partial<{ p_nome: string; p_cor: string; p_icone: string; p_ativo: boolean; p_classe: string }>,
 ) {
   await callRPC('update_categoria_conta_pagar', { p_id_categorias: idCategorias, ...dados });
 }

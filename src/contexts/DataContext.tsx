@@ -13,6 +13,7 @@ import {
   NoteStatus,
   PayableAttachment,
   PayableCategory,
+  PayableCategoryClass,
   PayableEntrySource,
   PayableHistory,
   PayableStatus,
@@ -53,7 +54,7 @@ import {
   type ContaPagar,
   type InsertContaPagarPayload,
 } from '@/api/supabase/contas-pagar';
-import { getCategorias, type Categoria } from '@/api/supabase/categorias';
+import { getCategorias, updateCategoria, type Categoria } from '@/api/supabase/categorias';
 import { getFornecedores, type Fornecedor } from '@/api/supabase/fornecedores';
 import { insertLog } from '@/api/supabase/logs';
 import {
@@ -227,6 +228,7 @@ interface DataCtx {
   payableHistory: PayableHistory[];
   addPayable: (data: Omit<AccountPayable, 'id' | 'createdAt' | 'updatedAt'>) => Promise<AccountPayable>;
   updatePayable: (id: string, data: Partial<AccountPayable>) => Promise<void>;
+  updateCategoriaClasse: (id: string, classe: PayableCategoryClass) => Promise<void>;
   getPayable: (id: string) => AccountPayable | undefined;
   addPayableAttachment: (data: Omit<PayableAttachment, 'id' | 'createdAt'>) => PayableAttachment;
   addPayableHistoryEntry: (data: Omit<PayableHistory, 'id' | 'createdAt'>) => PayableHistory;
@@ -251,7 +253,7 @@ const Ctx = createContext<DataCtx | null>(null);
  */
 type PayablesData = Pick<DataCtx,
   | 'payables' | 'payableCategories' | 'payableSuppliers' | 'payableAttachments' | 'payableHistory'
-  | 'addPayable' | 'updatePayable' | 'getPayable' | 'addPayableAttachment' | 'addPayableHistoryEntry'
+  | 'addPayable' | 'updatePayable' | 'updateCategoriaClasse' | 'getPayable' | 'addPayableAttachment' | 'addPayableHistoryEntry'
   | 'getAttachmentsForPayable' | 'getHistoryForPayable' | 'getInstallmentSiblings'
   | 'emailSuggestions' | 'refreshEmailSuggestions' | 'acceptEmailSuggestion' | 'dismissEmailSuggestion'
 >;
@@ -1093,6 +1095,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
     bumpDataVersion();
   }, [bumpDataVersion, payableById]);
 
+  /** Classifica a classe contábil (DRE) de uma categoria. Otimista + reverte em erro. */
+  const updateCategoriaClasse = useCallback(async (id: string, classe: PayableCategoryClass) => {
+    const previous = payableCategories;
+    setPayableCategories((prev) => prev.map((category) => (category.id === id ? { ...category, classe } : category)));
+    bumpDataVersion();
+    if (!IS_REAL_AUTH) return;
+    try {
+      await updateCategoria(id, { p_classe: classe });
+    } catch (err) {
+      setPayableCategories(previous);
+      bumpDataVersion();
+      toast({ title: 'Erro ao classificar categoria', description: 'Mudança revertida. Tente novamente.', variant: 'destructive' });
+      throw err;
+    }
+  }, [payableCategories, bumpDataVersion]);
+
   const getPayable = useCallback((id: string) => payableById.get(id), [payableById]);
 
   const addPayableAttachment = useCallback((data: Omit<PayableAttachment, 'id' | 'createdAt'>) => {
@@ -1236,6 +1254,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     payableHistory,
     addPayable,
     updatePayable,
+    updateCategoriaClasse,
     getPayable,
     addPayableAttachment,
     addPayableHistoryEntry,
@@ -1284,6 +1303,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     payableHistory,
     addPayable,
     updatePayable,
+    updateCategoriaClasse,
     getPayable,
     addPayableAttachment,
     addPayableHistoryEntry,
@@ -1306,6 +1326,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     payableHistory,
     addPayable,
     updatePayable,
+    updateCategoriaClasse,
     getPayable,
     addPayableAttachment,
     addPayableHistoryEntry,
@@ -1324,6 +1345,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     payableHistory,
     addPayable,
     updatePayable,
+    updateCategoriaClasse,
     getPayable,
     addPayableAttachment,
     addPayableHistoryEntry,
