@@ -313,6 +313,7 @@ function mapStatusNome(nome: string): NoteStatus {
 
 export function supabaseToIntakeNote(row: NotaServico): IntakeNote {
   const extra = row as unknown as {
+    fk_fechamentos?: string | null;
     payment_status?: string;
     pago_em?: string | null;
     pago_com?: string | null;
@@ -328,6 +329,7 @@ export function supabaseToIntakeNote(row: NotaServico): IntakeNote {
     updatedAt:        row.updated_at,
     deadline:         row.prazo || undefined,
     createdByUserId:  '',
+    closingId:         extra.fk_fechamentos ?? row.fk_fechamentos ?? null,
     status:           mapStatusNome(row.status.nome),
     type:             'SERVICO' as NoteType,
     vehicleModel:     row.veiculo.modelo,

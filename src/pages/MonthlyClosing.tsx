@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
@@ -201,6 +201,19 @@ const normalizeAvailablePeriods = (dates: string[]) => {
   });
 };
 
+const getClosingCompetenceDate = (note: Pick<IntakeNote, 'finalizedAt' | 'updatedAt'>) =>
+  note.finalizedAt ?? note.updatedAt;
+
+const isAvailableForClosing = (note: IntakeNote) =>
+  isBillableNoteStatus(note.status) && !note.closingId && Boolean(getClosingCompetenceDate(note));
+
+const isInClosingPeriod = (note: IntakeNote, month: string, year: string) => {
+  const competenceDate = getClosingCompetenceDate(note);
+  if (!competenceDate) return false;
+  const dt = new Date(competenceDate);
+  return String(dt.getMonth() + 1) === month && String(dt.getFullYear()) === year;
+};
+
 /* ── Dual-ring spinner ─────────────────────────────────────────────────── */
 function DualSpinner() {
   return (
@@ -263,10 +276,6 @@ export default function MonthlyClosing() {
   const [selMonth, setSelMonth] = useState(defaultMonth);
   const [selYear, setSelYear] = useState(defaultYear);
   const [selClientId, setSelClientId] = useState('');
-  const [availablePeriods, setAvailablePeriods] = useState<AvailableClosingPeriod[]>([]);
-  const [loadingPeriods, setLoadingPeriods] = useState(false);
-  const [periodsLoadedClientId, setPeriodsLoadedClientId] = useState<string | null>(null);
-  const manualPeriodClientIdRef = useRef<string | null>(null);
   const [previewNotes, setPreviewNotes] = useState<PreviewNote[]>([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [descontos, setDescontos] = useState<Record<string, number>>({});
@@ -301,14 +310,14 @@ export default function MonthlyClosing() {
     setStoredPdfPreviewUrl(null);
     setStoredPdfPreviewTitle(null);
     setSelClientId('');
-    setPeriodsLoadedClientId(null);
-    setAvailablePeriods([]);
+    setSelMonth(defaultMonth);
+    setSelYear(defaultYear);
     setPreviewNotes([]);
     setDescontos({});
     setIncludedNoteIds([]);
     setEditingItems({});
     setPreviewDados(null);
-  }, [currentScopeUserId]);
+  }, [currentScopeUserId, defaultMonth, defaultYear]);
 
   /* ── Load fechamentos ── */
   const loadFechamentos = useCallback(async () => {
@@ -368,68 +377,15 @@ export default function MonthlyClosing() {
     }
   }, [drafts, draftsHydratedKey, draftsStorageKey]);
 
-  useEffect(() => {
-    if (!selClientId) {
-      setAvailablePeriods([]);
-      setPeriodsLoadedClientId(null);
-      setSelMonth(defaultMonth);
-      setSelYear(defaultYear);
-      return;
-    }
+  const availableClosingNotes = useMemo(
+    () => notes.filter(isAvailableForClosing),
+    [notes],
+  );
 
-    let cancelled = false;
-    const loadPeriods = async () => {
-      setLoadingPeriods(true);
-      try {
-        setPeriodsLoadedClientId(null);
-        const fallback = normalizeAvailablePeriods(
-          notes
-            .filter((note) => note.clientId === selClientId && isBillableNoteStatus(note.status) && (note.finalizedAt ?? note.updatedAt))
-            .map((note) => note.finalizedAt ?? note.updatedAt),
-        );
-
-        const periods = IS_REAL_AUTH
-          ? normalizeAvailablePeriods(
-              (await getNotasServico({ p_fk_clientes: selClientId, p_limite: 500, p_offset: 0, p_apenas_sem_fechamento: true })).dados
-                .filter((note) => note.finalizado_em || note.status.tipo_status === 'fechado')
-                .map((note) => note.finalizado_em ?? note.created_at),
-            )
-          : fallback;
-
-        const nextPeriods = periods.length > 0 ? periods : fallback;
-        if (cancelled) return;
-
-        setAvailablePeriods(nextPeriods);
-        setPeriodsLoadedClientId(selClientId);
-        if (nextPeriods.length === 0) {
-          setSelMonth('');
-          return;
-        }
-
-        const selectedYear = nextPeriods.some((period) => period.year === selYear)
-          ? selYear
-          : nextPeriods[0].year;
-        setSelYear(selectedYear);
-        setSelMonth((current) => {
-          if (manualPeriodClientIdRef.current === selClientId) return '';
-          if (activeDraftId && current) return current;
-          if (nextPeriods.some((period) => period.month === current && period.year === selectedYear)) return current;
-          return '';
-        });
-      } catch {
-        if (cancelled) return;
-        setAvailablePeriods([]);
-        setPeriodsLoadedClientId(selClientId);
-        setSelMonth('');
-        toast({ title: 'Erro ao carregar períodos do cliente', variant: 'destructive' });
-      } finally {
-        if (!cancelled) setLoadingPeriods(false);
-      }
-    };
-
-    void loadPeriods();
-    return () => { cancelled = true; };
-  }, [selClientId, notes, defaultMonth, defaultYear, selYear, toast, activeDraftId]);
+  const availablePeriods = useMemo(
+    () => normalizeAvailablePeriods(availableClosingNotes.map(getClosingCompetenceDate).filter(Boolean) as string[]),
+    [availableClosingNotes],
+  );
 
   const loadDraftIntoEditor = useCallback((draft: ClosingDraft) => {
     if (!scopedClientIdSet.has(draft.clientId)) {
@@ -442,7 +398,6 @@ export default function MonthlyClosing() {
     }
 
     setActiveDraftId(draft.id);
-    manualPeriodClientIdRef.current = null;
     setSelClientId(draft.clientId);
     setSelMonth(draft.month);
     setSelYear(draft.year);
@@ -630,8 +585,11 @@ export default function MonthlyClosing() {
 
     setLoadingPreview(true);
     try {
+      const localClosingIdByNoteId = new Map(notes.map((note) => [note.id, note.closingId ?? null]));
       const notasFiltradas = IS_REAL_AUTH
-        ? (await getNotasServico({ p_fk_clientes: selClientId, p_limite: 500, p_offset: 0, p_apenas_sem_fechamento: true })).dados.filter((note) => {
+        ? (await getNotasServico({ p_fk_clientes: selClientId, p_limite: 500, p_offset: 0 })).dados.filter((note) => {
+            const closingId = note.fk_fechamentos ?? localClosingIdByNoteId.get(note.id_notas_servico);
+            if (closingId) return false;
             if (!(note.finalizado_em || note.status.tipo_status === 'fechado')) return false;
             const dt = new Date(note.finalizado_em ?? note.created_at);
             return dt >= inicio && dt <= fim;
@@ -646,9 +604,9 @@ export default function MonthlyClosing() {
             pagoEm: note.pago_em ?? null,
           }))
         : notes.filter((n) => {
-            if (!isBillableNoteStatus(n.status)) return false;
+            if (!isAvailableForClosing(n)) return false;
             if (n.clientId !== selClientId) return false;
-            const dt = new Date(n.finalizedAt ?? n.updatedAt);
+            const dt = new Date(getClosingCompetenceDate(n));
             return dt >= inicio && dt <= fim;
           }).map((note) => ({
             id: note.id,
@@ -656,7 +614,7 @@ export default function MonthlyClosing() {
             vehicleModel: note.vehicleModel,
             plate: note.plate ?? '',
             totalAmount: note.totalAmount,
-            updatedAt: note.updatedAt,
+            updatedAt: getClosingCompetenceDate(note),
             paymentStatus: note.paymentStatus,
             pagoEm: note.paidAt ?? null,
           }));
@@ -777,15 +735,6 @@ export default function MonthlyClosing() {
         : draft
     )));
   }, [draftModalOpen, activeDraftId, previewNotes, includedNoteIds, descontos]);
-
-  useEffect(() => {
-    if (!selYear || availablePeriods.length === 0) return;
-    if (manualPeriodClientIdRef.current === selClientId) return;
-    const monthsForYear = availablePeriods.filter((period) => period.year === selYear);
-    if (monthsForYear.length === 0) return;
-    if (monthsForYear.some((period) => period.month === selMonth)) return;
-    setSelMonth(monthsForYear[0].month);
-  }, [availablePeriods, selYear, selMonth, selClientId]);
 
   const updatePreviewItem = useCallback((
     noteId: string,
@@ -983,27 +932,67 @@ export default function MonthlyClosing() {
 
   const years = useMemo(() => {
     const y = Number(defaultYear);
-    if (availablePeriods.length > 0) {
-      return [...new Set(availablePeriods.map((period) => period.year))];
-    }
-    return [y - 1, y, y + 1].map(String);
+    return [...new Set([
+      ...availablePeriods.map((period) => period.year),
+      ...[y - 1, y, y + 1].map(String),
+    ])].sort((a, b) => Number(b) - Number(a));
   }, [availablePeriods, defaultYear]);
 
-  const availableMonthsForYear = useMemo(
-    () => availablePeriods.filter((period) => period.year === selYear),
-    [availablePeriods, selYear],
-  );
+  const monthOptionsForYear = useMemo(() => {
+    const counts = new Map(
+      availablePeriods
+        .filter((period) => period.year === selYear)
+        .map((period) => [period.month, period.noteCount]),
+    );
+
+    return MONTHS.map((label, index) => {
+      const month = String(index + 1);
+      return {
+        key: `${selYear}-${month.padStart(2, '0')}`,
+        month,
+        year: selYear,
+        label,
+        noteCount: counts.get(month) ?? 0,
+      };
+    });
+  }, [availablePeriods, selYear]);
 
   const activeClients = useMemo(() => clients.filter((c) => c.isActive).sort((a, b) => a.name.localeCompare(b.name)), [clients]);
-  const periodsLoadedForSelectedClient = Boolean(selClientId && periodsLoadedClientId === selClientId && !loadingPeriods);
-  const hasNoPeriodsForSelectedClient = periodsLoadedForSelectedClient && availablePeriods.length === 0;
+
+  const closingNotesForSelectedPeriod = useMemo(
+    () => (selMonth && selYear
+      ? availableClosingNotes.filter((note) => isInClosingPeriod(note, selMonth, selYear))
+      : []),
+    [availableClosingNotes, selMonth, selYear],
+  );
+
+  const clientsForSelectedPeriod = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const note of closingNotesForSelectedPeriod) {
+      counts.set(note.clientId, (counts.get(note.clientId) ?? 0) + 1);
+    }
+
+    return activeClients
+      .map((client) => ({ client, noteCount: counts.get(client.id) ?? 0 }))
+      .filter((item) => item.noteCount > 0);
+  }, [activeClients, closingNotesForSelectedPeriod]);
+
+  const selectedPeriodTotalNotes = closingNotesForSelectedPeriod.length;
+  const hasNoClientsForSelectedPeriod = Boolean(selMonth && selYear && clientsForSelectedPeriod.length === 0);
+
+  useEffect(() => {
+    if (!selClientId) return;
+    if (clientsForSelectedPeriod.some(({ client }) => client.id === selClientId)) return;
+    setSelClientId('');
+    setActiveDraftId(null);
+    setPreviewNotes([]);
+    setDescontos({});
+    setIncludedNoteIds([]);
+    setEditingItems({});
+  }, [clientsForSelectedPeriod, selClientId]);
 
   const handleClientSelect = useCallback((clientId: string) => {
-    manualPeriodClientIdRef.current = clientId;
     setActiveDraftId(null);
-    setSelMonth('');
-    setAvailablePeriods([]);
-    setPeriodsLoadedClientId(null);
     setSelClientId(clientId);
     setPreviewNotes([]);
     setDescontos({});
@@ -1012,8 +1001,23 @@ export default function MonthlyClosing() {
   }, []);
 
   const handleMonthSelect = useCallback((month: string) => {
-    manualPeriodClientIdRef.current = null;
     setSelMonth(month);
+    setSelClientId('');
+    setActiveDraftId(null);
+    setPreviewNotes([]);
+    setDescontos({});
+    setIncludedNoteIds([]);
+    setEditingItems({});
+  }, []);
+
+  const handleYearSelect = useCallback((year: string) => {
+    setSelYear(year);
+    setSelClientId('');
+    setActiveDraftId(null);
+    setPreviewNotes([]);
+    setDescontos({});
+    setIncludedNoteIds([]);
+    setEditingItems({});
   }, []);
 
   return (
@@ -1045,29 +1049,18 @@ export default function MonthlyClosing() {
             Agrupa as O.S. pela data de finalização/entrega (competência). Isso pode diferir do Dashboard,
             que conta o faturamento pela data de entrada da O.S.
           </p>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(220px,1fr)_160px_110px_auto] lg:items-end">
-            <div className="flex-1 min-w-[180px]">
-              <label className="mb-1.5 block text-xs text-muted-foreground">Cliente</label>
-              <Select value={selClientId} onValueChange={handleClientSelect}>
-                <SelectTrigger aria-label="Selecionar cliente do fechamento"><SelectValue placeholder="Selecionar cliente" /></SelectTrigger>
-                <SelectContent>
-                  {activeClients.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[160px_110px_minmax(240px,1fr)_auto] lg:items-end">
             <div className="grid grid-cols-2 gap-2 sm:contents">
               <div>
                 <label className="mb-1.5 block text-xs text-muted-foreground">Mês</label>
-                <Select value={selMonth} onValueChange={handleMonthSelect} disabled={!selClientId || loadingPeriods || availableMonthsForYear.length === 0}>
+                <Select value={selMonth} onValueChange={handleMonthSelect}>
                   <SelectTrigger className="w-full" aria-label="Selecionar mês do fechamento">
-                    <SelectValue placeholder={loadingPeriods ? 'Carregando...' : hasNoPeriodsForSelectedClient ? 'Sem O.S. para fechar' : 'Escolha o mês'} />
+                    <SelectValue placeholder="Escolha o mês" />
                   </SelectTrigger>
                   <SelectContent>
-                    {availableMonthsForYear.map((period) => (
+                    {monthOptionsForYear.map((period) => (
                       <SelectItem key={period.key} value={period.month}>
-                        {MONTHS[Number(period.month) - 1]} ({period.noteCount})
+                        {period.noteCount > 0 ? `${period.label} (${period.noteCount})` : period.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1075,7 +1068,7 @@ export default function MonthlyClosing() {
               </div>
               <div>
                 <label className="mb-1.5 block text-xs text-muted-foreground">Ano</label>
-                <Select value={selYear} onValueChange={setSelYear} disabled={!selClientId || loadingPeriods || years.length === 0}>
+                <Select value={selYear} onValueChange={handleYearSelect} disabled={years.length === 0}>
                   <SelectTrigger className="w-full" aria-label="Selecionar ano do fechamento"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {years.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}
@@ -1083,24 +1076,32 @@ export default function MonthlyClosing() {
                 </Select>
               </div>
             </div>
-            <Button onClick={handleBuildPreview} disabled={loadingPreview || loadingPeriods || !selClientId || !selMonth || availablePeriods.length === 0} className="w-full lg:min-w-[180px]">
-              {loadingPreview || loadingPeriods ? <RefreshCcw className="w-4 h-4 mr-2 animate-spin" /> : <PlusCircle className="w-4 h-4 mr-2" />}
+            <div className="flex-1 min-w-[180px]">
+              <label className="mb-1.5 block text-xs text-muted-foreground">Cliente</label>
+              <Select value={selClientId} onValueChange={handleClientSelect} disabled={!selMonth || !selYear || clientsForSelectedPeriod.length === 0}>
+                <SelectTrigger aria-label="Selecionar cliente do fechamento">
+                  <SelectValue placeholder={hasNoClientsForSelectedPeriod ? 'Nenhum cliente no período' : 'Selecionar cliente'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {clientsForSelectedPeriod.map(({ client, noteCount }) => (
+                    <SelectItem key={client.id} value={client.id}>{client.name} ({noteCount})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={handleBuildPreview} disabled={loadingPreview || !selClientId || !selMonth || !selYear} className="w-full lg:min-w-[180px]">
+              {loadingPreview ? <RefreshCcw className="w-4 h-4 mr-2 animate-spin" /> : <PlusCircle className="w-4 h-4 mr-2" />}
               Gerar rascunho
             </Button>
           </div>
-          {selClientId && loadingPeriods && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              Buscando O.S. entregues desse cliente para montar os períodos disponíveis.
-            </p>
-          )}
-          {hasNoPeriodsForSelectedClient && (
+          {hasNoClientsForSelectedPeriod && (
             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              Não há O.S. entregues e sem fechamento para este cliente. Se a O.S. já entrou em um fechamento, ela não aparece aqui para evitar cobrança duplicada.
+              Nenhum cliente tem O.S. entregue e sem fechamento em {MONTHS[Number(selMonth) - 1]} de {selYear}.
             </div>
           )}
-          {selClientId && availablePeriods.length > 0 && !selMonth && !loadingPeriods && (
+          {selMonth && selYear && clientsForSelectedPeriod.length > 0 && !selClientId && (
             <p className="mt-2 text-xs text-muted-foreground">
-              Escolha o mês antes de gerar. Foram encontradas {availablePeriods.reduce((sum, period) => sum + period.noteCount, 0)} O.S. em {availablePeriods.length} período{availablePeriods.length === 1 ? '' : 's'}.
+              Escolha o cliente para fechar {MONTHS[Number(selMonth) - 1]} de {selYear}. Foram encontradas {selectedPeriodTotalNotes} O.S. em {clientsForSelectedPeriod.length} cliente{clientsForSelectedPeriod.length === 1 ? '' : 's'}.
             </p>
           )}
         </CardContent>

@@ -107,6 +107,7 @@ export interface IntakeNote {
   status: NoteStatus;
   type: NoteType;
   parentNoteId?: string;
+  closingId?: string | null;
   previousStatus?: NoteStatus;
   engineType: string;
   vehicleModel: string;

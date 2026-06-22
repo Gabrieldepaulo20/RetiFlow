@@ -10,14 +10,15 @@ test.describe('Fechamento Mensal', () => {
   });
 
   test('gera rascunho e visualiza template sem finalizar fechamento mockado', async ({ page }) => {
-    await page.getByRole('combobox', { name: /cliente do fechamento/i }).click();
-    await page.getByRole('option', { name: /Ana Paula Ferreira/i }).click();
-
-    await expect(page.getByText(/escolha o mês antes de gerar/i)).toBeVisible();
-    await expect(page.getByRole('button', { name: /gerar rascunho/i })).toBeDisabled();
-
     await page.getByRole('combobox', { name: /mês do fechamento/i }).click();
     await page.getByRole('option', { name: /fevereiro/i }).click();
+
+    await expect(page.getByText(/escolha o cliente para fechar fevereiro de 2026/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: /gerar rascunho/i })).toBeDisabled();
+    await expect(page.getByText(/erro ao carregar períodos do cliente/i)).toHaveCount(0);
+
+    await page.getByRole('combobox', { name: /cliente do fechamento/i }).click();
+    await page.getByRole('option', { name: /Ana Paula Ferreira/i }).click();
 
     await page.getByRole('button', { name: /gerar rascunho/i }).click();
 

@@ -4,25 +4,28 @@ Atualizado em: 2026-06-22
 
 ---
 
-## Fechamento Mensal - Cliente Nao Auto-Seleciona Periodo - 2026-06-22
+## Fechamento Mensal - Periodo Primeiro, Cliente Depois - 2026-06-22
 
-- Bug corrigido: ao selecionar um cliente em novo rascunho, a tela nao escolhe mais o primeiro mes
-  automaticamente nem permite gerar antes da escolha explicita do periodo.
-- Fluxo novo: escolher cliente -> carregar periodos disponiveis -> escolher mes -> gerar rascunho.
-- Quando nao ha O.S. entregues/sem fechamento para o cliente, a tela mostra aviso neutro ("Sem O.S. para
-  fechar") em vez de erro prematuro. O toast "Nenhuma nota finalizada neste periodo" fica restrito ao clique
-  de gerar quando realmente faltar dado.
-- Implementacao: `MonthlyClosing` usa uma guarda via `useRef` para diferenciar cliente recem-selecionado de
-  rascunho aberto/edicao; o efeito antigo que auto-escolhia o primeiro mes agora respeita essa guarda.
-- E2E `e2e/monthly-closing.spec.ts` atualizado para validar que o botao "Gerar rascunho" fica desabilitado
-  ate a escolha manual do mes.
-- Sem alteracao de banco, RPC, Storage, Auth ou Edge Function; `npm run test:integration` nao foi necessario.
+- Bug critico corrigido: selecionar cliente nao chama mais RPC para "carregar periodos", portanto nao aparece
+  toast vermelho "Erro ao carregar periodos do cliente" antes de o usuario escolher o periodo.
+- Decisao de produto: fluxo correto do fechamento mensal agora e **escolher mes/ano -> escolher cliente com
+  O.S. no periodo -> gerar rascunho**. Isso combina melhor com o trabalho real da cliente.
+- A lista de clientes e filtrada pelo periodo selecionado e mostra a quantidade de O.S. daquele cliente; se
+  nao houver O.S. entregue/sem fechamento no periodo, aparece aviso neutro no card, sem toast destrutivo.
+- `MonthlyClosing` nao usa mais `p_apenas_sem_fechamento` para montar periodos ou ao gerar rascunho. Na geracao,
+  busca as O.S. do cliente e filtra `fk_fechamentos`/`closingId` no front para evitar duplicidade.
+- `IntakeNote` ganhou `closingId?: string | null` e `supabaseToIntakeNote` mapeia `fk_fechamentos`, permitindo
+  filtrar O.S. ja fechadas tambem nos dados carregados no contexto.
+- E2E `e2e/monthly-closing.spec.ts` atualizado para validar mes -> cliente -> gerar e confirmar que o toast
+  vermelho de periodos nao aparece.
+- Sem migration, sem RPC nova, sem Storage/Auth/Edge Function nesta etapa.
 - Validado:
   - `npm run typecheck`
   - `npx tsc --noEmit`
   - `npm run lint` (apenas 8 avisos antigos de Fast Refresh)
   - `npm test -- --run` (55 arquivos, 413 testes)
-  - `npm run build` (avisos conhecidos de Browserslist/chunk)
+  - `npm run build` (avisos conhecidos de Browserslist/dynamic import/chunk size)
+  - `npm run test:integration` (17 arquivos, 55 testes; logs de erro em testes negativos esperados)
   - `CI=1 npx playwright test e2e/monthly-closing.spec.ts`
 
 ---
