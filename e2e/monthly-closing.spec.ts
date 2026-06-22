@@ -13,12 +13,17 @@ test.describe('Fechamento Mensal', () => {
     await page.getByRole('combobox', { name: /cliente do fechamento/i }).click();
     await page.getByRole('option', { name: /Ana Paula Ferreira/i }).click();
 
-    await expect(page.getByText(/mostrando apenas períodos/i)).toBeVisible();
+    await expect(page.getByText(/escolha o mês antes de gerar/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: /gerar rascunho/i })).toBeDisabled();
+
+    await page.getByRole('combobox', { name: /mês do fechamento/i }).click();
+    await page.getByRole('option', { name: /fevereiro/i }).click();
+
     await page.getByRole('button', { name: /gerar rascunho/i }).click();
 
     const draftDialog = page.getByRole('dialog').filter({ hasText: /rascunho de fechamento/i });
     await expect(draftDialog).toBeVisible();
-    await expect(draftDialog.getByText(/resumo do rascunho/i)).toBeVisible();
+    await expect(draftDialog.getByText(/total a pagar no fechamento/i)).toBeVisible();
 
     await draftDialog.getByRole('button', { name: /visualizar/i }).click();
 

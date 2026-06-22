@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
@@ -266,7 +266,7 @@ export default function MonthlyClosing() {
   const [availablePeriods, setAvailablePeriods] = useState<AvailableClosingPeriod[]>([]);
   const [loadingPeriods, setLoadingPeriods] = useState(false);
   const [periodsLoadedClientId, setPeriodsLoadedClientId] = useState<string | null>(null);
-  const [awaitingManualPeriodSelection, setAwaitingManualPeriodSelection] = useState(false);
+  const manualPeriodClientIdRef = useRef<string | null>(null);
   const [previewNotes, setPreviewNotes] = useState<PreviewNote[]>([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [descontos, setDescontos] = useState<Record<string, number>>({});
@@ -372,7 +372,6 @@ export default function MonthlyClosing() {
     if (!selClientId) {
       setAvailablePeriods([]);
       setPeriodsLoadedClientId(null);
-      setAwaitingManualPeriodSelection(false);
       setSelMonth(defaultMonth);
       setSelYear(defaultYear);
       return;
@@ -412,7 +411,7 @@ export default function MonthlyClosing() {
           : nextPeriods[0].year;
         setSelYear(selectedYear);
         setSelMonth((current) => {
-          if (awaitingManualPeriodSelection) return '';
+          if (manualPeriodClientIdRef.current === selClientId) return '';
           if (activeDraftId && current) return current;
           if (nextPeriods.some((period) => period.month === current && period.year === selectedYear)) return current;
           return '';
@@ -430,7 +429,7 @@ export default function MonthlyClosing() {
 
     void loadPeriods();
     return () => { cancelled = true; };
-  }, [selClientId, notes, defaultMonth, defaultYear, selYear, toast, activeDraftId, awaitingManualPeriodSelection]);
+  }, [selClientId, notes, defaultMonth, defaultYear, selYear, toast, activeDraftId]);
 
   const loadDraftIntoEditor = useCallback((draft: ClosingDraft) => {
     if (!scopedClientIdSet.has(draft.clientId)) {
@@ -443,7 +442,7 @@ export default function MonthlyClosing() {
     }
 
     setActiveDraftId(draft.id);
-    setAwaitingManualPeriodSelection(false);
+    manualPeriodClientIdRef.current = null;
     setSelClientId(draft.clientId);
     setSelMonth(draft.month);
     setSelYear(draft.year);
@@ -781,11 +780,12 @@ export default function MonthlyClosing() {
 
   useEffect(() => {
     if (!selYear || availablePeriods.length === 0) return;
+    if (manualPeriodClientIdRef.current === selClientId) return;
     const monthsForYear = availablePeriods.filter((period) => period.year === selYear);
     if (monthsForYear.length === 0) return;
     if (monthsForYear.some((period) => period.month === selMonth)) return;
     setSelMonth(monthsForYear[0].month);
-  }, [availablePeriods, selYear, selMonth]);
+  }, [availablePeriods, selYear, selMonth, selClientId]);
 
   const updatePreviewItem = useCallback((
     noteId: string,
@@ -999,12 +999,12 @@ export default function MonthlyClosing() {
   const hasNoPeriodsForSelectedClient = periodsLoadedForSelectedClient && availablePeriods.length === 0;
 
   const handleClientSelect = useCallback((clientId: string) => {
+    manualPeriodClientIdRef.current = clientId;
     setActiveDraftId(null);
-    setSelClientId(clientId);
     setSelMonth('');
-    setAwaitingManualPeriodSelection(true);
     setAvailablePeriods([]);
     setPeriodsLoadedClientId(null);
+    setSelClientId(clientId);
     setPreviewNotes([]);
     setDescontos({});
     setIncludedNoteIds([]);
@@ -1012,7 +1012,7 @@ export default function MonthlyClosing() {
   }, []);
 
   const handleMonthSelect = useCallback((month: string) => {
-    setAwaitingManualPeriodSelection(false);
+    manualPeriodClientIdRef.current = null;
     setSelMonth(month);
   }, []);
 

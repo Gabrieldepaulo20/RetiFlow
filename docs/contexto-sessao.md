@@ -4,6 +4,29 @@ Atualizado em: 2026-06-22
 
 ---
 
+## Fechamento Mensal - Cliente Nao Auto-Seleciona Periodo - 2026-06-22
+
+- Bug corrigido: ao selecionar um cliente em novo rascunho, a tela nao escolhe mais o primeiro mes
+  automaticamente nem permite gerar antes da escolha explicita do periodo.
+- Fluxo novo: escolher cliente -> carregar periodos disponiveis -> escolher mes -> gerar rascunho.
+- Quando nao ha O.S. entregues/sem fechamento para o cliente, a tela mostra aviso neutro ("Sem O.S. para
+  fechar") em vez de erro prematuro. O toast "Nenhuma nota finalizada neste periodo" fica restrito ao clique
+  de gerar quando realmente faltar dado.
+- Implementacao: `MonthlyClosing` usa uma guarda via `useRef` para diferenciar cliente recem-selecionado de
+  rascunho aberto/edicao; o efeito antigo que auto-escolhia o primeiro mes agora respeita essa guarda.
+- E2E `e2e/monthly-closing.spec.ts` atualizado para validar que o botao "Gerar rascunho" fica desabilitado
+  ate a escolha manual do mes.
+- Sem alteracao de banco, RPC, Storage, Auth ou Edge Function; `npm run test:integration` nao foi necessario.
+- Validado:
+  - `npm run typecheck`
+  - `npx tsc --noEmit`
+  - `npm run lint` (apenas 8 avisos antigos de Fast Refresh)
+  - `npm test -- --run` (55 arquivos, 413 testes)
+  - `npm run build` (avisos conhecidos de Browserslist/chunk)
+  - `CI=1 npx playwright test e2e/monthly-closing.spec.ts`
+
+---
+
 ## Correcao De Dado: O.S. Anteriores A 01/06 Marcadas Como PAGO - 2026-06-22
 
 - Pedido: toda O.S. de servico ANTERIOR a 01/06/2026 (legado) deve ficar PAGO; as de 01/06 em diante
