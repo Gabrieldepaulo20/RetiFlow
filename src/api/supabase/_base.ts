@@ -58,6 +58,8 @@ const SUPPORT_BLOCKED_WRITE_RPCS = new Set([
   'insert_fechamento',
   'insert_sugestao_email',
   'registrar_acao_fechamento',
+  'marcar_fechamento_pago',
+  'estornar_fechamento_pago',
   'update_fatura',
   'update_fechamento',
   // Configurações de empresa/documentos — não se aplica ao tenant em suporte

@@ -61,6 +61,10 @@ export interface FechamentoListItem {
   periodo: string;
   label: string;
   valor_total: number;
+  /** Pagamento do fechamento (B2B): pendente até o cliente quitar o lote. */
+  status_pagamento?: 'PENDENTE' | 'PAGO';
+  pago_em?: string | null;
+  pago_com?: string | null;
   versao: number;
   total_regeneracoes: number;
   total_edicoes: number;
@@ -193,6 +197,23 @@ export async function registrarAcaoFechamento(params: {
   p_mensagem?: string;
 }) {
   await callMutationRPC('registrar_acao_fechamento', params);
+}
+
+/** Marca o fechamento como pago e cascateia o recebimento para as O.S. pendentes dele. */
+export async function marcarFechamentoPago(
+  idFechamentos: string,
+  params: { pagoEm: string; pagoCom?: string | null },
+) {
+  await callMutationRPC('marcar_fechamento_pago', {
+    p_id_fechamentos: idFechamentos,
+    p_pago_em: params.pagoEm,
+    p_pago_com: params.pagoCom ?? null,
+  });
+}
+
+/** Estorna o pagamento do fechamento e reverte as O.S. pagas por esta cascata. */
+export async function estornarFechamentoPago(idFechamentos: string) {
+  await callMutationRPC('estornar_fechamento_pago', { p_id_fechamentos: idFechamentos });
 }
 
 export async function getNotaDetalhesParaFechamento(idNota: string): Promise<NotaDetalhesResult | null> {

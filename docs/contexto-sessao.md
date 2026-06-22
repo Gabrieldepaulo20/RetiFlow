@@ -100,16 +100,23 @@ Atualizado em: 2026-06-22
   para "TOTAL A PAGAR". `NotaServico` (api) passou a declarar payment_status/pago_em/pago_com.
 - So frontend. Validado: npm run typecheck (strict), lint, 412 testes, build.
 
-### PROXIMO — Peca 2b (backend): fechamento pago + cascata
-- Fechamento ganha **status de pagamento** (Pendente/Pago + data) e RPC para **pagar o fechamento** que
-  cascateia: `UPDATE Notas_de_Servico SET payment_status='PAGO', pago_em, pago_com WHERE fk_fechamentos = <id>
-  AND payment_status <> 'PAGO'` (so as pendentes; estorno reverte). O vinculo ja existe relacional:
-  `Notas_de_Servico.fk_fechamentos` (setado no `update_fechamento`). Tabela `Fechamentos` NAO esta no repo
-  (predates migrations) e NAO tem coluna de status — ALTER ADD COLUMN + RPC nova (aditivo). `get_fechamentos`
-  (def no repo em 20260430114500) precisa passar a retornar o status. Writes de fechamento estao em
-  `SUPPORT_BLOCKED_WRITE_RPCS` — a RPC de pagar tambem deve ser bloqueada em suporte (ou ganhar variante).
-- EXIGE aprovacao do usuario antes de aplicar a migration em prod. Frontend: botao "Marcar fechamento como
-  pago" (+ estorno) na lista/detalhe de fechamentos gerados.
+### Peca 2b FEITA — fechamento pago + cascata - 2026-06-22
+- **BACKEND APLICADO (2026-06-22):** migration `20260622120000_fechamento_payment_and_cascade.sql`.
+  - `Fechamentos` += `status_pagamento` (CHECK PENDENTE/PAGO, default PENDENTE) + `pago_em` + `pago_com`.
+  - RPC `marcar_fechamento_pago(id, pago_em, pago_com)`: valida dono (via `Clientes.fk_criado_por`),
+    seta o fechamento PAGO e cascateia `UPDATE Notas_de_Servico SET payment_status='PAGO', pago_em, pago_com
+    WHERE fk_fechamentos=id AND payment_status<>'PAGO'`.
+  - RPC `estornar_fechamento_pago(id)`: volta o fechamento p/ PENDENTE e reverte SO as O.S. cujo `pago_em`
+    == o `pago_em` do fechamento (pagas por esta cascata; nao mexe nas pagas individualmente).
+  - `get_fechamentos` (+ variante suporte) retornam `status_pagamento`/`pago_em`/`pago_com`.
+  - SECURITY DEFINER, grants authenticated+service_role, idempotente, rollback no .sql. Verificado no
+    catalogo (colunas+2 RPCs+get com status); `db lint` sem erros; `test:integration` ok (17 arq, 55).
+- Frontend: `fechamentos.ts` (tipo + `marcarFechamentoPago`/`estornarFechamentoPago`), `_base.ts` bloqueia
+  as 2 novas RPCs em modo suporte, `MonthlyClosing` mostra badge Pago/A receber no card do fechamento
+  gerado + botao "Marcar pago" (forma+data) + "Estornar" (admin), desabilitados em suporte.
+- Validado: npm run typecheck (strict), lint, 413 testes, build, test:integration.
+- Observacao: O.S. afetadas pela cascata so refletem no Dashboard/Notas apos recarregar (DataContext nao
+  refaz fetch automatico). Aceitavel; melhoria futura = refresh apos a acao.
 
 ### LICAO DE DEPLOY (importante)
 - O Amplify roda `npm run typecheck` = `tsc -p tsconfig.app.json` (**strict: true / strictNullChecks ON**).

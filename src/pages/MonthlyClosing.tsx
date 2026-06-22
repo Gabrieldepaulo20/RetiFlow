@@ -9,11 +9,16 @@ import { Badge } from '@/components/ui/badge';
 import {
   AlertTriangle, Download, Building2,
   PlusCircle, RefreshCcw, ChevronLeft, Eye, EyeOff, Sparkles, PencilLine, Printer,
+  Wallet, CheckCircle2, RotateCcw,
 } from 'lucide-react';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { ClosingHtmlPreview } from '@/components/closing/ClosingHtmlPreview';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { createPdfPreviewWindow, openPdfInBrowser } from '@/lib/printPdf';
 import {
   getFechamentos,
@@ -24,6 +29,8 @@ import {
   uploadFechamentoPDF,
   getFechamentoPDFSignedUrl,
   buildFechamentoDocumentSnapshotParams,
+  marcarFechamentoPago,
+  estornarFechamentoPago,
   type FechamentoListItem,
   type FechamentoDadosJson,
   type FechamentoNota,
@@ -34,7 +41,7 @@ import {
   filterFechamentosForClientScope,
   getMonthlyClosingDraftsStorageKey,
 } from '@/services/domain/monthlyClosingIsolation';
-import type { IntakeNote, NotePaymentStatus } from '@/types';
+import { PAYMENT_METHOD_LABELS, type IntakeNote, type NotePaymentStatus, type PaymentMethod } from '@/types';
 import { isBillableNoteStatus } from '@/services/domain/intakeNotes';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
@@ -226,7 +233,7 @@ function getDivergencias(fechamento: FechamentoListItem, notes: IntakeNote[]) {
 /* ── Main component ─────────────────────────────────────────────────────── */
 export default function MonthlyClosing() {
   const { notes, clients } = useData();
-  const { operationalUser } = useAuth();
+  const { operationalUser, user, isSupportImpersonating } = useAuth();
   const { toast } = useToast();
   const { data: templateSettings } = useDocumentTemplateSettings();
   const { data: documentSettings } = useDocumentCustomization('closing_report');
@@ -236,6 +243,11 @@ export default function MonthlyClosing() {
   const defaultYear = String(now.getFullYear());
   const [fechamentos, setFechamentos] = useState<FechamentoListItem[]>([]);
   const [loadingList, setLoadingList] = useState(false);
+  // Pagamento do fechamento (B2B): marcar pago + cascata.
+  const [payFechamento, setPayFechamento] = useState<FechamentoListItem | null>(null);
+  const [payData, setPayData] = useState(() => new Date().toISOString().slice(0, 10));
+  const [payForma, setPayForma] = useState<PaymentMethod>('PIX');
+  const [payBusy, setPayBusy] = useState(false);
   const [drafts, setDrafts] = useState<ClosingDraft[]>([]);
   const [draftsHydratedKey, setDraftsHydratedKey] = useState<string | null>(null);
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
@@ -253,6 +265,8 @@ export default function MonthlyClosing() {
   const [selClientId, setSelClientId] = useState('');
   const [availablePeriods, setAvailablePeriods] = useState<AvailableClosingPeriod[]>([]);
   const [loadingPeriods, setLoadingPeriods] = useState(false);
+  const [periodsLoadedClientId, setPeriodsLoadedClientId] = useState<string | null>(null);
+  const [awaitingManualPeriodSelection, setAwaitingManualPeriodSelection] = useState(false);
   const [previewNotes, setPreviewNotes] = useState<PreviewNote[]>([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [descontos, setDescontos] = useState<Record<string, number>>({});
@@ -287,6 +301,7 @@ export default function MonthlyClosing() {
     setStoredPdfPreviewUrl(null);
     setStoredPdfPreviewTitle(null);
     setSelClientId('');
+    setPeriodsLoadedClientId(null);
     setAvailablePeriods([]);
     setPreviewNotes([]);
     setDescontos({});
@@ -356,6 +371,8 @@ export default function MonthlyClosing() {
   useEffect(() => {
     if (!selClientId) {
       setAvailablePeriods([]);
+      setPeriodsLoadedClientId(null);
+      setAwaitingManualPeriodSelection(false);
       setSelMonth(defaultMonth);
       setSelYear(defaultYear);
       return;
@@ -365,6 +382,7 @@ export default function MonthlyClosing() {
     const loadPeriods = async () => {
       setLoadingPeriods(true);
       try {
+        setPeriodsLoadedClientId(null);
         const fallback = normalizeAvailablePeriods(
           notes
             .filter((note) => note.clientId === selClientId && isBillableNoteStatus(note.status) && (note.finalizedAt ?? note.updatedAt))
@@ -383,6 +401,7 @@ export default function MonthlyClosing() {
         if (cancelled) return;
 
         setAvailablePeriods(nextPeriods);
+        setPeriodsLoadedClientId(selClientId);
         if (nextPeriods.length === 0) {
           setSelMonth('');
           return;
@@ -393,12 +412,15 @@ export default function MonthlyClosing() {
           : nextPeriods[0].year;
         setSelYear(selectedYear);
         setSelMonth((current) => {
+          if (awaitingManualPeriodSelection) return '';
+          if (activeDraftId && current) return current;
           if (nextPeriods.some((period) => period.month === current && period.year === selectedYear)) return current;
-          return nextPeriods.find((period) => period.year === selectedYear)?.month ?? nextPeriods[0].month;
+          return '';
         });
       } catch {
         if (cancelled) return;
         setAvailablePeriods([]);
+        setPeriodsLoadedClientId(selClientId);
         setSelMonth('');
         toast({ title: 'Erro ao carregar períodos do cliente', variant: 'destructive' });
       } finally {
@@ -408,7 +430,7 @@ export default function MonthlyClosing() {
 
     void loadPeriods();
     return () => { cancelled = true; };
-  }, [selClientId, notes, defaultMonth, defaultYear, selYear, toast]);
+  }, [selClientId, notes, defaultMonth, defaultYear, selYear, toast, activeDraftId, awaitingManualPeriodSelection]);
 
   const loadDraftIntoEditor = useCallback((draft: ClosingDraft) => {
     if (!scopedClientIdSet.has(draft.clientId)) {
@@ -421,6 +443,7 @@ export default function MonthlyClosing() {
     }
 
     setActiveDraftId(draft.id);
+    setAwaitingManualPeriodSelection(false);
     setSelClientId(draft.clientId);
     setSelMonth(draft.month);
     setSelYear(draft.year);
@@ -905,6 +928,34 @@ export default function MonthlyClosing() {
     }
   }, [openStoredClosingPdf, renderClosingPdfBlob, toast]);
 
+  const handleMarcarPago = useCallback(async () => {
+    if (!payFechamento) return;
+    setPayBusy(true);
+    try {
+      await marcarFechamentoPago(payFechamento.id_fechamentos, {
+        pagoEm: new Date(`${payData}T12:00:00`).toISOString(),
+        pagoCom: payForma,
+      });
+      toast({ title: 'Fechamento pago', description: 'As O.S. pendentes deste fechamento foram marcadas como pagas.' });
+      setPayFechamento(null);
+      await loadFechamentos();
+    } catch (err) {
+      toast({ title: 'Erro ao marcar pago', description: err instanceof Error ? err.message : 'Tente novamente.', variant: 'destructive' });
+    } finally {
+      setPayBusy(false);
+    }
+  }, [payFechamento, payData, payForma, toast, loadFechamentos]);
+
+  const handleEstornarFechamento = useCallback(async (fechamento: FechamentoListItem) => {
+    try {
+      await estornarFechamentoPago(fechamento.id_fechamentos);
+      toast({ title: 'Pagamento estornado', description: 'O fechamento voltou para pendente e as O.S. pagas por ele foram revertidas.' });
+      await loadFechamentos();
+    } catch (err) {
+      toast({ title: 'Erro ao estornar', description: err instanceof Error ? err.message : 'Tente novamente.', variant: 'destructive' });
+    }
+  }, [toast, loadFechamentos]);
+
   const handlePrintPreview = useCallback(async () => {
     if (storedPdfPreviewUrl) {
       const previewWindow = createPdfPreviewWindow(storedPdfPreviewTitle ?? 'Fechamento');
@@ -944,6 +995,27 @@ export default function MonthlyClosing() {
   );
 
   const activeClients = useMemo(() => clients.filter((c) => c.isActive).sort((a, b) => a.name.localeCompare(b.name)), [clients]);
+  const periodsLoadedForSelectedClient = Boolean(selClientId && periodsLoadedClientId === selClientId && !loadingPeriods);
+  const hasNoPeriodsForSelectedClient = periodsLoadedForSelectedClient && availablePeriods.length === 0;
+
+  const handleClientSelect = useCallback((clientId: string) => {
+    setActiveDraftId(null);
+    setSelClientId(clientId);
+    setSelMonth('');
+    setAwaitingManualPeriodSelection(true);
+    setAvailablePeriods([]);
+    setPeriodsLoadedClientId(null);
+    setPreviewNotes([]);
+    setDescontos({});
+    setIncludedNoteIds([]);
+    setEditingItems({});
+  }, []);
+
+  const handleMonthSelect = useCallback((month: string) => {
+    setAwaitingManualPeriodSelection(false);
+    setSelMonth(month);
+  }, []);
+
   return (
     <div className="space-y-5 overflow-x-hidden">
       {generating && (
@@ -976,7 +1048,7 @@ export default function MonthlyClosing() {
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(220px,1fr)_160px_110px_auto] lg:items-end">
             <div className="flex-1 min-w-[180px]">
               <label className="mb-1.5 block text-xs text-muted-foreground">Cliente</label>
-              <Select value={selClientId} onValueChange={setSelClientId}>
+              <Select value={selClientId} onValueChange={handleClientSelect}>
                 <SelectTrigger aria-label="Selecionar cliente do fechamento"><SelectValue placeholder="Selecionar cliente" /></SelectTrigger>
                 <SelectContent>
                   {activeClients.map((c) => (
@@ -988,8 +1060,10 @@ export default function MonthlyClosing() {
             <div className="grid grid-cols-2 gap-2 sm:contents">
               <div>
                 <label className="mb-1.5 block text-xs text-muted-foreground">Mês</label>
-                <Select value={selMonth} onValueChange={setSelMonth} disabled={!selClientId || loadingPeriods || availableMonthsForYear.length === 0}>
-                  <SelectTrigger className="w-full" aria-label="Selecionar mês do fechamento"><SelectValue placeholder={loadingPeriods ? 'Carregando...' : 'Sem notas'} /></SelectTrigger>
+                <Select value={selMonth} onValueChange={handleMonthSelect} disabled={!selClientId || loadingPeriods || availableMonthsForYear.length === 0}>
+                  <SelectTrigger className="w-full" aria-label="Selecionar mês do fechamento">
+                    <SelectValue placeholder={loadingPeriods ? 'Carregando...' : hasNoPeriodsForSelectedClient ? 'Sem O.S. para fechar' : 'Escolha o mês'} />
+                  </SelectTrigger>
                   <SelectContent>
                     {availableMonthsForYear.map((period) => (
                       <SelectItem key={period.key} value={period.month}>
@@ -1014,6 +1088,21 @@ export default function MonthlyClosing() {
               Gerar rascunho
             </Button>
           </div>
+          {selClientId && loadingPeriods && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Buscando O.S. entregues desse cliente para montar os períodos disponíveis.
+            </p>
+          )}
+          {hasNoPeriodsForSelectedClient && (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Não há O.S. entregues e sem fechamento para este cliente. Se a O.S. já entrou em um fechamento, ela não aparece aqui para evitar cobrança duplicada.
+            </div>
+          )}
+          {selClientId && availablePeriods.length > 0 && !selMonth && !loadingPeriods && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Escolha o mês antes de gerar. Foram encontradas {availablePeriods.reduce((sum, period) => sum + period.noteCount, 0)} O.S. em {availablePeriods.length} período{availablePeriods.length === 1 ? '' : 's'}.
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -1100,6 +1189,7 @@ export default function MonthlyClosing() {
               const palette = PALETTE[idx % PALETTE.length];
               const divs = getDivergencias(f, notes);
               const initials = (f.cliente?.nome ?? 'SEM CLIENTE').slice(0, 2).toUpperCase();
+              const isPago = f.status_pagamento === 'PAGO';
               return (
                 <Card key={f.id_fechamentos} className={cn('border-l-4 overflow-hidden', palette.border)}>
                   <CardContent className="p-4">
@@ -1111,6 +1201,10 @@ export default function MonthlyClosing() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-semibold text-sm truncate">{f.cliente?.nome ?? '—'}</p>
                           <Badge variant="secondary" className="text-xs">{f.periodo}</Badge>
+                          <Badge className={cn('text-xs gap-1', isPago ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700')}>
+                            {isPago ? <CheckCircle2 className="w-3 h-3" /> : <Wallet className="w-3 h-3" />}
+                            {isPago ? 'Pago' : 'A receber'}
+                          </Badge>
                           {divs.length > 0 && (
                             <Badge variant="destructive" className="text-xs gap-1">
                               <AlertTriangle className="w-3 h-3" />
@@ -1125,6 +1219,12 @@ export default function MonthlyClosing() {
                           </span>
                           {f.total_downloads > 0 && ` · ${f.total_downloads} download${f.total_downloads > 1 ? 's' : ''}`}
                         </p>
+                        {isPago && f.pago_em && (
+                          <p className="mt-0.5 text-xs text-emerald-700">
+                            Recebido em {new Date(f.pago_em).toLocaleDateString('pt-BR')}
+                            {f.pago_com ? ` · ${PAYMENT_METHOD_LABELS[f.pago_com as PaymentMethod] ?? f.pago_com}` : ''}
+                          </p>
+                        )}
                         {divs.length > 0 && (
                           <div className="mt-2 space-y-1">
                             {divs.map((d, i) => (
@@ -1150,6 +1250,38 @@ export default function MonthlyClosing() {
                         <Button size="sm" variant="outline" onClick={() => handleDownload(f)} className="flex-1 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800 sm:flex-none">
                           <Download className="w-3.5 h-3.5 mr-1.5" /> PDF
                         </Button>
+                        {!isPago ? (
+                          <Button
+                            size="sm"
+                            onClick={() => { setPayForma('PIX'); setPayData(new Date().toISOString().slice(0, 10)); setPayFechamento(f); }}
+                            disabled={isSupportImpersonating}
+                            title={isSupportImpersonating ? 'Indisponível em modo suporte' : undefined}
+                            className="col-span-2 justify-center bg-emerald-600 text-white hover:bg-emerald-700 sm:col-span-1 sm:flex-none"
+                          >
+                            <Wallet className="w-3.5 h-3.5 mr-1.5" /> Marcar pago
+                          </Button>
+                        ) : user?.role === 'ADMIN' ? (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button size="sm" variant="outline" disabled={isSupportImpersonating} className="col-span-2 justify-center sm:col-span-1 sm:flex-none">
+                                <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> Estornar
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Estornar pagamento de {f.periodo}?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  O fechamento volta para "A receber" e as O.S. que foram pagas por ele voltam para pendente.
+                                  Use apenas para corrigir um lançamento.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Voltar</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => void handleEstornarFechamento(f)}>Confirmar estorno</AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        ) : null}
                       </div>
                     </div>
                   </CardContent>
@@ -1385,6 +1517,43 @@ export default function MonthlyClosing() {
               )}
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Marcar fechamento como pago (cascata para as O.S. pendentes do fechamento) */}
+      <Dialog open={!!payFechamento} onOpenChange={(open) => { if (!open) setPayFechamento(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Marcar fechamento como pago</DialogTitle>
+            <DialogDescription>
+              {payFechamento?.cliente?.nome ?? 'Cliente'} · {payFechamento?.periodo ?? ''} — R$ {(payFechamento?.valor_total ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.
+              As O.S. pendentes deste fechamento serão marcadas como pagas.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Forma de pagamento</label>
+              <Select value={payForma} onValueChange={(v) => setPayForma(v as PaymentMethod)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethod[]).map((m) => (
+                    <SelectItem key={m} value={m}>{PAYMENT_METHOD_LABELS[m]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Data do recebimento</label>
+              <Input type="date" value={payData} onChange={(e) => setPayData(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPayFechamento(null)} disabled={payBusy}>Cancelar</Button>
+            <Button onClick={() => void handleMarcarPago()} disabled={payBusy} className="bg-emerald-600 text-white hover:bg-emerald-700">
+              {payBusy ? <RefreshCcw className="w-4 h-4 mr-2 animate-spin" /> : <Wallet className="w-4 h-4 mr-2" />}
+              Confirmar pagamento
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
