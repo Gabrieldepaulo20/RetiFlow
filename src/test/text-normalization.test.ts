@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isValidBrazilianPlate,
   normalizeCityName,
+  normalizeCommonBusinessTermsPtBr,
   normalizeDecimalInputDraft,
   normalizeEmail,
   normalizeMoneyInput,
@@ -33,6 +34,12 @@ describe('textNormalization', () => {
     expect(normalizeCityName('Sertaõzinho')).toBe('Sertãozinho');
     expect(normalizeCityName('Sertãzinho')).toBe('Sertãozinho');
     expect(normalizeCityName('  ribeirão   preto  ')).toBe('Ribeirão Preto');
+  });
+
+  it('normalizes common business terms found in payable titles', () => {
+    expect(normalizeCommonBusinessTermsPtBr('Ferpecas Ribeiroa Preto')).toBe('Ferpeças Ribeirão Preto');
+    expect(normalizeCommonBusinessTermsPtBr('Pelegrino')).toBe('Pellegrino');
+    expect(normalizeCommonBusinessTermsPtBr('RET Comercio de Auto Pecas')).toBe('RET Comércio de Auto Peças');
   });
 
   it('normalizes email, plate and digit-only fields', () => {

@@ -22,12 +22,12 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { AccountPayable, PaymentMethod, PAYABLE_STATUS_COLORS, PAYABLE_STATUS_LABELS, PAYMENT_METHOD_LABELS, RECURRENCE_TYPE_LABELS } from '@/types';
-import { buildPayableHistoryDescription, calculatePayableFinalAmount, calculatePayableRemainingBalance, canCancelPayable, canEditPayable, canRegisterPayment, formatPayableDueDateLabel, getContextualQuestion, getDueDateUrgencyLevel, getPayableDisplayStatus, groupPayables, isPayableEditRestricted, isPayableOverdue, type ContextualActionKind, type PayableGroupBy } from '@/services/domain/payables';
+import { buildPayableHistoryDescription, calculatePayableFinalAmount, calculatePayableRemainingBalance, canCancelPayable, canEditPayable, canRegisterPayment, formatPayableDueDateLabel, generatePayableDuplicateKey, getContextualQuestion, getDueDateUrgencyLevel, getPayableDisplayStatus, groupPayables, isPayableEditRestricted, isPayableOverdue, type PayableGroupBy } from '@/services/domain/payables';
 import { calculatePayablesCashFlowSummary } from '@/services/domain/payablesCashFlow';
-import { ContextualQuestionBanner } from '@/components/payables/ContextualQuestionBanner';
 import { getGmailOAuthFeedback } from '@/services/domain/gmailOAuth';
 import {
   normalizeDecimalInputDraft,
+  normalizeCommonBusinessTermsPtBr,
   normalizeMoneyInput,
   normalizeWhitespace,
   parsePositiveNumber,
@@ -43,7 +43,7 @@ function fmtBRL(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-type StatusFilter = 'all' | 'pendente' | 'vencido' | 'pago' | 'cancelado';
+type StatusFilter = 'all' | 'pendente' | 'parcelado' | 'repetido' | 'vencido' | 'pago' | 'cancelado';
 type PeriodFilter = 'all' | 'current-month' | 'next-30' | 'overdue';
 type OriginFilter = 'all' | 'MANUAL' | 'IA_IMPORT' | 'CAMERA_CAPTURE' | 'AUTO_SERIES' | 'recurring' | 'installment';
 type FavorecidoFilter = 'all' | 'FORNECEDOR' | 'FUNCIONARIO';
@@ -86,7 +86,7 @@ export default function ContasAPagar() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [pageView, setPageView] = useState<PageView>(() => searchParams.get('view') === 'sugestoes' ? 'sugestoes' : 'contas');
   const effectiveView: PageView = suggestionsEnabled ? pageView : 'contas';
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('pendente');
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all');
   const [originFilter, setOriginFilter] = useState<OriginFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -132,6 +132,51 @@ export default function ContasAPagar() {
   const routeModal = searchParams.get('modal');
   const routeDetailsId = searchParams.get('id');
 
+  const payableDuplicateCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const payable of activePayables) {
+      if (payable.status === 'CANCELADO') continue;
+      const key = generatePayableDuplicateKey(payable);
+      if (!key) continue;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [activePayables]);
+
+  const payableSeriesStats = useMemo(() => {
+    const series = new Map<string, {
+      items: AccountPayable[];
+      paidCount: number;
+      remainingAmount: number;
+    }>();
+
+    for (const payable of activePayables) {
+      if ((payable.totalInstallments ?? 0) <= 1) continue;
+      const key = payable.recurrenceParentId ?? payable.id;
+      const current = series.get(key) ?? {
+        items: [],
+        paidCount: 0,
+        remainingAmount: 0,
+      };
+
+      current.items.push(payable);
+      current.remainingAmount += calculatePayableRemainingBalance(payable);
+      if (payable.status === 'PAGO') {
+        current.paidCount += 1;
+      }
+      series.set(key, current);
+    }
+
+    for (const current of series.values()) {
+      current.items.sort((a, b) => (
+        (a.recurrenceIndex ?? 999) - (b.recurrenceIndex ?? 999)
+        || a.dueDate.localeCompare(b.dueDate)
+      ));
+    }
+
+    return series;
+  }, [activePayables]);
+
   useEffect(() => {
     setPageView(searchParams.get('view') === 'sugestoes' ? 'sugestoes' : 'contas');
   }, [searchParams]);
@@ -159,6 +204,11 @@ export default function ContasAPagar() {
   const filtered = useMemo(() => {
     let result = activePayables;
     if (statusFilter === 'pendente') result = result.filter((payable) => ['PENDENTE', 'PARCIAL', 'AGENDADO'].includes(payable.status));
+    if (statusFilter === 'parcelado') result = result.filter((payable) => (payable.totalInstallments ?? 0) > 1);
+    if (statusFilter === 'repetido') result = result.filter((payable) => {
+      const key = generatePayableDuplicateKey(payable);
+      return key ? (payableDuplicateCounts.get(key) ?? 0) > 1 : false;
+    });
     if (statusFilter === 'vencido') result = result.filter((payable) => isPayableOverdue(payable));
     if (statusFilter === 'pago') result = result.filter((payable) => payable.status === 'PAGO');
     if (statusFilter === 'cancelado') result = result.filter((payable) => payable.status === 'CANCELADO');
@@ -189,7 +239,7 @@ export default function ContasAPagar() {
       });
     }
     return [...result].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-  }, [activePayables, categoryFilter, endCurrentMonth, favorecidoFilter, now, originFilter, periodFilter, search, startCurrentMonth, statusFilter]);
+  }, [activePayables, categoryFilter, endCurrentMonth, favorecidoFilter, now, originFilter, payableDuplicateCounts, periodFilter, search, startCurrentMonth, statusFilter]);
 
   // Agrupamento opcional da lista (por categoria, favorecido ou fornecedor) com subtotais.
   const payableGroups = useMemo(
@@ -356,17 +406,6 @@ export default function ContasAPagar() {
     });
   }
 
-  function handleContextualAction(payableId: string, action: ContextualActionKind) {
-    const payable = payables.find((item) => item.id === payableId);
-    if (!payable) return;
-    if (action === 'mark_paid') {
-      openPayment(payable);
-    } else if (action === 'reschedule') {
-      openEdit(payable);
-    }
-    dismissContextualQuestion(payableId);
-  }
-
   async function handleDuplicate(payable: AccountPayable) {
     const created = await addPayable({
       title: `${payable.title} (cópia)`,
@@ -430,8 +469,8 @@ export default function ContasAPagar() {
   }
 
   async function handleSubmitEdit() {
-    const normalizedTitle = toTitleCasePtBr(editTitle);
-    const normalizedSupplierName = toTitleCasePtBr(editSupplierName);
+    const normalizedTitle = normalizeCommonBusinessTermsPtBr(toTitleCasePtBr(editTitle));
+    const normalizedSupplierName = normalizeCommonBusinessTermsPtBr(toTitleCasePtBr(editSupplierName));
     const normalizedDocNumber = normalizeWhitespace(editDocNumber);
     const normalizedObservations = normalizeWhitespace(editObservations);
 
@@ -547,6 +586,14 @@ export default function ContasAPagar() {
     const isCancelled = displayStatus === 'CANCELADO';
     const isFuncionario = payable.favorecidoTipo === 'FUNCIONARIO';
     const contextualQuestion = getContextualQuestion(payable, now);
+    const duplicateKey = generatePayableDuplicateKey(payable);
+    const duplicateCount = duplicateKey ? (payableDuplicateCounts.get(duplicateKey) ?? 0) : 0;
+    const seriesKey = (payable.totalInstallments ?? 0) > 1 ? (payable.recurrenceParentId ?? payable.id) : null;
+    const series = seriesKey ? payableSeriesStats.get(seriesKey) : null;
+    const seriesTotal = Math.max(payable.totalInstallments ?? 0, series?.items.length ?? 0);
+    const installmentLabel = (payable.totalInstallments ?? 0) > 1
+      ? `Parcela ${payable.recurrenceIndex ?? 1}/${seriesTotal || payable.totalInstallments}`
+      : null;
 
     const rail = overdue
       ? 'bg-destructive'
@@ -580,97 +627,129 @@ export default function ContasAPagar() {
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: Math.min(index, 8) * 0.03, duration: 0.22 }}
-        whileHover={{ y: -2 }}
         className={cn(
-          'group relative flex h-fit overflow-hidden rounded-xl border bg-card shadow-sm transition-shadow hover:shadow-md sm:rounded-2xl',
+          'group relative flex overflow-hidden rounded-xl border bg-card shadow-sm transition-colors hover:border-primary/30 hover:bg-primary/[0.015] sm:rounded-2xl',
           overdue && 'border-destructive/40',
           isCancelled && 'opacity-70',
         )}
       >
         <div className={cn('w-1.5 shrink-0', rail)} />
-        <div className="flex min-w-0 flex-1 flex-col gap-2 p-2.5 sm:gap-2.5 sm:p-3.5">
-          <div className="flex items-start gap-2.5">
-            <SupplierAvatar name={payable.supplierName} categoryIcon={category?.icon} size={30} />
+        <div className="grid min-w-0 flex-1 gap-2 p-2.5 sm:p-3 lg:grid-cols-[minmax(0,1.6fr)_minmax(140px,0.7fr)_minmax(150px,0.8fr)_auto] lg:items-center lg:gap-3">
+          <div className="flex min-w-0 items-start gap-2.5">
+            <SupplierAvatar name={payable.supplierName ?? payable.title} categoryIcon={category?.icon} size={34} />
             <div className="min-w-0 flex-1">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1">
-                    {payable.isUrgent ? <AlertCircle className="h-3 w-3 shrink-0 text-destructive" aria-label="Urgente" /> : null}
-                    <p className="truncate text-sm font-semibold text-foreground leading-tight">{payable.title}</p>
-                  </div>
-                  {payable.supplierName ? (
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground">{payable.supplierName}</p>
-                  ) : null}
-                </div>
-                <p className={cn('max-w-[46%] truncate text-right text-sm font-display font-bold tabular-nums tracking-tight sm:text-base', valueColor)}>
-                  {fmtBRL(payable.finalAmount)}
-                </p>
+              <div className="flex min-w-0 items-center gap-1.5">
+                {payable.isUrgent ? <AlertCircle className="h-3.5 w-3.5 shrink-0 text-destructive" aria-label="Urgente" /> : null}
+                <p className="truncate text-sm font-semibold leading-tight text-foreground">{payable.title}</p>
+              </div>
+              {payable.supplierName ? (
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">{payable.supplierName}</p>
+              ) : null}
+              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                <PayableStatusBadge payable={payable} />
+                {category ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                    <CategoryIcon className="h-3 w-3" />
+                    {category.name}
+                  </span>
+                ) : null}
+                {isFuncionario ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700">
+                    <Users className="h-3 w-3" />
+                    Funcionário
+                  </span>
+                ) : null}
+                {payable.entrySource === 'IA_IMPORT' ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                    <Sparkles className="h-3 w-3" /> IA
+                  </span>
+                ) : null}
+                {duplicateCount > 1 ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                    <AlertTriangle className="h-3 w-3" />
+                    Possível repetida ({duplicateCount})
+                  </span>
+                ) : null}
               </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5">
-            <PayableStatusBadge payable={payable} />
-            {isFuncionario ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700">
-                <Users className="h-3 w-3" />
-                Funcionário
-              </span>
-            ) : null}
-            {category ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                <CategoryIcon className="h-3 w-3" />
-                {category.name}
-              </span>
-            ) : null}
-            {(payable.totalInstallments ?? 0) > 1 ? (
-              <Badge variant="outline" className="gap-1 text-[11px]">
+          <div className="grid grid-cols-2 gap-2 text-xs lg:block">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Vencimento</p>
+              <div className="mt-1 flex items-center gap-1.5">
+                <CalendarClock className={cn(
+                  'h-3.5 w-3.5 shrink-0',
+                  overdue ? 'text-destructive' : urgency === 'critical' ? 'text-amber-600' : 'text-muted-foreground',
+                )} />
+                <DueDateLabel payable={payable} />
+              </div>
+            </div>
+            <div className="min-w-0 lg:mt-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Documento</p>
+              <p className="mt-1 truncate font-medium text-foreground/80">{payable.docNumber || 'Sem documento'}</p>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            {installmentLabel ? (
+              <button
+                type="button"
+                onClick={() => updateRouteModal('details', payable.id)}
+                className="inline-flex max-w-full items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-2 py-1 text-[11px] font-semibold text-primary transition hover:bg-primary/10"
+              >
                 <Repeat className="h-3 w-3" />
-                {payable.recurrenceIndex ?? 1}/{payable.totalInstallments}
-              </Badge>
+                <span className="truncate">{installmentLabel}</span>
+              </button>
+            ) : (
+              <Badge variant="outline" className="text-[11px]">Conta única</Badge>
+            )}
+            {series ? (
+              <div className="max-w-xs">
+                <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                  <span>{series.paidCount}/{seriesTotal || series.items.length} pagas</span>
+                  <span className="font-medium text-foreground/80">{fmtBRL(series.remainingAmount)} aberto</span>
+                </div>
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-emerald-500"
+                    style={{ width: `${Math.min(100, Math.round((series.paidCount / Math.max(1, seriesTotal || series.items.length)) * 100))}%` }}
+                  />
+                </div>
+              </div>
             ) : null}
             {payable.recurrence !== 'NENHUMA' ? (
               <Badge variant="outline" className="text-[11px]">{RECURRENCE_TYPE_LABELS[payable.recurrence]}</Badge>
             ) : null}
-            {payable.entrySource === 'IA_IMPORT' ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-                <Sparkles className="h-3 w-3" /> IA
+            {contextualQuestion && !dismissedQuestions.has(payable.id) ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                <AlertCircle className="h-3 w-3" />
+                Revisar
+                <button type="button" className="ml-1 text-amber-900 underline-offset-2 hover:underline" onClick={() => dismissContextualQuestion(payable.id)}>
+                  ocultar
+                </button>
               </span>
             ) : null}
           </div>
 
-          <div className="flex items-center gap-1.5 text-xs leading-tight">
-            <CalendarClock className={cn(
-              'h-3.5 w-3.5 shrink-0',
-              overdue ? 'text-destructive' : urgency === 'critical' ? 'text-amber-600' : 'text-muted-foreground',
-            )} />
-            <DueDateLabel payable={payable} />
-          </div>
-
-          {contextualQuestion && !dismissedQuestions.has(payable.id) ? (
-            <ContextualQuestionBanner
-              question={contextualQuestion}
-              payableId={payable.id}
-              onAction={handleContextualAction}
-              onDismiss={dismissContextualQuestion}
-            />
-          ) : null}
-
-          <div className="mt-auto flex flex-wrap items-center gap-2 pt-0.5">
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            <p className={cn('mr-auto text-base font-display font-bold tabular-nums tracking-tight lg:mr-2 lg:text-right', valueColor)}>
+              {fmtBRL(payable.finalAmount)}
+            </p>
             <Button
               variant="outline"
               size="sm"
-              className="min-w-0 flex-1 basis-[calc(50%-0.25rem)]"
+              className="min-w-0 flex-1 basis-[calc(50%-0.25rem)] lg:flex-none"
               onClick={() => updateRouteModal('details', payable.id)}
             >
-              Ver detalhes
+              Detalhes
             </Button>
             {primaryAction ? (
-              <Button size="sm" className="min-w-0 flex-1 basis-[calc(50%-0.25rem)]" onClick={primaryAction.onClick}>
+              <Button size="sm" className="min-w-0 flex-1 basis-[calc(50%-0.25rem)] lg:flex-none" onClick={primaryAction.onClick}>
                 {primaryAction.label}
               </Button>
             ) : null}
-            <div className="ml-auto shrink-0">{renderActions(payable)}</div>
+            <div className="shrink-0">{renderActions(payable)}</div>
           </div>
         </div>
       </motion.div>
@@ -838,9 +917,11 @@ export default function ContasAPagar() {
             <div className="space-y-2.5 border-b border-border/60 p-2.5 sm:p-3">
               <Tabs value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
                 <TabsList className="h-auto min-h-8 w-full justify-start overflow-x-auto rounded-xl p-1 sm:w-auto">
-                  <TabsTrigger value="all" className="shrink-0 text-xs">Todas</TabsTrigger>
                   <TabsTrigger value="pendente" className="shrink-0 text-xs">Pendentes</TabsTrigger>
+                  <TabsTrigger value="parcelado" className="shrink-0 text-xs">Parceladas</TabsTrigger>
+                  <TabsTrigger value="repetido" className="shrink-0 text-xs">Repetidas</TabsTrigger>
                   <TabsTrigger value="vencido" className="shrink-0 text-xs">Vencidas</TabsTrigger>
+                  <TabsTrigger value="all" className="shrink-0 text-xs">Todas</TabsTrigger>
                   <TabsTrigger value="pago" className="shrink-0 text-xs">Pagas</TabsTrigger>
                   <TabsTrigger value="cancelado" className="hidden text-xs sm:flex">Canceladas</TabsTrigger>
                 </TabsList>
@@ -856,7 +937,7 @@ export default function ContasAPagar() {
             </div>
 
             {filtered.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-4 py-24 text-center"><Wallet className="h-10 w-10 text-muted-foreground" /><div className="max-w-sm"><h3 className="text-base font-semibold">Nenhuma conta encontrada</h3><p className="text-sm text-muted-foreground">Ajuste os filtros ou cadastre a primeira conta.</p></div><Button variant="outline" onClick={() => { setStatusFilter('all'); setPeriodFilter('all'); setOriginFilter('all'); setCategoryFilter('all'); setFavorecidoFilter('all'); setGroupBy('none'); setSearchRaw(''); }}>Limpar filtros</Button></div>
+              <div className="flex flex-col items-center justify-center gap-4 py-24 text-center"><Wallet className="h-10 w-10 text-muted-foreground" /><div className="max-w-sm"><h3 className="text-base font-semibold">Nenhuma conta encontrada</h3><p className="text-sm text-muted-foreground">Ajuste os filtros ou cadastre a primeira conta.</p></div><Button variant="outline" onClick={() => { setStatusFilter('pendente'); setPeriodFilter('all'); setOriginFilter('all'); setCategoryFilter('all'); setFavorecidoFilter('all'); setGroupBy('none'); setSearchRaw(''); }}>Voltar para pendentes</Button></div>
             ) : payableGroups ? (
               <div className="space-y-2 p-2.5 sm:p-3">
                 {payableGroups.map((group) => {
@@ -878,7 +959,7 @@ export default function ContasAPagar() {
                         <span className="ml-auto shrink-0 text-sm font-display font-bold tabular-nums text-foreground/80">{fmtBRL(group.subtotal)}</span>
                       </button>
                       {!collapsed ? (
-                        <div className="grid items-start gap-2 p-2.5 sm:gap-3 sm:p-3 sm:grid-cols-2 xl:grid-cols-3">
+                        <div className="space-y-2 p-2.5 sm:p-3">
                           {group.items.map((payable, index) => renderPayableCard(payable, index))}
                         </div>
                       ) : null}
@@ -888,7 +969,7 @@ export default function ContasAPagar() {
               </div>
             ) : (
               <>
-                <div className="grid items-start gap-2 p-2.5 sm:gap-3 sm:p-3 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="space-y-2 p-2.5 sm:p-3">
                   {pagedPayables.map((payable, index) => renderPayableCard(payable, index))}
                 </div>
                 {totalPages > 1 ? (
@@ -937,7 +1018,7 @@ export default function ContasAPagar() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2 md:col-span-2"><Label>Título *</Label><Input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} onBlur={() => setEditTitle(toTitleCasePtBr(editTitle))} /></div>
+            <div className="space-y-2 md:col-span-2"><Label>Título *</Label><Input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} onBlur={() => setEditTitle(normalizeCommonBusinessTermsPtBr(toTitleCasePtBr(editTitle)))} /></div>
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <Label>{editFavorecidoTipo === 'FUNCIONARIO' ? 'Funcionário' : 'Fornecedor'}</Label>
@@ -946,7 +1027,7 @@ export default function ContasAPagar() {
                   <button type="button" onClick={() => setEditFavorecidoTipo('FUNCIONARIO')} disabled={!!(selectedPayable && isPayableEditRestricted(selectedPayable))} className={`rounded-md px-2 py-1 transition-colors ${editFavorecidoTipo === 'FUNCIONARIO' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'} disabled:cursor-not-allowed disabled:opacity-60`}>Funcionário</button>
                 </div>
               </div>
-              <Input value={editSupplierName} onChange={(event) => setEditSupplierName(event.target.value)} onBlur={() => setEditSupplierName(toTitleCasePtBr(editSupplierName))} disabled={!!(selectedPayable && isPayableEditRestricted(selectedPayable))} placeholder={editFavorecidoTipo === 'FUNCIONARIO' ? 'Nome do funcionário' : 'Nome do fornecedor'} />
+              <Input value={editSupplierName} onChange={(event) => setEditSupplierName(event.target.value)} onBlur={() => setEditSupplierName(normalizeCommonBusinessTermsPtBr(toTitleCasePtBr(editSupplierName)))} disabled={!!(selectedPayable && isPayableEditRestricted(selectedPayable))} placeholder={editFavorecidoTipo === 'FUNCIONARIO' ? 'Nome do funcionário' : 'Nome do fornecedor'} />
             </div>
             <div className="space-y-2"><Label>Nº do documento</Label><Input value={editDocNumber} onChange={(event) => setEditDocNumber(event.target.value)} onBlur={() => setEditDocNumber(normalizeWhitespace(editDocNumber))} disabled={!!(selectedPayable && isPayableEditRestricted(selectedPayable))} placeholder="Número do boleto, NF..." /></div>
             <div className="space-y-2"><Label>Categoria *</Label><Select value={editCategoryId} onValueChange={setEditCategoryId}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{payableCategories.filter((category) => category.isActive).map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select></div>

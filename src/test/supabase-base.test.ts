@@ -167,6 +167,32 @@ describe('Supabase RPC base wrapper', () => {
     });
   });
 
+  it('uses audited support-context RPCs when renaming a payable', async () => {
+    window.sessionStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify({
+      id: '11111111-1111-4111-8111-111111111111',
+      reason: 'renomear conta',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      actorUser: { id: 'actor-id', email: 'gabrielwilliam208@gmail.com', name: 'Gabriel' },
+      targetUser: { id: '22222222-2222-4222-8222-222222222222', email: 'patricia@example.com', name: 'Patricia' },
+    }));
+    mocks.rpc.mockResolvedValue({
+      data: { status: 200, mensagem: 'ok' },
+      error: null,
+    });
+
+    await callRPC('update_conta_pagar', {
+      p_id_contas_pagar: '33333333-3333-4333-8333-333333333333',
+      p_titulo: 'Ferpeças Ribeirão Preto',
+    });
+
+    expect(mocks.rpc).toHaveBeenCalledWith('update_conta_pagar_contexto_suporte', {
+      p_id_contas_pagar: '33333333-3333-4333-8333-333333333333',
+      p_titulo: 'Ferpeças Ribeirão Preto',
+      p_contexto_usuario_id: '22222222-2222-4222-8222-222222222222',
+      p_sessao_suporte: '11111111-1111-4111-8111-111111111111',
+    });
+  });
+
   it('uses audited support-context RPCs for email suggestion actions', async () => {
     window.sessionStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify({
       id: '11111111-1111-4111-8111-111111111111',

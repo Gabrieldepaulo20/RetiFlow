@@ -122,6 +122,30 @@ export function toTitleCasePtBr(value: string | null | undefined) {
     .join(' ');
 }
 
+const COMMON_BUSINESS_TERM_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/\bribeiroa\b/giu, 'Ribeirão'],
+  [/\bribeirao\b/giu, 'Ribeirão'],
+  [/\bferpecas\b/giu, 'Ferpeças'],
+  [/\bpelegrino\b/giu, 'Pellegrino'],
+  [/\bagua\b/giu, 'Água'],
+  [/\bcomercio\b/giu, 'Comércio'],
+  [/\bpecas\b/giu, 'Peças'],
+  [/\bimportacao\b/giu, 'Importação'],
+  [/\bdistribuicao\b/giu, 'Distribuição'],
+  [/\bquimica\b/giu, 'Química'],
+];
+
+export function normalizeCommonBusinessTermsPtBr(value: string | null | undefined) {
+  let normalized = normalizeWhitespace(value);
+  if (!normalized) return '';
+
+  for (const [pattern, replacement] of COMMON_BUSINESS_TERM_REPLACEMENTS) {
+    normalized = normalized.replace(pattern, replacement);
+  }
+
+  return normalized;
+}
+
 type ParsedNumberResult = {
   value: number | null;
   normalized: string;

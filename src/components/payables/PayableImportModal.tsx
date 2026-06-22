@@ -14,13 +14,14 @@ import {
   buildMeaningfulPayableTitle,
   buildPayableHistoryDescription,
   calculatePayableFinalAmount,
-  findPayableDuplicate,
+  classifyPayableMatch,
 } from '@/services/domain/payables';
 import { inferPayableAttachmentType, isPayableImageFile, isPayablePdfFile } from '@/services/domain/payableFiles';
 import { buildImportedPayableAttachmentName } from '@/services/domain/payableAttachments';
 import { AccountPayable, PAYMENT_METHOD_LABELS, PaymentMethod, RecurrenceType } from '@/types';
 import { AlertTriangle, Camera, CheckCircle2, ChevronDown, FileScan, LoaderCircle, RotateCw, Sparkles, Trash2, Upload, XCircle } from 'lucide-react';
 import { analisarContaPagarComIA, insertAnexoContaPagar, uploadAnexoContaPagar } from '@/api/supabase/contas-pagar';
+import { normalizeCommonBusinessTermsPtBr } from '@/services/domain/textNormalization';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
@@ -328,9 +329,19 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     const totalInstallments = Number(draft.totalInstallments);
     const recurrenceIndex = Number(draft.recurrenceIndex);
 
+    const supplierName = normalizeCommonBusinessTermsPtBr(draft.supplierName.trim() || 'Fornecedor não identificado');
+    const title = normalizeCommonBusinessTermsPtBr(buildMeaningfulPayableTitle({
+      title: draft.title,
+      supplierName,
+      docNumber: draft.docNumber,
+      dueDate,
+      recurrenceIndex: Number.isInteger(recurrenceIndex) && recurrenceIndex > 0 ? recurrenceIndex : undefined,
+      totalInstallments: Number.isInteger(totalInstallments) && totalInstallments > 1 ? totalInstallments : undefined,
+    }));
+
     return {
       ...draft,
-      supplierName: draft.supplierName.trim() || 'Fornecedor não identificado',
+      supplierName,
       categoryId,
       dueDate,
       issueDate,
@@ -339,14 +350,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
       recurrence: normalizeRecurrence(draft.recurrence),
       recurrenceIndex: Number.isInteger(recurrenceIndex) && recurrenceIndex > 0 ? recurrenceIndex : undefined,
       totalInstallments: Number.isInteger(totalInstallments) && totalInstallments > 1 ? totalInstallments : undefined,
-      title: buildMeaningfulPayableTitle({
-        title: draft.title,
-        supplierName: draft.supplierName,
-        docNumber: draft.docNumber,
-        dueDate,
-        recurrenceIndex: Number.isInteger(recurrenceIndex) && recurrenceIndex > 0 ? recurrenceIndex : undefined,
-        totalInstallments: Number.isInteger(totalInstallments) && totalInstallments > 1 ? totalInstallments : undefined,
-      }),
+      title,
       suggestedStatus: draft.suggestedStatus === 'PAGO' || draft.suggestedStatus === 'AGENDADO' || draft.suggestedStatus === 'PENDENTE'
         ? draft.suggestedStatus
         : 'PENDENTE',
@@ -509,16 +513,27 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
       markItemForReview(item, error instanceof Error ? error.message : 'Revise os dados antes de criar a conta.');
       return { created: false };
     }
-    const duplicate = findPayableDuplicate(
-      { supplierName: normalized.supplierName, supplierId: undefined, docNumber: normalized.docNumber, originalAmount: normalized.originalAmount, dueDate: normalized.dueDate },
+    const match = classifyPayableMatch(
+      {
+        supplierName: normalized.supplierName,
+        supplierId: undefined,
+        docNumber: normalized.docNumber,
+        originalAmount: normalized.originalAmount,
+        dueDate: normalized.dueDate,
+        recurrence: normalized.recurrence,
+        recurrenceIndex: normalized.recurrenceIndex,
+        totalInstallments: normalized.totalInstallments,
+        recurrenceParentId: options.recurrenceParentId,
+      },
       [...payables, ...(options.existingPayables ?? [])],
     );
-    if (duplicate) {
+    if (match.kind === 'duplicidade_provavel' || match.kind === 'revisar') {
+      const matchedTitle = match.match?.title ?? 'conta existente';
       updateItem(item.id, {
         status: 'review',
         expanded: true,
-        duplicatePayableId: duplicate.id,
-        error: `Encontrei uma conta parecida: ${duplicate.title}. Se for uma parcela ou cobrança separada, confirme como conta separada.`,
+        duplicatePayableId: match.match?.id,
+        error: `Encontrei uma conta parecida: ${matchedTitle}. ${match.reasons.join(', ')}. Confirme se é parcela, recorrência ou cobrança separada antes de salvar.`,
       });
       return { created: false };
     }
@@ -575,7 +590,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
 
       let recurrenceParentId: string | undefined;
       for (const item of sortInstallmentItems(groupItems)) {
-        const result = await autoCreateItem(item, { recurrenceParentId });
+        const result = await autoCreateItem(item, { recurrenceParentId, existingPayables: createdInBatch });
         if (result.created && result.payable) {
           created += 1;
           createdInBatch.push(result.payable);
@@ -672,27 +687,32 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     let payable = item.createdPayable ?? (item.createdPayableId ? payables.find((candidate) => candidate.id === item.createdPayableId) : undefined);
 
     if (!payable) {
-      const duplicate = findPayableDuplicate(
+      const match = classifyPayableMatch(
         {
           supplierName: draft.supplierName,
           supplierId: undefined,
           docNumber: draft.docNumber,
           originalAmount: draft.originalAmount,
           dueDate: draft.dueDate,
+          recurrence: draft.recurrence,
+          recurrenceIndex: draft.recurrenceIndex,
+          totalInstallments: draft.totalInstallments,
+          recurrenceParentId: options.recurrenceParentId,
         },
         payables,
       );
 
-      if (duplicate && !options.allowDuplicate) {
+      if ((match.kind === 'duplicidade_provavel' || match.kind === 'revisar') && !options.allowDuplicate) {
+        const matchedTitle = match.match?.title ?? 'conta existente';
         updateItem(item.id, {
           status: 'review',
           progress: 0,
           creating: false,
-          error: `Encontramos uma conta parecida: ${duplicate.title}. Confirme se é outra parcela ou cobrança separada antes de salvar.`,
-          duplicatePayableId: duplicate.id,
+          error: `Encontramos uma conta parecida: ${matchedTitle}. ${match.reasons.join(', ')}. Confirme se é outra parcela ou cobrança separada antes de salvar.`,
+          duplicatePayableId: match.match?.id,
           expanded: true,
         });
-        throw new Error(`Encontramos uma conta parecida: ${duplicate.title}. Confirme antes de criar uma conta separada.`);
+        throw new Error(`Encontramos uma conta parecida: ${matchedTitle}. Confirme antes de criar uma conta separada.`);
       }
 
       const finalAmount = calculatePayableFinalAmount(draft.originalAmount);

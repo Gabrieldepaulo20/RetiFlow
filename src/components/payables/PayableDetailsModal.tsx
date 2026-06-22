@@ -37,7 +37,7 @@ import {
   updateAnexoContaPagarNome,
 } from '@/api/supabase/contas-pagar';
 import { normalizeAttachmentDisplayName } from '@/services/domain/payableAttachments';
-import { toTitleCasePtBr } from '@/services/domain/textNormalization';
+import { normalizeCommonBusinessTermsPtBr, toTitleCasePtBr } from '@/services/domain/textNormalization';
 import { ArrowUpRight, CalendarRange, CheckCircle2, Circle, Clock, Layers3, Loader2, Paperclip, Pencil, PlusCircle } from 'lucide-react';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
@@ -202,7 +202,7 @@ export default function PayableDetailsModal({
 
   async function handleRenamePayableTitle() {
     if (!payable) return;
-    const nextTitle = toTitleCasePtBr(titleDraft);
+    const nextTitle = normalizeCommonBusinessTermsPtBr(toTitleCasePtBr(titleDraft));
     if (!nextTitle) {
       toast({ title: 'Nome inválido', description: 'Informe um nome para a conta.', variant: 'destructive' });
       return;
@@ -374,7 +374,7 @@ export default function PayableDetailsModal({
                         <Input
                           value={titleDraft}
                           onChange={(event) => setTitleDraft(event.target.value)}
-                          onBlur={() => setTitleDraft(toTitleCasePtBr(titleDraft))}
+                          onBlur={() => setTitleDraft(normalizeCommonBusinessTermsPtBr(toTitleCasePtBr(titleDraft)))}
                           onKeyDown={(event) => {
                             if (event.key === 'Enter') void handleRenamePayableTitle();
                             if (event.key === 'Escape') setRenamingTitle(false);

@@ -1618,6 +1618,45 @@ Plano aprovado para executar em fases:
 - Observacao:
   - `npm run test:integration` nao foi rodado depois desta limpeza operacional porque os testes de integracao recriam esses usuarios quando executados.
 
+## Contas A Pagar - Lista Financeira, Parcelas E Qualidade Da IA - 2026-06-22
+
+- Pedido: revisar profundamente a experiencia de Contas a Pagar da Retifica Premium, principalmente visualizacao em cards, parcelas, duplicidades, nomes ruins importados por IA e edicao em modo suporte.
+- Diagnostico read-only da Retifica Premium no Supabase:
+  - usuario alvo: `retificapremium5@gmail.com`;
+  - 33 contas ativas encontradas no modulo;
+  - 22 pendentes, totalizando R$ 8.851,70;
+  - 11 pagas, totalizando R$ 5.340,26;
+  - 21 contas com sinais de parcelamento/serie;
+  - nenhuma conta ativa iniciando com `Duplicata`;
+  - nomes ruins encontrados para melhoria de normalizacao: `Ferpecas Ribeiroa Preto`, `Ferpecas Ribeirao Preto`, `Pelegrino` e `Agua`.
+- UX:
+  - filtro padrao deixou de ser `Todas` e passou para `Pendentes`;
+  - adicionadas abas `Parceladas` e `Repetidas`;
+  - lista deixou de ser grade de cards grandes e passou a uma lista financeira compacta;
+  - cada linha exibe vencimento, documento, valor, status, categoria, IA, possivel repeticao e acoes principais;
+  - contas parceladas exibem chip `Parcela X/Y`, progresso da serie e saldo ainda aberto da serie.
+- IA/importacao:
+  - importacao passou a usar `classifyPayableMatch` em vez de apenas `findPayableDuplicate`;
+  - duplicidade provavel ou caso ambiguo vai para revisao manual;
+  - parcela/recorrencia legitima nao fica bloqueada como duplicata;
+  - criacao em lote compara tambem com contas criadas no proprio lote para evitar repeticao silenciosa;
+  - nomes/titulos vindos da IA passam por normalizacao conservadora de termos comuns em pt-BR.
+- Edicao:
+  - edicao de titulo no modal de detalhes e no formulario principal normaliza termos comuns e acentuacao;
+  - teste unitario cobre que `update_conta_pagar` em modo suporte chama `update_conta_pagar_contexto_suporte` com `p_contexto_usuario_id` e `p_sessao_suporte`.
+- Decisao de seguranca/custo:
+  - nao foi criada rotina noturna com OpenAI nesta rodada;
+  - antes disso, precisa de job auditavel, limite de custo, modo dry-run, log de alteracoes e rollback por conta, para evitar a IA alterar dado financeiro incorretamente.
+- Validacao:
+  - `npm run typecheck`: passou;
+  - `npx tsc --noEmit`: passou;
+  - `npm run lint`: passou com warnings antigos de Fast Refresh;
+  - `npm test -- --run`: passou;
+  - `npm run build`: passou com avisos conhecidos de Browserslist/chunks/import dinamico;
+  - validacao visual via Playwright em modo mock: login local, tela `/contas-a-pagar`, aba `Pendentes` selecionada e lista renderizada sem erro de aplicacao.
+- Observacao:
+  - sem migration, sem alteracao de RLS/policy/bucket, sem Edge Function nova e sem service role no frontend.
+
 ## Filtros De O.S., Dashboard Finalizado E CPF/CNPJ - 2026-06-05
 
 - Pedido: melhorar Notas de Entrada com filtro real por data, ajustar Dashboard para contabilizar valores de O.S. apenas quando `Finalizada`, impedir tempo medio negativo e permitir filtrar clientes por CPF/CNPJ.
