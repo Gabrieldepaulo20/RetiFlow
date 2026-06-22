@@ -10,7 +10,7 @@ test.describe('Route surface sentinels', () => {
     await page.goto('/');
 
     await expect(page).toHaveURL('/login');
-    await expect(page.getByText('Entrar na área do cliente')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Entrar na sua conta' })).toBeVisible();
     await expect(page.getByText('Escolha o portal de acesso adequado para continuar.')).not.toBeVisible();
   });
 

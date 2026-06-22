@@ -4,6 +4,53 @@ Atualizado em: 2026-06-22
 
 ---
 
+## Auditoria De Estabilidade, Reload E Performance - 2026-06-22
+
+- Pedido: analisar profundamente o sistema para reduzir risco de reload cair em tela de problema, "Algo deu
+  errado" ou "Tentar novamente", alem de revisar falhas de navegacao, auth, dependencias e performance.
+- Corrigido o maior risco de UX em reload autenticado:
+  - `ProtectedRoute` nao mostra mais "Falha ao carregar perfil" / "Tentar novamente" quando a sessao existe
+    mas o perfil falha momentaneamente;
+  - agora tenta recuperar automaticamente a sessao/perfil ate 3 vezes com estado neutro "Reconectando sessao";
+  - se ainda falhar, mantem o usuario fora de login/access-denied e mostra "Conexao instavel" + "Verificar sessao".
+- `ErrorBoundary` global tambem deixou de usar a copia vermelha "Algo deu errado" / "Tentar novamente";
+  o fallback generico agora e neutro ("Estamos restaurando esta tela" / "Reabrir tela"). O caso de chunk/deploy
+  novo continua com recuperacao propria e CTA "Nova versao disponivel / Recarregar agora".
+- E2E `route-refresh-access` ficou mais forte:
+  - valida `/dashboard`, `/clientes`, `/notas-entrada`, `/kanban`, `/contas-a-pagar`, `/fechamento`,
+    `/admin` e `/admin/usuarios` antes/depois de reload;
+  - falha se aparecer fallback global, "Falha ao carregar perfil", "Reconectando sessao", "Tentar novamente"
+    ou "Reabrir tela".
+- E2Es antigos de login/auth foram atualizados para a UI atual:
+  - heading atual: "Entrar na sua conta";
+  - campo de senha usa seletor exato `textbox` para nao conflitar com botao "Mostrar senha";
+  - sentinelas de admin operacional ajustados para comportamento real do menu atual.
+- Dependencias:
+  - `npm audit fix` sem `--force` atualizou lockfile e removeu vulnerabilidade alta de producao em `ws`,
+    alem de atualizar `postcss`, `react-router-dom`/`@remix-run/router` e dependencias relacionadas;
+  - `npm audit --omit=dev --audit-level=high` passa;
+  - residual conhecido: 2 vulnerabilidades moderadas em `uuid < 11.1.1` via `aws-rum-web <= 2.1.0`.
+    O `npm audit fix --force` recomenda `aws-rum-web@3.1.0` (breaking). Foi testado antes e revertido porque
+    nao removeu de forma limpa a cadeia do `uuid`; melhor tratar numa etapa separada de observabilidade.
+- Performance/build:
+  - `react-pdf.browser` segue grande (~1.46 MB), mas isolado em chunk dinamico;
+  - `charts-vendor` segue isolado;
+  - `index` ainda passa de 500 KB (~540 KB) e merece etapa futura de reducao de imports compartilhados;
+  - build ainda alerta sobre `src/lib/supabase.ts` ser importado de forma estatica e dinamica, sem falhar.
+- Sem migration, sem RPC nova, sem Storage/Auth/Edge Function nesta etapa.
+- Validado:
+  - `npm run typecheck`
+  - `npx tsc --noEmit`
+  - `npm run lint` (apenas 8 avisos antigos de Fast Refresh)
+  - `npm test -- --run` (55 arquivos, 415 testes)
+  - `npm run build` (passou; avisos conhecidos de Browserslist/dynamic import/chunk size)
+  - `npm run test:integration` (17 arquivos, 55 testes; logs de erro em testes negativos esperados)
+  - `CI=1 npx playwright test e2e/navigation.spec.ts e2e/route-surface.spec.ts e2e/auth.spec.ts e2e/access-matrix.spec.ts e2e/route-refresh-access.spec.ts` (26 testes)
+  - `gitleaks detect --source . --no-git --redact=100` (sem vazamentos)
+  - `npm audit --omit=dev --audit-level=high` (sem high/critical de producao)
+
+---
+
 ## Clientes - Remocao Do Bloco De Acoes Comerciais - 2026-06-22
 
 - Pedido: remover do modulo de Clientes o bloco/texto "Acoes para trazer dinheiro"; isso nao deve aparecer

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
-import { WifiOff } from 'lucide-react';
+import { RefreshCw, WifiOff } from 'lucide-react';
 import { AppModuleKey, UserRole } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { LoadingScreen } from '@/components/ui/loading-screen';
@@ -22,7 +22,25 @@ export default function ProtectedRoute({ moduleKey, allowedRoles, redirectTo }: 
     [location.pathname, moduleKey, user?.id],
   );
   const [verifiedAccessKey, setVerifiedAccessKey] = useState<string | null>(null);
+  const [profileRecoveryAttempts, setProfileRecoveryAttempts] = useState(0);
   const shouldRevalidateRoute = authMode === 'real' && isAuthenticated && Boolean(moduleKey) && !isAuthLoading && !profileError;
+
+  useEffect(() => {
+    if (!profileError) {
+      setProfileRecoveryAttempts(0);
+      return undefined;
+    }
+
+    if (profileRecoveryAttempts >= 3) return undefined;
+
+    const delayByAttempt = [600, 1_500, 3_000] as const;
+    const timeoutId = window.setTimeout(() => {
+      setProfileRecoveryAttempts((attempts) => attempts + 1);
+      retryAuth();
+    }, delayByAttempt[profileRecoveryAttempts] ?? 3_000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [profileError, profileRecoveryAttempts, retryAuth]);
 
   useEffect(() => {
     if (!shouldRevalidateRoute) {
@@ -62,18 +80,30 @@ export default function ProtectedRoute({ moduleKey, allowedRoles, redirectTo }: 
   }
 
   if (profileError) {
+    if (profileRecoveryAttempts < 3) {
+      return (
+        <LoadingScreen
+          description="Sua sessão existe. Estamos validando o perfil novamente para manter você na mesma tela."
+          label="Reconectando sessão"
+        />
+      );
+    }
+
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-6 text-center">
-        <div className="rounded-[28px] border border-border/60 bg-card/80 px-8 py-7 shadow-sm backdrop-blur-sm space-y-4 max-w-sm w-full">
-          <div className="flex items-center justify-center w-12 h-12 rounded-full bg-destructive/10 mx-auto">
-            <WifiOff className="w-5 h-5 text-destructive" />
+        <div className="w-full max-w-sm space-y-4 rounded-[28px] border border-border/60 bg-card/80 px-8 py-7 shadow-sm backdrop-blur-sm">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+            <WifiOff className="h-5 w-5 text-primary" />
           </div>
           <div className="space-y-1.5">
-            <p className="text-sm font-semibold text-foreground">Falha ao carregar perfil</p>
-            <p className="text-sm text-muted-foreground leading-relaxed">{profileError}</p>
+            <p className="text-sm font-semibold text-foreground">Conexão instável</p>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Não conseguimos validar o perfil agora. Sua sessão não foi descartada.
+            </p>
           </div>
           <Button size="sm" variant="outline" onClick={retryAuth} className="w-full">
-            Tentar novamente
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Verificar sessão
           </Button>
         </div>
       </div>

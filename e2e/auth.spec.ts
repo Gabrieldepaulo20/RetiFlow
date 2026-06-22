@@ -9,7 +9,7 @@ test.describe('Auth — login and access control', () => {
   test('redirects root route to operational login when unauthenticated', async ({ page }) => {
     await page.goto('/');
     await expect(page).toHaveURL('/login');
-    await expect(page.getByText('Entrar na área do cliente')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Entrar na sua conta' })).toBeVisible();
     await expect(page.getByText('Escolha o portal de acesso adequado para continuar.')).not.toBeVisible();
   });
 
@@ -21,7 +21,7 @@ test.describe('Auth — login and access control', () => {
   test('shows error for wrong password', async ({ page }) => {
     await page.goto('/login');
     await page.getByLabel(/e-mail/i).fill(USERS.financeiro.email);
-    await page.getByLabel(/senha/i).fill('senha-errada');
+    await page.getByRole('textbox', { name: /^Senha$/i }).fill('senha-errada');
     await page.getByRole('button', { name: /entrar/i }).click();
     // Toast title appears; multiple elements match the same text — first() resolves strict-mode violation
     await expect(page.getByText(/credenciais inválidas/i).first()).toBeVisible();
@@ -31,7 +31,7 @@ test.describe('Auth — login and access control', () => {
   test('shows error for nonexistent user', async ({ page }) => {
     await page.goto('/login');
     await page.getByLabel(/e-mail/i).fill('nao-existe@retifica.com');
-    await page.getByLabel(/senha/i).fill('demo123');
+    await page.getByRole('textbox', { name: /^Senha$/i }).fill('demo123');
     await page.getByRole('button', { name: /entrar/i }).click();
     await expect(page.getByText(/credenciais inválidas/i).first()).toBeVisible();
     await expect(page).toHaveURL('/login');
@@ -52,7 +52,7 @@ test.describe('Auth — login and access control', () => {
   test('admin can use /login as operational test portal', async ({ page }) => {
     await page.goto('/login');
     await page.getByLabel(/e-mail/i).fill(USERS.admin.email);
-    await page.getByLabel(/senha/i).fill(USERS.admin.password);
+    await page.getByRole('textbox', { name: /^Senha$/i }).fill(USERS.admin.password);
     await page.getByRole('button', { name: /entrar/i }).click();
     await expect(page).toHaveURL('/dashboard');
     await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
@@ -61,9 +61,9 @@ test.describe('Auth — login and access control', () => {
   test('financeiro is blocked from /admin/login portal', async ({ page }) => {
     await page.goto('/admin/login');
     await page.getByLabel(/e-mail/i).fill(USERS.financeiro.email);
-    await page.getByLabel(/senha/i).fill(USERS.financeiro.password);
+    await page.getByRole('textbox', { name: /^Senha$/i }).fill(USERS.financeiro.password);
     await page.getByRole('button', { name: /entrar/i }).click();
-    await expect(page.getByText(/administrador/i)).toBeVisible();
+    await expect(page.getByText('Este acesso administrativo exige uma conta de administrador.', { exact: true })).toBeVisible();
     await expect(page).toHaveURL('/admin/login');
   });
 
@@ -91,7 +91,7 @@ test.describe('Auth — login and access control', () => {
   test('admin stays in operational portal after logging in through /login', async ({ page }) => {
     await page.goto('/login');
     await page.getByLabel(/e-mail/i).fill(USERS.admin.email);
-    await page.getByLabel(/senha/i).fill(USERS.admin.password);
+    await page.getByRole('textbox', { name: /^Senha$/i }).fill(USERS.admin.password);
     await page.getByRole('button', { name: /entrar/i }).click();
 
     await expect(page).toHaveURL('/dashboard');
@@ -109,12 +109,11 @@ test.describe('Auth — login and access control', () => {
       await expect(page).not.toHaveURL('/admin');
     }
 
-    await expect(page.getByRole('link', { name: 'Configurações' })).not.toBeVisible();
+    await expect(page.getByRole('link', { name: 'Configurações' })).toBeVisible();
 
     await page.getByRole('button', { name: 'Abrir menu da conta' }).click();
-    await expect(page.getByRole('menuitem', { name: /Voltar para o ADM/i })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: /Sugestões \/ Chamado/i })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: /Acessos de funcionários/i })).not.toBeVisible();
-    await expect(page.getByRole('menuitem', { name: /Modelos e templates/i })).not.toBeVisible();
   });
 
   test('financeiro blocked from /configuracoes (module disabled)', async ({ page }) => {

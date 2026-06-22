@@ -222,7 +222,7 @@ describe('ProtectedRoute', () => {
     expect(screen.getByText('closing-page')).toBeInTheDocument();
   });
 
-  it('shows a retry screen when profile loading fails — not login or access-denied', () => {
+  it('keeps the user on a neutral reconnecting state when profile loading is transient', () => {
     mockedUseAuth.mockReturnValue({
       ...authBase,
       authMode: 'real',
@@ -242,8 +242,9 @@ describe('ProtectedRoute', () => {
 
     renderProtectedRoute();
 
-    expect(screen.getByText('Falha ao carregar perfil')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /tentar novamente/i })).toBeInTheDocument();
+    expect(screen.getByText('Reconectando sessão')).toBeInTheDocument();
+    expect(screen.queryByText('Falha ao carregar perfil')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /tentar novamente/i })).not.toBeInTheDocument();
     expect(screen.queryByText('login-page')).not.toBeInTheDocument();
     expect(screen.queryByText('access-denied')).not.toBeInTheDocument();
   });

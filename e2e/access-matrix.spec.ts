@@ -9,12 +9,12 @@ test.describe('Access matrix sentinels', () => {
   test('unauthenticated users are routed to the correct login portal', async ({ page }) => {
     await page.goto('/dashboard');
     await expect(page).toHaveURL('/login');
-    await expect(page.getByText('Entrar na área do cliente')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Entrar na sua conta' })).toBeVisible();
 
     await clearSession(page);
     await page.goto('/admin');
     await expect(page).toHaveURL('/admin/login');
-    await expect(page.getByText('Entrar como administrador')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Entrar na sua conta' })).toBeVisible();
   });
 
   test('financeiro cannot access admin or disabled settings routes by direct URL', async ({ page }) => {
@@ -38,7 +38,7 @@ test.describe('Access matrix sentinels', () => {
     await clearSession(page);
     await page.goto('/login');
     await page.getByLabel(/e-mail/i).fill(USERS.admin.email);
-    await page.getByLabel(/senha/i).fill(USERS.admin.password);
+    await page.getByRole('textbox', { name: /^Senha$/i }).fill(USERS.admin.password);
     await page.getByRole('button', { name: /entrar/i }).click();
 
     await expect(page).toHaveURL('/dashboard');
