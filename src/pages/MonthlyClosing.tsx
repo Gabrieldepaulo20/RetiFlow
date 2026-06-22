@@ -35,12 +35,13 @@ import {
   type FechamentoDadosJson,
   type FechamentoNota,
 } from '@/api/supabase/fechamentos';
-import { getNotasServico } from '@/api/supabase/notas';
+import { getNotasServico, mapStatusNome } from '@/api/supabase/notas';
 import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 import {
   filterFechamentosForClientScope,
   getMonthlyClosingDraftsStorageKey,
 } from '@/services/domain/monthlyClosingIsolation';
+import { getClosingCompetenceDate } from '@/services/domain/monthlyClosing';
 import { PAYMENT_METHOD_LABELS, type IntakeNote, type NotePaymentStatus, type PaymentMethod } from '@/types';
 import { isBillableNoteStatus } from '@/services/domain/intakeNotes';
 
@@ -200,9 +201,6 @@ const normalizeAvailablePeriods = (dates: string[]) => {
     return Number(b.month) - Number(a.month);
   });
 };
-
-const getClosingCompetenceDate = (note: Pick<IntakeNote, 'finalizedAt' | 'updatedAt'>) =>
-  note.finalizedAt ?? note.updatedAt;
 
 const isAvailableForClosing = (note: IntakeNote) =>
   isBillableNoteStatus(note.status) && !note.closingId && Boolean(getClosingCompetenceDate(note));
@@ -590,8 +588,8 @@ export default function MonthlyClosing() {
         ? (await getNotasServico({ p_fk_clientes: selClientId, p_limite: 500, p_offset: 0 })).dados.filter((note) => {
             const closingId = note.fk_fechamentos ?? localClosingIdByNoteId.get(note.id_notas_servico);
             if (closingId) return false;
-            if (!(note.finalizado_em || note.status.tipo_status === 'fechado')) return false;
-            const dt = new Date(note.finalizado_em ?? note.created_at);
+            if (!isBillableNoteStatus(mapStatusNome(note.status.nome))) return false;
+            const dt = new Date(note.created_at);
             return dt >= inicio && dt <= fim;
           }).map((note) => ({
             id: note.id_notas_servico,
@@ -599,7 +597,7 @@ export default function MonthlyClosing() {
             vehicleModel: note.veiculo.modelo,
             plate: note.veiculo.placa,
             totalAmount: note.total,
-            updatedAt: note.finalizado_em ?? note.created_at,
+            updatedAt: note.created_at,
             paymentStatus: (note.payment_status === 'PAGO' ? 'PAGO' : 'PENDENTE') as NotePaymentStatus,
             pagoEm: note.pago_em ?? null,
           }))
@@ -620,7 +618,7 @@ export default function MonthlyClosing() {
           }));
 
       if (notasFiltradas.length === 0) {
-        toast({ title: 'Nenhuma nota finalizada neste período', variant: 'destructive' });
+        toast({ title: 'Nenhuma O.S. faturável criada neste período', variant: 'destructive' });
         return;
       }
 
@@ -1046,8 +1044,7 @@ export default function MonthlyClosing() {
         <CardContent className="p-3 sm:p-4">
           <p className="text-sm font-medium">Novo rascunho de fechamento</p>
           <p className="mb-2 mt-0.5 text-xs text-muted-foreground">
-            Agrupa as O.S. pela data de finalização/entrega (competência). Isso pode diferir do Dashboard,
-            que conta o faturamento pela data de entrada da O.S.
+            Agrupa as O.S. pela data de entrada/criação e considera apenas O.S. faturáveis ainda sem fechamento.
           </p>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[160px_110px_minmax(240px,1fr)_auto] lg:items-end">
             <div className="grid grid-cols-2 gap-2 sm:contents">
@@ -1101,7 +1098,7 @@ export default function MonthlyClosing() {
           )}
           {selMonth && selYear && clientsForSelectedPeriod.length > 0 && !selClientId && (
             <p className="mt-2 text-xs text-muted-foreground">
-              Escolha o cliente para fechar {MONTHS[Number(selMonth) - 1]} de {selYear}. Foram encontradas {selectedPeriodTotalNotes} O.S. em {clientsForSelectedPeriod.length} cliente{clientsForSelectedPeriod.length === 1 ? '' : 's'}.
+              Escolha o cliente para fechar {MONTHS[Number(selMonth) - 1]} de {selYear}. Foram encontradas {selectedPeriodTotalNotes} O.S. faturáveis em {clientsForSelectedPeriod.length} cliente{clientsForSelectedPeriod.length === 1 ? '' : 's'}.
             </p>
           )}
         </CardContent>

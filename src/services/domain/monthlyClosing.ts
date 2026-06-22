@@ -9,7 +9,7 @@ import {
   IntakeNote,
   IntakeService,
 } from '@/types';
-import { isBillableNoteStatus, resolveNoteFinalizedAt } from '@/services/domain/intakeNotes';
+import { isBillableNoteStatus } from '@/services/domain/intakeNotes';
 import { normalizeNoteNumber } from '@/lib/noteNumbers';
 
 export type ClosingPeriodType = 'mensal' | 'quinzenal' | 'semanal' | 'personalizado';
@@ -74,6 +74,10 @@ export function getClosingDateRange(filters: ClosingPeriodFilters) {
 
 export function getServicesForClosingNote(services: IntakeService[], noteId: string) {
   return services.filter((service) => service.noteId === noteId);
+}
+
+export function getClosingCompetenceDate(note: Pick<IntakeNote, 'createdAt'>) {
+  return note.createdAt;
 }
 
 // ─── Closing Record Calculations ──────────────────────────────────────────
@@ -268,7 +272,7 @@ export function generateClosingRecords({
       downloadCount: 0,
       logs: [
         createClosingLog(
-          `Fechamento gerado com ${clientNotes.length} nota(s) finalizada(s) para ${clientName}.`,
+          `Fechamento gerado com ${clientNotes.length} O.S. faturável(is) para ${clientName}.`,
           'generated',
           createdAt,
         ),
@@ -300,13 +304,13 @@ export function getFinalizedNotesForClosing(source: ClosingSource, filters: Clos
       return false;
     }
 
-    const finalizedAt = resolveNoteFinalizedAt(note);
-    if (!finalizedAt) {
+    const competenceDate = getClosingCompetenceDate(note);
+    if (!competenceDate) {
       return false;
     }
 
-    const completedAt = new Date(finalizedAt);
-    if (completedAt < start || completedAt > end) {
+    const entryDate = new Date(competenceDate);
+    if (entryDate < start || entryDate > end) {
       return false;
     }
 

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { extractNotaStoragePath, getNotaPDFSignedUrl } from '@/api/supabase/notas';
+import { extractNotaStoragePath, getNotaPDFSignedUrl, mapStatusNome } from '@/api/supabase/notas';
 
 const mocks = vi.hoisted(() => ({
   from: vi.fn(),
@@ -50,6 +50,13 @@ describe('Notas Supabase PDF storage helpers', () => {
     expect(extractNotaStoragePath(undefined)).toBeNull();
     expect(extractNotaStoragePath('')).toBeNull();
     expect(extractNotaStoragePath('blob:https://app.local/123')).toBeNull();
+  });
+
+  it('mapStatusNome keeps legacy closed statuses aligned with the billable model', () => {
+    expect(mapStatusNome('Finalizado')).toBe('ENTREGUE');
+    expect(mapStatusNome('Cancelado')).toBe('EXCLUIDA');
+    expect(mapStatusNome('Descartado')).toBe('EXCLUIDA');
+    expect(mapStatusNome('Sem Conserto')).toBe('SEM_CONSERTO');
   });
 
   it('extractNotaStoragePath normalizes relative paths', () => {

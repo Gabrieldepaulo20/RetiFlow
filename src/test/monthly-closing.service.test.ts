@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   calcServiceTotal,
   generateClosingRecords,
+  getClosingCompetenceDate,
   getFinalizedNotesForClosing,
   getNoteDiscount,
   normalizeClosingRecord,
@@ -48,7 +49,7 @@ function buildNote(overrides: Partial<IntakeNote>): IntakeNote {
 }
 
 describe('monthly closing domain service', () => {
-  it('uses finalizedAt instead of createdAt to include notes in the correct period', () => {
+  it('uses the note entry date instead of finalizedAt to place notes in the closing period', () => {
     const januaryCreatedButFebruaryFinalized = buildNote({
       id: 'n-finalized-at',
       createdAt: '2026-01-20T10:00:00.000Z',
@@ -73,11 +74,30 @@ describe('monthly closing domain service', () => {
       },
     );
 
-    expect(results).toHaveLength(1);
-    expect(results[0]?.id).toBe('n-finalized-at');
+    expect(results).toHaveLength(0);
+
+    const januaryResults = getFinalizedNotesForClosing(
+      {
+        customers: [customer],
+        notes: [januaryCreatedButFebruaryFinalized],
+        services,
+      },
+      {
+        periodType: 'mensal',
+        month: '1',
+        year: '2026',
+        quinzena: '1',
+        weekDate: new Date('2026-01-10T00:00:00.000Z'),
+        customRange: {},
+        clientFilter: 'all',
+      },
+    );
+
+    expect(januaryResults).toHaveLength(1);
+    expect(januaryResults[0]?.id).toBe('n-finalized-at');
   });
 
-  it('falls back to updatedAt for legacy finalized notes without finalizedAt', () => {
+  it('does not move legacy notes to another month just because updatedAt changed', () => {
     const legacyFinalized = buildNote({
       id: 'n-legacy',
       createdAt: '2026-01-10T10:00:00.000Z',
@@ -102,8 +122,8 @@ describe('monthly closing domain service', () => {
       },
     );
 
-    expect(results).toHaveLength(1);
-    expect(results[0]?.id).toBe('n-legacy');
+    expect(results).toHaveLength(0);
+    expect(getClosingCompetenceDate(legacyFinalized)).toBe('2026-01-10T10:00:00.000Z');
   });
 
   it('recalculates persisted closing totals and discounts during normalization', () => {

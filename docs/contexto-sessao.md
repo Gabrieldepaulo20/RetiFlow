@@ -30,6 +30,40 @@ Atualizado em: 2026-06-22
 
 ---
 
+## Fechamento Mensal - Competencia Pela Entrada Da O.S. - 2026-06-22
+
+- Bug critico investigado: Junho aparecia como `158` no fechamento porque a tela ainda agrupava por
+  `finalizedAt ?? updatedAt`. As O.S. legadas foram finalizadas/atualizadas em lote em junho, inflando o
+  contador.
+- Regra corrigida: fechamento mensal agora agrupa pela **data de entrada/criacao da O.S.** (`createdAt` /
+  `created_at`) e continua incluindo somente O.S. faturaveis (`ENTREGUE`, `RECUSADO`, `SEM_CONSERTO`, com
+  legado `Finalizado -> ENTREGUE`) sem `fk_fechamentos`.
+- Caminhos alinhados:
+  - dropdown de meses/contadores (`availablePeriods`);
+  - lista de clientes do periodo;
+  - geracao real de rascunho via `getNotasServico`;
+  - helper de dominio `getClosingCompetenceDate`;
+  - testes unitarios do fechamento.
+- A mensagem da tela agora diz "O.S. faturaveis" para explicar por que o numero do fechamento pode ser menor
+  que o total de O.S. criadas no modulo de Notas de Entrada.
+- Evidencia read-only em PROD para Retifica Premium:
+  - regra antiga por finalizacao/update em Junho/2026: `158`;
+  - todas O.S. criadas em Junho/2026: `82`;
+  - O.S. faturaveis sem fechamento em Junho/2026: `63`;
+  - O.S. ainda em fluxo em Junho/2026: `18`;
+  - anuladas/canceladas em Junho/2026: `1`.
+- Sem migration, sem RPC nova, sem Storage/Auth/Edge Function nesta etapa.
+- Validado:
+  - `npm run typecheck`
+  - `npx tsc --noEmit`
+  - `npm run lint` (apenas 8 avisos antigos de Fast Refresh)
+  - `npm test -- --run` (55 arquivos, 414 testes)
+  - `npm run build` (avisos conhecidos de Browserslist/dynamic import/chunk size)
+  - `CI=1 npx playwright test e2e/monthly-closing.spec.ts`
+  - `npm run test:integration` (17 arquivos, 55 testes; logs de erro em testes negativos esperados)
+
+---
+
 ## Correcao De Dado: O.S. Anteriores A 01/06 Marcadas Como PAGO - 2026-06-22
 
 - Pedido: toda O.S. de servico ANTERIOR a 01/06/2026 (legado) deve ficar PAGO; as de 01/06 em diante

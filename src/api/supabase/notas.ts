@@ -307,7 +307,7 @@ const LEGACY_STATUS_ALIASES: Record<string, NoteStatus> = {
   'Aberto': 'ABERTO',
 };
 
-function mapStatusNome(nome: string): NoteStatus {
+export function mapStatusNome(nome: string): NoteStatus {
   return NOME_TO_STATUS[nome] ?? LEGACY_STATUS_ALIASES[nome] ?? 'ABERTO';
 }
 
