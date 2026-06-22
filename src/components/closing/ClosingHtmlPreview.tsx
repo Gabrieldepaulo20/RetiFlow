@@ -152,6 +152,26 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
           })}
         </div>
 
+        {dados.recebidas && dados.recebidas.length > 0 && (
+          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/60 px-5 py-4 text-sm">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+              Já recebido no período (não incluso no total a pagar)
+            </p>
+            <div className="space-y-1">
+              {dados.recebidas.map((r) => (
+                <div key={r.id} className="flex items-center justify-between gap-3 text-slate-600">
+                  <span>O.S. {r.os}{r.veiculo ? ` · ${r.veiculo}` : ''}{r.pago_em ? ` · pago em ${new Date(r.pago_em).toLocaleDateString('pt-BR')}` : ''}</span>
+                  <span className="font-medium text-emerald-700">R$ {brl(r.total)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 flex items-center justify-between border-t border-emerald-200 pt-2 font-semibold text-emerald-700">
+              <span>Total já recebido</span>
+              <span>R$ {brl(dados.total_ja_recebido ?? 0)}</span>
+            </div>
+          </div>
+        )}
+
         <div className="mt-5 flex flex-col gap-2 rounded-2xl border px-5 py-4 sm:flex-row sm:items-end sm:justify-between" style={{ backgroundColor: `${effectiveAccent}12`, borderColor: `${effectiveAccent}25` }}>
           <div className="text-sm text-slate-600">
             <p>{dados.notas.length} ordem{dados.notas.length !== 1 ? 's' : ''} de serviço · {dados.periodo}</p>
@@ -160,7 +180,7 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
             )}
           </div>
           <div className="text-right">
-            <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: effectiveAccent }}>Total geral</p>
+            <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: effectiveAccent }}>Total a pagar</p>
             <p className="text-2xl font-bold" style={{ color: effectiveAccent }}>R$ {brl(dados.total_com_desconto)}</p>
           </div>
         </div>

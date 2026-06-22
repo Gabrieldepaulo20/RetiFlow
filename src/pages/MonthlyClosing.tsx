@@ -34,7 +34,7 @@ import {
   filterFechamentosForClientScope,
   getMonthlyClosingDraftsStorageKey,
 } from '@/services/domain/monthlyClosingIsolation';
-import type { IntakeNote } from '@/types';
+import type { IntakeNote, NotePaymentStatus } from '@/types';
 import { isBillableNoteStatus } from '@/services/domain/intakeNotes';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
@@ -60,6 +60,9 @@ interface PreviewNote {
   placa: string | null;
   total: number;
   updatedAt: string;
+  /** Eixo financeiro: se já foi recebida (fora do total do fechamento) ou pendente. */
+  paymentStatus: NotePaymentStatus;
+  pagoEm: string | null;
   itens: Array<{
     id: string;
     descricao: string;
@@ -105,10 +108,17 @@ const recalcItemSubtotal = (item: PreviewNote['itens'][number]) => {
 const recalcNoteTotal = (items: PreviewNote['itens']) =>
   items.reduce((sum, item) => sum + recalcItemSubtotal(item), 0);
 
+/** O.S. já recebida (paga) no período — informativa, nunca entra no total do fechamento. */
+const isReceivedNote = (note: Pick<PreviewNote, 'paymentStatus'>) => note.paymentStatus === 'PAGO';
+
+const getReceivedDraftNotes = (draft: Pick<ClosingDraft, 'notes'>) => draft.notes.filter(isReceivedNote);
+
 const getIncludedDraftNotes = (draft: Pick<ClosingDraft, 'notes' | 'includedNoteIds'>) => {
-  if (!draft.includedNoteIds) return draft.notes;
-  const included = new Set(draft.includedNoteIds);
-  return draft.notes.filter((note) => included.has(note.id));
+  const base = draft.includedNoteIds
+    ? draft.notes.filter((note) => new Set(draft.includedNoteIds).has(note.id))
+    : draft.notes;
+  // Notas já recebidas nunca entram no total/cascata do fechamento (só informativas).
+  return base.filter((note) => !isReceivedNote(note));
 };
 
 const computeDraftTotals = (draft: Pick<ClosingDraft, 'notes' | 'discounts' | 'includedNoteIds'>) => {
@@ -142,6 +152,15 @@ const buildDadosFromDraft = (draft: ClosingDraft): FechamentoDadosJson => {
     }),
     total_original: totals.totalOriginal,
     total_com_desconto: totals.totalComDesconto,
+    recebidas: getReceivedDraftNotes(draft).map((note) => ({
+      id: note.id,
+      os: note.os,
+      veiculo: note.veiculo,
+      placa: note.placa,
+      total: note.total,
+      pago_em: note.pagoEm,
+    })),
+    total_ja_recebido: getReceivedDraftNotes(draft).reduce((sum, note) => sum + note.total, 0),
   };
 };
 
@@ -601,6 +620,8 @@ export default function MonthlyClosing() {
             plate: note.veiculo.placa,
             totalAmount: note.total,
             updatedAt: note.finalizado_em ?? note.created_at,
+            paymentStatus: (note.payment_status === 'PAGO' ? 'PAGO' : 'PENDENTE') as NotePaymentStatus,
+            pagoEm: note.pago_em ?? null,
           }))
         : notes.filter((n) => {
             if (!isBillableNoteStatus(n.status)) return false;
@@ -614,6 +635,8 @@ export default function MonthlyClosing() {
             plate: note.plate ?? '',
             totalAmount: note.totalAmount,
             updatedAt: note.updatedAt,
+            paymentStatus: note.paymentStatus,
+            pagoEm: note.paidAt ?? null,
           }));
 
       if (notasFiltradas.length === 0) {
@@ -632,6 +655,8 @@ export default function MonthlyClosing() {
           placa: nota.plate ?? null,
           total: nota.totalAmount,
           updatedAt: nota.updatedAt,
+          paymentStatus: nota.paymentStatus,
+          pagoEm: nota.pagoEm,
           itens: det?.itens_servico.map((i) => ({
             id: i.id_rel,
             descricao: i.descricao,
@@ -652,7 +677,7 @@ export default function MonthlyClosing() {
 
       setPreviewNotes(resultado);
       setDescontos({});
-      setIncludedNoteIds(resultado.map((note) => note.id));
+      setIncludedNoteIds(resultado.filter((note) => note.paymentStatus !== 'PAGO').map((note) => note.id));
       setEditingItems({});
       const draftClient = clients.find((entry) => entry.id === selClientId);
       const periodLabel = `${MONTHS[mesNum - 1]} ${selYear}`;
@@ -665,7 +690,7 @@ export default function MonthlyClosing() {
         year: selYear,
         periodLabel,
         notes: resultado,
-        includedNoteIds: resultado.map((note) => note.id),
+        includedNoteIds: resultado.filter((note) => note.paymentStatus !== 'PAGO').map((note) => note.id),
         discounts: {},
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -692,6 +717,9 @@ export default function MonthlyClosing() {
 
   const grandTotal = useMemo(() => totals.reduce((a, b) => a + b.totalComDesconto, 0), [totals]);
   const grandTotalOriginal = useMemo(() => totals.reduce((a, n) => a + n.totalBruto, 0), [totals]);
+  // O.S. já recebidas no período (informativas, fora do total a pagar).
+  const receivedNotes = useMemo(() => previewNotes.filter((note) => note.paymentStatus === 'PAGO'), [previewNotes]);
+  const receivedTotal = useMemo(() => receivedNotes.reduce((sum, note) => sum + note.total, 0), [receivedNotes]);
   const includedNotesCount = includedNoteIds.length;
   const modalPreviewDados = useMemo(
     () => generatedPreviewFechamento?.dados_json ?? (activeDraft ? buildDadosFromDraft({
@@ -1158,16 +1186,18 @@ export default function MonthlyClosing() {
                   const disc = descontos[nota.id] ?? 0;
                   const totalComDesc = nota.total * (1 - disc / 100);
                   const editing = editingItems[nota.id] ?? true;
-                  const included = includedNoteIds.includes(nota.id);
+                  const isPaid = nota.paymentStatus === 'PAGO';
+                  const included = !isPaid && includedNoteIds.includes(nota.id);
                   return (
-                    <Card key={nota.id} className={cn('overflow-hidden border-border/70 transition', !included && 'opacity-70')}>
+                    <Card key={nota.id} className={cn('overflow-hidden border-border/70 transition', !included && 'opacity-70', isPaid && 'bg-muted/30')}>
                       <div className="bg-muted/40 border-b border-border/50 px-4 py-3 flex items-center justify-between gap-3">
                         <div className="flex min-w-0 items-start gap-3">
-                          <label className="mt-0.5 flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border bg-background transition hover:border-primary/50">
+                          <label className={cn('mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border bg-background transition', isPaid ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:border-primary/50')}>
                             <input
                               type="checkbox"
                               className="h-4 w-4 accent-primary"
                               checked={included}
+                              disabled={isPaid}
                               onChange={(event) => toggleNoteInClosing(nota.id, event.target.checked)}
                               aria-label={`Incluir O.S. ${nota.os} no fechamento`}
                             />
@@ -1175,10 +1205,18 @@ export default function MonthlyClosing() {
                           <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-semibold text-sm">{nota.os}</p>
-                            <Badge variant="outline" className="text-[10px]">Editável</Badge>
-                            <Badge className={cn('text-[10px]', included ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>
-                              {included ? 'Entra no fechamento' : 'Fora deste fechamento'}
-                            </Badge>
+                            {isPaid ? (
+                              <Badge className="bg-emerald-100 text-emerald-700 text-[10px]">
+                                Já recebido{nota.pagoEm ? ` · ${new Date(nota.pagoEm).toLocaleDateString('pt-BR')}` : ''}
+                              </Badge>
+                            ) : (
+                              <>
+                                <Badge variant="outline" className="text-[10px]">Editável</Badge>
+                                <Badge className={cn('text-[10px]', included ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>
+                                  {included ? 'Entra no fechamento' : 'Fora deste fechamento'}
+                                </Badge>
+                              </>
+                            )}
                           </div>
                           <p className="text-xs text-muted-foreground truncate">{nota.veiculo}{nota.placa ? ` · ${nota.placa}` : ''}</p>
                           </div>
@@ -1266,10 +1304,16 @@ export default function MonthlyClosing() {
                 <div className="border-t bg-muted/20 p-4 sm:p-5 xl:border-l xl:border-t-0">
                   <div className="space-y-4 xl:sticky xl:top-4">
                     <div className="rounded-2xl border bg-background p-4 shadow-sm">
-                      <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Resumo do rascunho</p>
+                      <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Total a pagar no fechamento</p>
                       <p className="mt-2 text-sm text-muted-foreground">{includedNotesCount} de {previewNotes.length} O.S. marcadas · {activeDraft?.periodLabel ?? '—'}</p>
                       <p className="mt-1 text-3xl font-bold text-primary">R$ {toMoney(grandTotal)}</p>
                       {grandTotalOriginal !== grandTotal && <p className="mt-1 text-xs text-muted-foreground">Bruto: R$ {toMoney(grandTotalOriginal)}</p>}
+                      {receivedNotes.length > 0 && (
+                        <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                          Já recebido no período: <span className="font-semibold">R$ {toMoney(receivedTotal)}</span>
+                          {' '}({receivedNotes.length} O.S. — não somadas no total)
+                        </div>
+                      )}
                     </div>
                     <div className="rounded-2xl border bg-background p-4 shadow-sm space-y-2 text-sm text-muted-foreground">
                       <p>1. Este popup serve para edição e revisão das O.S.</p>

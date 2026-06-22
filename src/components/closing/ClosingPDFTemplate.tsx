@@ -218,6 +218,27 @@ export function ClosingPDFTemplate({
           );
         })}
 
+        {/* Já recebido no período (informativo, fora do total a pagar) */}
+        {dados.recebidas && dados.recebidas.length > 0 && (
+          <View style={{ marginTop: 10, padding: 8, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 4, backgroundColor: '#f8fafc' }}>
+            <Text style={{ fontSize: 8, color: '#555', marginBottom: 4 }}>
+              Já recebido no período (não incluso no total a pagar):
+            </Text>
+            {dados.recebidas.map((r) => (
+              <View key={r.id} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
+                <Text style={{ fontSize: 8, color: '#555' }}>
+                  O.S. {r.os}{r.veiculo ? ` · ${r.veiculo}` : ''}{r.pago_em ? ` · pago em ${new Date(r.pago_em).toLocaleDateString('pt-BR')}` : ''}
+                </Text>
+                <Text style={{ fontSize: 8, color: '#16a34a' }}>R$ {brl(r.total)}</Text>
+              </View>
+            ))}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 3, borderTopWidth: 1, borderColor: '#e5e7eb', paddingTop: 3 }}>
+              <Text style={{ fontSize: 8, color: '#555' }}>Total já recebido</Text>
+              <Text style={{ fontSize: 8, color: '#16a34a' }}>R$ {brl(dados.total_ja_recebido ?? 0)}</Text>
+            </View>
+          </View>
+        )}
+
         {/* Grand total */}
         <View style={{ ...s.totalSection, backgroundColor: rgba(effectiveAccent, 0.08), borderColor: rgba(effectiveAccent, 0.2) }}>
           <View>
@@ -231,7 +252,7 @@ export function ClosingPDFTemplate({
             )}
           </View>
           <View style={{ alignItems: 'flex-end' }}>
-            <Text style={{ fontSize: 8, color: '#555' }}>TOTAL GERAL</Text>
+            <Text style={{ fontSize: 8, color: '#555' }}>TOTAL A PAGAR</Text>
             <Text style={{ ...s.totalValue, color: effectiveAccent }}>R$ {brl(dados.total_com_desconto)}</Text>
           </View>
         </View>

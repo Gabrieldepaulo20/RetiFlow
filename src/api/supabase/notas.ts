@@ -23,6 +23,9 @@ export interface NotaServico {
   pdf_url: string | null;
   finalizado_em: string | null;
   fk_fechamentos?: string | null;
+  payment_status?: string | null;
+  pago_em?: string | null;
+  pago_com?: string | null;
   cliente: { id: string; nome: string };
   veiculo: { id: string; modelo: string; placa: string | null; km: number; motor: string };
   status: { id: number; nome: string; index: number; tipo_status: string };

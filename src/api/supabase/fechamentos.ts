@@ -24,6 +24,16 @@ export interface FechamentoNota {
   total_com_desconto: number;
 }
 
+/** O.S. do período que já foi recebida fora do fechamento (informativa: não soma no total a pagar). */
+export interface FechamentoRecebida {
+  id: string;
+  os: string;
+  veiculo: string;
+  placa: string | null;
+  total: number;
+  pago_em: string | null;
+}
+
 export interface FechamentoDadosJson {
   gerado_em: string;
   periodo: string;
@@ -31,6 +41,10 @@ export interface FechamentoDadosJson {
   notas: FechamentoNota[];
   total_original: number;
   total_com_desconto: number;
+  /** O.S. já recebidas no período (mostradas no documento, fora do total a pagar). */
+  recebidas?: FechamentoRecebida[];
+  /** Soma das O.S. já recebidas no período. */
+  total_ja_recebido?: number;
   divergente?: boolean;
   divergencias?: Array<{
     os: string;

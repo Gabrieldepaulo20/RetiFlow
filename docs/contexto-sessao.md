@@ -57,19 +57,25 @@ Atualizado em: 2026-06-21
   (admin, pago) — mesmo contrato do `IntakeNoteDetail`. Usa `registrarRecebimentoNota`/
   `estornarRecebimentoNota`. So frontend. Validado: npm run typecheck (strict), lint, 408 testes, build.
 
-### PROXIMO — Peca 2: fechamento pago + cascata + O.S. paga no rascunho
-Spec acordada com o usuario (construir corretamente):
-1. O.S. paga no meio do mes deve **aparecer no rascunho do fechamento ACINZENTADA**, FORA do total,
-   com selo "Pago em DD/MM". No PDF, sai como linha "ja recebido — nao incluso no total" mostrando o
-   valor e o motivo (data/forma). Resumo: "Total a pagar: R$ X · Ja recebido no periodo: R$ Y (N O.S.)".
-   (Hoje o rascunho agrupa por finalizacao e IGNORA pagamento — precisa passar a considerar paymentStatus.)
-2. Fechamento ganha **status de pagamento** (Pendente/Pago + data).
-3. **Pagar o fechamento -> cascata**: marca como Pago SO as O.S. pendentes do fechamento (paidAt = data do
-   pagamento do fechamento). Estorno reverte. As ja-pagas nao sao tocadas (sem dupla contagem).
-4. Total do fechamento = soma so das O.S. pendentes do periodo.
-- Backend necessario: status de pagamento no fechamento + RPC de cascata (migration, EXIGE aprovacao do
-  usuario antes de aplicar em prod). Fechamento hoje: `insert_fechamento`/`update_fechamento`
-  (guarda O.S. em `p_dados_json`), `registrar_acao_fechamento` (log); NAO tem conceito de pago nem cascata.
+### Peca 2a FEITA (frontend) — O.S. paga no rascunho/PDF do fechamento
+- O rascunho agora considera `paymentStatus`: O.S. ja paga aparece ACINZENTADA, com badge "Ja recebido
+  · DD/MM", checkbox desabilitado e FORA do total (nunca entra em includedNoteIds/notas/cascata).
+- Resumo do rascunho: "Total a pagar no fechamento" + bloco verde "Ja recebido no periodo: R$ Y (N O.S.)".
+- `FechamentoDadosJson` ganhou `recebidas[]` + `total_ja_recebido`; PDF (`ClosingPDFTemplate`) e preview
+  (`ClosingHtmlPreview`) mostram a secao "Ja recebido (nao incluso no total a pagar)" e renomeiam o total
+  para "TOTAL A PAGAR". `NotaServico` (api) passou a declarar payment_status/pago_em/pago_com.
+- So frontend. Validado: npm run typecheck (strict), lint, 412 testes, build.
+
+### PROXIMO — Peca 2b (backend): fechamento pago + cascata
+- Fechamento ganha **status de pagamento** (Pendente/Pago + data) e RPC para **pagar o fechamento** que
+  cascateia: `UPDATE Notas_de_Servico SET payment_status='PAGO', pago_em, pago_com WHERE fk_fechamentos = <id>
+  AND payment_status <> 'PAGO'` (so as pendentes; estorno reverte). O vinculo ja existe relacional:
+  `Notas_de_Servico.fk_fechamentos` (setado no `update_fechamento`). Tabela `Fechamentos` NAO esta no repo
+  (predates migrations) e NAO tem coluna de status — ALTER ADD COLUMN + RPC nova (aditivo). `get_fechamentos`
+  (def no repo em 20260430114500) precisa passar a retornar o status. Writes de fechamento estao em
+  `SUPPORT_BLOCKED_WRITE_RPCS` — a RPC de pagar tambem deve ser bloqueada em suporte (ou ganhar variante).
+- EXIGE aprovacao do usuario antes de aplicar a migration em prod. Frontend: botao "Marcar fechamento como
+  pago" (+ estorno) na lista/detalhe de fechamentos gerados.
 
 ### LICAO DE DEPLOY (importante)
 - O Amplify roda `npm run typecheck` = `tsc -p tsconfig.app.json` (**strict: true / strictNullChecks ON**).
