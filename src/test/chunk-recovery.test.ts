@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { installChunkLoadRecovery, isChunkLoadError } from '@/lib/chunkRecovery';
+import { installChunkLoadRecovery, isChunkLoadError, recoverFromChunkLoadError } from '@/lib/chunkRecovery';
 
 describe('chunk load recovery', () => {
   afterEach(() => {
@@ -29,5 +29,24 @@ describe('chunk load recovery', () => {
     expect(firstEvent.defaultPrevented).toBe(true);
     expect(secondEvent.defaultPrevented).toBe(true);
     expect(consoleError).toHaveBeenCalledTimes(1);
+  });
+
+  it('recoverFromChunkLoadError: recarrega so para erro de chunk e respeita o guard', () => {
+    window.sessionStorage.clear();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const reload = vi.fn();
+
+    // erro comum nao recarrega
+    expect(recoverFromChunkLoadError(new Error('Erro de negócio'), { reload })).toBe(false);
+    expect(reload).not.toHaveBeenCalled();
+
+    // erro de chunk recarrega uma vez
+    const chunkErr = new Error('Failed to fetch dynamically imported module: /assets/x.js');
+    expect(recoverFromChunkLoadError(chunkErr, { reload })).toBe(true);
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    // mesma URL: nao recarrega de novo (evita loop)
+    expect(recoverFromChunkLoadError(chunkErr, { reload })).toBe(false);
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 });

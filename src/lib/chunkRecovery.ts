@@ -28,33 +28,51 @@ interface ChunkLoadRecoveryOptions {
   reload?: () => void;
 }
 
-export function installChunkLoadRecovery(options: ChunkLoadRecoveryOptions = {}) {
-  if (typeof window === 'undefined') return;
+/**
+ * Se `error` for falha de carregamento de chunk (deploy novo deixou o asset antigo
+ * obsoleto), recarrega a página UMA vez por URL (guarda em sessionStorage para não
+ * entrar em loop). Retorna true se disparou a recuperação. Usado pelos listeners de
+ * evento e pelo ErrorBoundary (quando o erro vem como throw de render do React.lazy).
+ */
+export function recoverFromChunkLoadError(
+  error: unknown,
+  options: { preventDefault?: () => void; reload?: () => void } = {},
+): boolean {
+  if (typeof window === 'undefined') return false;
+  if (!isChunkLoadError(error)) return false;
+
+  options.preventDefault?.();
   const reload = options.reload ?? (() => window.location.reload());
 
-  const recover = (error: unknown, preventDefault?: () => void) => {
-    if (!isChunkLoadError(error)) return;
+  const currentUrl = window.location.href;
+  const lastRecoveredUrl = window.sessionStorage.getItem(CHUNK_RECOVERY_KEY);
 
-    preventDefault?.();
+  if (lastRecoveredUrl === currentUrl) {
+    console.error('[chunk-recovery] Falha ao carregar asset mesmo após recarregar.', error);
+    return false;
+  }
 
-    const currentUrl = window.location.href;
-    const lastRecoveredUrl = window.sessionStorage.getItem(CHUNK_RECOVERY_KEY);
+  window.sessionStorage.setItem(CHUNK_RECOVERY_KEY, currentUrl);
+  reload();
+  return true;
+}
 
-    if (lastRecoveredUrl === currentUrl) {
-      console.error('[chunk-recovery] Falha ao carregar asset mesmo após recarregar.', error);
-      return;
-    }
-
-    window.sessionStorage.setItem(CHUNK_RECOVERY_KEY, currentUrl);
-    reload();
-  };
+export function installChunkLoadRecovery(options: ChunkLoadRecoveryOptions = {}) {
+  if (typeof window === 'undefined') return;
+  const { reload } = options;
 
   window.addEventListener('vite:preloadError', (event) => {
     const preloadEvent = event as Event & { payload?: unknown };
-    recover(preloadEvent.payload ?? 'vite:preloadError', () => event.preventDefault());
+    recoverFromChunkLoadError(preloadEvent.payload ?? 'vite:preloadError', {
+      preventDefault: () => event.preventDefault(),
+      reload,
+    });
   });
 
   window.addEventListener('unhandledrejection', (event) => {
-    recover(event.reason, () => event.preventDefault());
+    recoverFromChunkLoadError(event.reason, {
+      preventDefault: () => event.preventDefault(),
+      reload,
+    });
   });
 }

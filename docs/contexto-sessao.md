@@ -4,6 +4,25 @@ Atualizado em: 2026-06-21
 
 ---
 
+## Resquicios Lovable + Erro Ao Recarregar (chunk antigo) - 2026-06-21
+
+- Investigado o repo inteiro: NAO ha texto "lovable"/"gpteng" em codigo, index.html, package.json ou
+  vite.config. O unico resquicio era `public/favicon.ico` (binario, do commit de scaffold `a772b50`).
+  O `favicon.svg` ja era branded (engrenagem laranja Retifica). Acao: removido `favicon.ico` + o link
+  `alternate icon` no index.html; agora so o SVG branded (navegadores modernos). Se ainda aparecer o
+  icone antigo, e cache do browser — hard refresh resolve.
+- Erro "recarrega -> pagina de erro -> recarrega de novo e funciona": causa = chunk antigo apos deploy.
+  O `chunkRecovery` so ouvia eventos (`vite:preloadError`/`unhandledrejection`), mas quando o `React.lazy`
+  falha ele LANCA no render -> caia no `ErrorBoundary` ("Algo deu errado") sem auto-recuperar. Fix:
+  `chunkRecovery` agora exporta `recoverFromChunkLoadError`; o `ErrorBoundary` chama no `componentDidCatch`
+  (recarrega 1x/URL via guard em sessionStorage) e mostra CTA "Nova versao disponivel / Recarregar agora"
+  quando o erro e de chunk. So frontend. Validado: typecheck (strict), lint, 413 testes, build.
+- A VERIFICAR no console do AWS Amplify (NAO da pra resolver no repo): regra de **SPA rewrite**
+  (`/<*> -> /index.html 200`) para refresh em rota profunda nao dar 404. `customHttp.yml` ja manda
+  `Cache-Control: no-cache, no-store` em tudo (index sempre revalida).
+
+---
+
 ## Clientes - CRM Comercial MVP - 2026-06-21
 
 - Pedido: transformar o modulo de Clientes em uma base de CRM mais util para a dona da Retifica Premium
