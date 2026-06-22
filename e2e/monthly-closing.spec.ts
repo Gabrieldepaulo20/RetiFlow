@@ -33,4 +33,20 @@ test.describe('Fechamento Mensal', () => {
     await expect(previewDialog.getByText(/aparência de impressão/i)).toBeVisible();
     await expect(previewDialog.getByText(/retífica premium/i).first()).toBeVisible();
   });
+
+  test('gera rascunho usando data de corte personalizada', async ({ page }) => {
+    await page.getByRole('button', { name: /personalizado/i }).click();
+    await page.getByLabel(/data de corte/i).fill('2026-02-28');
+
+    await expect(page.getByText(/escolha o cliente para fechar até 28\/02\/2026/i)).toBeVisible();
+
+    await page.getByRole('combobox', { name: /cliente do fechamento/i }).click();
+    await page.getByRole('option', { name: /Ana Paula Ferreira/i }).click();
+
+    await page.getByRole('button', { name: /gerar rascunho/i }).click();
+
+    const draftDialog = page.getByRole('dialog').filter({ hasText: /rascunho de fechamento/i });
+    await expect(draftDialog).toBeVisible();
+    await expect(draftDialog.getByText('01/02/2026 a 28/02/2026', { exact: true })).toBeVisible();
+  });
 });

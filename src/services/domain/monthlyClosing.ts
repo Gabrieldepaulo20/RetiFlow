@@ -13,6 +13,7 @@ import { isBillableNoteStatus } from '@/services/domain/intakeNotes';
 import { normalizeNoteNumber } from '@/lib/noteNumbers';
 
 export type ClosingPeriodType = 'mensal' | 'quinzenal' | 'semanal' | 'personalizado';
+export type MonthlyClosingDateMode = 'month' | 'custom';
 
 export interface ClosingPeriodFilters {
   periodType: ClosingPeriodType;
@@ -78,6 +79,46 @@ export function getServicesForClosingNote(services: IntakeService[], noteId: str
 
 export function getClosingCompetenceDate(note: Pick<IntakeNote, 'createdAt'>) {
   return note.createdAt;
+}
+
+function pad2(value: number) {
+  return String(value).padStart(2, '0');
+}
+
+export function toDateInputValue(date: Date) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+export function parseDateInputValue(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return null;
+  }
+
+  return date;
+}
+
+export interface MonthlyClosingDateSelection {
+  mode: MonthlyClosingDateMode;
+  month: string;
+  year: string;
+  cutoffDate?: string;
+}
+
+export interface MonthlyClosingDateRange {
+  start: Date;
+  end: Date;
+  month: string;
+  year: string;
+  label: string;
+  helperLabel: string;
 }
 
 // ─── Closing Record Calculations ──────────────────────────────────────────
@@ -198,8 +239,45 @@ const MONTH_NAMES = [
   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro',
 ];
 
+const formatPtDate = (date: Date) =>
+  date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+export function getMonthlyClosingDateRange(selection: MonthlyClosingDateSelection): MonthlyClosingDateRange | null {
+  if (selection.mode === 'custom') {
+    const cutoff = parseDateInputValue(selection.cutoffDate ?? '');
+    if (!cutoff) return null;
+
+    const start = new Date(cutoff.getFullYear(), cutoff.getMonth(), 1);
+    const end = new Date(cutoff.getFullYear(), cutoff.getMonth(), cutoff.getDate(), 23, 59, 59);
+    return {
+      start,
+      end,
+      month: String(cutoff.getMonth() + 1),
+      year: String(cutoff.getFullYear()),
+      label: `${formatPtDate(start)} a ${formatPtDate(end)}`,
+      helperLabel: `até ${formatPtDate(end)}`,
+    };
+  }
+
+  const year = Number.parseInt(selection.year, 10);
+  const monthIndex = Number.parseInt(selection.month, 10) - 1;
+  if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || monthIndex < 0 || monthIndex > 11) {
+    return null;
+  }
+
+  const start = new Date(year, monthIndex, 1);
+  const end = new Date(year, monthIndex + 1, 0, 23, 59, 59);
+  return {
+    start,
+    end,
+    month: String(monthIndex + 1),
+    year: String(year),
+    label: `${MONTH_NAMES[monthIndex]} ${year}`,
+    helperLabel: `${MONTH_NAMES[monthIndex]} de ${year}`,
+  };
+}
+
 export function buildClosingPeriodLabel(filters: ClosingPeriodFilters, dateRange: { start: Date; end: Date }): string {
-  const fmt = (d: Date) => d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const monthName = MONTH_NAMES[parseInt(filters.month, 10) - 1];
 
   switch (filters.periodType) {
@@ -210,10 +288,10 @@ export function buildClosingPeriodLabel(filters: ClosingPeriodFilters, dateRange
     case 'semanal': {
       const weekStart = startOfWeek(filters.weekDate, { weekStartsOn: 1 });
       const weekEnd = endOfWeek(filters.weekDate, { weekStartsOn: 1 });
-      return `Semana ${fmt(weekStart)} a ${fmt(weekEnd)}`;
+      return `Semana ${formatPtDate(weekStart)} a ${formatPtDate(weekEnd)}`;
     }
     default:
-      return `${fmt(dateRange.start)} a ${fmt(dateRange.end)}`;
+      return `${formatPtDate(dateRange.start)} a ${formatPtDate(dateRange.end)}`;
   }
 }
 

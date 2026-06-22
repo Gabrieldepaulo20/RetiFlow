@@ -4,8 +4,10 @@ import {
   generateClosingRecords,
   getClosingCompetenceDate,
   getFinalizedNotesForClosing,
+  getMonthlyClosingDateRange,
   getNoteDiscount,
   normalizeClosingRecord,
+  toDateInputValue,
 } from '@/services/domain/monthlyClosing';
 import { Customer, IntakeNote, IntakeService } from '@/types';
 
@@ -49,6 +51,21 @@ function buildNote(overrides: Partial<IntakeNote>): IntakeNote {
 }
 
 describe('monthly closing domain service', () => {
+  it('builds a custom closing range from the first day of the month to the cutoff date', () => {
+    const range = getMonthlyClosingDateRange({
+      mode: 'custom',
+      month: '6',
+      year: '2026',
+      cutoffDate: '2026-06-20',
+    });
+
+    expect(range).not.toBeNull();
+    expect(toDateInputValue(range!.start)).toBe('2026-06-01');
+    expect(toDateInputValue(range!.end)).toBe('2026-06-20');
+    expect(range?.label).toBe('01/06/2026 a 20/06/2026');
+    expect(range?.helperLabel).toBe('até 20/06/2026');
+  });
+
   it('uses the note entry date instead of finalizedAt to place notes in the closing period', () => {
     const januaryCreatedButFebruaryFinalized = buildNote({
       id: 'n-finalized-at',

@@ -64,6 +64,31 @@ Atualizado em: 2026-06-22
 
 ---
 
+## Fechamento Mensal - Data De Corte Personalizada - 2026-06-22
+
+- Pedido: a cliente precisa escolher o dia do fechamento, nao apenas mes/ano.
+- Implementado no card "Novo rascunho de fechamento":
+  - seletor `Mês inteiro` / `Personalizado`;
+  - no modo `Personalizado`, campo `Data de corte`;
+  - a regra do periodo personalizado e **do primeiro dia do mes da data escolhida ate a data de corte**.
+    Exemplo: `20/06/2026` fecha `01/06/2026 a 20/06/2026`.
+- O cliente continua sendo escolhido depois do periodo; a lista de clientes e os contadores passam a obedecer
+  o corte personalizado.
+- Rascunhos novos salvam `periodMode` e `cutoffDate`; rascunhos antigos continuam abrindo como `Mês inteiro`.
+- Sem migration, sem RPC nova, sem Storage/Auth/Edge Function nesta etapa.
+- Validado:
+  - `npm test -- --run src/test/monthly-closing.service.test.ts`
+  - `npm run typecheck`
+  - `npx tsc --noEmit`
+  - `npm run lint` (apenas 8 avisos antigos de Fast Refresh)
+  - `npm test -- --run` (55 arquivos, 415 testes)
+  - `npm run build` (avisos conhecidos de Browserslist/dynamic import/chunk size)
+  - `CI=1 npx playwright test e2e/monthly-closing.spec.ts`
+- `npm run test:integration` nao foi executado porque nao houve alteracao em Supabase/Auth/Storage/Edge
+  Function nem migration.
+
+---
+
 ## Correcao De Dado: O.S. Anteriores A 01/06 Marcadas Como PAGO - 2026-06-22
 
 - Pedido: toda O.S. de servico ANTERIOR a 01/06/2026 (legado) deve ficar PAGO; as de 01/06 em diante
