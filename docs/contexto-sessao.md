@@ -4,6 +4,41 @@ Atualizado em: 2026-06-21
 
 ---
 
+## Clientes - CRM Comercial MVP - 2026-06-21
+
+- Pedido: transformar o modulo de Clientes em uma base de CRM mais util para a dona da Retifica Premium
+  enxergar onde agir para trazer mais dinheiro.
+- Frontend:
+  - `src/pages/Clients.tsx` virou uma tela de CRM comercial, mantendo cadastro/edicao/detalhe/exportacao;
+  - topo agora mostra receita mapeada, receita em risco, oportunidades comerciais estimadas e clientes Classe A;
+  - bloco "Acoes para trazer dinheiro" prioriza clientes com queda, risco de abandono, ticket alto sem recorrencia,
+    retorno recente ou necessidade de blindagem;
+  - filtros incluem status, CPF/CNPJ e visoes comerciais (`Com oportunidade`, `Em risco`, `Crescendo`, `Classe A`,
+    `So 1 O.S.`);
+  - cards mobile e tabela desktop mostram classe ABC, risco, tendencia, faturamento, quantidade de O.S., ultima O.S.
+    e acao recomendada;
+  - CSV de clientes agora exporta campos de CRM.
+- Dominio:
+  - `src/services/domain/customerCrm.ts` calcula ABC, risco de abandono, tendencia 90d vs 90d anteriores,
+    receita total faturavel, ticket medio, run rate mensal, receita em risco e oportunidades ordenadas por prioridade;
+  - faturamento do CRM considera apenas `BILLABLE_STATUSES` e ignora `EXCLUIDA`;
+  - sem IA, sem banco novo e sem Edge Function nesta fase: tudo derivado dos clientes + notas ja carregados.
+- Testes:
+  - `src/test/customer-crm.test.ts` cobre ABC, queda de receita, primeira O.S. sem recorrencia e exclusao de O.S.
+    anulada da receita;
+  - `e2e/helpers.ts` ajustado para o E2E mirar explicitamente o campo `Senha`, porque o botao "Mostrar senha"
+    tambem tinha label com "senha" e quebrava o Playwright em modo strict.
+- Validacoes executadas:
+  - `npm test -- --run src/test/customer-crm.test.ts`: passou, 4 testes;
+  - `npx tsc --noEmit`: passou;
+  - `npm run lint`: passou com 8 avisos antigos de Fast Refresh;
+  - `npm test -- --run`: passou, 55 arquivos e 412 testes;
+  - `npm run build`: passou com avisos conhecidos de Browserslist/dynamic import/chunk size;
+  - `npx playwright test e2e/clients.spec.ts`: passou, 2 testes no Chromium.
+- `npm run test:integration` nao foi executado porque nao houve alteracao em Supabase/Auth/Storage/Edge Function.
+
+---
+
 ## Recebimento Das Notas (Pago/Pendente) + Plano Do Fechamento B2B - 2026-06-21
 
 ### Modelo de pagamento (decidido, profissional)

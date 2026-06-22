@@ -13,7 +13,7 @@ export async function loginAs(page: Page, role: keyof typeof USERS) {
 
   await page.goto(isAdmin ? '/admin/login' : '/login');
   await page.getByLabel(/e-mail/i).fill(email);
-  await page.getByLabel(/senha/i).fill(password);
+  await page.getByRole('textbox', { name: /^Senha$/i }).fill(password);
   await page.getByRole('button', { name: /entrar/i }).click();
 
   // Wait for redirect away from login
