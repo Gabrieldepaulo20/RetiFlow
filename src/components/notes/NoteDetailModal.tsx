@@ -16,6 +16,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   AlertDialog,
@@ -38,7 +40,9 @@ import {
   NoteStatus,
   IntakeNote,
   Client,
+  type PaymentMethod,
 } from '@/types';
+import { isBillableNoteStatus } from '@/services/domain/intakeNotes';
 import {
   User,
   Car,
@@ -70,6 +74,7 @@ import {
   Wallet,
   Phone,
   CheckCircle2,
+  RotateCcw,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -195,6 +200,8 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
     getAttachmentsForNote,
     updateNoteStatus,
     getChildNotes,
+    registrarRecebimentoNota,
+    estornarRecebimentoNota,
   } = useData();
   const { user, can } = useAuth();
   const navigate = useNavigate();
@@ -206,6 +213,8 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
   const [realDetalhes, setRealDetalhes] = useState<NotaServicoDetalhes | null>(null);
   const [realDetalhesLoading, setRealDetalhesLoading] = useState(false);
   const [showPDF, setShowPDF] = useState(false);
+  const [recebForma, setRecebForma] = useState<PaymentMethod>('PIX');
+  const [recebData, setRecebData] = useState(() => new Date().toISOString().slice(0, 10));
 
   const note = noteOverride ?? (noteId ? getNote(noteId) : undefined);
   const client = clientOverride ?? (note ? getClient(note.clientId) : undefined);
@@ -693,33 +702,113 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
               </div>
 
               {/* Pagamento (eixo financeiro, separado do fluxo) */}
-              <div className="flex items-center gap-2.5 rounded-xl bg-muted/30 p-3">
-                <div
-                  className={cn(
-                    'flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
-                    note.paymentStatus === 'PAGO' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600',
-                  )}
-                >
-                  {note.paymentStatus === 'PAGO' ? <CheckCircle2 className="h-4 w-4" /> : <Wallet className="h-4 w-4" />}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Pagamento</p>
-                  <p
+              <div className="space-y-2.5 rounded-xl bg-muted/30 p-3">
+                <div className="flex items-center gap-2.5">
+                  <div
                     className={cn(
-                      'text-sm font-semibold leading-tight',
-                      note.paymentStatus === 'PAGO' ? 'text-emerald-700' : 'text-amber-700',
+                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
+                      note.paymentStatus === 'PAGO' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600',
                     )}
                   >
-                    {PAYMENT_STATUS_LABELS[note.paymentStatus]}
-                  </p>
-                </div>
-                {note.paymentStatus === 'PAGO' && (
-                  <div className="text-right">
-                    <p className="text-xs font-medium text-foreground/80">{fmtDate(note.paidAt)}</p>
-                    {note.paidWith && (
-                      <p className="text-[10px] text-muted-foreground/60">{PAYMENT_METHOD_LABELS[note.paidWith]}</p>
-                    )}
+                    {note.paymentStatus === 'PAGO' ? <CheckCircle2 className="h-4 w-4" /> : <Wallet className="h-4 w-4" />}
                   </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Pagamento</p>
+                    <p
+                      className={cn(
+                        'text-sm font-semibold leading-tight',
+                        note.paymentStatus === 'PAGO' ? 'text-emerald-700' : 'text-amber-700',
+                      )}
+                    >
+                      {PAYMENT_STATUS_LABELS[note.paymentStatus]}
+                    </p>
+                  </div>
+                  {note.paymentStatus === 'PAGO' && (
+                    <div className="text-right">
+                      <p className="text-xs font-medium text-foreground/80">{fmtDate(note.paidAt)}</p>
+                      {note.paidWith && (
+                        <p className="text-[10px] text-muted-foreground/60">{PAYMENT_METHOD_LABELS[note.paidWith]}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Registrar recebimento — nota faturável e pendente */}
+                {isBillableNoteStatus(note.status) && note.paymentStatus === 'PENDENTE' && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button size="sm" className="h-8 w-full gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700">
+                        <Wallet className="h-3.5 w-3.5" /> Registrar recebimento
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Registrar recebimento de {note.number}</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Confirme a forma e a data do recebimento de R$ {note.totalAmount.toLocaleString('pt-BR')}.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-muted-foreground">Forma de pagamento</label>
+                          <Select value={recebForma} onValueChange={(v) => setRecebForma(v as PaymentMethod)}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {(Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethod[]).map((m) => (
+                                <SelectItem key={m} value={m}>{PAYMENT_METHOD_LABELS[m]}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-muted-foreground">Data do recebimento</label>
+                          <Input type="date" value={recebData} onChange={(e) => setRecebData(e.target.value)} />
+                        </div>
+                      </div>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Voltar</AlertDialogCancel>
+                        <AlertDialogAction
+                          className="bg-emerald-600 text-white hover:bg-emerald-700"
+                          onClick={() => {
+                            registrarRecebimentoNota(note.id, { paidWith: recebForma, paidAt: new Date(`${recebData}T12:00:00`).toISOString() });
+                            toast({ title: `${note.number} recebida`, description: `Pagamento via ${PAYMENT_METHOD_LABELS[recebForma]} registrado.` });
+                          }}
+                        >
+                          Confirmar recebimento
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
+
+                {/* Estornar recebimento — admin, nota paga */}
+                {isBillableNoteStatus(note.status) && note.paymentStatus === 'PAGO' && user?.role === 'ADMIN' && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-8 w-full gap-1.5">
+                        <RotateCcw className="h-3.5 w-3.5" /> Estornar recebimento
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Estornar recebimento de {note.number}?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          A nota volta para "A receber". Use apenas para corrigir um lançamento.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Voltar</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => {
+                            estornarRecebimentoNota(note.id);
+                            toast({ title: `${note.number} estornada`, description: 'Recebimento revertido para pendente.' });
+                          }}
+                        >
+                          Confirmar estorno
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 )}
               </div>
 

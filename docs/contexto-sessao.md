@@ -4,6 +4,46 @@ Atualizado em: 2026-06-21
 
 ---
 
+## Recebimento Das Notas (Pago/Pendente) + Plano Do Fechamento B2B - 2026-06-21
+
+### Modelo de pagamento (decidido, profissional)
+- Dois eixos JA existem e sao independentes: fluxo (`status`) x pagamento (`paymentStatus` PENDENTE/PAGO
+  + `paidAt` + `paidWith`). **Entregue NUNCA significa pago automaticamente** — a O.S. fica Entregue +
+  Pendente ate registrar o recebimento. Isso resolve a duvida do cliente.
+- Dois cenarios de recebimento:
+  - **B2C (paga na entrega):** registra o recebimento na propria nota (1 clique).
+  - **B2B (CNPJ, paga no fim do mes):** O.S. ficam Entregue + Pendente o mes todo (contam como "A receber")
+    e entram no fechamento; quando o fechamento e pago, TODAS as O.S. dele viram Pago de uma vez (cascata).
+- "A receber" (Dashboard) = faturavel (ENTREGUE/RECUSADO/SEM_CONSERTO) + Pendente; snapshot, nao do periodo.
+
+### FEITO — Peca 1 (frontend): recebimento no pop-up
+- `NoteDetailModal` (pop-up do Kanban e de Notas de Entrada) ganhou, no card Pagamento, os botoes
+  "Registrar recebimento" (faturavel + pendente; escolhe forma + data) e "Estornar recebimento"
+  (admin, pago) — mesmo contrato do `IntakeNoteDetail`. Usa `registrarRecebimentoNota`/
+  `estornarRecebimentoNota`. So frontend. Validado: npm run typecheck (strict), lint, 408 testes, build.
+
+### PROXIMO — Peca 2: fechamento pago + cascata + O.S. paga no rascunho
+Spec acordada com o usuario (construir corretamente):
+1. O.S. paga no meio do mes deve **aparecer no rascunho do fechamento ACINZENTADA**, FORA do total,
+   com selo "Pago em DD/MM". No PDF, sai como linha "ja recebido — nao incluso no total" mostrando o
+   valor e o motivo (data/forma). Resumo: "Total a pagar: R$ X · Ja recebido no periodo: R$ Y (N O.S.)".
+   (Hoje o rascunho agrupa por finalizacao e IGNORA pagamento — precisa passar a considerar paymentStatus.)
+2. Fechamento ganha **status de pagamento** (Pendente/Pago + data).
+3. **Pagar o fechamento -> cascata**: marca como Pago SO as O.S. pendentes do fechamento (paidAt = data do
+   pagamento do fechamento). Estorno reverte. As ja-pagas nao sao tocadas (sem dupla contagem).
+4. Total do fechamento = soma so das O.S. pendentes do periodo.
+- Backend necessario: status de pagamento no fechamento + RPC de cascata (migration, EXIGE aprovacao do
+  usuario antes de aplicar em prod). Fechamento hoje: `insert_fechamento`/`update_fechamento`
+  (guarda O.S. em `p_dados_json`), `registrar_acao_fechamento` (log); NAO tem conceito de pago nem cascata.
+
+### LICAO DE DEPLOY (importante)
+- O Amplify roda `npm run typecheck` = `tsc -p tsconfig.app.json` (**strict: true / strictNullChecks ON**).
+  Validar SEMPRE com `npm run typecheck`, NAO com `npx tsc --noEmit` (usa tsconfig.json com
+  strictNullChecks:false e nao pega varios erros). Um build do Amplify ja falhou por isso nesta sessao
+  (mock de DataCtx sem `updateCategoriaClasse`), corrigido em `e3ce902`.
+
+---
+
 ## Fase 2 (DRE) - Classe Contabil Nas Categorias + DRE No Dashboard - 2026-06-21
 
 - Objetivo: padrao profissional (SAP/TOTVS) - separar custo de despesa para existir Lucro Bruto/DRE.
