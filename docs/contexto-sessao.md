@@ -1,6 +1,21 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-06-21
+Atualizado em: 2026-06-22
+
+---
+
+## Correcao De Dado: O.S. Anteriores A 01/06 Marcadas Como PAGO - 2026-06-22
+
+- Pedido: toda O.S. de servico ANTERIOR a 01/06/2026 (legado) deve ficar PAGO; as de 01/06 em diante
+  (sistema novo) NAO sao tocadas. Motivo: o controle de pagamento so passou a valer no sistema novo.
+- Executado em PROD (autorizado) via `supabase db query --linked`:
+  `UPDATE "RetificaPremium"."Notas_de_Servico" SET payment_status='PAGO'
+   WHERE created_at < '2026-06-01' AND payment_status IS DISTINCT FROM 'PAGO';` (97 linhas).
+- `pago_em` deixado NULO de proposito: assim as legadas NAO entram em "Recebido"/caixa de junho
+  (que exige paidAt >= 01/06), so saem de "A receber". (NUNCA setar pago_em = finalizado_em: o legado
+  foi finalizado em lote em junho e inflaria o caixa do mes.)
+- Verificacao remota: antes de 01/06 = 857 todas PAGO (0 pendentes); depois de 01/06 intocado
+  (84 pendentes, 0 marcadas por engano). Sem migration (correcao de dado pontual).
 
 ---
 
