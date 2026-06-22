@@ -4,6 +4,21 @@ Atualizado em: 2026-06-22
 
 ---
 
+## Clientes - Remocao Do Bloco De Acoes Comerciais - 2026-06-22
+
+- Pedido: remover do modulo de Clientes o bloco/texto "Acoes para trazer dinheiro"; isso nao deve aparecer
+  para a cliente.
+- `src/pages/Clients.tsx` foi simplificado:
+  - removido o card de topo "Oportunidades";
+  - removido o bloco "Acoes para trazer dinheiro";
+  - removido o filtro "Com oportunidade";
+  - removida a coluna/CTA de oportunidade dos cards mobile e da tabela desktop.
+- O modulo continua com cadastro/edicao/detalhe/exportacao, busca, filtros por status/CPF-CNPJ/CRM, classe ABC,
+  risco, tendencia, faturamento, quantidade de O.S. e ultima O.S.
+- Sem migration, sem RPC nova, sem Storage/Auth/Edge Function nesta etapa.
+
+---
+
 ## Fechamento Mensal - Periodo Primeiro, Cliente Depois - 2026-06-22
 
 - Bug critico corrigido: selecionar cliente nao chama mais RPC para "carregar periodos", portanto nao aparece
@@ -129,13 +144,11 @@ Atualizado em: 2026-06-22
   enxergar onde agir para trazer mais dinheiro.
 - Frontend:
   - `src/pages/Clients.tsx` virou uma tela de CRM comercial, mantendo cadastro/edicao/detalhe/exportacao;
-  - topo agora mostra receita mapeada, receita em risco, oportunidades comerciais estimadas e clientes Classe A;
-  - bloco "Acoes para trazer dinheiro" prioriza clientes com queda, risco de abandono, ticket alto sem recorrencia,
-    retorno recente ou necessidade de blindagem;
-  - filtros incluem status, CPF/CNPJ e visoes comerciais (`Com oportunidade`, `Em risco`, `Crescendo`, `Classe A`,
+  - topo mostra receita mapeada, receita em risco e clientes Classe A;
+  - filtros incluem status, CPF/CNPJ e visoes comerciais (`Em risco`, `Crescendo`, `Classe A`,
     `So 1 O.S.`);
   - cards mobile e tabela desktop mostram classe ABC, risco, tendencia, faturamento, quantidade de O.S., ultima O.S.
-    e acao recomendada;
+    e acoes operacionais de ver/editar;
   - CSV de clientes agora exporta campos de CRM.
 - Dominio:
   - `src/services/domain/customerCrm.ts` calcula ABC, risco de abandono, tendencia 90d vs 90d anteriores,

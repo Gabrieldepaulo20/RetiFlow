@@ -16,13 +16,9 @@ import {
   MoreHorizontal,
   Pencil,
   Phone,
-  PhoneCall,
   PlusCircle,
   Search,
   ShieldCheck,
-  Target,
-  TrendingDown,
-  TrendingUp,
   type LucideIcon,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -30,10 +26,8 @@ import { cn } from '@/lib/utils';
 import { buildCustomerAddressLabel } from '@/services/domain/customers';
 import {
   buildCustomerCrm,
-  type CustomerCommercialOpportunity,
   type CustomerCrmClass,
   type CustomerCrmStats,
-  type CustomerOpportunityType,
   type CustomerRiskLevel,
   type CustomerTrend,
 } from '@/services/domain/customerCrm';
@@ -41,7 +35,7 @@ import ClientDetailModal from '@/components/clients/ClientDetailModal';
 import { ClientFormModal } from '@/components/clients/ClientFormModal';
 import type { Client } from '@/types';
 
-type CommercialFilter = 'all' | 'opportunities' | 'risk' | 'growth' | 'classA' | 'one_service';
+type CommercialFilter = 'all' | 'risk' | 'growth' | 'classA' | 'one_service';
 
 const currencyFormatter = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
@@ -80,15 +74,6 @@ const TREND_META: Record<CustomerTrend, { label: string; className: string }> = 
   new: { label: 'Novo', className: 'text-sky-700' },
   stable: { label: 'Estável', className: 'text-slate-600' },
   no_history: { label: 'Sem histórico', className: 'text-slate-500' },
-};
-
-const OPPORTUNITY_META: Record<CustomerOpportunityType, { icon: LucideIcon; className: string }> = {
-  recover_drop: { icon: TrendingDown, className: 'border-rose-200 bg-rose-50 text-rose-900' },
-  reactivate: { icon: PhoneCall, className: 'border-orange-200 bg-orange-50 text-orange-900' },
-  protect_top_client: { icon: ShieldCheck, className: 'border-emerald-200 bg-emerald-50 text-emerald-900' },
-  grow_low_frequency: { icon: Target, className: 'border-sky-200 bg-sky-50 text-sky-900' },
-  first_service_followup: { icon: Phone, className: 'border-violet-200 bg-violet-50 text-violet-900' },
-  expand_growth: { icon: TrendingUp, className: 'border-teal-200 bg-teal-50 text-teal-900' },
 };
 
 const escapeCsvCell = (value: unknown) => {
@@ -184,16 +169,6 @@ function MetricTile({
   );
 }
 
-function OpportunityIcon({ type }: { type: CustomerOpportunityType }) {
-  const meta = OPPORTUNITY_META[type];
-  const Icon = meta.icon;
-  return (
-    <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border', meta.className)}>
-      <Icon className="h-4 w-4" />
-    </span>
-  );
-}
-
 function ClientCrmBadges({ stat }: { stat?: CustomerCrmStats }) {
   if (!stat) {
     return <Badge variant="outline" className="rounded-full text-[11px]">Sem dados</Badge>;
@@ -211,14 +186,12 @@ function ClientCrmBadges({ stat }: { stat?: CustomerCrmStats }) {
   );
 }
 
-function opportunityMatchesCommercialFilter(
+function crmMatchesCommercialFilter(
   filter: CommercialFilter,
   stat: CustomerCrmStats | undefined,
-  opportunity: CustomerCommercialOpportunity | undefined,
 ) {
   if (filter === 'all') return true;
   if (!stat) return false;
-  if (filter === 'opportunities') return Boolean(opportunity);
   if (filter === 'risk') return stat.risk === 'watch' || stat.risk === 'high_risk' || stat.risk === 'lost';
   if (filter === 'growth') return stat.trend === 'growing' || stat.trend === 'reactivated' || stat.trend === 'new';
   if (filter === 'classA') return stat.crmClass === 'A';
@@ -239,14 +212,6 @@ export default function Clients() {
 
   const crm = useMemo(() => buildCustomerCrm({ clients, notes }), [clients, notes]);
 
-  const opportunityByClientId = useMemo(() => {
-    const map = new Map<string, CustomerCommercialOpportunity>();
-    for (const opportunity of crm.opportunities) {
-      if (!map.has(opportunity.clientId)) map.set(opportunity.clientId, opportunity);
-    }
-    return map;
-  }, [crm.opportunities]);
-
   const filtered = useMemo(() => {
     const q = normalizeSearchText(search.trim());
     const normalizedQuery = q.replace(/\D/g, '');
@@ -254,11 +219,10 @@ export default function Clients() {
     return clients
       .filter((client) => {
         const stat = crm.statsByClientId.get(client.id);
-        const opportunity = opportunityByClientId.get(client.id);
         if (filterStatus === 'active' && !client.isActive) return false;
         if (filterStatus === 'inactive' && client.isActive) return false;
         if (filterDocType !== 'all' && client.docType !== filterDocType) return false;
-        if (!opportunityMatchesCommercialFilter(commercialFilter, stat, opportunity)) return false;
+        if (!crmMatchesCommercialFilter(commercialFilter, stat)) return false;
         if (q) {
           const searchable = normalizeSearchText([
             client.name,
@@ -275,17 +239,13 @@ export default function Clients() {
         return true;
       })
       .sort((a, b) => {
-        const aOpportunity = opportunityByClientId.get(a.id);
-        const bOpportunity = opportunityByClientId.get(b.id);
         const aStat = crm.statsByClientId.get(a.id);
         const bStat = crm.statsByClientId.get(b.id);
-        const byOpportunity = (bOpportunity?.priorityScore ?? 0) - (aOpportunity?.priorityScore ?? 0);
-        if (byOpportunity !== 0) return byOpportunity;
         const byRevenue = (bStat?.totalRevenue ?? 0) - (aStat?.totalRevenue ?? 0);
         if (byRevenue !== 0) return byRevenue;
         return a.name.localeCompare(b.name, 'pt-BR');
       });
-  }, [clients, commercialFilter, crm.statsByClientId, filterDocType, filterStatus, opportunityByClientId, search]);
+  }, [clients, commercialFilter, crm.statsByClientId, filterDocType, filterStatus, search]);
 
   const filteredDocCounts = useMemo(() => {
     return filtered.reduce(
@@ -299,7 +259,6 @@ export default function Clients() {
   }, [filtered]);
 
   const editingClient = editingClientId ? clients.find((client) => client.id === editingClientId) : undefined;
-  const topOpportunities = crm.opportunities.slice(0, 4);
 
   const openEdit = (clientId: string) => {
     setSelectedClientId(null);
@@ -336,7 +295,7 @@ export default function Clients() {
         </div>
       </div>
 
-      <section className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
         <MetricTile
           label="Receita mapeada"
           value={formatCurrency(crm.summary.totalRevenue)}
@@ -352,60 +311,11 @@ export default function Clients() {
           tone="rose"
         />
         <MetricTile
-          label="Oportunidades"
-          value={formatCurrency(crm.summary.growthPotential)}
-          detail={`Top ${Math.min(20, crm.opportunities.length)} ações comerciais`}
-          icon={Target}
-          tone="amber"
-        />
-        <MetricTile
           label="Classe A"
           value={`${crm.summary.classCounts.A}`}
           detail="Clientes que sustentam a carteira"
           icon={ShieldCheck}
         />
-      </section>
-
-      <section className="rounded-lg border border-border/70 bg-card p-3 shadow-sm">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="text-sm font-bold text-foreground">Ações para trazer dinheiro</h2>
-            <p className="text-xs text-muted-foreground">Prioridade calculada por queda, risco, ticket e relevância.</p>
-          </div>
-          <Badge variant="outline" className="rounded-full">
-            {crm.opportunities.length} oportunidade{crm.opportunities.length === 1 ? '' : 's'}
-          </Badge>
-        </div>
-
-        <div className="grid gap-2 xl:grid-cols-4">
-          {topOpportunities.map((opportunity) => (
-            <button
-              key={`${opportunity.clientId}-${opportunity.type}`}
-              type="button"
-              onClick={() => setSelectedClientId(opportunity.clientId)}
-              className="rounded-lg border border-border/70 bg-background p-3 text-left transition hover:border-primary/40 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <div className="flex items-start gap-3">
-                <OpportunityIcon type={opportunity.type} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-foreground">{opportunity.clientName}</p>
-                  <p className="mt-0.5 text-xs font-medium text-primary">{opportunity.title}</p>
-                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{opportunity.reason}</p>
-                  <div className="mt-2 flex items-center justify-between gap-2">
-                    <span className="text-xs text-muted-foreground">{opportunity.city || 'Sem cidade'}</span>
-                    <span className="text-sm font-bold tabular-nums text-foreground">{formatCurrency(opportunity.estimatedImpact)}</span>
-                  </div>
-                </div>
-              </div>
-            </button>
-          ))}
-
-          {topOpportunities.length === 0 && (
-            <div className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground xl:col-span-4">
-              Assim que houver histórico suficiente, o CRM mostra prioridades comerciais aqui.
-            </div>
-          )}
-        </div>
       </section>
 
       <Card>
@@ -440,7 +350,6 @@ export default function Clients() {
               <SelectTrigger className="h-10 w-full px-2 text-xs md:px-3 md:text-sm"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos no CRM</SelectItem>
-                <SelectItem value="opportunities">Com oportunidade</SelectItem>
                 <SelectItem value="risk">Em risco</SelectItem>
                 <SelectItem value="growth">Crescendo</SelectItem>
                 <SelectItem value="classA">Classe A</SelectItem>
@@ -467,7 +376,6 @@ export default function Clients() {
           <div className="grid gap-2 lg:hidden">
             {filtered.map((client) => {
               const stat = crm.statsByClientId.get(client.id);
-              const opportunity = opportunityByClientId.get(client.id);
 
               return (
                 <div key={client.id} className="rounded-lg border border-border/60 bg-background p-3 shadow-sm">
@@ -520,18 +428,6 @@ export default function Clients() {
                     </div>
                   </div>
 
-                  {opportunity ? (
-                    <button
-                      type="button"
-                      onClick={() => setSelectedClientId(client.id)}
-                      className={cn('mt-3 w-full rounded-lg border p-2 text-left text-xs transition hover:brightness-95', OPPORTUNITY_META[opportunity.type].className)}
-                    >
-                      <span className="font-semibold">{opportunity.title}</span>
-                      <span className="ml-2 font-bold">{formatCurrency(opportunity.estimatedImpact)}</span>
-                      <p className="mt-1 line-clamp-2 text-[11px]">{opportunity.recommendedAction}</p>
-                    </button>
-                  ) : null}
-
                   <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                     <span className="flex min-w-0 items-center gap-1.5">
                       <Phone className="h-3.5 w-3.5 shrink-0" />
@@ -564,14 +460,12 @@ export default function Clients() {
                   <TableHead className="w-[15%]">Receita</TableHead>
                   <TableHead className="w-[14%]">Frequência</TableHead>
                   <TableHead className="w-[14%]">Última O.S.</TableHead>
-                  <TableHead>Oportunidade</TableHead>
                   <TableHead className="w-[150px] text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filtered.map((client) => {
                   const stat = crm.statsByClientId.get(client.id);
-                  const opportunity = opportunityByClientId.get(client.id);
 
                   return (
                     <TableRow key={client.id}>
@@ -608,21 +502,6 @@ export default function Clients() {
                           <p className="text-xs text-muted-foreground">{stat.daysSinceLastNote} dia{stat.daysSinceLastNote === 1 ? '' : 's'} sem O.S.</p>
                         ) : null}
                       </TableCell>
-                      <TableCell>
-                        {opportunity ? (
-                          <button
-                            type="button"
-                            onClick={() => setSelectedClientId(client.id)}
-                            className="group max-w-full text-left"
-                          >
-                            <p className="truncate text-sm font-semibold text-foreground group-hover:text-primary">{opportunity.title}</p>
-                            <p className="truncate text-xs text-muted-foreground">{opportunity.recommendedAction}</p>
-                            <p className="text-xs font-bold text-primary">{formatCurrency(opportunity.estimatedImpact)} estimado</p>
-                          </button>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">Sem ação urgente</span>
-                        )}
-                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
                           <Button size="sm" variant="ghost" onClick={() => setSelectedClientId(client.id)}>Ver</Button>
@@ -633,7 +512,7 @@ export default function Clients() {
                   );
                 })}
                 {filtered.length === 0 && (
-                  <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">Nenhum cliente encontrado.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">Nenhum cliente encontrado.</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
