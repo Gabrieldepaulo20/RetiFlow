@@ -30,6 +30,12 @@ verify_enabled = true
 [functions.analisar-conta-pagar]
 verify_jwt = false
 
+# verify_jwt = false é obrigatório: a função faz a própria validação de sessão
+# (assertAuthenticatedUser) e precisa responder o preflight OPTIONS sem JWT,
+# senão o gateway barra o CORS e o cliente vê "Failed to send a request".
+[functions.briefing-contas-pagar]
+verify_jwt = false
+
 [functions.marketing-events]
 verify_jwt = false
 

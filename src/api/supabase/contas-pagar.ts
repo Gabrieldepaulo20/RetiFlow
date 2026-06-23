@@ -411,6 +411,13 @@ export async function gerarBriefingContasPagar(payload: GerarBriefingPayload): P
   });
 
   if (error) {
+    // FunctionsFetchError = falha de transporte (preflight CORS barrado, função
+    // não publicada ou rede). Damos uma mensagem acionável em vez da genérica.
+    const isTransport = (error as { name?: string }).name === 'FunctionsFetchError'
+      || /failed to send a request/i.test(error instanceof Error ? error.message : '');
+    if (isTransport) {
+      throw new Error('Não foi possível alcançar o resumo por IA. Verifique se a função foi publicada (briefing-contas-pagar) e tente novamente.');
+    }
     throw new Error(await getFunctionErrorMessage(error));
   }
   if (!data) {
