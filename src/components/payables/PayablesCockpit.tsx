@@ -72,26 +72,26 @@ function RunwayBars({ summary, reduce }: { summary: PayablesCashFlowSummary; red
   }
 
   const toneClass: Record<string, string> = {
-    overdue: 'bg-gradient-to-t from-rose-500/45 to-rose-400',
-    today: 'bg-gradient-to-t from-amber-500/55 to-amber-300',
-    labor: 'bg-gradient-to-t from-emerald-500/45 to-emerald-300',
-    default: 'bg-gradient-to-t from-cyan-600/45 to-cyan-300',
+    overdue: 'bg-gradient-to-t from-rose-600 to-rose-300 shadow-[0_0_18px_rgba(251,113,133,0.22)]',
+    today: 'bg-gradient-to-t from-amber-500 to-amber-200 shadow-[0_0_16px_rgba(251,191,36,0.18)]',
+    labor: 'bg-gradient-to-t from-emerald-600 to-emerald-300 shadow-[0_0_16px_rgba(52,211,153,0.18)]',
+    default: 'bg-gradient-to-t from-cyan-700 to-cyan-300 shadow-[0_0_14px_rgba(34,211,238,0.15)]',
   };
 
   return (
-    <div className="mt-5">
+    <div className="mt-4">
       <div className="mb-2 flex items-center justify-between text-[10px] font-medium uppercase tracking-wider text-slate-400">
         <span>{overdue.total > 0 ? 'Atraso' : 'Hoje'}</span>
         <span>+7 dias</span>
       </div>
-      <div className="flex h-28 items-end gap-1.5">
+      <div className="flex h-20 items-end gap-1.5 sm:h-24">
         {columns.map((col, index) => {
-          const heightPct = Math.max(col.total > 0 ? 14 : 4, Math.round((col.total / max) * 100));
+          const heightPct = Math.max(col.total > 0 ? 18 : 5, Math.round((col.total / max) * 100));
           return (
-            <div key={col.key} className="flex min-w-0 flex-1 flex-col items-center gap-1.5" title={col.title}>
-              <div className="flex w-full flex-1 items-end">
+            <div key={col.key} className="flex h-full min-w-0 flex-1 flex-col items-center gap-1.5" title={col.title}>
+              <div className="flex min-h-0 w-full flex-1 items-end">
                 <motion.div
-                  className={cn('w-full rounded-t-md rounded-b-sm', toneClass[col.tone])}
+                  className={cn('w-full rounded-t-md rounded-b-sm ring-1 ring-white/10', toneClass[col.tone])}
                   initial={reduce ? false : { scaleY: 0 }}
                   animate={{ scaleY: 1 }}
                   transition={{ delay: index * 0.04, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
@@ -112,11 +112,20 @@ function RunwayBars({ summary, reduce }: { summary: PayablesCashFlowSummary; red
 export function PayablesCockpit({ summary, briefing, briefingLoading, onOpenDetails, onRefreshBriefing, prefersReducedMotion }: Props) {
   const reduce = prefersReducedMotion ?? false;
   const isIa = briefing.source === 'ia';
+  const hasOverdue = summary.overdueTotal > 0;
+  const focusTotal = hasOverdue ? summary.overdueTotal : summary.nextSevenTotal;
+  const focusLabel = hasOverdue ? 'Prioridade agora' : 'Saídas previstas · próximos 7 dias';
+  const nextSevenCaption = summary.nextSevenTotal > 0
+    ? `${fmtBRL(summary.nextSevenTotal)} vencem nos próximos 7 dias`
+    : 'nenhum vencimento nos próximos 7 dias';
+  const focusCaption = hasOverdue
+    ? `${summary.overdueCount} ${summary.overdueCount === 1 ? 'conta vencida' : 'contas vencidas'} · ${nextSevenCaption}`
+    : `${summary.nextSevenCount} ${summary.nextSevenCount === 1 ? 'vencimento' : 'vencimentos'} no radar · nada vencido`;
 
   return (
     <section
-      className="relative overflow-hidden rounded-2xl text-slate-100 shadow-[0_24px_60px_-24px_rgba(11,22,34,0.55)]"
-      style={{ background: 'radial-gradient(680px 320px at 80% -30%, rgba(52,195,222,0.16), transparent 65%), linear-gradient(165deg, #1D2A38, #16202C 55%)' }}
+      className="relative overflow-hidden rounded-xl text-slate-100 shadow-[0_20px_48px_-26px_rgba(11,22,34,0.55)] sm:rounded-2xl"
+      style={{ background: 'radial-gradient(560px 260px at 82% -28%, rgba(52,195,222,0.14), transparent 65%), linear-gradient(165deg, #1D2A38, #16202C 58%)' }}
     >
       {/* malha sutil */}
       <div
@@ -130,40 +139,38 @@ export function PayablesCockpit({ summary, briefing, briefingLoading, onOpenDeta
         }}
       />
 
-      <div className="relative grid gap-6 p-4 sm:p-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+      <div className="relative grid gap-5 p-4 sm:p-5 lg:grid-cols-[minmax(0,1.22fr)_minmax(0,1fr)]">
         {/* Esquerda: total + runway */}
         <div>
-          <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-            Saídas previstas · próximos 7 dias
+          <span className={cn(
+            'text-[11px] font-semibold uppercase tracking-[0.16em]',
+            hasOverdue ? 'text-rose-200' : 'text-slate-400',
+          )}>
+            {focusLabel}
           </span>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="font-display text-lg font-bold text-slate-400">R$</span>
             <AnimatedNumber
-              value={summary.nextSevenTotal}
+              value={focusTotal}
               format={(n) => n.toLocaleString('pt-BR')}
-              className="font-display text-4xl font-extrabold leading-none text-white tabular-nums sm:text-5xl"
+              className="font-display text-4xl font-extrabold leading-none text-white tabular-nums sm:text-[2.7rem]"
             />
           </div>
           <p className="mt-2 text-[13px] text-slate-400">
-            <b className="font-semibold text-cyan-300">{summary.nextSevenCount} {summary.nextSevenCount === 1 ? 'vencimento' : 'vencimentos'}</b>
-            {summary.overdueCount > 0 ? (
-              <> · <b className="font-semibold text-rose-300">{summary.overdueCount} {summary.overdueCount === 1 ? 'atrasado' : 'atrasados'}</b> exige ação hoje</>
-            ) : (
-              <> · nada vencido</>
-            )}
+            {focusCaption}
           </p>
 
           <RunwayBars summary={summary} reduce={reduce} />
 
           {/* próximos vencimentos clicáveis */}
           {summary.nextDue.length > 0 ? (
-            <div className="mt-5 flex flex-wrap gap-2">
+            <div className="mt-4 flex flex-wrap gap-2">
               {summary.nextDue.slice(0, 4).map((payable: AccountPayable) => (
                 <button
                   key={payable.id}
                   type="button"
                   onClick={() => onOpenDetails(payable.id)}
-                  className="group inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-left transition hover:border-cyan-300/40 hover:bg-cyan-300/10"
+                  className="group inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.045] px-2.5 py-1.5 text-left transition hover:border-cyan-300/40 hover:bg-cyan-300/10"
                 >
                   <span className="max-w-[130px] truncate text-xs font-medium text-slate-200">{payable.title}</span>
                   <span className="text-xs font-bold tabular-nums text-cyan-200">{fmtBRL(calculatePayableRemainingBalance(payable))}</span>
@@ -189,11 +196,12 @@ export function PayablesCockpit({ summary, briefing, briefingLoading, onOpenDeta
                 type="button"
                 onClick={onRefreshBriefing}
                 disabled={briefingLoading}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 text-slate-300 transition hover:border-cyan-300/40 hover:text-cyan-200 disabled:opacity-50"
+                className="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg border border-white/10 px-2 text-[11px] font-semibold text-slate-300 transition hover:border-cyan-300/40 hover:text-cyan-200 disabled:opacity-50"
                 aria-label="Atualizar resumo com IA"
                 title="Atualizar resumo com IA"
               >
                 {briefingLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                <span className="hidden sm:inline">Gerar IA</span>
               </button>
             ) : null}
           </div>
@@ -216,7 +224,7 @@ export function PayablesCockpit({ summary, briefing, briefingLoading, onOpenDeta
           ) : null}
 
           {!isIa && onRefreshBriefing ? (
-            <p className="mt-3 text-[11px] text-slate-500">Toque em atualizar para gerar um resumo escrito por IA.</p>
+            <p className="mt-3 text-[11px] text-slate-500">Use Gerar IA quando quiser um resumo escrito pelo modelo.</p>
           ) : null}
         </div>
       </div>

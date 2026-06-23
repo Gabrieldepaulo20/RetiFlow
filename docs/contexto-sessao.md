@@ -1618,6 +1618,32 @@ Plano aprovado para executar em fases:
 - Observacao:
   - `npm run test:integration` nao foi rodado depois desta limpeza operacional porque os testes de integracao recriam esses usuarios quando executados.
 
+## Contas A Pagar - Lapidacao Visual Do Cockpit E Lista - 2026-06-23
+
+- Pedido: melhorar e organizar o design que ja tinha sido iniciado, mantendo a direcao visual mais moderna e deixando a tela mais clean.
+- Escopo:
+  - lapidacao frontend em `src/components/payables/PayablesCockpit.tsx` e `src/pages/ContasAPagar.tsx`;
+  - sem migration, sem alteracao de RLS/policy/bucket e sem nova Edge Function nesta rodada.
+- Ajustes aplicados:
+  - cockpit escuro passou a priorizar o valor realmente vencido quando ha atraso, evitando destaque enganoso de `R$ 0` nos proximos 7 dias;
+  - barras do runway ficaram mais visiveis e compactas;
+  - texto de zero vencimentos ficou mais natural: `nenhum vencimento nos proximos 7 dias`;
+  - botao do resumo passou a deixar claro `Gerar IA`;
+  - cards vencidos ficaram visualmente menos agressivos;
+  - removido chip repetitivo `Revisar/ocultar` da lista;
+  - acao principal foi compactada de `Registrar pagamento` para `Pagar`, preservando `title` acessivel;
+  - grid da lista ganhou mais espaco para titulo/fornecedor e menos truncamento.
+- Validacao visual local:
+  - Playwright em modo mock abriu `/contas-a-pagar` em desktop e mobile;
+  - desktop confirmou cockpit com `Prioridade agora`, barras visiveis e lista mais limpa;
+  - mobile confirmou `scrollWidth=390` para viewport `390`, sem overflow horizontal.
+- Validacao de comandos:
+  - `npm run typecheck`: passou;
+  - `npx tsc --noEmit`: passou;
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh;
+  - `npm test -- --run`: passou, 56 arquivos e 422 testes;
+  - `npm run build`: passou com avisos conhecidos de Browserslist/chunks/import dinamico.
+
 ## Contas A Pagar - Lista Financeira, Parcelas E Qualidade Da IA - 2026-06-22
 
 - Pedido: revisar profundamente a experiencia de Contas a Pagar da Retifica Premium, principalmente visualizacao em cards, parcelas, duplicidades, nomes ruins importados por IA e edicao em modo suporte.

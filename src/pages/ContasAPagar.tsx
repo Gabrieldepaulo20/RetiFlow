@@ -22,7 +22,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { AccountPayable, PaymentMethod, PAYABLE_STATUS_COLORS, PAYABLE_STATUS_LABELS, PAYMENT_METHOD_LABELS, RECURRENCE_TYPE_LABELS } from '@/types';
-import { buildPayableHistoryDescription, calculatePayableFinalAmount, calculatePayableRemainingBalance, canCancelPayable, canEditPayable, canRegisterPayment, formatPayableDueDateLabel, generatePayableDuplicateKey, getContextualQuestion, getDueDateUrgencyLevel, getPayableDisplayStatus, groupPayables, isPayableEditRestricted, isPayableOverdue, type PayableGroupBy } from '@/services/domain/payables';
+import { buildPayableHistoryDescription, calculatePayableFinalAmount, calculatePayableRemainingBalance, canCancelPayable, canEditPayable, canRegisterPayment, formatPayableDueDateLabel, generatePayableDuplicateKey, getDueDateUrgencyLevel, getPayableDisplayStatus, groupPayables, isPayableEditRestricted, isPayableOverdue, type PayableGroupBy } from '@/services/domain/payables';
 import { calculatePayablesCashFlowSummary } from '@/services/domain/payablesCashFlow';
 import { getGmailOAuthFeedback } from '@/services/domain/gmailOAuth';
 import {
@@ -111,16 +111,6 @@ export default function ContasAPagar() {
   const [editOriginalAmount, setEditOriginalAmount] = useState('');
   const [editDocNumber, setEditDocNumber] = useState('');
   const [editPaymentMethod, setEditPaymentMethod] = useState<PaymentMethod>('PIX');
-  // Perguntas contextuais dispensadas nesta sessão (não reaparecem após o usuário fechar).
-  const [dismissedQuestions, setDismissedQuestions] = useState<Set<string>>(() => {
-    try {
-      const raw = sessionStorage.getItem('payable-contextual-dismissed');
-      return new Set<string>(raw ? (JSON.parse(raw) as string[]) : []);
-    } catch {
-      return new Set<string>();
-    }
-  });
-
   const pendingEmailSuggestions = useMemo(() => emailSuggestions.filter((s) => s.status === 'PENDING').length, [emailSuggestions]);
 
   const now = useMemo(() => new Date(), []);
@@ -415,19 +405,6 @@ export default function ContasAPagar() {
     setDialogMode('edit');
   }
 
-  function dismissContextualQuestion(payableId: string) {
-    setDismissedQuestions((previous) => {
-      const next = new Set(previous);
-      next.add(payableId);
-      try {
-        sessionStorage.setItem('payable-contextual-dismissed', JSON.stringify([...next]));
-      } catch {
-        // sessionStorage indisponível — mantém apenas em memória.
-      }
-      return next;
-    });
-  }
-
   async function handleDuplicate(payable: AccountPayable) {
     const created = await addPayable({
       title: `${payable.title} (cópia)`,
@@ -607,7 +584,6 @@ export default function ContasAPagar() {
     const isPaid = displayStatus === 'PAGO';
     const isCancelled = displayStatus === 'CANCELADO';
     const isFuncionario = payable.favorecidoTipo === 'FUNCIONARIO';
-    const contextualQuestion = getContextualQuestion(payable, now);
     const duplicateKey = generatePayableDuplicateKey(payable);
     const duplicateCount = duplicateKey ? (payableDuplicateCounts.get(duplicateKey) ?? 0) : 0;
     const anomaly = anomalyMap.get(payable.id);
@@ -639,9 +615,9 @@ export default function ContasAPagar() {
           : 'text-foreground';
 
     const primaryAction = canRegisterPayment(payable)
-      ? { label: 'Registrar pagamento', onClick: () => openPayment(payable) }
+      ? { label: 'Pagar', title: 'Registrar pagamento', onClick: () => openPayment(payable) }
       : canEditPayable(payable)
-        ? { label: 'Editar', onClick: () => openEdit(payable) }
+        ? { label: 'Editar', title: 'Editar conta', onClick: () => openEdit(payable) }
         : null;
 
     return (
@@ -649,16 +625,16 @@ export default function ContasAPagar() {
         key={payable.id}
         initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        whileHover={prefersReducedMotion || isCancelled ? undefined : { y: -2 }}
+        whileHover={prefersReducedMotion || isCancelled ? undefined : { y: -1 }}
         transition={{ delay: Math.min(index, 8) * 0.03, duration: 0.22 }}
         className={cn(
-          'group relative flex overflow-hidden rounded-xl border bg-card shadow-sm transition-shadow hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 sm:rounded-2xl',
-          overdue && 'border-destructive/40',
+          'group relative flex overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm transition-colors hover:border-primary/25 hover:bg-primary/[0.012] sm:rounded-2xl',
+          overdue && 'border-rose-200/80 bg-rose-50/25 hover:border-rose-300/80',
           isCancelled && 'opacity-70',
         )}
       >
-        <div className={cn('w-1.5 shrink-0', rail)} />
-        <div className="grid min-w-0 flex-1 gap-2 p-2.5 sm:p-3 lg:grid-cols-[minmax(0,1.6fr)_minmax(140px,0.7fr)_minmax(150px,0.8fr)_auto] lg:items-center lg:gap-3">
+        <div className={cn('w-1 shrink-0', rail)} />
+        <div className="grid min-w-0 flex-1 gap-2 p-2.5 sm:p-2.5 lg:grid-cols-[minmax(280px,1.7fr)_minmax(136px,0.6fr)_minmax(150px,0.72fr)_auto] lg:items-center lg:gap-3">
           <div className="flex min-w-0 items-start gap-2.5">
             <SupplierAvatar name={payable.supplierName ?? payable.title} categoryIcon={category?.icon} size={34} />
             <div className="min-w-0 flex-1">
@@ -754,15 +730,6 @@ export default function ContasAPagar() {
             {payable.recurrence !== 'NENHUMA' ? (
               <Badge variant="outline" className="text-[11px]">{RECURRENCE_TYPE_LABELS[payable.recurrence]}</Badge>
             ) : null}
-            {contextualQuestion && !dismissedQuestions.has(payable.id) ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
-                <AlertCircle className="h-3 w-3" />
-                Revisar
-                <button type="button" className="ml-1 text-amber-900 underline-offset-2 hover:underline" onClick={() => dismissContextualQuestion(payable.id)}>
-                  ocultar
-                </button>
-              </span>
-            ) : null}
           </div>
 
           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
@@ -772,13 +739,19 @@ export default function ContasAPagar() {
             <Button
               variant="outline"
               size="sm"
-              className="min-w-0 flex-1 basis-[calc(50%-0.25rem)] lg:flex-none"
+              className="min-w-0 flex-1 basis-[calc(50%-0.25rem)] lg:flex-none lg:px-3"
               onClick={() => updateRouteModal('details', payable.id)}
+              title="Ver detalhes"
             >
               Detalhes
             </Button>
             {primaryAction ? (
-              <Button size="sm" className="min-w-0 flex-1 basis-[calc(50%-0.25rem)] lg:flex-none" onClick={primaryAction.onClick}>
+              <Button
+                size="sm"
+                className="min-w-0 flex-1 basis-[calc(50%-0.25rem)] lg:flex-none lg:px-3"
+                onClick={primaryAction.onClick}
+                title={primaryAction.title}
+              >
                 {primaryAction.label}
               </Button>
             ) : null}
