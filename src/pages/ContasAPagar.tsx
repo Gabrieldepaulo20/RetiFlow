@@ -22,7 +22,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { AccountPayable, PaymentMethod, PAYABLE_STATUS_COLORS, PAYABLE_STATUS_LABELS, PAYMENT_METHOD_LABELS, RECURRENCE_TYPE_LABELS } from '@/types';
-import { buildPayableHistoryDescription, calculatePayableFinalAmount, calculatePayableRemainingBalance, canCancelPayable, canEditPayable, canRegisterPayment, formatPayableDueDateLabel, generatePayableDuplicateKey, getDueDateUrgencyLevel, getPayableDisplayStatus, groupPayables, isPayableEditRestricted, isPayableOverdue, type PayableGroupBy } from '@/services/domain/payables';
+import { buildPayableHistoryDescription, calculatePayableFinalAmount, calculatePayableRemainingBalance, canCancelPayable, canEditPayable, canRegisterPayment, formatPayableDueDateLabel, generatePayableDuplicateKey, getContextualQuestion, getDueDateUrgencyLevel, getPayableDisplayStatus, groupPayables, isPayableEditRestricted, isPayableOverdue, type ContextualActionKind, type PayableGroupBy } from '@/services/domain/payables';
 import { calculatePayablesCashFlowSummary } from '@/services/domain/payablesCashFlow';
 import { getGmailOAuthFeedback } from '@/services/domain/gmailOAuth';
 import {
@@ -36,6 +36,7 @@ import PayableCreateModal from '@/components/payables/PayableCreateModal';
 import PayableImportModal from '@/components/payables/PayableImportModal';
 import PayableDetailsModal from '@/components/payables/PayableDetailsModal';
 import PayableEmailSuggestions from '@/components/payables/PayableEmailSuggestions';
+import { ContextualQuestionBanner } from '@/components/payables/ContextualQuestionBanner';
 import { PayablesCockpit } from '@/components/payables/PayablesCockpit';
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { detectPayableAnomalies, formatAnomalyBadge } from '@/services/domain/payablesAnomaly';
@@ -111,6 +112,15 @@ export default function ContasAPagar() {
   const [editOriginalAmount, setEditOriginalAmount] = useState('');
   const [editDocNumber, setEditDocNumber] = useState('');
   const [editPaymentMethod, setEditPaymentMethod] = useState<PaymentMethod>('PIX');
+  // Perguntas contextuais dispensadas nesta sessão (não reaparecem após o usuário fechar).
+  const [dismissedQuestions, setDismissedQuestions] = useState<Set<string>>(() => {
+    try {
+      const raw = sessionStorage.getItem('payable-contextual-dismissed');
+      return new Set<string>(raw ? (JSON.parse(raw) as string[]) : []);
+    } catch {
+      return new Set<string>();
+    }
+  });
   const pendingEmailSuggestions = useMemo(() => emailSuggestions.filter((s) => s.status === 'PENDING').length, [emailSuggestions]);
 
   const now = useMemo(() => new Date(), []);
@@ -405,6 +415,31 @@ export default function ContasAPagar() {
     setDialogMode('edit');
   }
 
+  function dismissContextualQuestion(payableId: string) {
+    setDismissedQuestions((previous) => {
+      const next = new Set(previous);
+      next.add(payableId);
+      try {
+        sessionStorage.setItem('payable-contextual-dismissed', JSON.stringify([...next]));
+      } catch {
+        // sessionStorage indisponível — mantém apenas em memória.
+      }
+      return next;
+    });
+  }
+
+  function handleContextualAction(payableId: string, action: ContextualActionKind) {
+    const payable = payables.find((item) => item.id === payableId);
+    if (!payable) return;
+    if (action === 'mark_paid') {
+      openPayment(payable);
+    } else if (action === 'reschedule') {
+      openEdit(payable);
+    } else {
+      dismissContextualQuestion(payableId);
+    }
+  }
+
   async function handleDuplicate(payable: AccountPayable) {
     const created = await addPayable({
       title: `${payable.title} (cópia)`,
@@ -587,6 +622,7 @@ export default function ContasAPagar() {
     const duplicateKey = generatePayableDuplicateKey(payable);
     const duplicateCount = duplicateKey ? (payableDuplicateCounts.get(duplicateKey) ?? 0) : 0;
     const anomaly = anomalyMap.get(payable.id);
+    const contextualQuestion = getContextualQuestion(payable, now);
     const seriesKey = (payable.totalInstallments ?? 0) > 1 ? (payable.recurrenceParentId ?? payable.id) : null;
     const series = seriesKey ? payableSeriesStats.get(seriesKey) : null;
     const seriesTotal = Math.max(payable.totalInstallments ?? 0, series?.items.length ?? 0);
@@ -634,7 +670,8 @@ export default function ContasAPagar() {
         )}
       >
         <div className={cn('w-1 shrink-0', rail)} />
-        <div className="grid min-w-0 flex-1 gap-2 p-2.5 sm:p-2.5 lg:grid-cols-[minmax(280px,1.7fr)_minmax(136px,0.6fr)_minmax(150px,0.72fr)_auto] lg:items-center lg:gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="grid gap-2 p-2.5 sm:p-2.5 lg:grid-cols-[minmax(280px,1.7fr)_minmax(136px,0.6fr)_minmax(150px,0.72fr)_auto] lg:items-center lg:gap-3">
           <div className="flex min-w-0 items-start gap-2.5">
             <SupplierAvatar name={payable.supplierName ?? payable.title} categoryIcon={category?.icon} size={34} />
             <div className="min-w-0 flex-1">
@@ -757,6 +794,17 @@ export default function ContasAPagar() {
             ) : null}
             <div className="shrink-0">{renderActions(payable)}</div>
           </div>
+          </div>
+          {contextualQuestion && !dismissedQuestions.has(payable.id) ? (
+            <div className="px-2.5 pb-2.5">
+              <ContextualQuestionBanner
+                question={contextualQuestion}
+                payableId={payable.id}
+                onAction={handleContextualAction}
+                onDismiss={dismissContextualQuestion}
+              />
+            </div>
+          ) : null}
         </div>
       </motion.div>
     );
