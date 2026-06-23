@@ -88,7 +88,7 @@ export default function ContasAPagar() {
   const [pageView, setPageView] = useState<PageView>(() => searchParams.get('view') === 'sugestoes' ? 'sugestoes' : 'contas');
   const effectiveView: PageView = suggestionsEnabled ? pageView : 'contas';
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('pendente');
-  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all');
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('current-month');
   const [originFilter, setOriginFilter] = useState<OriginFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [favorecidoFilter, setFavorecidoFilter] = useState<FavorecidoFilter>('all');
@@ -812,20 +812,12 @@ export default function ContasAPagar() {
 
   return (
     <>
-      <div className="space-y-4 overflow-x-hidden sm:space-y-6">
-        <div className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary/20 via-primary/10 to-transparent ring-1 ring-primary/20 sm:h-12 sm:w-12 sm:rounded-2xl">
-              <Wallet className="h-5 w-5 text-primary sm:h-6 sm:w-6" />
-            </div>
-            <div>
-              <h1 className="text-xl font-display font-bold tracking-tight sm:text-2xl">Contas a Pagar</h1>
-              <p className="mt-0.5 hidden text-sm text-muted-foreground sm:block">Boletos, notas e despesas — entrada manual rápida ou importação assistida por IA.</p>
-            </div>
-          </div>
-          <div className="flex w-full flex-col items-stretch gap-3 sm:w-auto sm:items-end">
+      <div className="space-y-3 overflow-x-hidden sm:space-y-4">
+        <h1 className="sr-only">Contas a Pagar</h1>
+        <div className="-mt-2 flex flex-col gap-2 sm:-mt-3 lg:-mt-4">
+          <div className="flex justify-center">
             <Tabs value={effectiveView} onValueChange={(value) => updatePageView(value as PageView)}>
-              <TabsList className={cn('grid h-10 rounded-xl', suggestionsEnabled ? 'grid-cols-2' : 'grid-cols-1')}>
+              <TabsList className={cn('grid h-11 rounded-2xl bg-muted/70 p-1 shadow-sm ring-1 ring-border/60', suggestionsEnabled ? 'grid-cols-2' : 'grid-cols-1')}>
                 <TabsTrigger value="contas" className="gap-2">
                   <Wallet className="h-4 w-4" />
                   Contas
@@ -843,13 +835,15 @@ export default function ContasAPagar() {
                 ) : null}
               </TabsList>
             </Tabs>
-            {effectiveView === 'contas' ? (
-            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
-              <Button variant="outline" onClick={() => updateRouteModal('import')} className="min-w-0 px-3 text-sm"><Sparkles className="mr-1.5 h-4 w-4 sm:mr-2" />Importar com IA</Button>
-              <Button onClick={() => updateRouteModal('new')} className="min-w-0 px-3 shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30"><PlusCircle className="mr-1.5 h-4 w-4 sm:mr-2" />Nova Conta</Button>
-            </div>
-            ) : null}
           </div>
+          {effectiveView === 'contas' ? (
+            <div className="flex justify-end">
+              <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:flex sm:flex-wrap">
+                <Button variant="outline" onClick={() => updateRouteModal('import')} className="min-w-0 px-3 text-sm"><Sparkles className="mr-1.5 h-4 w-4 sm:mr-2" />Importar com IA</Button>
+                <Button onClick={() => updateRouteModal('new')} className="min-w-0 px-3 shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30"><PlusCircle className="mr-1.5 h-4 w-4 sm:mr-2" />Nova Conta</Button>
+              </div>
+            </div>
+          ) : null}
         </div>
 
         {effectiveView === 'sugestoes' ? (
@@ -904,30 +898,32 @@ export default function ContasAPagar() {
 
         <Card>
           <CardContent className="p-0">
-            <div className="space-y-2.5 border-b border-border/60 p-2.5 sm:p-3">
-              <Tabs value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
-                <TabsList className="h-auto min-h-8 w-full justify-start overflow-x-auto rounded-xl p-1 sm:w-auto">
-                  <TabsTrigger value="pendente" className="shrink-0 text-xs">Pendentes</TabsTrigger>
-                  <TabsTrigger value="parcelado" className="shrink-0 text-xs">Parceladas</TabsTrigger>
-                  <TabsTrigger value="repetido" className="shrink-0 text-xs">Repetidas</TabsTrigger>
-                  <TabsTrigger value="vencido" className="shrink-0 text-xs">Vencidas</TabsTrigger>
-                  <TabsTrigger value="all" className="shrink-0 text-xs">Todas</TabsTrigger>
-                  <TabsTrigger value="pago" className="shrink-0 text-xs">Pagas</TabsTrigger>
-                  <TabsTrigger value="cancelado" className="hidden text-xs sm:flex">Canceladas</TabsTrigger>
-                </TabsList>
-              </Tabs>
-              <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
-                <div className="relative col-span-2 min-w-0 lg:col-span-1"><Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><Input value={searchRaw} onChange={(event) => setSearchRaw(event.target.value)} placeholder="Buscar conta..." className="h-9 pl-8 text-sm" /></div>
-                <Select value={favorecidoFilter} onValueChange={(value) => setFavorecidoFilter(value as FavorecidoFilter)}><SelectTrigger className="h-9 min-w-0 text-xs sm:text-sm"><SelectValue placeholder="Favorecido" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os favorecidos</SelectItem><SelectItem value="FORNECEDOR">Fornecedores</SelectItem><SelectItem value="FUNCIONARIO">Funcionários (salários)</SelectItem></SelectContent></Select>
-                <Select value={categoryFilter} onValueChange={setCategoryFilter}><SelectTrigger className="h-9 min-w-0 text-xs sm:text-sm"><SelectValue placeholder="Categorias" /></SelectTrigger><SelectContent><SelectItem value="all">Todas as categorias</SelectItem>{payableCategories.filter((category) => category.isActive).map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select>
-                <Select value={originFilter} onValueChange={(value) => setOriginFilter(value as OriginFilter)}><SelectTrigger className="h-9 min-w-0 text-xs sm:text-sm"><SelectValue placeholder="Origens" /></SelectTrigger><SelectContent><SelectItem value="all">Todas as origens</SelectItem><SelectItem value="MANUAL">Cadastro manual</SelectItem><SelectItem value="IA_IMPORT">Importadas por IA</SelectItem><SelectItem value="CAMERA_CAPTURE">Captura por câmera</SelectItem><SelectItem value="AUTO_SERIES">Geradas em série</SelectItem><SelectItem value="recurring">Recorrentes</SelectItem><SelectItem value="installment">Parceladas</SelectItem></SelectContent></Select>
-                <Select value={periodFilter} onValueChange={(value) => setPeriodFilter(value as PeriodFilter)}><SelectTrigger className="h-9 min-w-0 text-xs sm:text-sm"><SelectValue placeholder="Período" /></SelectTrigger><SelectContent><SelectItem value="all">Todo o período</SelectItem><SelectItem value="current-month">Vencimento neste mês</SelectItem><SelectItem value="next-30">Próximos 30 dias</SelectItem><SelectItem value="overdue">Somente vencidas</SelectItem></SelectContent></Select>
-                <Select value={groupBy} onValueChange={(value) => setGroupBy(value as GroupByOption)}><SelectTrigger className="h-9 min-w-0 gap-1 text-xs sm:text-sm"><Layers className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /><SelectValue placeholder="Agrupar" /></SelectTrigger><SelectContent><SelectItem value="none">Sem agrupamento</SelectItem><SelectItem value="category">Agrupar por categoria</SelectItem><SelectItem value="favorecido">Agrupar por favorecido</SelectItem><SelectItem value="supplier">Agrupar por fornecedor</SelectItem></SelectContent></Select>
+            <div className="border-b border-border/60 p-2.5 sm:p-3">
+              <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
+                <Tabs value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
+                  <TabsList className="flex h-9 w-full justify-start overflow-x-auto rounded-xl p-1 xl:w-auto xl:shrink-0">
+                    <TabsTrigger value="pendente" className="shrink-0 text-xs">Pendentes</TabsTrigger>
+                    <TabsTrigger value="parcelado" className="shrink-0 text-xs">Parceladas</TabsTrigger>
+                    <TabsTrigger value="repetido" className="shrink-0 text-xs">Repetidas</TabsTrigger>
+                    <TabsTrigger value="vencido" className="shrink-0 text-xs">Vencidas</TabsTrigger>
+                    <TabsTrigger value="all" className="shrink-0 text-xs">Todas</TabsTrigger>
+                    <TabsTrigger value="pago" className="shrink-0 text-xs">Pagas</TabsTrigger>
+                    <TabsTrigger value="cancelado" className="hidden text-xs 2xl:flex">Canceladas</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+                <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-[minmax(150px,1fr)_repeat(5,minmax(86px,0.58fr))]">
+                  <div className="relative col-span-2 min-w-0 md:col-span-3 xl:col-span-1"><Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><Input value={searchRaw} onChange={(event) => setSearchRaw(event.target.value)} placeholder="Buscar conta..." className="h-9 pl-8 text-sm" /></div>
+                  <Select value={favorecidoFilter} onValueChange={(value) => setFavorecidoFilter(value as FavorecidoFilter)}><SelectTrigger className="h-9 min-w-0 truncate text-xs sm:text-sm"><SelectValue placeholder="Favorecidos" /></SelectTrigger><SelectContent><SelectItem value="all">Favorecidos</SelectItem><SelectItem value="FORNECEDOR">Fornecedores</SelectItem><SelectItem value="FUNCIONARIO">Funcionários</SelectItem></SelectContent></Select>
+                  <Select value={categoryFilter} onValueChange={setCategoryFilter}><SelectTrigger className="h-9 min-w-0 truncate text-xs sm:text-sm"><SelectValue placeholder="Categorias" /></SelectTrigger><SelectContent><SelectItem value="all">Categorias</SelectItem>{payableCategories.filter((category) => category.isActive).map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select>
+                  <Select value={originFilter} onValueChange={(value) => setOriginFilter(value as OriginFilter)}><SelectTrigger className="h-9 min-w-0 truncate text-xs sm:text-sm"><SelectValue placeholder="Origens" /></SelectTrigger><SelectContent><SelectItem value="all">Origens</SelectItem><SelectItem value="MANUAL">Manual</SelectItem><SelectItem value="IA_IMPORT">IA</SelectItem><SelectItem value="CAMERA_CAPTURE">Câmera</SelectItem><SelectItem value="AUTO_SERIES">Série</SelectItem><SelectItem value="recurring">Recorrentes</SelectItem><SelectItem value="installment">Parceladas</SelectItem></SelectContent></Select>
+                  <Select value={periodFilter} onValueChange={(value) => setPeriodFilter(value as PeriodFilter)}><SelectTrigger className="h-9 min-w-0 truncate text-xs sm:text-sm"><SelectValue placeholder="Período" /></SelectTrigger><SelectContent><SelectItem value="current-month">Este mês</SelectItem><SelectItem value="all">Todo período</SelectItem><SelectItem value="next-30">Próx. 30 dias</SelectItem><SelectItem value="overdue">Vencidas</SelectItem></SelectContent></Select>
+                  <Select value={groupBy} onValueChange={(value) => setGroupBy(value as GroupByOption)}><SelectTrigger className="h-9 min-w-0 gap-1 truncate text-xs sm:text-sm"><Layers className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /><SelectValue placeholder="Agrupar" /></SelectTrigger><SelectContent><SelectItem value="none">Sem grupo</SelectItem><SelectItem value="category">Por categoria</SelectItem><SelectItem value="favorecido">Por favorecido</SelectItem><SelectItem value="supplier">Por fornecedor</SelectItem></SelectContent></Select>
+                </div>
               </div>
             </div>
 
             {filtered.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-4 py-24 text-center"><Wallet className="h-10 w-10 text-muted-foreground" /><div className="max-w-sm"><h3 className="text-base font-semibold">Nenhuma conta encontrada</h3><p className="text-sm text-muted-foreground">Ajuste os filtros ou cadastre a primeira conta.</p></div><Button variant="outline" onClick={() => { setStatusFilter('pendente'); setPeriodFilter('all'); setOriginFilter('all'); setCategoryFilter('all'); setFavorecidoFilter('all'); setGroupBy('none'); setSearchRaw(''); }}>Voltar para pendentes</Button></div>
+              <div className="flex flex-col items-center justify-center gap-4 py-24 text-center"><Wallet className="h-10 w-10 text-muted-foreground" /><div className="max-w-sm"><h3 className="text-base font-semibold">Nenhuma conta encontrada</h3><p className="text-sm text-muted-foreground">Ajuste os filtros ou cadastre a primeira conta.</p></div><Button variant="outline" onClick={() => { setStatusFilter('pendente'); setPeriodFilter('current-month'); setOriginFilter('all'); setCategoryFilter('all'); setFavorecidoFilter('all'); setGroupBy('none'); setSearchRaw(''); }}>Voltar para pendentes deste mês</Button></div>
             ) : payableGroups ? (
               <div className="space-y-2 p-2.5 sm:p-3">
                 {payableGroups.map((group) => {
