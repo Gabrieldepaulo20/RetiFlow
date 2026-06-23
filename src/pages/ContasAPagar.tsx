@@ -49,11 +49,37 @@ function fmtBRL(value: number) {
 }
 
 type StatusFilter = 'all' | 'pendente' | 'parcelado' | 'repetido' | 'vencido' | 'pago' | 'cancelado';
-type PeriodFilter = 'all' | 'current-month' | 'next-30' | 'overdue';
+type PeriodFilter = 'all' | 'next-30' | 'overdue' | `month:${string}`;
 type OriginFilter = 'all' | 'MANUAL' | 'IA_IMPORT' | 'CAMERA_CAPTURE' | 'AUTO_SERIES' | 'recurring' | 'installment';
 type FavorecidoFilter = 'all' | 'FORNECEDOR' | 'FUNCIONARIO';
 type GroupByOption = 'none' | PayableGroupBy;
 type DialogMode = 'payment' | 'edit' | 'cancel' | 'delete' | null;
+
+const MONTH_FILTER_PREFIX = 'month:';
+
+function getMonthPeriodFilter(date: Date): PeriodFilter {
+  return `${MONTH_FILTER_PREFIX}${format(date, 'yyyy-MM')}` as PeriodFilter;
+}
+
+function formatMonthName(date: Date) {
+  const month = format(date, 'MMMM', { locale: ptBR });
+  return `${month.charAt(0).toUpperCase()}${month.slice(1)}`;
+}
+
+function getMonthPeriodRange(filter: PeriodFilter) {
+  if (!filter.startsWith(MONTH_FILTER_PREFIX)) return null;
+
+  const [yearRaw, monthRaw] = filter.slice(MONTH_FILTER_PREFIX.length).split('-');
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return null;
+
+  const date = new Date(year, month - 1, 1);
+  return {
+    start: startOfMonth(date).getTime(),
+    end: endOfMonth(date).getTime(),
+  };
+}
 
 function PayableStatusBadge({ payable }: { payable: AccountPayable }) {
   const display = getPayableDisplayStatus(payable);
@@ -88,7 +114,7 @@ export default function ContasAPagar() {
   const [pageView, setPageView] = useState<PageView>(() => searchParams.get('view') === 'sugestoes' ? 'sugestoes' : 'contas');
   const effectiveView: PageView = suggestionsEnabled ? pageView : 'contas';
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('pendente');
-  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('current-month');
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>(() => getMonthPeriodFilter(new Date()));
   const [originFilter, setOriginFilter] = useState<OriginFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [favorecidoFilter, setFavorecidoFilter] = useState<FavorecidoFilter>('all');
@@ -126,6 +152,25 @@ export default function ContasAPagar() {
   const now = useMemo(() => new Date(), []);
   const startCurrentMonth = useMemo(() => startOfMonth(now).getTime(), [now]);
   const endCurrentMonth = useMemo(() => endOfMonth(now).getTime(), [now]);
+  const defaultMonthFilter = useMemo(() => getMonthPeriodFilter(now), [now]);
+  const periodMonthOptions = useMemo(() => (
+    Array.from({ length: 12 }, (_, index) => {
+      const date = new Date(now.getFullYear(), index, 1);
+      return {
+        value: getMonthPeriodFilter(date),
+        label: formatMonthName(date),
+      };
+    })
+  ), [now]);
+  const selectedPeriodLabel = useMemo(() => {
+    const selectedMonth = periodMonthOptions.find((option) => option.value === periodFilter);
+    if (selectedMonth) return `Mês ${selectedMonth.label.toLowerCase()}`;
+    if (periodFilter === 'all') return 'Todo período';
+    if (periodFilter === 'next-30') return 'Próx. 30 dias';
+    if (periodFilter === 'overdue') return 'Vencidas';
+    return 'Período';
+  }, [periodFilter, periodMonthOptions]);
+  const periodFilterIsMonth = periodFilter.startsWith(MONTH_FILTER_PREFIX);
   const categoryById = useMemo(() => new Map(payableCategories.map((category) => [category.id, category])), [payableCategories]);
   const activePayables = useMemo(() => payables.filter((payable) => payable.deletedAt == null), [payables]);
   const selectedPayable = useMemo(() => selectedPayableId ? payables.find((payable) => payable.id === selectedPayableId) ?? null : null, [payables, selectedPayableId]);
@@ -230,16 +275,17 @@ export default function ContasAPagar() {
     if (periodFilter !== 'all') {
       const nowTime = now.getTime();
       const inThirtyDays = nowTime + 30 * 24 * 60 * 60 * 1000;
+      const monthRange = getMonthPeriodRange(periodFilter);
       result = result.filter((payable) => {
         const dueTime = parseISO(payable.dueDate).getTime();
-        if (periodFilter === 'current-month') return dueTime >= startCurrentMonth && dueTime <= endCurrentMonth;
+        if (monthRange) return dueTime >= monthRange.start && dueTime <= monthRange.end;
         if (periodFilter === 'next-30') return dueTime >= nowTime && dueTime <= inThirtyDays;
         if (periodFilter === 'overdue') return isPayableOverdue(payable);
         return true;
       });
     }
     return [...result].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-  }, [activePayables, categoryFilter, endCurrentMonth, favorecidoFilter, now, originFilter, payableDuplicateCounts, periodFilter, search, startCurrentMonth, statusFilter]);
+  }, [activePayables, categoryFilter, favorecidoFilter, now, originFilter, payableDuplicateCounts, periodFilter, search, statusFilter]);
 
   // Agrupamento opcional da lista (por categoria, favorecido ou fornecedor) com subtotais.
   const payableGroups = useMemo(
@@ -812,38 +858,38 @@ export default function ContasAPagar() {
 
   return (
     <>
-      <div className="space-y-3 overflow-x-hidden sm:space-y-4">
+      <div className="space-y-2 overflow-x-hidden sm:space-y-3">
         <h1 className="sr-only">Contas a Pagar</h1>
-        <div className="-mt-2 flex flex-col gap-2 sm:-mt-3 lg:-mt-4">
-          <div className="flex justify-center">
-            <Tabs value={effectiveView} onValueChange={(value) => updatePageView(value as PageView)}>
-              <TabsList className={cn('grid h-11 rounded-2xl bg-muted/70 p-1 shadow-sm ring-1 ring-border/60', suggestionsEnabled ? 'grid-cols-2' : 'grid-cols-1')}>
-                <TabsTrigger value="contas" className="gap-2">
-                  <Wallet className="h-4 w-4" />
-                  Contas
-                </TabsTrigger>
-                {suggestionsEnabled ? (
-                  <TabsTrigger value="sugestoes" className="relative gap-2">
-                    <MailOpen className="h-4 w-4" />
-                    Sugestões
-                    {pendingEmailSuggestions > 0 ? (
-                      <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
-                        {pendingEmailSuggestions}
-                      </span>
-                    ) : null}
+        <div className="-mt-5 sm:-mt-7 lg:-mt-9">
+          <div className="relative flex flex-col gap-2 sm:min-h-11 sm:flex-row sm:items-center sm:justify-center">
+            <div className="flex justify-center">
+              <Tabs value={effectiveView} onValueChange={(value) => updatePageView(value as PageView)}>
+                <TabsList className={cn('grid h-11 rounded-2xl bg-muted/70 p-1 shadow-sm ring-1 ring-border/60', suggestionsEnabled ? 'grid-cols-2' : 'grid-cols-1')}>
+                  <TabsTrigger value="contas" className="gap-2">
+                    <Wallet className="h-4 w-4" />
+                    Contas
                   </TabsTrigger>
-                ) : null}
-              </TabsList>
-            </Tabs>
-          </div>
-          {effectiveView === 'contas' ? (
-            <div className="flex justify-end">
-              <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:flex sm:flex-wrap">
+                  {suggestionsEnabled ? (
+                    <TabsTrigger value="sugestoes" className="relative gap-2">
+                      <MailOpen className="h-4 w-4" />
+                      Sugestões
+                      {pendingEmailSuggestions > 0 ? (
+                        <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                          {pendingEmailSuggestions}
+                        </span>
+                      ) : null}
+                    </TabsTrigger>
+                  ) : null}
+                </TabsList>
+              </Tabs>
+            </div>
+            {effectiveView === 'contas' ? (
+              <div className="grid w-full grid-cols-2 gap-2 lg:absolute lg:right-0 lg:top-0 lg:w-auto lg:flex lg:flex-wrap">
                 <Button variant="outline" onClick={() => updateRouteModal('import')} className="min-w-0 px-3 text-sm"><Sparkles className="mr-1.5 h-4 w-4 sm:mr-2" />Importar com IA</Button>
                 <Button onClick={() => updateRouteModal('new')} className="min-w-0 px-3 shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30"><PlusCircle className="mr-1.5 h-4 w-4 sm:mr-2" />Nova Conta</Button>
               </div>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
         </div>
 
         {effectiveView === 'sugestoes' ? (
@@ -916,14 +962,32 @@ export default function ContasAPagar() {
                   <Select value={favorecidoFilter} onValueChange={(value) => setFavorecidoFilter(value as FavorecidoFilter)}><SelectTrigger className="h-9 min-w-0 truncate text-xs sm:text-sm"><SelectValue placeholder="Favorecidos" /></SelectTrigger><SelectContent><SelectItem value="all">Favorecidos</SelectItem><SelectItem value="FORNECEDOR">Fornecedores</SelectItem><SelectItem value="FUNCIONARIO">Funcionários</SelectItem></SelectContent></Select>
                   <Select value={categoryFilter} onValueChange={setCategoryFilter}><SelectTrigger className="h-9 min-w-0 truncate text-xs sm:text-sm"><SelectValue placeholder="Categorias" /></SelectTrigger><SelectContent><SelectItem value="all">Categorias</SelectItem>{payableCategories.filter((category) => category.isActive).map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select>
                   <Select value={originFilter} onValueChange={(value) => setOriginFilter(value as OriginFilter)}><SelectTrigger className="h-9 min-w-0 truncate text-xs sm:text-sm"><SelectValue placeholder="Origens" /></SelectTrigger><SelectContent><SelectItem value="all">Origens</SelectItem><SelectItem value="MANUAL">Manual</SelectItem><SelectItem value="IA_IMPORT">IA</SelectItem><SelectItem value="CAMERA_CAPTURE">Câmera</SelectItem><SelectItem value="AUTO_SERIES">Série</SelectItem><SelectItem value="recurring">Recorrentes</SelectItem><SelectItem value="installment">Parceladas</SelectItem></SelectContent></Select>
-                  <Select value={periodFilter} onValueChange={(value) => setPeriodFilter(value as PeriodFilter)}><SelectTrigger className="h-9 min-w-0 truncate text-xs sm:text-sm"><SelectValue placeholder="Período" /></SelectTrigger><SelectContent><SelectItem value="current-month">Este mês</SelectItem><SelectItem value="all">Todo período</SelectItem><SelectItem value="next-30">Próx. 30 dias</SelectItem><SelectItem value="overdue">Vencidas</SelectItem></SelectContent></Select>
+                  <Select value={periodFilter} onValueChange={(value) => setPeriodFilter(value as PeriodFilter)}>
+                    <SelectTrigger
+                      className={cn(
+                        'h-9 min-w-0 gap-1.5 truncate text-xs sm:text-sm',
+                        periodFilterIsMonth && 'border-primary/40 bg-primary/10 font-semibold text-primary shadow-sm ring-1 ring-primary/20',
+                      )}
+                    >
+                      <CalendarClock className={cn('h-3.5 w-3.5 shrink-0', periodFilterIsMonth ? 'text-primary' : 'text-muted-foreground')} />
+                      <span className="truncate">{selectedPeriodLabel}</span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {periodMonthOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                      ))}
+                      <SelectItem value="all">Todo período</SelectItem>
+                      <SelectItem value="next-30">Próx. 30 dias</SelectItem>
+                      <SelectItem value="overdue">Vencidas</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <Select value={groupBy} onValueChange={(value) => setGroupBy(value as GroupByOption)}><SelectTrigger className="h-9 min-w-0 gap-1 truncate text-xs sm:text-sm"><Layers className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /><SelectValue placeholder="Agrupar" /></SelectTrigger><SelectContent><SelectItem value="none">Sem grupo</SelectItem><SelectItem value="category">Por categoria</SelectItem><SelectItem value="favorecido">Por favorecido</SelectItem><SelectItem value="supplier">Por fornecedor</SelectItem></SelectContent></Select>
                 </div>
               </div>
             </div>
 
             {filtered.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-4 py-24 text-center"><Wallet className="h-10 w-10 text-muted-foreground" /><div className="max-w-sm"><h3 className="text-base font-semibold">Nenhuma conta encontrada</h3><p className="text-sm text-muted-foreground">Ajuste os filtros ou cadastre a primeira conta.</p></div><Button variant="outline" onClick={() => { setStatusFilter('pendente'); setPeriodFilter('current-month'); setOriginFilter('all'); setCategoryFilter('all'); setFavorecidoFilter('all'); setGroupBy('none'); setSearchRaw(''); }}>Voltar para pendentes deste mês</Button></div>
+              <div className="flex flex-col items-center justify-center gap-4 py-24 text-center"><Wallet className="h-10 w-10 text-muted-foreground" /><div className="max-w-sm"><h3 className="text-base font-semibold">Nenhuma conta encontrada</h3><p className="text-sm text-muted-foreground">Ajuste os filtros ou cadastre a primeira conta.</p></div><Button variant="outline" onClick={() => { setStatusFilter('pendente'); setPeriodFilter(defaultMonthFilter); setOriginFilter('all'); setCategoryFilter('all'); setFavorecidoFilter('all'); setGroupBy('none'); setSearchRaw(''); }}>Voltar para pendentes deste mês</Button></div>
             ) : payableGroups ? (
               <div className="space-y-2 p-2.5 sm:p-3">
                 {payableGroups.map((group) => {
