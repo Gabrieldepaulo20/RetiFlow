@@ -2,6 +2,15 @@ import { addDays, format } from 'date-fns';
 import type { AccountPayable, PayableCategory } from '@/types';
 import { calculatePayableRemainingBalance, isPayableOverdue } from '@/services/domain/payables';
 
+/** Um dia da "pista de vencimentos" (runway) dos próximos 7 dias. */
+export type PayableRunwayDay = {
+  dateISO: string;
+  isToday: boolean;
+  total: number;
+  count: number;
+  hasLabor: boolean;
+};
+
 export type PayablesCashFlowSummary = {
   nextSevenTotal: number;
   nextSevenCount: number;
@@ -12,6 +21,8 @@ export type PayablesCashFlowSummary = {
   laborTotal: number;
   laborCount: number;
   nextDue: AccountPayable[];
+  /** Saídas previstas por dia (hoje + 6 dias). Para a barra visual do cockpit. */
+  runway: PayableRunwayDay[];
 };
 
 const PENDING_CASH_FLOW_STATUSES = new Set(['PENDENTE', 'PARCIAL', 'AGENDADO']);
@@ -48,6 +59,20 @@ export function calculatePayablesCashFlowSummary(input: {
   const overdue = pendingSorted.filter((payable) => isPayableOverdue(payable, now));
   const laborPayables = pendingSorted.filter((payable) => isLaborRelatedPayable(payable, categoryById.get(payable.categoryId)?.name));
 
+  // Pista de vencimentos: um bucket por dia, de hoje até +6 dias.
+  const runway: PayableRunwayDay[] = [];
+  for (let offset = 0; offset < 7; offset += 1) {
+    const dateISO = format(addDays(now, offset), 'yyyy-MM-dd');
+    const dayPayables = pendingSorted.filter((payable) => payable.dueDate === dateISO);
+    runway.push({
+      dateISO,
+      isToday: offset === 0,
+      total: dayPayables.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0),
+      count: dayPayables.length,
+      hasLabor: dayPayables.some((payable) => isLaborRelatedPayable(payable, categoryById.get(payable.categoryId)?.name)),
+    });
+  }
+
   return {
     nextSevenTotal: nextSeven.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0),
     nextSevenCount: nextSeven.length,
@@ -58,5 +83,6 @@ export function calculatePayablesCashFlowSummary(input: {
     laborTotal: laborPayables.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0),
     laborCount: laborPayables.length,
     nextDue: pendingSorted.slice(0, 5),
+    runway,
   };
 }

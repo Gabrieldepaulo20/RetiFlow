@@ -371,3 +371,54 @@ export async function analisarContaPagarComIA(params: {
 
   return data;
 }
+
+export type GerarBriefingPayload = {
+  monthLabel?: string;
+  nextSevenTotal: number;
+  nextSevenCount: number;
+  nextThirtyTotal: number;
+  nextThirtyCount: number;
+  overdueTotal: number;
+  overdueCount: number;
+  laborTotal: number;
+  laborCount: number;
+  anomalies?: Array<{ title: string; supplierName?: string; badge: string; current?: number; baseline?: number }>;
+  topDue?: Array<{ title: string; dueDate: string; amount: number }>;
+};
+
+export type BriefingIaResult = {
+  source: 'ia';
+  headline: string;
+  body: string;
+  highlights: Array<{ kind: 'saida' | 'atraso' | 'anomalia' | 'folha'; text: string }>;
+  generatedAtISO?: string;
+};
+
+/** Gera o resumo da semana com IA (edge function `briefing-contas-pagar`). */
+export async function gerarBriefingContasPagar(payload: GerarBriefingPayload): Promise<BriefingIaResult> {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+
+  if (sessionError || !accessToken) {
+    throw new Error('Sessão Supabase não encontrada. Faça login novamente para gerar o resumo.');
+  }
+
+  const { data, error } = await supabase.functions.invoke<BriefingIaResult & { error?: string }>('briefing-contas-pagar', {
+    body: payload,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (error) {
+    throw new Error(await getFunctionErrorMessage(error));
+  }
+  if (!data) {
+    throw new Error('A IA não retornou o resumo.');
+  }
+  if (data.error) {
+    throw new Error(data.error);
+  }
+
+  return data;
+}

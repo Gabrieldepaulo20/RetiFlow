@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { endOfMonth, format, parseISO, startOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { motion } from 'framer-motion';
-import { AlertCircle, AlertTriangle, Building2, CalendarCheck, CalendarClock, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, FileText, Layers, MailOpen, MoreHorizontal, Pencil, PlusCircle, Repeat, Search, Sparkles, Trash2, Users, Wallet, XCircle } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Building2, CalendarClock, ChevronDown, ChevronLeft, ChevronRight, Copy, FileText, Layers, MailOpen, MoreHorizontal, Pencil, PlusCircle, Repeat, Search, Sparkles, Trash2, TrendingUp, Users, Wallet, XCircle } from 'lucide-react';
 import { getCategoryIcon } from '@/lib/payableCategoryIcon';
 import { SupplierAvatar } from '@/components/payables/SupplierAvatar';
 import { useAuth } from '@/contexts/AuthContext';
@@ -28,7 +28,6 @@ import { getGmailOAuthFeedback } from '@/services/domain/gmailOAuth';
 import {
   normalizeDecimalInputDraft,
   normalizeCommonBusinessTermsPtBr,
-  normalizeMoneyInput,
   normalizeWhitespace,
   parsePositiveNumber,
   toTitleCasePtBr,
@@ -37,6 +36,11 @@ import PayableCreateModal from '@/components/payables/PayableCreateModal';
 import PayableImportModal from '@/components/payables/PayableImportModal';
 import PayableDetailsModal from '@/components/payables/PayableDetailsModal';
 import PayableEmailSuggestions from '@/components/payables/PayableEmailSuggestions';
+import { PayablesCockpit } from '@/components/payables/PayablesCockpit';
+import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
+import { detectPayableAnomalies, formatAnomalyBadge } from '@/services/domain/payablesAnomaly';
+import { buildComputedBriefing, type PayableBriefing } from '@/services/domain/payablesBriefing';
+import { usePayablesBriefing } from '@/hooks/usePayablesBriefing';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 
 function fmtBRL(value: number) {
@@ -49,10 +53,6 @@ type OriginFilter = 'all' | 'MANUAL' | 'IA_IMPORT' | 'CAMERA_CAPTURE' | 'AUTO_SE
 type FavorecidoFilter = 'all' | 'FORNECEDOR' | 'FUNCIONARIO';
 type GroupByOption = 'none' | PayableGroupBy;
 type DialogMode = 'payment' | 'edit' | 'cancel' | 'delete' | null;
-
-function parseMoneyInput(value: string) {
-  return normalizeMoneyInput(value).value ?? 0;
-}
 
 function PayableStatusBadge({ payable }: { payable: AccountPayable }) {
   const display = getPayableDisplayStatus(payable);
@@ -269,64 +269,86 @@ export default function ContasAPagar() {
     () => calculatePayablesCashFlowSummary({ payables: activePayables, categories: payableCategories, now }),
     [activePayables, now, payableCategories],
   );
-  const summaryCards = [
+  // Anomalias de valor: contas que destoam da média do mesmo fornecedor+categoria.
+  const anomalyMap = useMemo(() => detectPayableAnomalies({ payables: activePayables }), [activePayables]);
+  const anomalyDigest = useMemo(() => {
+    const byId = new Map(activePayables.map((payable) => [payable.id, payable]));
+    return [...anomalyMap.values()]
+      .filter((anomaly) => anomaly.direction === 'acima')
+      .sort((a, b) => b.deltaPct - a.deltaPct)
+      .slice(0, 3)
+      .map((anomaly) => {
+        const payable = byId.get(anomaly.payableId);
+        return {
+          title: payable?.title ?? 'Conta',
+          supplierName: payable?.supplierName ?? undefined,
+          badge: formatAnomalyBadge(anomaly),
+          current: anomaly.currentAmount,
+          baseline: anomaly.baseline,
+        };
+      });
+  }, [anomalyMap, activePayables]);
+
+  // Briefing da semana: resumo automático (sempre) + versão IA sob demanda.
+  const computedBriefing = useMemo(
+    () => buildComputedBriefing({ summary: cashFlowSummary, anomalies: anomalyDigest }),
+    [cashFlowSummary, anomalyDigest],
+  );
+  const { iaBriefing, isGenerating, generate: generateBriefing } = usePayablesBriefing();
+  const activeBriefing: PayableBriefing = iaBriefing ?? computedBriefing;
+  const briefingPayload = useMemo(() => ({
+    monthLabel: format(now, "MMMM 'de' yyyy", { locale: ptBR }),
+    nextSevenTotal: cashFlowSummary.nextSevenTotal,
+    nextSevenCount: cashFlowSummary.nextSevenCount,
+    nextThirtyTotal: cashFlowSummary.nextThirtyTotal,
+    nextThirtyCount: cashFlowSummary.nextThirtyCount,
+    overdueTotal: cashFlowSummary.overdueTotal,
+    overdueCount: cashFlowSummary.overdueCount,
+    laborTotal: cashFlowSummary.laborTotal,
+    laborCount: cashFlowSummary.laborCount,
+    anomalies: anomalyDigest,
+    topDue: cashFlowSummary.nextDue.map((payable) => ({
+      title: payable.title,
+      dueDate: payable.dueDate,
+      amount: calculatePayableRemainingBalance(payable),
+    })),
+  }), [cashFlowSummary, anomalyDigest, now]);
+
+  const prefersReducedMotion = useMemo(
+    () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true,
+    [],
+  );
+
+  const kpis = [
     {
       label: 'Vence hoje',
-      value: hasDueToday ? fmtBRL(dueToday.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0)) : 'Nada pra hoje',
-      sub: hasDueToday ? `${dueToday.length} conta${dueToday.length !== 1 ? 's' : ''} no prazo` : 'Você pode respirar',
-      Icon: CalendarCheck,
-      tone: hasDueToday ? 'urgent' : 'ok',
+      amount: dueToday.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0),
+      sub: hasDueToday ? `${dueToday.length} conta${dueToday.length !== 1 ? 's' : ''} no prazo` : 'Nada pra hoje',
+      dot: 'bg-amber-500',
+      valueClass: hasDueToday ? 'text-amber-700' : 'text-foreground',
     },
     {
       label: 'Em atraso',
-      value: hasOverdue ? fmtBRL(overduePayables.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0)) : 'Tudo em dia',
-      sub: hasOverdue ? `${overduePayables.length} venceram` : 'Nenhum atraso',
-      Icon: AlertTriangle,
-      tone: hasOverdue ? 'danger' : 'ok',
+      amount: overduePayables.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0),
+      sub: hasOverdue ? `${overduePayables.length} ${overduePayables.length === 1 ? 'venceu' : 'venceram'}` : 'Nenhum atraso',
+      dot: 'bg-destructive',
+      valueClass: hasOverdue ? 'text-destructive' : 'text-foreground',
     },
     {
       label: 'A pagar',
-      value: fmtBRL(pendingLike.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0)),
+      amount: pendingLike.reduce((sum, payable) => sum + calculatePayableRemainingBalance(payable), 0),
       sub: `${pendingLike.length} conta${pendingLike.length !== 1 ? 's' : ''} pendente${pendingLike.length !== 1 ? 's' : ''}`,
-      Icon: Clock,
-      tone: 'warn',
+      dot: 'bg-primary',
+      valueClass: 'text-foreground',
     },
     {
       label: 'Pago no mês',
-      value: fmtBRL(paidThisMonthTotal),
+      amount: paidThisMonthTotal,
       sub: format(now, "MMMM 'de' yyyy", { locale: ptBR }),
-      Icon: CheckCircle2,
-      tone: 'success',
+      dot: 'bg-emerald-500',
+      valueClass: 'text-emerald-700',
     },
-  ] as const;
-
-  const kpiToneStyles: Record<typeof summaryCards[number]['tone'], { card: string; icon: string; value: string }> = {
-    urgent: {
-      card: 'border-amber-300/70 bg-gradient-to-br from-amber-50 via-white to-white shadow-amber-100/40',
-      icon: 'bg-amber-500 text-white shadow-md shadow-amber-200',
-      value: 'text-amber-900',
-    },
-    danger: {
-      card: 'border-destructive/40 bg-gradient-to-br from-red-50 via-white to-white shadow-red-100/40',
-      icon: 'bg-destructive text-destructive-foreground shadow-md shadow-red-200',
-      value: 'text-destructive',
-    },
-    warn: {
-      card: 'border-primary/30 bg-gradient-to-br from-primary/[0.05] via-white to-white shadow-primary/10',
-      icon: 'bg-primary text-primary-foreground shadow-md shadow-primary/20',
-      value: 'text-foreground',
-    },
-    success: {
-      card: 'border-emerald-300/70 bg-gradient-to-br from-emerald-50 via-white to-white shadow-emerald-100/40',
-      icon: 'bg-emerald-600 text-white shadow-md shadow-emerald-200',
-      value: 'text-emerald-900',
-    },
-    ok: {
-      card: 'border-border bg-gradient-to-br from-muted/30 via-white to-white',
-      icon: 'bg-muted text-muted-foreground',
-      value: 'text-muted-foreground',
-    },
-  };
+  ];
 
   function updateRouteModal(modal?: string, id?: string) {
     const next = new URLSearchParams(searchParams);
@@ -588,6 +610,7 @@ export default function ContasAPagar() {
     const contextualQuestion = getContextualQuestion(payable, now);
     const duplicateKey = generatePayableDuplicateKey(payable);
     const duplicateCount = duplicateKey ? (payableDuplicateCounts.get(duplicateKey) ?? 0) : 0;
+    const anomaly = anomalyMap.get(payable.id);
     const seriesKey = (payable.totalInstallments ?? 0) > 1 ? (payable.recurrenceParentId ?? payable.id) : null;
     const series = seriesKey ? payableSeriesStats.get(seriesKey) : null;
     const seriesTotal = Math.max(payable.totalInstallments ?? 0, series?.items.length ?? 0);
@@ -624,11 +647,12 @@ export default function ContasAPagar() {
     return (
       <motion.div
         key={payable.id}
-        initial={{ opacity: 0, y: 8 }}
+        initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
+        whileHover={prefersReducedMotion || isCancelled ? undefined : { y: -2 }}
         transition={{ delay: Math.min(index, 8) * 0.03, duration: 0.22 }}
         className={cn(
-          'group relative flex overflow-hidden rounded-xl border bg-card shadow-sm transition-colors hover:border-primary/30 hover:bg-primary/[0.015] sm:rounded-2xl',
+          'group relative flex overflow-hidden rounded-xl border bg-card shadow-sm transition-shadow hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 sm:rounded-2xl',
           overdue && 'border-destructive/40',
           isCancelled && 'opacity-70',
         )}
@@ -668,6 +692,15 @@ export default function ContasAPagar() {
                   <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
                     <AlertTriangle className="h-3 w-3" />
                     Possível repetida ({duplicateCount})
+                  </span>
+                ) : null}
+                {anomaly && anomaly.direction === 'acima' && !isPaid && !isCancelled ? (
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                    title={`Valor ${formatAnomalyBadge(anomaly)} — o normal para ${payable.supplierName ?? 'este favorecido'} é cerca de ${fmtBRL(anomaly.baseline)}.`}
+                  >
+                    <TrendingUp className="h-3 w-3" />
+                    {formatAnomalyBadge(anomaly)}
                   </span>
                 ) : null}
               </div>
@@ -816,101 +849,37 @@ export default function ContasAPagar() {
         ) : null}
 
         {effectiveView === 'contas' ? <ErrorBoundary><>
-        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-          {summaryCards.map((card, index) => {
-            const tone = kpiToneStyles[card.tone];
-            return (
-              <motion.div
-                key={card.label}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.06, duration: 0.25 }}
-                className={cn(
-                  'relative overflow-hidden rounded-xl border p-2.5 shadow-sm sm:rounded-2xl sm:p-4',
-                  tone.card,
-                )}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{card.label}</span>
-                  <span className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg sm:h-8 sm:w-8', tone.icon)}>
-                    <card.Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                  </span>
-                </div>
-                <p className={cn('mt-2 truncate text-base font-display font-bold tracking-tight tabular-nums leading-tight sm:text-xl', tone.value)}>{card.value}</p>
-                <p className="mt-1 line-clamp-1 text-[10px] font-medium text-muted-foreground">{card.sub}</p>
-              </motion.div>
-            );
-          })}
+        <PayablesCockpit
+          summary={cashFlowSummary}
+          briefing={activeBriefing}
+          briefingLoading={isGenerating}
+          onOpenDetails={(id) => updateRouteModal('details', id)}
+          onRefreshBriefing={() => generateBriefing(briefingPayload)}
+          prefersReducedMotion={prefersReducedMotion}
+        />
+
+        <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+          {kpis.map((kpi, index) => (
+            <motion.div
+              key={kpi.label}
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.05, duration: 0.25 }}
+              className="rounded-xl border bg-card p-3 shadow-sm transition-shadow hover:shadow-md sm:rounded-2xl sm:p-4"
+            >
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
+                <span className={cn('h-1.5 w-1.5 rounded-full', kpi.dot)} />
+                {kpi.label}
+              </div>
+              <AnimatedNumber
+                value={kpi.amount}
+                format={fmtBRL}
+                className={cn('mt-1.5 block truncate font-display text-lg font-bold tabular-nums tracking-tight sm:text-xl', kpi.valueClass)}
+              />
+              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{kpi.sub}</p>
+            </motion.div>
+          ))}
         </div>
-
-        <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/[0.04] via-background to-background">
-          <CardContent className="grid gap-3 p-2.5 sm:p-3 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <p className="text-sm font-semibold">Fluxo de caixa</p>
-                  <p className="hidden text-xs text-muted-foreground sm:block">Saídas previstas, atrasos e folha para priorizar pagamentos sem surpresa.</p>
-                </div>
-                <Badge variant="outline" className="hidden rounded-full sm:flex">
-                  Base: contas pendentes, parciais e agendadas
-                </Badge>
-              </div>
-
-              <div className="grid grid-cols-2 gap-1.5 sm:gap-2 xl:grid-cols-4">
-                <div className="rounded-xl border bg-background p-2 sm:p-2.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Próx. 7 dias</p>
-                  <p className="mt-1.5 truncate text-sm font-bold tabular-nums sm:text-base">{fmtBRL(cashFlowSummary.nextSevenTotal)}</p>
-                  <p className="mt-0.5 hidden text-[11px] text-muted-foreground sm:block">{cashFlowSummary.nextSevenCount} vencimento{cashFlowSummary.nextSevenCount === 1 ? '' : 's'}</p>
-                </div>
-                <div className="rounded-xl border bg-background p-2 sm:p-2.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Próx. 30 dias</p>
-                  <p className="mt-1.5 truncate text-sm font-bold tabular-nums sm:text-base">{fmtBRL(cashFlowSummary.nextThirtyTotal)}</p>
-                  <p className="mt-0.5 hidden text-[11px] text-muted-foreground sm:block">{cashFlowSummary.nextThirtyCount} conta{cashFlowSummary.nextThirtyCount === 1 ? '' : 's'} no radar</p>
-                </div>
-                <div className="rounded-xl border border-destructive/20 bg-red-50/60 p-2 sm:p-2.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-destructive/80">Atrasadas</p>
-                  <p className="mt-1.5 truncate text-sm font-bold tabular-nums text-destructive sm:text-base">{fmtBRL(cashFlowSummary.overdueTotal)}</p>
-                  <p className="mt-0.5 hidden text-[11px] text-destructive/70 sm:block">{cashFlowSummary.overdueCount} pendência{cashFlowSummary.overdueCount === 1 ? '' : 's'} crítica{cashFlowSummary.overdueCount === 1 ? '' : 's'}</p>
-                </div>
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-2 sm:p-2.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-800">Mão de obra</p>
-                  <p className="mt-1.5 truncate text-sm font-bold tabular-nums text-emerald-950 sm:text-base">{fmtBRL(cashFlowSummary.laborTotal)}</p>
-                  <p className="mt-0.5 hidden text-[11px] text-emerald-800 sm:block">{cashFlowSummary.laborCount} lançamento{cashFlowSummary.laborCount === 1 ? '' : 's'} identificado{cashFlowSummary.laborCount === 1 ? '' : 's'}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-xl border bg-background p-2.5 sm:p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold">Próximos vencimentos</p>
-                  <p className="text-xs text-muted-foreground">Ordem real de prioridade pela data.</p>
-                </div>
-                <CalendarClock className="h-4 w-4 text-primary" />
-              </div>
-              <div className="mt-3 space-y-2">
-                {cashFlowSummary.nextDue.length === 0 ? (
-                  <div className="rounded-xl border border-dashed p-4 text-center text-xs text-muted-foreground">
-                    Nenhuma conta pendente no momento.
-                  </div>
-                ) : cashFlowSummary.nextDue.map((payable) => (
-                  <button
-                    key={payable.id}
-                    type="button"
-                    className="flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left transition hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    onClick={() => updateRouteModal('details', payable.id)}
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">{payable.title}</span>
-                      <span className="block text-xs text-muted-foreground">{format(parseISO(payable.dueDate), 'dd/MM/yyyy', { locale: ptBR })}</span>
-                    </span>
-                    <span className="shrink-0 text-sm font-bold tabular-nums">{fmtBRL(calculatePayableRemainingBalance(payable))}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
 
         <Card>
           <CardContent className="p-0">
