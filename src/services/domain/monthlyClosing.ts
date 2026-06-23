@@ -109,6 +109,9 @@ export interface MonthlyClosingDateSelection {
   mode: MonthlyClosingDateMode;
   month: string;
   year: string;
+  startDate?: string;
+  endDate?: string;
+  /** Compatibilidade com rascunhos criados antes do intervalo personalizado completo. */
   cutoffDate?: string;
 }
 
@@ -244,19 +247,39 @@ const formatPtDate = (date: Date) =>
 
 export function getMonthlyClosingDateRange(selection: MonthlyClosingDateSelection): MonthlyClosingDateRange | null {
   if (selection.mode === 'custom') {
-    const cutoff = parseDateInputValue(selection.cutoffDate ?? '');
-    if (!cutoff) return null;
+    const customStart = parseDateInputValue(selection.startDate ?? '');
+    const customEnd = parseDateInputValue(selection.endDate ?? '');
 
-    const start = new Date(cutoff.getFullYear(), cutoff.getMonth(), 1);
-    const end = new Date(cutoff.getFullYear(), cutoff.getMonth(), cutoff.getDate(), 23, 59, 59);
-    return {
-      start,
-      end,
-      month: String(cutoff.getMonth() + 1),
-      year: String(cutoff.getFullYear()),
-      label: `${formatPtDate(start)} a ${formatPtDate(end)}`,
-      helperLabel: `até ${formatPtDate(end)}`,
-    };
+    if (customStart && customEnd) {
+      if (customStart.getTime() > customEnd.getTime()) return null;
+
+      const start = new Date(customStart.getFullYear(), customStart.getMonth(), customStart.getDate());
+      const end = new Date(customEnd.getFullYear(), customEnd.getMonth(), customEnd.getDate(), 23, 59, 59);
+      return {
+        start,
+        end,
+        month: String(start.getMonth() + 1),
+        year: String(start.getFullYear()),
+        label: `${formatPtDate(start)} a ${formatPtDate(end)}`,
+        helperLabel: `${formatPtDate(start)} a ${formatPtDate(end)}`,
+      };
+    }
+
+    const legacyCutoff = parseDateInputValue(selection.cutoffDate ?? '');
+    if (legacyCutoff) {
+      const start = new Date(legacyCutoff.getFullYear(), legacyCutoff.getMonth(), 1);
+      const end = new Date(legacyCutoff.getFullYear(), legacyCutoff.getMonth(), legacyCutoff.getDate(), 23, 59, 59);
+      return {
+        start,
+        end,
+        month: String(start.getMonth() + 1),
+        year: String(start.getFullYear()),
+        label: `${formatPtDate(start)} a ${formatPtDate(end)}`,
+        helperLabel: `${formatPtDate(start)} a ${formatPtDate(end)}`,
+      };
+    }
+
+    return null;
   }
 
   const year = Number.parseInt(selection.year, 10);

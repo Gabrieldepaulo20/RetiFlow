@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -92,6 +93,8 @@ interface ClosingDraft {
   clientId: string;
   clientName: string;
   periodMode?: MonthlyClosingDateMode;
+  startDate?: string | null;
+  endDate?: string | null;
   cutoffDate?: string | null;
   month: string;
   year: string;
@@ -260,7 +263,8 @@ export default function MonthlyClosing() {
   const now = new Date();
   const defaultMonth = String(now.getMonth() + 1);
   const defaultYear = String(now.getFullYear());
-  const defaultCutoffDate = toDateInputValue(now);
+  const defaultCustomStartDate = toDateInputValue(new Date(now.getFullYear(), now.getMonth(), 1));
+  const defaultCustomEndDate = toDateInputValue(now);
   const [fechamentos, setFechamentos] = useState<FechamentoListItem[]>([]);
   const [loadingList, setLoadingList] = useState(false);
   // Pagamento do fechamento (B2B): marcar pago + cascata.
@@ -283,7 +287,8 @@ export default function MonthlyClosing() {
   const [periodMode, setPeriodMode] = useState<MonthlyClosingDateMode>('month');
   const [selMonth, setSelMonth] = useState(defaultMonth);
   const [selYear, setSelYear] = useState(defaultYear);
-  const [customCutoffDate, setCustomCutoffDate] = useState(defaultCutoffDate);
+  const [customStartDate, setCustomStartDate] = useState(defaultCustomStartDate);
+  const [customEndDate, setCustomEndDate] = useState(defaultCustomEndDate);
   const [selClientId, setSelClientId] = useState('');
   const [previewNotes, setPreviewNotes] = useState<PreviewNote[]>([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
@@ -322,13 +327,14 @@ export default function MonthlyClosing() {
     setPeriodMode('month');
     setSelMonth(defaultMonth);
     setSelYear(defaultYear);
-    setCustomCutoffDate(defaultCutoffDate);
+    setCustomStartDate(defaultCustomStartDate);
+    setCustomEndDate(defaultCustomEndDate);
     setPreviewNotes([]);
     setDescontos({});
     setIncludedNoteIds([]);
     setEditingItems({});
     setPreviewDados(null);
-  }, [currentScopeUserId, defaultCutoffDate, defaultMonth, defaultYear]);
+  }, [currentScopeUserId, defaultCustomEndDate, defaultCustomStartDate, defaultMonth, defaultYear]);
 
   /* ── Load fechamentos ── */
   const loadFechamentos = useCallback(async () => {
@@ -411,14 +417,24 @@ export default function MonthlyClosing() {
     setActiveDraftId(draft.id);
     setSelClientId(draft.clientId);
     setPeriodMode(draft.periodMode ?? 'month');
-    setCustomCutoffDate(draft.cutoffDate ?? defaultCutoffDate);
+    if (draft.periodMode === 'custom') {
+      const legacyCutoff = parseDateInputValue(draft.cutoffDate ?? '');
+      setCustomStartDate(
+        draft.startDate
+          ?? (legacyCutoff ? toDateInputValue(new Date(legacyCutoff.getFullYear(), legacyCutoff.getMonth(), 1)) : defaultCustomStartDate),
+      );
+      setCustomEndDate(draft.endDate ?? draft.cutoffDate ?? defaultCustomEndDate);
+    } else {
+      setCustomStartDate(defaultCustomStartDate);
+      setCustomEndDate(defaultCustomEndDate);
+    }
     setSelMonth(draft.month);
     setSelYear(draft.year);
     setPreviewNotes(draft.notes);
     setDescontos(draft.discounts);
     setIncludedNoteIds(draft.includedNoteIds ?? draft.notes.map((note) => note.id));
     setEditingItems({});
-  }, [defaultCutoffDate, scopedClientIdSet, toast]);
+  }, [defaultCustomEndDate, defaultCustomStartDate, scopedClientIdSet, toast]);
 
   const openDraft = useCallback((draft: ClosingDraft) => {
     loadDraftIntoEditor(draft);
@@ -435,9 +451,10 @@ export default function MonthlyClosing() {
       mode: periodMode,
       month: selMonth,
       year: selYear,
-      cutoffDate: customCutoffDate,
+      startDate: customStartDate,
+      endDate: customEndDate,
     }),
-    [customCutoffDate, periodMode, selMonth, selYear],
+    [customEndDate, customStartDate, periodMode, selMonth, selYear],
   );
 
   const closeTemplatePreview = useCallback(() => {
@@ -688,7 +705,9 @@ export default function MonthlyClosing() {
         clientId: selClientId,
         clientName: draftClient?.name ?? 'Cliente',
         periodMode,
-        cutoffDate: periodMode === 'custom' ? customCutoffDate : null,
+        startDate: periodMode === 'custom' ? customStartDate : null,
+        endDate: periodMode === 'custom' ? customEndDate : null,
+        cutoffDate: null,
         month: selectedPeriodRange.month,
         year: selectedPeriodRange.year,
         periodLabel,
@@ -707,7 +726,7 @@ export default function MonthlyClosing() {
     } finally {
       setLoadingPreview(false);
     }
-  }, [clients, customCutoffDate, notes, openDraft, periodMode, scopedClientIdSet, selClientId, selectedPeriodRange, toast]);
+  }, [clients, customEndDate, customStartDate, notes, openDraft, periodMode, scopedClientIdSet, selClientId, selectedPeriodRange, toast]);
 
   /* ── Computed totals ── */
   const totals = useMemo(() => {
@@ -1035,22 +1054,27 @@ export default function MonthlyClosing() {
   const handlePeriodModeSelect = useCallback((mode: MonthlyClosingDateMode) => {
     setPeriodMode(mode);
     if (mode === 'custom') {
-      const cutoff = parseDateInputValue(customCutoffDate);
-      if (cutoff) {
-        setSelMonth(String(cutoff.getMonth() + 1));
-        setSelYear(String(cutoff.getFullYear()));
+      const start = parseDateInputValue(customStartDate);
+      if (start) {
+        setSelMonth(String(start.getMonth() + 1));
+        setSelYear(String(start.getFullYear()));
       }
     }
     clearCurrentDraftSelection();
-  }, [clearCurrentDraftSelection, customCutoffDate]);
+  }, [clearCurrentDraftSelection, customStartDate]);
 
-  const handleCustomCutoffDateChange = useCallback((value: string) => {
-    setCustomCutoffDate(value);
-    const cutoff = parseDateInputValue(value);
-    if (cutoff) {
-      setSelMonth(String(cutoff.getMonth() + 1));
-      setSelYear(String(cutoff.getFullYear()));
+  const handleCustomStartDateChange = useCallback((value: string) => {
+    setCustomStartDate(value);
+    const start = parseDateInputValue(value);
+    if (start) {
+      setSelMonth(String(start.getMonth() + 1));
+      setSelYear(String(start.getFullYear()));
     }
+    clearCurrentDraftSelection();
+  }, [clearCurrentDraftSelection]);
+
+  const handleCustomEndDateChange = useCallback((value: string) => {
+    setCustomEndDate(value);
     clearCurrentDraftSelection();
   }, [clearCurrentDraftSelection]);
 
@@ -1092,7 +1116,7 @@ export default function MonthlyClosing() {
           <p className="mb-2 mt-0.5 text-xs text-muted-foreground">
             Agrupa as O.S. pela data de entrada/criação e considera apenas O.S. faturáveis ainda sem fechamento.
           </p>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[220px_260px_minmax(240px,1fr)_auto] lg:items-end">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[220px_minmax(330px,440px)_minmax(240px,1fr)_auto] lg:items-end">
             <div>
               <label className="mb-1.5 block text-xs text-muted-foreground">Período</label>
               <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
@@ -1144,15 +1168,34 @@ export default function MonthlyClosing() {
                 </div>
               </div>
             ) : (
-              <div>
-                <label htmlFor="closing-cutoff-date" className="mb-1.5 block text-xs text-muted-foreground">Data de corte</label>
-                <Input
-                  id="closing-cutoff-date"
-                  type="date"
-                  value={customCutoffDate}
-                  onChange={(event) => handleCustomCutoffDateChange(event.target.value)}
-                  aria-label="Selecionar data de corte do fechamento"
-                />
+              <div className="rounded-2xl border border-primary/15 bg-primary/[0.035] p-2 shadow-sm">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">Data inicial</label>
+                    <DatePicker
+                      value={customStartDate}
+                      onChange={handleCustomStartDateChange}
+                      placeholder="Data inicial"
+                      ariaLabel="Selecionar data inicial do fechamento"
+                      className="h-10 bg-background text-xs sm:text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">Data final</label>
+                    <DatePicker
+                      value={customEndDate}
+                      onChange={handleCustomEndDateChange}
+                      placeholder="Data final"
+                      ariaLabel="Selecionar data final do fechamento"
+                      className="h-10 bg-background text-xs sm:text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="mt-2 rounded-xl border border-primary/15 bg-background/75 px-2.5 py-1.5 text-[11px] font-medium text-primary">
+                  {selectedPeriodRange
+                    ? `Fechamento de ${selectedPeriodRange.helperLabel}`
+                    : 'Escolha a data inicial e a data final.'}
+                </div>
               </div>
             )}
             <div className="flex-1 min-w-[180px]">
@@ -1175,7 +1218,7 @@ export default function MonthlyClosing() {
           </div>
           {periodMode === 'custom' && !selectedPeriodRange && (
             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              Escolha uma data de corte válida para carregar os clientes.
+              Escolha uma data inicial e uma data final válidas. A data inicial não pode ser maior que a final.
             </div>
           )}
           {hasNoClientsForSelectedPeriod && (

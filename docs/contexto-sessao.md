@@ -1,6 +1,29 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-06-22
+Atualizado em: 2026-06-23
+
+---
+
+## Fechamento Mensal - Intervalo Personalizado Com Duas Datas - 2026-06-23
+
+- Pedido: o modo `Personalizado` nao pode ter apenas uma "data de corte"; a cliente precisa escolher
+  livremente de quando ate quando sera o fechamento.
+- Corrigido:
+  - `MonthlyClosing` agora exibe dois seletores de calendario: `Data inicial` e `Data final`;
+  - o resumo do card mostra explicitamente `Fechamento de DD/MM/AAAA a DD/MM/AAAA`;
+  - intervalo invalido (inicio maior que fim ou data faltando) bloqueia cliente/geracao e mostra aviso claro;
+  - rascunhos novos salvam `startDate` e `endDate`;
+  - rascunhos antigos com `cutoffDate` continuam compativeis, usando a regra antiga so como fallback.
+- `DatePicker` ganhou `ariaLabel` para manter os controles acessiveis e testaveis.
+- Sem migration, sem RPC nova, sem Storage/Auth/Edge Function nesta etapa.
+- Validado:
+  - `npm test -- --run src/test/monthly-closing.service.test.ts`
+  - `npx tsc --noEmit`
+  - `npm run typecheck`
+  - `npm run lint` (apenas 8 avisos antigos de Fast Refresh)
+  - `npm test -- --run` (56 arquivos, 424 testes)
+  - `npm run build` (avisos conhecidos de Browserslist/dynamic import/chunk size)
+  - `CI=1 npx playwright test e2e/monthly-closing.spec.ts`
 
 ---
 

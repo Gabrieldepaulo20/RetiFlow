@@ -37,6 +37,7 @@ export interface DatePickerProps {
   placeholder: string;
   className?: string;
   disabled?: boolean;
+  ariaLabel?: string;
 }
 
 export function DatePicker({
@@ -45,6 +46,7 @@ export function DatePicker({
   placeholder,
   className,
   disabled = false,
+  ariaLabel,
 }: DatePickerProps) {
   const [open, setOpen] = useState(false);
   const selectedDate = parseDateInput(value);
@@ -56,6 +58,7 @@ export function DatePicker({
           type="button"
           variant="outline"
           disabled={disabled}
+          aria-label={ariaLabel}
           className={cn(
             'h-10 w-full justify-start rounded-xl border-border/60 px-3 text-left font-normal shadow-sm transition-colors hover:border-primary/20 hover:bg-muted/30 hover:text-foreground',
             className,
