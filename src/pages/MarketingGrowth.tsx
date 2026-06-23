@@ -33,6 +33,10 @@ import {
   Users,
 } from 'lucide-react';
 import { getMarketingResumo, type MarketingProvider, type MarketingResumo } from '@/api/supabase/marketing';
+import {
+  MARKETING_RESUMO_CACHE_TTL_MS,
+  readCachedMarketingResumo,
+} from '@/api/supabase/marketingCache';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSystemUsersQuery } from '@/hooks/useSystemUsersQuery';
 import { Badge } from '@/components/ui/badge';
@@ -437,6 +441,16 @@ export default function MarketingGrowth() {
     () => selectableUsers.find((user) => user.id === selectedUserId) ?? null,
     [selectableUsers, selectedUserId],
   );
+  const targetUserId = isAdmin ? selectedUserId : null;
+  const queryEnabled = !isAdmin || Boolean(targetUserId);
+  const queryKey = useMemo(
+    () => ['marketing-growth', selectedPeriod, targetUserId ?? 'self'] as const,
+    [selectedPeriod, targetUserId],
+  );
+  const cachedResumo = useMemo(
+    () => (queryEnabled ? readCachedMarketingResumo(selectedPeriod, targetUserId) : null),
+    [queryEnabled, selectedPeriod, targetUserId],
+  );
 
   useEffect(() => {
     if (!isAdmin) {
@@ -448,16 +462,20 @@ export default function MarketingGrowth() {
   }, [isAdmin, selectableUsers, selectedUserId]);
 
   const { data, isLoading, isFetching, error } = useQuery({
-    queryKey: ['marketing-growth', selectedPeriod, isAdmin ? selectedUserId : 'self'],
-    queryFn: () => getMarketingResumo(selectedPeriod, isAdmin ? selectedUserId : null),
-    enabled: !isAdmin || Boolean(selectedUserId),
-    staleTime: 1000 * 60 * 5,
-    gcTime: 1000 * 60 * 15,
+    queryKey,
+    queryFn: () => getMarketingResumo(selectedPeriod, targetUserId),
+    enabled: queryEnabled,
+    staleTime: MARKETING_RESUMO_CACHE_TTL_MS,
+    gcTime: 1000 * 60 * 60,
     refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    initialData: cachedResumo?.data,
+    initialDataUpdatedAt: cachedResumo?.savedAt,
     placeholderData: (previous) => {
       if (!previous) return undefined;
+      if (previous.periodDays !== selectedPeriod) return undefined;
       if (!isAdmin) return previous;
-      return previous.context?.targetUserId === selectedUserId ? previous : undefined;
+      return previous.context?.targetUserId === targetUserId ? previous : undefined;
     },
     retry: false,
   });

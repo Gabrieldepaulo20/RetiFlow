@@ -108,6 +108,17 @@ interface Ga4Summary {
   sources: MarketingSourceMetric[];
 }
 
+interface CacheEntry<T> {
+  expiresAt: number;
+  value: T;
+}
+
+const GA4_ACCESS_TOKEN_CACHE_TTL_MS = 50 * 60_000;
+const GA4_SUMMARY_CACHE_TTL_MS = 10 * 60_000;
+
+const ga4AccessTokenCache = new Map<string, CacheEntry<string>>();
+const ga4SummaryCache = new Map<string, CacheEntry<Ga4Summary>>();
+
 const localDevOrigins = new Set([
   'http://localhost:5173',
   'http://127.0.0.1:5173',
@@ -259,6 +270,23 @@ function parseServiceAccount(raw: string): GoogleServiceAccount {
   };
 }
 
+function getCachedValue<T>(cache: Map<string, CacheEntry<T>>, key: string) {
+  const cached = cache.get(key);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    cache.delete(key);
+    return null;
+  }
+  return cached.value;
+}
+
+function setCachedValue<T>(cache: Map<string, CacheEntry<T>>, key: string, value: T, ttlMs: number) {
+  cache.set(key, {
+    expiresAt: Date.now() + ttlMs,
+    value,
+  });
+}
+
 async function createServiceAccountJwt(serviceAccount: GoogleServiceAccount) {
   const now = Math.floor(Date.now() / 1000);
   const header = { alg: 'RS256', typ: 'JWT' };
@@ -286,6 +314,10 @@ async function createServiceAccountJwt(serviceAccount: GoogleServiceAccount) {
 }
 
 async function getGa4AccessToken(serviceAccount: GoogleServiceAccount) {
+  const cacheKey = serviceAccount.client_email;
+  const cachedToken = getCachedValue(ga4AccessTokenCache, cacheKey);
+  if (cachedToken) return cachedToken;
+
   const assertion = await createServiceAccountJwt(serviceAccount);
   const response = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -300,6 +332,7 @@ async function getGa4AccessToken(serviceAccount: GoogleServiceAccount) {
   if (!response.ok || !payload.access_token) {
     throw new Error(payload.error_description ?? payload.error ?? 'Falha ao autenticar no GA4.');
   }
+  setCachedValue(ga4AccessTokenCache, cacheKey, payload.access_token, GA4_ACCESS_TOKEN_CACHE_TTL_MS);
   return payload.access_token;
 }
 
@@ -402,8 +435,20 @@ function countActionEvents(report: Ga4RunReportResponse) {
 
 async function fetchGa4Summary(propertyId: string, serviceAccountJson: string, periodDays: number, currentData: MarketingResumo): Promise<Ga4Summary> {
   const serviceAccount = parseServiceAccount(serviceAccountJson);
-  const accessToken = await getGa4AccessToken(serviceAccount);
   const range = getDateRange(periodDays);
+  const cacheKey = [
+    serviceAccount.client_email,
+    propertyId,
+    periodDays,
+    range.startDate,
+    range.endDate,
+    range.previousStartDate,
+    range.previousEndDate,
+  ].join(':');
+  const cachedSummary = getCachedValue(ga4SummaryCache, cacheKey);
+  if (cachedSummary) return cachedSummary;
+
+  const accessToken = await getGa4AccessToken(serviceAccount);
 
   const commonLimit = { limit: '8' };
   const [currentReport, previousReport, dailyReport, pagesReport, sourcesReport, currentEventsReport, previousEventsReport] = await Promise.all([
@@ -463,7 +508,7 @@ async function fetchGa4Summary(propertyId: string, serviceAccountJson: string, p
     }),
   ]);
 
-  return {
+  const summary = {
     currentVisits: metricValue(currentReport, 0, 0),
     previousVisits: metricValue(previousReport, 0, 0),
     currentSessions: metricValue(currentReport, 0, 1),
@@ -480,6 +525,8 @@ async function fetchGa4Summary(propertyId: string, serviceAccountJson: string, p
     pages: buildGa4Pages(pagesReport, currentData.site.pages),
     sources: buildGa4Sources(sourcesReport, currentData.site.sources),
   };
+  setCachedValue(ga4SummaryCache, cacheKey, summary, GA4_SUMMARY_CACHE_TTL_MS);
+  return summary;
 }
 
 function upsertGa4Integration(

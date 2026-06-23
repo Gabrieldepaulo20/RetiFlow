@@ -4,6 +4,40 @@ Atualizado em: 2026-06-23
 
 ---
 
+## Crescimento - Performance De Carregamento - 2026-06-23
+
+- Pedido: o modulo Crescimento demorava para carregar ao consultar informacoes.
+- Corrigido sem migration e sem alterar contrato de banco:
+  - adicionado cache por sessao no frontend (`sessionStorage`) para o resumo de Crescimento por cliente/periodo,
+    com TTL de 15 minutos;
+  - a tela usa esse cache como `initialData` do React Query, evitando skeleton/recarregamento quando volta para
+    o mesmo cliente/periodo;
+  - chamadas simultaneas para o mesmo cliente/periodo sao deduplicadas em `getMarketingResumo`;
+  - `MarketingGrowth` nao mostra cache de outro periodo/cliente e nao usa cache `self` enquanto admin ainda esta
+    selecionando cliente;
+  - a Edge Function `marketing-dashboard` ganhou cache quente em memoria para token GA4 (50 min) e resumo GA4
+    por propriedade/periodo (10 min), reduzindo chamadas externas repetidas quando o runtime permanece quente.
+- Segurança:
+  - continua exigindo `Authorization`;
+  - continua validando usuario/alvo antes de montar resposta;
+  - nenhum segredo foi exposto no frontend ou em arquivo versionado.
+- Observacao: `deno check` nao rodou localmente porque o binario `deno` nao esta instalado nesta maquina.
+- Deploy:
+  - `supabase functions deploy marketing-dashboard --use-api` publicado no projeto
+    `dqeoxxokvvcpssajycgq`.
+- Validado:
+  - `npm test -- --run src/test/marketing-cache.test.ts src/test/marketing-api.test.ts`
+  - `npx tsc --noEmit`
+  - `npm run typecheck`
+  - `npm run lint` (apenas 8 avisos antigos de Fast Refresh; uma primeira tentativa em paralelo falhou por
+    arquivo temporario do Vite sumindo durante leitura, e passou ao repetir isolado)
+  - `npm test -- --run` (58 arquivos, 431 testes)
+  - `npm run build` (avisos conhecidos de Browserslist/dynamic import/chunk size)
+  - `npm run test:integration` (17 arquivos, 55 testes; logs negativos esperados em testes de seguranca)
+  - `CI=1 npx playwright test e2e/route-surface.spec.ts`
+
+---
+
 ## Fechamento Mensal - Intervalo Personalizado Com Duas Datas - 2026-06-23
 
 - Pedido: o modo `Personalizado` nao pode ter apenas uma "data de corte"; a cliente precisa escolher
