@@ -217,9 +217,24 @@ function localDateValue(value: string | null | undefined) {
   return new Date(year, month - 1, day).getTime();
 }
 
+export const DEFAULT_NOTE_DEADLINE_DAYS = 5;
+export const MAX_NOTE_DEADLINE_DAYS = 10;
+
 export function validateDueDateNotBeforeBaseDate(dueDate: string | null | undefined, baseDate: string | null | undefined) {
   const due = localDateValue(dueDate);
   const base = localDateValue(baseDate);
   if (due == null || base == null) return true;
   return due >= base;
+}
+
+export function validateDueDateWithinMaxDays(
+  dueDate: string | null | undefined,
+  baseDate: string | null | undefined,
+  maxDays = MAX_NOTE_DEADLINE_DAYS,
+) {
+  const due = localDateValue(dueDate);
+  const base = localDateValue(baseDate);
+  if (due == null || base == null) return true;
+  const days = (due - base) / (24 * 60 * 60 * 1000);
+  return days <= maxDays;
 }

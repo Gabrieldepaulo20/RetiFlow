@@ -173,6 +173,30 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
       subtotal_item: 0,
     }));
 
+    const invalidPastDeadline = new Date();
+    invalidPastDeadline.setDate(invalidPastDeadline.getDate() - 1);
+    const pastDeadlineUpdate = await callRpc(client, 'update_nota_servico', {
+      p_payload: {
+        id_notas_servico: noteId,
+        prazo: invalidPastDeadline.toISOString().slice(0, 10),
+      },
+    });
+    expect(pastDeadlineUpdate.status).toBe(400);
+    expect(pastDeadlineUpdate.code).toBe('invalid_payload');
+    expect(pastDeadlineUpdate.mensagem).toContain('prazo não pode ser anterior');
+
+    const invalidLongDeadline = new Date();
+    invalidLongDeadline.setDate(invalidLongDeadline.getDate() + 11);
+    const longDeadlineUpdate = await callRpc(client, 'update_nota_servico', {
+      p_payload: {
+        id_notas_servico: noteId,
+        prazo: invalidLongDeadline.toISOString().slice(0, 10),
+      },
+    });
+    expect(longDeadlineUpdate.status).toBe(400);
+    expect(longDeadlineUpdate.code).toBe('invalid_payload');
+    expect(longDeadlineUpdate.mensagem).toContain('até 10 dias');
+
     const updated = await callRpc(client, 'update_nota_servico', {
       p_payload: {
         id_notas_servico: noteId,

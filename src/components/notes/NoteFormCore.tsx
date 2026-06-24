@@ -41,7 +41,10 @@ import {
   onlyDigits,
   parsePositiveNumber,
   toTitleCasePtBr,
+  DEFAULT_NOTE_DEADLINE_DAYS,
+  MAX_NOTE_DEADLINE_DAYS,
   validateDueDateNotBeforeBaseDate,
+  validateDueDateWithinMaxDays,
 } from '@/services/domain/textNormalization';
 import { formatNoteNumber, normalizeNoteNumber } from '@/lib/noteNumbers';
 import { getNotaServicoDetalhes, uploadNotaPDF, updateNotaPdfUrl } from '@/api/supabase/notas';
@@ -108,6 +111,23 @@ export function FormSection({ children }: { children: React.ReactNode }) {
 
 const numberInputClassName =
   '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none';
+
+function formatInputDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getTodayInputValue() {
+  return formatInputDate(new Date());
+}
+
+function getFutureInputValue(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return formatInputDate(date);
+}
 
 /* ─── Item types ─── */
 
@@ -194,8 +214,8 @@ export default function NoteFormCore({
   const [parentNoteId, setParentNoteId] = useState(
     editingNote?.parentNoteId ?? preParentId,
   );
-  const [data, setData] = useState('');
-  const [prazo, setPrazo] = useState('');
+  const [data, setData] = useState(() => editingNote?.createdAt.split('T')[0] || getTodayInputValue());
+  const [prazo, setPrazo] = useState(() => editingNote?.deadline?.split('T')[0] || getFutureInputValue(DEFAULT_NOTE_DEADLINE_DAYS));
   const [clientId, setClientId] = useState(editingNote?.clientId ?? preClientId);
   const [vehicleModel, setVehicleModel] = useState('');
   const [engineType, setEngineType] = useState('Cabeçote');
@@ -518,6 +538,14 @@ export default function NoteFormCore({
     }
     if (prazo && !validateDueDateNotBeforeBaseDate(prazo, data)) {
       toast({ title: 'Prazo inválido', description: 'O prazo não pode ser anterior à data de entrada.', variant: 'destructive' });
+      return;
+    }
+    if (prazo && !validateDueDateWithinMaxDays(prazo, data)) {
+      toast({
+        title: 'Prazo muito longo',
+        description: `Use no máximo ${MAX_NOTE_DEADLINE_DAYS} dias a partir da data de entrada da O.S.`,
+        variant: 'destructive',
+      });
       return;
     }
     const normalizedContatoNome = toTitleCasePtBr(contatoNome);

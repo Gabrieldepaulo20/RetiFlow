@@ -4,6 +4,58 @@ Atualizado em: 2026-06-24
 
 ---
 
+## Notas De Entrada - Prazo Realista E Correcao OS-5509/OS-5571 - 2026-06-24
+
+- Pedido: investigar `OS-5509` e `OS-5571`, corrigir prazos incoerentes e impedir que a O.S. tenha prazo
+  anterior a data de entrada ou prazo de 1 mes por erro operacional.
+- Diagnostico em producao:
+  - ambas pertencem a Retifica Premium (`retificapremium5@gmail.com`) e estao com `origem = SISTEMA`;
+  - portanto, nenhuma das duas veio do banco legado;
+  - `OS-5509`: criada em `2026-06-08 15:00:15`, estava `Entregue`, prazo antigo `2026-05-08`,
+    `finalizado_em = NULL`, total `R$ 1.360,00`;
+  - `OS-5571`: criada em `2026-06-10 13:28:37`, estava `Entregue`, prazo antigo `2026-07-10`,
+    `finalizado_em = NULL`, total `R$ 1.800,00`;
+  - as duas nao tinham fechamento vinculado.
+- Correcao de dados aplicada com SQL guardado:
+  - a query abortaria se nao encontrasse exatamente as 2 O.S., `origem = SISTEMA`, status `Entregue` e
+    `fk_fechamentos IS NULL`;
+  - `OS-5509`: prazo corrigido para `2026-06-08`;
+  - `OS-5571`: prazo corrigido para `2026-06-10`;
+  - `finalizado_em` das duas preenchido com o `updated_at` que ja indicava a entrega em `2026-06-15`.
+- Regra preventiva aplicada:
+  - migration `20260624163711_enforce_note_deadline_and_finalized_at.sql`;
+  - `nova_nota` agora assume prazo padrao de 5 dias quando o payload nao envia prazo;
+  - `nova_nota` e `update_nota_servico` recusam prazo anterior a data de entrada;
+  - `nova_nota` e `update_nota_servico` recusam prazo acima de 10 dias da data de entrada;
+  - `update_nota_servico` agora persiste `finalizado_em` quando o frontend muda status para faturavel
+    (`Entregue`, `Recusada`, `Sem conserto`) e limpa quando volta para nao faturavel;
+  - formulario de O.S. nova abre com data de hoje e prazo padrao de +5 dias; UI bloqueia prazo maior que 10 dias.
+- Aplicado em producao:
+  - SQL executado via `supabase db query --linked --file ...`;
+  - historico remoto reparado com `supabase migration repair --linked --status applied 20260624163711`.
+- Validacao de producao:
+  - RPC `update_nota_servico` testada com sessao simulada da Retifica Premium;
+  - prazo `2026-07-10` para `OS-5571` retornou `status:400` / `invalid_payload` / "ate 10 dias";
+  - prazo `2026-06-08` para `OS-5571` retornou `status:400` / `invalid_payload` / "prazo nao pode ser anterior";
+  - estado final: `OS-5509` prazo `2026-06-08`, `finalizado_em 2026-06-15 17:10:30`; `OS-5571`
+    prazo `2026-06-10`, `finalizado_em 2026-06-15 17:10:25`.
+- Numeros atuais de junho da Retifica Premium depois da correcao:
+  - 93 O.S. criadas em junho;
+  - entradas previstas: `R$ 87.105,00`;
+  - faturamento real/faturavel: 84 O.S. / `R$ 76.155,00`;
+  - diferenca ainda nao faturada: `R$ 10.950,00`;
+  - composicao da diferenca: 7 O.S. `Aberta` (`R$ 10.600,00`) + 2 O.S. `Pronta` (`R$ 350,00`).
+- Validacao executada:
+  - `npm test -- --run src/test/text-normalization.test.ts src/test/domain.intakeNotes.test.ts src/test/dashboard-finance.test.ts`;
+  - `npx tsc --noEmit`;
+  - `npm run lint` (passou com 8 warnings antigos de Fast Refresh);
+  - `npm test -- --run` (58 arquivos, 435 testes);
+  - `npm run build` (passou com avisos conhecidos de Browserslist/chunks/import dinamico);
+  - `npm run test:integration` (17 arquivos, 56 testes);
+  - `npm run test:integration -- src/test/integration/notas.test.ts` depois do teste novo de prazo.
+
+---
+
 ## Limpeza De O.S. Excluidas Da Retifica Premium - 2026-06-24
 
 - Pedido: excluir do sistema as O.S. da Retifica Premium que estavam com status `Excluida`.

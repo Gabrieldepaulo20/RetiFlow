@@ -11,6 +11,7 @@ import {
   onlyDigits,
   toTitleCasePtBr,
   validateDueDateNotBeforeBaseDate,
+  validateDueDateWithinMaxDays,
 } from '@/services/domain/textNormalization';
 
 describe('textNormalization', () => {
@@ -64,5 +65,12 @@ describe('textNormalization', () => {
     expect(validateDueDateNotBeforeBaseDate('2026-04-24', '2026-04-25')).toBe(false);
     expect(validateDueDateNotBeforeBaseDate('2026-04-25', '2026-04-25')).toBe(true);
     expect(validateDueDateNotBeforeBaseDate('2026-04-26', '2026-04-25')).toBe(true);
+  });
+
+  it('validates service note due date maximum window', () => {
+    expect(validateDueDateWithinMaxDays('2026-06-30', '2026-06-20')).toBe(true);
+    expect(validateDueDateWithinMaxDays('2026-07-01', '2026-06-20')).toBe(false);
+    expect(validateDueDateWithinMaxDays('2026-06-28', '2026-06-20', 8)).toBe(true);
+    expect(validateDueDateWithinMaxDays('2026-06-29', '2026-06-20', 8)).toBe(false);
   });
 });

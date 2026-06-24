@@ -69,6 +69,7 @@ import {
 import { dashboardResumoToDomainData, getDashboardResumo, getServicosResumo } from '@/api/supabase/dashboard';
 import { buildMeaningfulPayableTitle } from '@/services/domain/payables';
 import { sanitizeClientInput } from '@/services/domain/customers';
+import { DEFAULT_NOTE_DEADLINE_DAYS } from '@/services/domain/textNormalization';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -115,6 +116,15 @@ function supabaseToAccountPayable(row: ContaPagar): AccountPayable {
     updatedAt: row.updated_at,
     createdByUserId: '',
   };
+}
+
+function getDefaultNoteDeadlineDate() {
+  const date = new Date();
+  date.setDate(date.getDate() + DEFAULT_NOTE_DEADLINE_DAYS);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 const PAYABLE_CLASS_VALUES = new Set(['CUSTO', 'DESPESA', 'IMPOSTO', 'FINANCEIRO']);
@@ -676,7 +686,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const result = await novaNota({
         tipo_nota: note.type === 'SERVICO' ? 'Serviço' : 'Compra',
         numero_nota: resolvedNumber,
-        prazo: note.deadline ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        prazo: note.deadline ?? getDefaultNoteDeadlineDate(),
         defeito: note.complaint || '-',
         fk_clientes: note.type === 'SERVICO' ? note.clientId : undefined,
         fk_notas_servico: note.type === 'COMPRA' ? note.parentNoteId : undefined,
@@ -818,7 +828,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (IS_REAL_AUTH) {
       const statusId = statusDbIdRef.current.get(status);
       if (statusId !== undefined) {
-        updateNotaServicoDB({ id_notas_servico: id, fk_status: statusId }).catch(() => {
+        const persistedTransition = applyNoteStatusTransition({ nextStatus: status, previousNote: note, changedAt });
+        updateNotaServicoDB({
+          id_notas_servico: id,
+          fk_status: statusId,
+          finalizado_em: persistedTransition.finalizedAt ?? null,
+        }).catch(() => {
           setNotes(previousNotes);
           bumpDataVersion();
           toast({ title: 'Erro ao salvar status', description: 'Mudança revertida. Tente novamente.', variant: 'destructive' });
