@@ -4,6 +4,31 @@ Atualizado em: 2026-06-24
 
 ---
 
+## PDFs De O.S. Pos-Merge De Clientes Duplicados - 2026-06-24
+
+- Pedido: confirmar se, ao juntar clientes duplicados, seria necessario regerar PDFs das notas para nao
+  manter CNPJ antigo/errado na nota impressa.
+- Diagnostico:
+  - os vinculos das O.S. no banco estavam corretos depois do merge, mas PDFs ja salvos no Storage sao
+    arquivos estaticos e nao mudam automaticamente quando `fk_clientes` e documento do cliente sao corrigidos;
+  - 18 PDFs dos clientes mergeados foram baixados do bucket `notas` e inspecionados por extracao de texto;
+  - 14 PDFs ainda continham CNPJ antigo/incorreto:
+    - Erick Pignata: `OS-3419`, `OS-3642` com `27755341000163`;
+    - Missao Johnny: `OS-3431`, `OS-3643`, `OS-3671`, `OS-3892`, `OS-3943`, `OS-4426`, `OS-4482`,
+      `OS-4554`, `OS-4829`, `OS-5001`, `OS-5201`, `OS-5754` com `40841996000147`.
+- Correcao aplicada:
+  - os 14 PDFs afetados foram regenerados pela `NotaPDFTemplate` atual usando os dados atuais do banco;
+  - upload feito com `upsert` no mesmo `pdf_url` de cada O.S., sem alterar referencias no banco;
+  - PDFs que ja estavam corretos (`OS-3299`, `OS-3774`, `OS-5905`, `OS-5940`) nao foram sobrescritos.
+- Validacao:
+  - os 18 PDFs foram baixados novamente do Supabase Storage depois da correcao;
+  - extracao de texto confirmou zero ocorrencia dos CNPJs antigos `27755341000163` e `40841996000147`;
+  - todos exibem o CNPJ atual esperado: `32755341000163` para Erick Pignata e `40817996000147` para Missao Johnny;
+  - uma pre-visualizacao local via Quick Look confirmou layout renderizado com `Retifica Premium`, documento
+    pontuado e `Ordem de Servico` na nota.
+
+---
+
 ## Notas De Entrada - Prazo Realista E Correcao OS-5509/OS-5571 - 2026-06-24
 
 - Pedido: investigar `OS-5509` e `OS-5571`, corrigir prazos incoerentes e impedir que a O.S. tenha prazo
