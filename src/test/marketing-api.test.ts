@@ -1,4 +1,8 @@
-import { getMarketingResumo } from '@/api/supabase/marketing';
+import {
+  DEFAULT_MARKETING_RESUMO_PERIOD_DAYS,
+  getMarketingResumo,
+  getMarketingResumoQueryKey,
+} from '@/api/supabase/marketing';
 import { getMarketingResumoCacheKey } from '@/api/supabase/marketingCache';
 
 const { getSession, invoke } = vi.hoisted(() => ({
@@ -104,5 +108,14 @@ describe('marketing growth API', () => {
     const raw = window.sessionStorage.getItem(getMarketingResumoCacheKey(7, null));
     expect(raw).toContain('"periodDays":7');
     expect(raw).toContain('"visits":10');
+  });
+
+  it('builds the same React Query key used by warmup and page reads', () => {
+    expect(getMarketingResumoQueryKey(30, ' cliente-1 ')).toEqual(['marketing-growth', 30, 'cliente-1']);
+    expect(getMarketingResumoQueryKey(Number.NaN, '')).toEqual([
+      'marketing-growth',
+      DEFAULT_MARKETING_RESUMO_PERIOD_DAYS,
+      'self',
+    ]);
   });
 });

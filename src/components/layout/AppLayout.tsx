@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Outlet, useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { AnimatedPage } from './AnimatedPage';
@@ -27,6 +28,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { preloadRouteModule, preloadRouteModules } from '@/routes/routeModules';
+import { getMarketingResumo, getMarketingResumoQueryKey, DEFAULT_MARKETING_RESUMO_PERIOD_DAYS } from '@/api/supabase/marketing';
+import { MARKETING_RESUMO_CACHE_TTL_MS } from '@/api/supabase/marketingCache';
+import { useSystemUsersQuery } from '@/hooks/useSystemUsersQuery';
 import { getInitials } from '@/lib/avatarInitials';
 import { isSuperAdmin } from '@/services/auth/superAdmin';
 import {
@@ -47,8 +51,9 @@ const navItems = [
 ] as const;
 
 export default function AppLayout() {
-  const { user, isSupportImpersonating, endSupportImpersonation, logout, canAccessModule } = useAuth();
+  const { user, operationalUser, isAdmin, isSupportImpersonating, endSupportImpersonation, logout, canAccessModule } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
   const isMobile = useIsMobile();
@@ -185,6 +190,44 @@ export default function AppLayout() {
     return canAccessModule(item.moduleKey);
   };
 
+  const canWarmMarketing = Boolean(user && canAccessModule('marketing'));
+  const { data: marketingWarmupUsers = [] } = useSystemUsersQuery({ enabled: canWarmMarketing && isAdmin });
+  const marketingWarmupTargetUserId = useMemo(() => {
+    if (!canWarmMarketing || !isAdmin) return null;
+    if (isSupportImpersonating && operationalUser?.moduleAccess?.marketing === true) {
+      return operationalUser.id;
+    }
+
+    return marketingWarmupUsers.find((candidate) => (
+      candidate.isActive
+      && candidate.role !== 'ADMIN'
+      && candidate.moduleAccess?.marketing === true
+    ))?.id ?? null;
+  }, [canWarmMarketing, isAdmin, isSupportImpersonating, marketingWarmupUsers, operationalUser]);
+  const canWarmMarketingData = canWarmMarketing && (!isAdmin || Boolean(marketingWarmupTargetUserId));
+
+  const warmMarketingGrowth = useCallback(() => {
+    void preloadRouteModule('/crescimento');
+    if (!canWarmMarketingData) return;
+
+    const targetUserId = isAdmin ? marketingWarmupTargetUserId : null;
+    void queryClient.prefetchQuery({
+      queryKey: getMarketingResumoQueryKey(DEFAULT_MARKETING_RESUMO_PERIOD_DAYS, targetUserId),
+      queryFn: () => getMarketingResumo(DEFAULT_MARKETING_RESUMO_PERIOD_DAYS, targetUserId),
+      staleTime: MARKETING_RESUMO_CACHE_TTL_MS,
+      gcTime: 60 * 60 * 1000,
+    }).catch(() => {
+      // O prefetch nao pode atrapalhar a navegacao; a tela mostra erro se o usuario abrir o modulo.
+    });
+  }, [canWarmMarketingData, isAdmin, marketingWarmupTargetUserId, queryClient]);
+
+  const warmRoute = useCallback((path: string) => {
+    void preloadRouteModule(path);
+    if (path === '/crescimento') {
+      warmMarketingGrowth();
+    }
+  }, [warmMarketingGrowth]);
+
   const handleKanbanSearchChange = (value: string) => {
     const params = new URLSearchParams(location.search);
 
@@ -216,8 +259,8 @@ export default function AppLayout() {
               key={item.path}
               to={item.path}
               onClick={onNav}
-              onMouseEnter={() => void preloadRouteModule(item.path)}
-              onFocus={() => void preloadRouteModule(item.path)}
+              onMouseEnter={() => warmRoute(item.path)}
+              onFocus={() => warmRoute(item.path)}
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                 active
@@ -325,6 +368,40 @@ export default function AppLayout() {
     }
     void preloadRouteModules(visibleNavPaths);
   }, [visibleNavPaths]);
+
+  useEffect(() => {
+    if (!canWarmMarketingData) return undefined;
+    if (location.pathname.startsWith('/crescimento')) return undefined;
+    if (typeof window === 'undefined' || typeof document === 'undefined') return undefined;
+
+    let cancelled = false;
+    let timeoutId: number | null = null;
+    let idleId: number | null = null;
+    const browserWindow = window as Window & {
+      requestIdleCallback?: (
+        callback: IdleRequestCallback,
+        options?: IdleRequestOptions,
+      ) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+
+    const runWarmup = () => {
+      if (cancelled || document.visibilityState === 'hidden') return;
+      warmMarketingGrowth();
+    };
+
+    if (browserWindow.requestIdleCallback) {
+      idleId = browserWindow.requestIdleCallback(runWarmup, { timeout: 3500 });
+    } else {
+      timeoutId = window.setTimeout(runWarmup, 1200);
+    }
+
+    return () => {
+      cancelled = true;
+      if (idleId !== null) browserWindow.cancelIdleCallback?.(idleId);
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+  }, [canWarmMarketingData, location.pathname, warmMarketingGrowth]);
 
   if (!user) return <Navigate to="/login" replace />;
 

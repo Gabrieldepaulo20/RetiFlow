@@ -32,7 +32,12 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react';
-import { getMarketingResumo, type MarketingProvider, type MarketingResumo } from '@/api/supabase/marketing';
+import {
+  getMarketingResumo,
+  getMarketingResumoQueryKey,
+  type MarketingProvider,
+  type MarketingResumo,
+} from '@/api/supabase/marketing';
 import {
   MARKETING_RESUMO_CACHE_TTL_MS,
   readCachedMarketingResumo,
@@ -425,7 +430,7 @@ function CampaignsTab({ resumo }: { resumo: MarketingResumo }) {
 }
 
 export default function MarketingGrowth() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, isSupportImpersonating, operationalUser } = useAuth();
   const { data: systemUsers = [], isLoading: isLoadingUsers } = useSystemUsersQuery({ enabled: isAdmin });
   const [periodDays, setPeriodDays] = useState('30');
   const [selectedUserId, setSelectedUserId] = useState('');
@@ -437,6 +442,11 @@ export default function MarketingGrowth() {
       && user.moduleAccess?.marketing === true
     ));
   }, [systemUsers]);
+  const supportMarketingUserId = useMemo(() => {
+    if (!isAdmin || !isSupportImpersonating) return '';
+    if (!operationalUser || operationalUser.role === 'ADMIN') return '';
+    return operationalUser.moduleAccess?.marketing === true ? operationalUser.id : '';
+  }, [isAdmin, isSupportImpersonating, operationalUser]);
   const selectedUser = useMemo(
     () => selectableUsers.find((user) => user.id === selectedUserId) ?? null,
     [selectableUsers, selectedUserId],
@@ -444,7 +454,7 @@ export default function MarketingGrowth() {
   const targetUserId = isAdmin ? selectedUserId : null;
   const queryEnabled = !isAdmin || Boolean(targetUserId);
   const queryKey = useMemo(
-    () => ['marketing-growth', selectedPeriod, targetUserId ?? 'self'] as const,
+    () => getMarketingResumoQueryKey(selectedPeriod, targetUserId),
     [selectedPeriod, targetUserId],
   );
   const cachedResumo = useMemo(
@@ -457,9 +467,15 @@ export default function MarketingGrowth() {
       setSelectedUserId('');
       return;
     }
+    if (supportMarketingUserId && selectableUsers.some((user) => user.id === supportMarketingUserId)) {
+      if (selectedUserId !== supportMarketingUserId) {
+        setSelectedUserId(supportMarketingUserId);
+      }
+      return;
+    }
     if (selectedUserId && selectableUsers.some((user) => user.id === selectedUserId)) return;
     setSelectedUserId(selectableUsers[0]?.id ?? '');
-  }, [isAdmin, selectableUsers, selectedUserId]);
+  }, [isAdmin, selectableUsers, selectedUserId, supportMarketingUserId]);
 
   const { data, isLoading, isFetching, error } = useQuery({
     queryKey,

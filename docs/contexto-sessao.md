@@ -1893,6 +1893,32 @@ Plano aprovado para executar em fases:
   - `Sem filtros ativos` permanece sozinho quando não houver filtro aplicado.
 - Alteração apenas de frontend; sem mudança de banco, RPC, Storage ou Edge Function.
 
+## Crescimento - Prefetch, Suporte E Atribuicao Comercial - 2026-06-24
+
+- Pedido: acelerar o carregamento do modulo Crescimento e preparar o caminho para rastrear site -> WhatsApp -> cliente/O.S. -> comissao Mega Master.
+- Escopo aplicado nesta rodada:
+  - `src/api/supabase/marketing.ts` agora expoe `DEFAULT_MARKETING_RESUMO_PERIOD_DAYS` e `getMarketingResumoQueryKey`, para a pagina e o layout usarem a mesma chave de cache React Query;
+  - `src/components/layout/AppLayout.tsx` pre-carrega o chunk da rota `/crescimento` e tambem faz prefetch em idle do resumo de 30 dias quando o usuario tem acesso ao modulo;
+  - hover/focus no item `Crescimento` tambem aquece dados, alem do preload visual da rota;
+  - em modo suporte, o warmup tenta priorizar o usuario operacional suportado quando ele tem o modulo Crescimento habilitado;
+  - `src/pages/MarketingGrowth.tsx` tambem passa a selecionar o usuario suportado em modo suporte, evitando abrir o painel de outro cliente por padrao;
+  - teste unitario cobre a chave compartilhada usada por warmup e pagina.
+- Risco/compatibilidade:
+  - sem migration, sem RLS/policy/bucket, sem alteracao de Edge Function e sem Google Tag Manager nesta etapa;
+  - prefetch ignora erro silenciosamente para nao atrapalhar login/navegacao; se o usuario abrir o modulo, a propria tela continua mostrando erro real.
+- Validacao executada:
+  - `npx tsc --noEmit`: passou;
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh;
+  - `npm test -- --run`: passou, 58 arquivos e 436 testes;
+  - `npm run build`: passou com avisos conhecidos de Browserslist/chunks/import dinamico;
+  - navegacao local com Playwright/Chrome em `VITE_AUTH_MODE=mock` abriu `/crescimento` sem console errors/page errors; em mock a tela mostra erro esperado de sessao Supabase ausente antes da chamada real da Edge Function.
+- Plano recomendado para a fase de atribuicao:
+  - configurar tags do site para eventos `page_view`, `whatsapp_click`, `form_submit` e UTMs/click ids, usando a Edge Function `marketing-events`;
+  - criar/validar campo de origem comercial no cliente e/ou na O.S. (`site`, `google_ads`, `meta_ads`, etc.) com indicador visual discreto;
+  - adicionar trilha de conversao para relacionar lead capturado por telefone/WhatsApp com cliente cadastrado no Retiflow;
+  - criar dashboard Mega Master privado mostrando receita atribuida e comissao de 20%;
+  - aplicar isso via migration/RPC/Edge Function com plano separado, porque envolve dado financeiro e regra de permissao.
+
 ## Limpeza De Usuarios Tenant/Integracao - 2026-06-09
 
 - Pedido: apagar usuarios de tenant/teste criados e que estavam poluindo o sistema.

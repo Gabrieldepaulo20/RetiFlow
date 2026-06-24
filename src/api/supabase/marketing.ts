@@ -90,6 +90,12 @@ export interface MarketingResumo {
 }
 
 const inFlightResumoRequests = new Map<string, Promise<MarketingResumo>>();
+export const DEFAULT_MARKETING_RESUMO_PERIOD_DAYS = 30;
+
+export function getMarketingResumoQueryKey(periodDays = DEFAULT_MARKETING_RESUMO_PERIOD_DAYS, targetUserId?: string | null) {
+  const safePeriod = Number.isFinite(periodDays) ? Math.trunc(periodDays) : DEFAULT_MARKETING_RESUMO_PERIOD_DAYS;
+  return ['marketing-growth', safePeriod, targetUserId?.trim() || 'self'] as const;
+}
 
 async function getAccessToken() {
   const { data, error } = await supabase.auth.getSession();
