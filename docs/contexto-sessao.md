@@ -4,6 +4,38 @@ Atualizado em: 2026-06-24
 
 ---
 
+## Limpeza De O.S. Excluidas Da Retifica Premium - 2026-06-24
+
+- Pedido: excluir do sistema as O.S. da Retifica Premium que estavam com status `Excluida`.
+- Diagnostico read-only em producao:
+  - usuario alvo: `retificapremium5@gmail.com`;
+  - status alvo: `Status_Notas.id_status_notas = 28` / `Excluida`;
+  - encontradas 2 O.S. candidatas, ambas sem `fk_fechamentos`;
+  - O.S. removidas: `OS-17` e `OS-5924`;
+  - cada O.S. tinha 1 item em `Rel_NotaS_Serv`;
+  - 0 compras vinculadas em `Notas_de_Compra`;
+  - 0 faturas vinculadas em `Faturas`;
+  - ambas tinham PDF no bucket privado `notas`.
+- Execucao:
+  - transacao SQL com trava: abortaria se nao encontrasse exatamente 2 O.S. excluidas da Retifica Premium sem
+    fechamento;
+  - removidos 2 registros de `Notas_de_Servico`;
+  - removidos 2 registros de `Rel_NotaS_Serv`;
+  - removidos 0 registros de `Notas_de_Compra`;
+  - removidos 0 registros de `Faturas`;
+  - removidos via Storage API os PDFs:
+    - `retifica-premium/2026/junho/18 (Quinta-feira)/OS-17.pdf`;
+    - `retifica-premium/2026/junho/22 (Segunda-feira)/OS-5924.pdf`.
+- Validacao pos-limpeza:
+  - 0 O.S. `Excluida` restantes para a Retifica Premium;
+  - 0 O.S. removidas ainda no banco;
+  - 0 itens orfaos;
+  - 0 compras orfas;
+  - 0 faturas orfas;
+  - 0 PDFs restantes no Storage para os paths removidos.
+
+---
+
 ## Contas A Pagar - Resumo IA Mais Curto E Acionavel - 2026-06-24
 
 - Pedido: o resumo de IA nao pode vir com muita escrita, porque a Retifica pode nao entender; precisa ser
