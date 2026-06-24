@@ -4,6 +4,41 @@ Atualizado em: 2026-06-24
 
 ---
 
+## Crescimento - Acesso Retifica Premium Ao GA4 - 2026-06-24
+
+- Pedido: garantir que a propria Retifica Premium consiga acessar e visualizar o modulo Crescimento com dados
+  do site dela, sem depender do modo suporte.
+- Diagnostico em producao:
+  - usuario alvo: `retificapremium5@gmail.com`;
+  - `Modulos.marketing = true` ja estava habilitado para a Retifica Premium;
+  - nao existia configuracao em `Marketing_Config`, entao o painel nao tinha propriedade GA4 especifica do
+    cliente e a rota self poderia cair no fallback global da Edge Function;
+  - secrets de GA4 existem no projeto Supabase e a Edge Function `marketing-dashboard` esta ativa;
+  - ainda nao ha eventos proprios no banco (`Marketing_Site_Eventos`/`Marketing_Leads`) e `site_key_hash`
+    segue ausente;
+  - `retificapremium.com.br` e `www.retificapremium.com.br` nao resolveram via DNS no momento do diagnostico,
+    entao a instalacao da tag propria do site ainda depende de confirmar dominio/hospedagem ativa.
+- Correcao aplicada:
+  - criada/atualizada `Marketing_Config` da Retifica Premium com:
+    - `modulo_habilitado = true`;
+    - `ga4_property_id = 523704972`;
+    - `allowed_origins = https://retificapremium.com.br, https://www.retificapremium.com.br`;
+    - `ga4_status = needs_attention` enquanto a tag propria/site key nao estiverem fechadas;
+  - migration `20260624182026_expose_marketing_ga4_property_id.sql` ajustou a RPC
+    `get_marketing_resumo` para devolver `dados.config.ga4PropertyId`, permitindo que o login da propria
+    Retifica Premium chame `marketing-dashboard` e a Edge Function busque a propriedade GA4 correta.
+- Aplicado em producao:
+  - SQL executado com `supabase db query --linked --file ...`;
+  - historico remoto reparado com `supabase migration repair --linked --status applied 20260624182026`.
+- Validacao:
+  - chamada simulando `auth.uid()` da Retifica Premium retornou `status = 200`, `moduloHabilitado = true`,
+    `ga4PropertyId = 523704972`, `ga4Status = needs_attention`;
+  - `supabase migration list --linked` mostra `20260624182026` aplicada local/remoto;
+  - proximo passo de produto/infra: confirmar o site/domino ativo e instalar a tag `marketing-events` com
+    `site_key_hash`, para medir cliques no WhatsApp e leads proprios alem dos dados do GA4.
+
+---
+
 ## PDFs De O.S. Pos-Merge De Clientes Duplicados - 2026-06-24
 
 - Pedido: confirmar se, ao juntar clientes duplicados, seria necessario regerar PDFs das notas para nao
