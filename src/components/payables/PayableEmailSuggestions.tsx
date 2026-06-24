@@ -9,6 +9,7 @@ import {
   Barcode,
   CalendarCheck2,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   CircleDollarSign,
   Clock3,
@@ -20,7 +21,7 @@ import {
   ReceiptText,
   RefreshCw,
   Send,
-  Sparkles,
+  ShieldCheck,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -36,7 +37,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { logError } from '@/lib/monitoring';
 import { EmailSuggestion } from '@/types';
-import { buildPayableHistoryDescription, classifyEmailSuggestionForReview, getSuggestionOverdueDays, summarizeSenderHistory } from '@/services/domain/payables';
+import { buildPayableHistoryDescription, classifyEmailSuggestionForReview, getSuggestionOverdueDays, summarizeSenderHistory, type PayableMatchResult } from '@/services/domain/payables';
 import { getGmailConnectionStatus, scanGmailPayables, startGmailOAuth, updateGmailAutoSyncSettings, type GmailConnectionStatus } from '@/api/supabase/gmail-payables';
 import { getCategoryIcon } from '@/lib/payableCategoryIcon';
 import { SupplierAvatar } from '@/components/payables/SupplierAvatar';
@@ -155,13 +156,35 @@ function PaymentMethodChip({ method }: { method: EmailSuggestion['suggestedPayme
   );
 }
 
-function ConfidenceBadge({ value }: { value: number }) {
-  const tone = value >= 90
-    ? 'bg-slate-900 text-white ring-slate-900'
-    : value >= 75
-      ? 'bg-cyan-700 text-white ring-cyan-700'
-      : 'bg-amber-500 text-slate-950 ring-amber-500';
-  return <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 sm:text-xs', tone)}><Sparkles className="h-2.5 w-2.5" />{value}%</span>;
+type TrustLevel = 'high' | 'mid' | 'low';
+
+/** Nível de confiança consolidado: funde confiança + risco do remetente + sinais. */
+function getTrustLevel(suggestion: EmailSuggestion): TrustLevel {
+  const hasFraud = (suggestion.fraudSignals ?? []).length > 0;
+  if (suggestion.senderRisk === 'ALTO' || hasFraud) return 'low';
+  if (suggestion.confidence < 80 || suggestion.senderRisk === 'MEDIO' || suggestion.suggestedStatus === 'INCERTO') return 'mid';
+  return 'high';
+}
+
+/** Uma pílula só, em vez de 3 badges + listas de sinais. Passa segurança sem ruído. */
+function TrustPill({ suggestion }: { suggestion: EmailSuggestion }) {
+  const level = getTrustLevel(suggestion);
+  const verified = (suggestion.verificationSignals ?? []).length;
+  const cfg = level === 'high'
+    ? { cls: 'bg-emerald-50 text-emerald-800 ring-emerald-200', Icon: ShieldCheck, label: 'Confiável' }
+    : level === 'mid'
+      ? { cls: 'bg-amber-50 text-amber-900 ring-amber-300', Icon: AlertCircle, label: 'Confira' }
+      : { cls: 'bg-rose-50 text-rose-800 ring-rose-300', Icon: AlertCircle, label: 'Risco' };
+  const title = `Confiança ${suggestion.confidence}%`
+    + (suggestion.senderRisk && suggestion.senderRisk !== 'BAIXO' ? ` · remetente ${suggestion.senderRisk.toLowerCase()}` : '')
+    + (verified > 0 ? ` · ${verified} verificação${verified === 1 ? '' : 'ões'}` : '');
+  return (
+    <span title={title} className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 sm:text-xs', cfg.cls)}>
+      <cfg.Icon className="h-3 w-3" />
+      {cfg.label}
+      <span className="opacity-70">· {suggestion.confidence}%</span>
+    </span>
+  );
 }
 
 function GmailSyncMetric({ label, value }: { label: string; value: number }) {
@@ -170,20 +193,6 @@ function GmailSyncMetric({ label, value }: { label: string; value: number }) {
       <p className="line-clamp-1 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground sm:text-[10px]">{label}</p>
       <p className="mt-0.5 text-sm font-bold leading-none text-foreground sm:text-base">{value}</p>
     </div>
-  );
-}
-
-function SenderRiskBadge({ risk }: { risk?: 'BAIXO' | 'MEDIO' | 'ALTO' }) {
-  if (!risk || risk === 'BAIXO') return null;
-  const isHigh = risk === 'ALTO';
-  return (
-    <span className={cn(
-      'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ring-1',
-      isHigh ? 'bg-rose-600 text-white ring-rose-600' : 'bg-amber-100 text-amber-900 ring-amber-300',
-    )}>
-      <AlertCircle className="h-3 w-3" />
-      {isHigh ? 'Remetente suspeito' : 'Remetente a revisar'}
-    </span>
   );
 }
 
@@ -242,12 +251,13 @@ type SuggestionCardProps = {
   overdueDays?: number | null;
   readOnly?: boolean;
   reviewReasons?: string[];
+  existingMatch?: PayableMatchResult | null;
   onAccept: () => void;
   onMarkPaid?: () => void;
   onDismiss: (motivo: DismissReason) => void;
 };
 
-function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, readOnly = false, reviewReasons = [], onAccept, onMarkPaid, onDismiss }: SuggestionCardProps) {
+function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, readOnly = false, reviewReasons = [], existingMatch, onAccept, onMarkPaid, onDismiss }: SuggestionCardProps) {
   const isPaid = suggestion.suggestedStatus === 'PAGO';
   const isScheduled = suggestion.suggestedStatus === 'AGENDADO';
   const isReview = suggestion.suggestedStatus === 'INCERTO';
@@ -255,6 +265,10 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, r
   const verificationSignals = suggestion.verificationSignals ?? [];
   const fraudSignals = suggestion.fraudSignals ?? [];
   const [allowHighRisk, setAllowHighRisk] = useState(false);
+  const [showEmail, setShowEmail] = useState(false);
+  // Conta parecida já cadastrada (quase-duplicado): mantém na lista, mas avisa.
+  const similarExisting = existingMatch?.match && existingMatch.kind === 'revisar' ? existingMatch.match : null;
+  const hasDetails = Boolean(suggestion.emailSnippet) || verificationSignals.length > 0 || fraudSignals.length > 0 || reviewReasons.length > 0;
   const brand = getSuggestionBrand(suggestion);
   const CategoryIcon = getCategoryIcon(categoryIcon);
   const StatusIcon = isReview ? AlertCircle : isPaid ? CheckCircle2 : isScheduled ? Clock3 : MailOpen;
@@ -319,14 +333,11 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, r
                   </div>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                      <SuggestionStatusBadge suggestion={suggestion} />
-                      <ConfidenceBadge value={suggestion.confidence} />
-                      <SenderRiskBadge risk={suggestion.senderRisk} />
+                      <TrustPill suggestion={suggestion} />
+                      {isPaid || isScheduled || isReview ? <SuggestionStatusBadge suggestion={suggestion} /> : null}
                     </div>
                     <p className="mt-1 text-sm font-semibold leading-snug text-foreground">{suggestion.suggestedTitle || suggestion.subject}</p>
-                    <p className="mt-1 hidden text-xs font-medium text-slate-600 sm:block">
-                      {suggestion.senderName} &middot; recebido {format(parseISO(suggestion.receivedAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                    </p>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">{suggestion.suggestedSupplierName || suggestion.senderName}</p>
                     <div className="mt-2 flex flex-wrap items-center gap-1.5 sm:gap-2">
                       {brand ? <BrandChip brand={brand} /> : null}
                       <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-sm">
@@ -335,35 +346,14 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, r
                       </span>
                       <PaymentMethodChip method={suggestion.suggestedPaymentMethod} />
                     </div>
-                    {verificationSignals.length > 0 || fraudSignals.length > 0 ? (
-                      <div className="mt-2 hidden flex-wrap gap-1.5 sm:flex">
-                        {verificationSignals.map((signal) => (
-                          <span key={`v-${signal}`} className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
-                            <BadgeCheck className="h-3 w-3" />{signal}
-                          </span>
-                        ))}
-                        {fraudSignals.map((signal) => (
-                          <span key={`f-${signal}`} className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-800">
-                            <AlertCircle className="h-3 w-3" />{signal}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
-                    {reviewReasons.length > 0 ? (
-                      <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 sm:mt-3 sm:px-3">
-                        <p className="text-[11px] font-bold uppercase tracking-wide text-amber-800">Revisar antes de criar</p>
-                        <div className="mt-1 flex flex-wrap gap-1.5">
-                          {reviewReasons.slice(0, 4).map((reason) => (
-                            <span key={reason} className="inline-flex items-center rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-amber-900 ring-1 ring-amber-200">
-                              {reason}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                    {suggestion.emailSnippet ? (
-                      <p className="mt-3 hidden line-clamp-2 rounded-lg border border-slate-200 bg-white/85 px-3 py-2 text-xs font-medium leading-relaxed text-slate-700 sm:block">
-                        {suggestion.emailSnippet}
+                    {similarExisting ? (
+                      <p
+                        className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-lg bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700 ring-1 ring-rose-200"
+                        title={existingMatch?.reasons.length ? existingMatch.reasons.join(' · ') : undefined}
+                      >
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                        <span className="shrink-0">Já existe parecida:</span>
+                        <span className="truncate font-bold">{similarExisting.title}</span>
                       </p>
                     ) : null}
                     {!isPaid && overdueDays != null && onMarkPaid && !readOnly ? (
@@ -397,11 +387,53 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, r
                 </div>
               </div>
 
+              {showEmail && hasDetails ? (
+                <div className="border-t border-slate-200/70 bg-white/70 px-2.5 py-2.5 sm:px-3">
+                  <p className="text-[11px] text-slate-500">
+                    {suggestion.senderName} &middot; {suggestion.senderEmail} &middot; recebido {format(parseISO(suggestion.receivedAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                  </p>
+                  {reviewReasons.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {reviewReasons.slice(0, 5).map((reason) => (
+                        <span key={reason} className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900 ring-1 ring-amber-200">
+                          {reason}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {verificationSignals.length > 0 || fraudSignals.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {verificationSignals.map((signal) => (
+                        <span key={`v-${signal}`} className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                          <BadgeCheck className="h-3 w-3" />{signal}
+                        </span>
+                      ))}
+                      {fraudSignals.map((signal) => (
+                        <span key={`f-${signal}`} className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-800">
+                          <AlertCircle className="h-3 w-3" />{signal}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {suggestion.emailSnippet ? (
+                    <p className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-relaxed text-slate-700">
+                      {suggestion.emailSnippet}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
               {!readOnly ? (
-              <div className={cn('flex items-center justify-end gap-2 border-t px-2.5 py-1.5 sm:px-3', footerClass)}>
-                <div className="grid w-full grid-cols-2 items-center gap-1.5 sm:flex sm:w-auto sm:gap-2 sm:justify-end">
+              <div className={cn('flex flex-wrap items-center justify-between gap-2 border-t px-2.5 py-1.5 sm:px-3', footerClass)}>
+                {hasDetails ? (
+                  <Button variant="ghost" size="sm" className="h-8 gap-1 px-2 text-slate-600 hover:bg-white/60 hover:text-slate-900" onClick={() => setShowEmail((v) => !v)}>
+                    <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', showEmail && 'rotate-180')} />
+                    Ver e-mail
+                  </Button>
+                ) : <span className="hidden sm:block" />}
+                <div className="flex flex-1 items-center justify-end gap-1.5 sm:flex-none sm:gap-2">
                   {isHighRisk && !allowHighRisk ? (
-                    <Button variant="ghost" size="sm" className="col-span-2 h-8 gap-1 text-rose-700 hover:bg-rose-100 hover:text-rose-800 sm:col-span-1" onClick={() => setAllowHighRisk(true)}>
+                    <Button variant="ghost" size="sm" className="h-8 gap-1 text-rose-700 hover:bg-rose-100 hover:text-rose-800" onClick={() => setAllowHighRisk(true)}>
                       Criar mesmo assim
                     </Button>
                   ) : null}
@@ -630,6 +662,12 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
     })),
     [pendingAll, payables, senderHistory],
   );
+  // Casamento com conta já existente, por sugestão — alimenta o selo "Já existe parecida".
+  const matchBySuggestionId = useMemo(() => {
+    const map = new Map<string, PayableMatchResult | null>();
+    for (const item of reviewedPending) map.set(item.suggestion.id, item.disposition.match);
+    return map;
+  }, [reviewedPending]);
   const alreadyRegistered = useMemo(
     () => reviewedPending.filter((item) => item.disposition.bucket === 'duplicate'),
     [reviewedPending],
@@ -1002,6 +1040,7 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
                       suggestion={suggestion}
                       categoryName={category?.name ?? 'Categoria'}
                       categoryIcon={category?.icon}
+                      existingMatch={matchBySuggestionId.get(suggestion.id)}
                       onAccept={() => { void handleAccept(suggestion); }}
                       onDismiss={(motivo) => { void handleDismiss(suggestion, motivo); }}
                     />
@@ -1033,6 +1072,7 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
                       categoryName={category?.name ?? 'Categoria'}
                       categoryIcon={category?.icon}
                       overdueDays={getSuggestionOverdueDays(suggestion)}
+                      existingMatch={matchBySuggestionId.get(suggestion.id)}
                       onAccept={() => { void handleAccept(suggestion); }}
                       onMarkPaid={() => { void handleMarkPaid(suggestion); }}
                       onDismiss={(motivo) => { void handleDismiss(suggestion, motivo); }}
@@ -1062,6 +1102,7 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
                         categoryIcon={category?.icon}
                         overdueDays={getSuggestionOverdueDays(suggestion)}
                         reviewReasons={disposition.reasons}
+                        existingMatch={disposition.match}
                         onAccept={() => { void handleAccept(suggestion); }}
                         onMarkPaid={() => { void handleMarkPaid(suggestion); }}
                         onDismiss={(motivo) => { void handleDismiss(suggestion, motivo); }}
@@ -1080,7 +1121,7 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
           <summary className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-emerald-800 hover:text-emerald-900">
             <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
             <BadgeCheck className="h-3.5 w-3.5" />
-            {alreadyRegistered.length} conta parecida — não recria automaticamente
+            {alreadyRegistered.length} já {alreadyRegistered.length === 1 ? 'cadastrada' : 'cadastradas'} no controle — não precisa adicionar de novo
           </summary>
           <div className="mt-3 space-y-2">
             {alreadyRegistered.map(({ suggestion, disposition }) => (
