@@ -42,5 +42,14 @@ verify_jwt = false
 [functions.gmail-oauth-callback]
 verify_jwt = false
 
+# verify_jwt = false e necessario porque a busca automatica e disparada por
+# pg_cron com segredo interno. A propria funcao ainda valida JWT para chamadas
+# do navegador e valida x-retiflow-cron-secret para chamadas agendadas.
+[functions.gmail-scan-payables]
+verify_jwt = false
+
+[functions.gmail-auto-sync-dispatch]
+verify_jwt = false
+
 [functions.support-inbound]
 verify_jwt = false

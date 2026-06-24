@@ -14,7 +14,7 @@ const baseCorsHeaders = {
   'Vary': 'Origin',
 };
 
-const scanVersion = 'ai-v6-gpt55';
+const scanVersion = 'ai-v7-month-dedup';
 const supportedAttachmentTypes = new Set([
   'application/pdf',
   'image/png',
@@ -29,6 +29,8 @@ const OPENAI_UPLOAD_TIMEOUT_MS = 60_000;
 const OPENAI_RESPONSES_TIMEOUT_MS = 45_000;
 const OPENAI_MAX_OUTPUT_TOKENS = 1200;
 const scheduledRetryDelayMs = 60 * 60 * 1000;
+const scheduledMaxMessagesCap = 80;
+const manualMaxMessages = 80;
 const defaultPayableAiModel = 'gpt-5.5';
 const defaultPayableReasoningEffort = 'low';
 
@@ -573,6 +575,121 @@ function sameYearMonth(a?: string | null, b?: string | null): boolean {
   return !!a && !!b && a.slice(0, 7) === b.slice(0, 7);
 }
 
+function sameDay(a?: string | null, b?: string | null): boolean {
+  return !!a && !!b && a.slice(0, 10) === b.slice(0, 10);
+}
+
+function addMonths(date: Date, amount: number) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + amount, 1));
+}
+
+function currentMonthBounds(reference = new Date()) {
+  const start = new Date(Date.UTC(reference.getUTCFullYear(), reference.getUTCMonth(), 1));
+  const next = addMonths(start, 1);
+  return { start, next };
+}
+
+function gmailDate(date: Date) {
+  return date.toISOString().slice(0, 10).replaceAll('-', '/');
+}
+
+function monthBoundsFromIsoDate(isoDate: string) {
+  const [year, month] = isoDate.slice(0, 10).split('-').map(Number);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return currentMonthBounds();
+  const start = new Date(Date.UTC(year, month - 1, 1));
+  return { start, next: addMonths(start, 1) };
+}
+
+function supplierLooksSame(a?: string | null, b?: string | null) {
+  const left = normSupplierName(a);
+  const right = normSupplierName(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  const minLength = Math.min(left.length, right.length);
+  return minLength >= 8 && (left.includes(right) || right.includes(left));
+}
+
+function amountLooksSame(a: number, b?: number | null) {
+  const right = Number(b ?? 0);
+  if (!Number.isFinite(a) || !Number.isFinite(right) || a <= 0 || right <= 0) return false;
+  return Math.abs(right - a) <= Math.max(1, a * 0.02);
+}
+
+function suggestionDedupKey(analysis: PayableEmailAnalysis) {
+  if (!analysis.amount || !analysis.dueDate) return '';
+  const supplier = normSupplierName(analysis.supplierName);
+  if (!supplier) return '';
+  return [supplier, analysis.amount.toFixed(2), analysis.dueDate.slice(0, 10)].join('|');
+}
+
+async function findExistingPayableMatch(params: {
+  service: ReturnType<typeof createClient>;
+  ownerUserId: string | null;
+  analysis: PayableEmailAnalysis;
+}) {
+  if (!params.ownerUserId || !params.analysis.amount || !params.analysis.dueDate) return null;
+  const { start, next } = monthBoundsFromIsoDate(params.analysis.dueDate);
+  const { data, error } = await params.service
+    .schema('RetificaPremium')
+    .from('Contas_Pagar')
+    .select('id_contas_pagar,titulo,nome_fornecedor,valor_original,valor_final,data_vencimento,status')
+    .eq('fk_criado_por', params.ownerUserId)
+    .is('excluido_em', null)
+    .gte('data_vencimento', start.toISOString())
+    .lt('data_vencimento', next.toISOString());
+
+  if (error) {
+    console.error('[gmail-scan-payables] Falha ao comparar contas existentes', {
+      ownerUserId: params.ownerUserId,
+      error: error.message,
+    });
+    return null;
+  }
+
+  return (data ?? []).find((payable: Record<string, unknown>) => {
+    if (String(payable.status ?? '') === 'CANCELADO') return false;
+    const sameSupplier =
+      supplierLooksSame(params.analysis.supplierName, payable.nome_fornecedor as string | null)
+      || supplierLooksSame(params.analysis.supplierName, payable.titulo as string | null);
+    return sameSupplier
+      && amountLooksSame(params.analysis.amount ?? 0, Number(payable.valor_final ?? payable.valor_original ?? 0))
+      && sameDay(params.analysis.dueDate, payable.data_vencimento as string | null);
+  }) ?? null;
+}
+
+async function findExistingSuggestionMatch(params: {
+  service: ReturnType<typeof createClient>;
+  authUserId: string;
+  analysis: PayableEmailAnalysis;
+}) {
+  if (!params.analysis.amount || !params.analysis.dueDate) return null;
+  const { start, next } = monthBoundsFromIsoDate(params.analysis.dueDate);
+  const { data, error } = await params.service
+    .schema('RetificaPremium')
+    .from('Sugestoes_Email')
+    .select('id_sugestoes_email,titulo_sugerido,fornecedor_sugerido,valor_sugerido,vencimento_sugerido,status')
+    .eq('fk_auth_user', params.authUserId)
+    .gte('vencimento_sugerido', start.toISOString())
+    .lt('vencimento_sugerido', next.toISOString());
+
+  if (error) {
+    console.error('[gmail-scan-payables] Falha ao comparar sugestões existentes', {
+      authUserId: params.authUserId,
+      error: error.message,
+    });
+    return null;
+  }
+
+  return (data ?? []).find((suggestion: Record<string, unknown>) => {
+    const sameSupplier =
+      supplierLooksSame(params.analysis.supplierName, suggestion.fornecedor_sugerido as string | null)
+      || supplierLooksSame(params.analysis.supplierName, suggestion.titulo_sugerido as string | null);
+    return sameSupplier
+      && amountLooksSame(params.analysis.amount ?? 0, Number(suggestion.valor_sugerido ?? 0))
+      && sameDay(params.analysis.dueDate, suggestion.vencimento_sugerido as string | null);
+  }) ?? null;
+}
+
 function compactHeader(value: string, maxLength = 800) {
   return value.replace(/\s+/g, ' ').trim().slice(0, maxLength);
 }
@@ -759,6 +876,9 @@ async function analyzePayableEmail(params: {
     '- Salário, holerite, pró-labore, folha de pagamento ou recibo de funcionário também são contas a pagar; use supplierName como nome do funcionário ou "Folha de Pagamento" e trate recorrência como mensal no raciocínio.',
     '- "Duplicata" pode ser só o tipo do documento; NUNCA use "Duplicata" como title sozinho. O title deve identificar fornecedor, documento, competência, vencimento ou parcela.',
     '- Se o e-mail mencionar "parcela X/Y", "parcela X de Y" ou "prestação X de Y", deixe isso claro no title e reason para não confundir parcela real com conta repetida.',
+    '- Se o e-mail/anexo tiver vários boletos, duplicatas ou parcelas, retorne UMA ÚNICA parcela por vez: a parcela com vencimento mais próximo que ainda seja uma cobrança real. NUNCA use o valor total da nota fiscal/fatura como amount quando os valores das parcelas estiverem listados.',
+    '- Para conta parcelada, amount deve ser o valor daquela parcela específica, dueDate deve ser o vencimento daquela parcela específica e title deve conter "parcela X/Y". Use reason para citar as demais parcelas encontradas.',
+    '- Se você só conseguir identificar o total da nota e não conseguir identificar valor/vencimento da parcela individual, use amount=null e dueDate=null para exigir revisão manual em vez de sugerir cobrança errada.',
     '- Se parecer uma cobrança repetida do mesmo fornecedor/valor/vencimento, registre em reason como "conta parecida para revisão" para revisão humana; não tente decidir sozinho sem histórico do sistema.',
     '- Promoções, propagandas, newsletter, venda de maquininha, desconto, campanha de marketing e avisos sem cobrança real devem ser isPayable=false.',
     '- Nunca invente valor ou vencimento. Se não estiver claro, use null.',
@@ -961,6 +1081,14 @@ Deno.serve(async (request) => {
 
   if (connectionError || !connection) return jsonResponse({ error: 'Gmail ainda não conectado.' }, 400, request);
 
+  const { data: owner } = await service
+    .schema('RetificaPremium')
+    .from('Usuarios')
+    .select('id_usuarios')
+    .eq('auth_id', authUserId)
+    .maybeSingle();
+  const ownerUserId = typeof owner?.id_usuarios === 'string' ? owner.id_usuarios : null;
+
   const errors: string[] = [];
   let created = 0;
   let skipped = 0;
@@ -977,7 +1105,13 @@ Deno.serve(async (request) => {
     const afterClause = lastSyncOverlap
       ? ` after:${lastSyncOverlap.toISOString().slice(0, 10).replaceAll('-', '/')}`
       : '';
+    const { start: monthStart, next: nextMonthStart } = currentMonthBounds();
+    const currentMonthClause = `after:${gmailDate(monthStart)} before:${gmailDate(nextMonthStart)}`;
     const queries = [
+      `in:anywhere ${currentMonthClause} (boleto OR fatura OR "nota fiscal" OR vencimento OR pagamento OR cobrança OR mensalidade OR invoice)`,
+      `in:anywhere ${currentMonthClause} has:attachment (boleto OR fatura OR "nota fiscal" OR vencimento OR pagamento OR cobrança OR mensalidade OR invoice OR duplicata OR parcela)`,
+      `in:anywhere ${currentMonthClause} ("comprovante de pagamento" OR comprovante OR recibo OR quitado OR pago OR "pagamento efetuado" OR "pagamento realizado")`,
+      `in:anywhere ${currentMonthClause} filename:pdf`,
       `in:anywhere newer_than:180d${afterClause} (boleto OR fatura OR "nota fiscal" OR vencimento OR pagamento)`,
       `in:anywhere newer_than:180d${afterClause} has:attachment (boleto OR fatura OR "nota fiscal" OR vencimento OR pagamento OR cobrança OR mensalidade OR invoice)`,
       `in:anywhere newer_than:180d${afterClause} ("comprovante de pagamento" OR comprovante OR recibo OR quitado OR pago OR "pagamento efetuado" OR "pagamento realizado")`,
@@ -985,13 +1119,14 @@ Deno.serve(async (request) => {
       `in:anywhere newer_than:90d${afterClause} filename:pdf`,
     ];
     const maxMessages = isScheduled && Number.isInteger(requestBody.maxMessages)
-      ? Math.min(Math.max(Number(requestBody.maxMessages), 1), 12)
-      : 50;
+      ? Math.min(Math.max(Number(requestBody.maxMessages), 1), scheduledMaxMessagesCap)
+      : manualMaxMessages;
     const messageIds = Array.from(new Set((await Promise.all(
-      queries.map((query, index) => listGmailMessageIds(accessToken, query, index === 4 ? 15 : 25)),
+      queries.map((query, index) => listGmailMessageIds(accessToken, query, index === 3 || index === 8 ? 30 : 50)),
     )).flat())).slice(0, maxMessages);
 
     let reconnectError: GmailReconnectRequiredError | null = null;
+    const seenSuggestionKeys = new Set<string>();
     const processMessage = async (messageId: string): Promise<void> => {
       scanned += 1;
       const { data: existing } = await service
@@ -1064,6 +1199,55 @@ Deno.serve(async (request) => {
           fk_auth_user: authUserId,
           gmail_message_id: messageId,
           message_hash: `${scanVersion}:${await sha256Hex(`${text}\n${attachments.map((attachment) => attachment.filename).join('\n')}`)}`,
+          assunto: subject,
+          email_remetente: from.email,
+          recebido_em: received,
+          fk_sugestoes_email: null,
+        });
+        return;
+      }
+
+      const duplicateKey = suggestionDedupKey(analysis);
+      if (duplicateKey && seenSuggestionKeys.has(duplicateKey)) {
+        skipped += 1;
+        await recordScannedMessage(service, existing?.id_gmail_scanned_messages ?? null, {
+          fk_auth_user: authUserId,
+          gmail_message_id: messageId,
+          message_hash: `${scanVersion}:run-duplicate:${await sha256Hex(`${text}\n${attachments.map((attachment) => attachment.filename).join('\n')}`)}`,
+          assunto: subject,
+          email_remetente: from.email,
+          recebido_em: received,
+          fk_sugestoes_email: null,
+        });
+        return;
+      }
+
+      if (analysis.suggestedStatus !== 'PAGO') {
+        const existingSuggestion = await findExistingSuggestionMatch({ service, authUserId, analysis });
+        if (existingSuggestion) {
+          if (duplicateKey) seenSuggestionKeys.add(duplicateKey);
+          skipped += 1;
+          await recordScannedMessage(service, existing?.id_gmail_scanned_messages ?? null, {
+            fk_auth_user: authUserId,
+            gmail_message_id: messageId,
+            message_hash: `${scanVersion}:existing-suggestion:${await sha256Hex(`${text}\n${attachments.map((attachment) => attachment.filename).join('\n')}`)}`,
+            assunto: subject,
+            email_remetente: from.email,
+            recebido_em: received,
+            fk_sugestoes_email: existingSuggestion.id_sugestoes_email as string,
+          });
+          return;
+        }
+      }
+
+      const alreadyRegistered = await findExistingPayableMatch({ service, ownerUserId, analysis });
+      if (alreadyRegistered) {
+        if (duplicateKey) seenSuggestionKeys.add(duplicateKey);
+        skipped += 1;
+        await recordScannedMessage(service, existing?.id_gmail_scanned_messages ?? null, {
+          fk_auth_user: authUserId,
+          gmail_message_id: messageId,
+          message_hash: `${scanVersion}:existing-payable:${await sha256Hex(`${text}\n${attachments.map((attachment) => attachment.filename).join('\n')}`)}`,
           assunto: subject,
           email_remetente: from.email,
           recebido_em: received,
@@ -1147,6 +1331,7 @@ Deno.serve(async (request) => {
         return;
       }
 
+      if (duplicateKey) seenSuggestionKeys.add(duplicateKey);
       await recordScannedMessage(service, existing?.id_gmail_scanned_messages ?? null, {
         fk_auth_user: authUserId,
         gmail_message_id: messageId,

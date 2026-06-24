@@ -1,7 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const maxConnectionsPerRun = 2;
-const scheduledMessageLimit = 12;
+const maxConnectionsPerRun = 5;
+const scheduledMessageLimit = 80;
 const retryDelayMs = 60 * 60 * 1000;
 
 function jsonResponse(body: unknown, status: number) {

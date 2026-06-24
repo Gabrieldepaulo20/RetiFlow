@@ -1,6 +1,51 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-06-23
+Atualizado em: 2026-06-24
+
+---
+
+## Contas A Pagar - Gmail Retifica Premium Auto Sync - 2026-06-24
+
+- Pedido: a Retifica Premium estava com Gmail conectado e permissao concedida, mas as contas analisadas pela
+  IA nao apareciam em `Sugestoes`.
+- Causa raiz confirmada em PROD:
+  - `gmail-scan-payables` ainda estava com verificacao JWT no gateway, entao a chamada interna do `pg_cron`
+    era bloqueada antes de chegar na validacao por `x-retiflow-cron-secret`;
+  - o cron via `pg_net` usava timeout padrao curto e abortava a chamada antes de uma varredura mensal com
+    anexos terminar;
+  - o dispatcher processava poucos e-mails por ciclo (2 conexoes, 12 mensagens) e a scanner nao comparava bem
+    sugestoes novas contra contas/sugestoes ja existentes.
+- Corrigido:
+  - `supabase/config.toml` marca `gmail-scan-payables` e `gmail-auto-sync-dispatch` como
+    `verify_jwt=false`; a seguranca continua dentro das functions: JWT para chamada do navegador e segredo
+    interno para chamada agendada;
+  - `gmail-auto-sync-dispatch` agora processa ate 5 conexoes e pede ate 80 mensagens por ciclo;
+  - `gmail-scan-payables` agora prioriza buscas do mes atual inteiro, incluindo anexos, comprovantes e PDFs;
+  - adicionada deduplicacao por fornecedor normalizado + valor + vencimento no mesmo ciclo;
+  - adicionada comparacao contra `Contas_Pagar` existentes do dono e contra `Sugestoes_Email` existentes antes
+    de criar nova sugestao;
+  - prompt da IA reforcado para conta parcelada: retornar uma parcela real por vez, nunca o valor total da nota
+    quando o valor da parcela estiver listado;
+  - migration `20260624011027_gmail_auto_sync_timeout.sql` recria o cron `retiflow-gmail-auto-sync` com
+    timeout de 120s.
+- Aplicado em PROD:
+  - migration executada via `supabase db query --linked --file ...` por existir drift no historico remoto;
+  - migration marcada como aplicada com `supabase migration repair --linked --status applied 20260624011027`;
+  - functions publicadas: `gmail-scan-payables` versao 42 e `gmail-auto-sync-dispatch` versao 4, ambas com
+    `verify_jwt=false`.
+- Validacao em PROD para Retifica Premium:
+  - Gmail status `CONNECTED`, auto sync ligado, intervalo 12h, falhas zeradas;
+  - ultima varredura: 80 e-mails, 34 anexos, 12 sugestoes novas, 67 ignorados/deduplicados;
+  - sugestoes atuais: 20 pendentes, 1 paga sugerida, 7 duplicadas descartadas;
+  - nao restou grupo duplicado pendente por fornecedor/valor/vencimento;
+  - proxima execucao automatica registrada para 2026-06-24 10:13:43 -03.
+- Correcao de dados feita nas sugestoes geradas:
+  - duplicatas obvias foram marcadas como `DISMISSED` com motivo `DUPLICADO`;
+  - sugestoes de TWR NF 18455 e Ferpecas NF 000.037.432 foram ajustadas para valor de parcela, nao total da
+    nota.
+- Pendente conhecido:
+  - 1 e-mail retornou JSON truncado/malformado da IA e ficou para nova tentativa; isso nao bloqueia o ciclo
+    inteiro.
 
 ---
 
