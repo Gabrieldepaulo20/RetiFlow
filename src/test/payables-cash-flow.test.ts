@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { buildComputedBriefing } from '@/services/domain/payablesBriefing';
 import { calculatePayablesCashFlowSummary, isLaborRelatedPayable } from '@/services/domain/payablesCashFlow';
 import type { AccountPayable, PayableCategory } from '@/types';
 
@@ -53,5 +54,46 @@ describe('payables cash flow summary', () => {
     expect(isLaborRelatedPayable(payable({ title: 'Folha Mensal' }))).toBe(true);
     expect(isLaborRelatedPayable(payable({ title: 'Serviço Terceirizado', categoryId: 'paycat-5' }), 'Mão de Obra')).toBe(true);
     expect(isLaborRelatedPayable(payable({ title: 'Boleto Peças' }), 'Peças e Materiais')).toBe(false);
+  });
+
+  it('gera briefing automático curto e acionável para a dona do negócio', () => {
+    const summary = calculatePayablesCashFlowSummary({
+      now: new Date('2026-06-09T12:00:00'),
+      categories,
+      payables: [
+        payable({ id: 'overdue-1', dueDate: '2026-06-01', finalAmount: 499 }),
+        payable({ id: 'next-1', dueDate: '2026-06-12', finalAmount: 120 }),
+      ],
+    });
+
+    const briefing = buildComputedBriefing({ summary });
+
+    expect(briefing.headline).toBe('Resolver atrasos primeiro');
+    expect(briefing.body.length).toBeLessThanOrEqual(140);
+    expect(briefing.body).toContain('Vale pagar ou remarcar');
+    expect(briefing.highlights).toHaveLength(2);
+  });
+
+  it('evita texto longo quando há valor fora do padrão', () => {
+    const summary = calculatePayablesCashFlowSummary({
+      now: new Date('2026-06-09T12:00:00'),
+      categories,
+      payables: [
+        payable({ id: 'today-1', dueDate: '2026-06-15', finalAmount: 300 }),
+      ],
+    });
+
+    const briefing = buildComputedBriefing({
+      summary,
+      anomalies: [{
+        title: 'Doc 135742-1/3 Prudemplast Química com nome muito grande',
+        supplierName: 'Prudemplast Química Ribeirão Preto LTDA',
+        badge: '+22% vs. média',
+      }],
+    });
+
+    expect(briefing.headline).toBe('Conferir valor diferente');
+    expect(briefing.body.length).toBeLessThanOrEqual(95);
+    expect(briefing.highlights.length).toBeLessThanOrEqual(2);
   });
 });

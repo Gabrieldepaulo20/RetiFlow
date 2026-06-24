@@ -189,7 +189,7 @@ export function PayablesCockpit({ summary, briefing, briefingLoading, onOpenDeta
               isIa ? 'border-cyan-300/30 bg-cyan-300/10 text-cyan-200' : 'border-white/12 bg-white/[0.05] text-slate-300',
             )}>
               {isIa ? <Sparkles className="h-3 w-3" /> : <TrendingUp className="h-3 w-3" />}
-              {isIa ? 'Resumo da semana · IA' : 'Resumo automático'}
+              {isIa ? 'Resumo rápido · IA' : 'Resumo rápido'}
             </span>
             {onRefreshBriefing ? (
               <button
@@ -206,8 +206,8 @@ export function PayablesCockpit({ summary, briefing, briefingLoading, onOpenDeta
             ) : null}
           </div>
 
-          <h3 className="mt-3 font-display text-base font-bold text-white">{briefing.headline}</h3>
-          <p className="mt-2 text-[13.5px] leading-relaxed text-slate-300">{briefing.body}</p>
+          <h3 className="mt-3 line-clamp-2 font-display text-base font-bold text-white">{briefing.headline}</h3>
+          <p className="mt-2 line-clamp-3 max-w-[48ch] text-[13.5px] leading-relaxed text-slate-300">{briefing.body}</p>
 
           {briefing.highlights.length > 0 ? (
             <div className="mt-3 flex flex-wrap gap-1.5">
@@ -221,10 +221,6 @@ export function PayablesCockpit({ summary, briefing, briefingLoading, onOpenDeta
                 </span>
               ))}
             </div>
-          ) : null}
-
-          {!isIa && onRefreshBriefing ? (
-            <p className="mt-3 text-[11px] text-slate-500">Use Gerar IA quando quiser um resumo escrito pelo modelo.</p>
           ) : null}
         </div>
       </div>

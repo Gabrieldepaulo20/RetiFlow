@@ -37,6 +37,16 @@ function plural(count: number, singular: string, pluralForm: string): string {
   return count === 1 ? singular : pluralForm;
 }
 
+function appendHighlight(list: PayableBriefingHighlight[], item: PayableBriefingHighlight) {
+  if (list.length < 2) list.push(item);
+}
+
+function shortName(value?: string | null): string {
+  const clean = String(value ?? '').replace(/\s+/g, ' ').trim();
+  if (!clean) return 'uma conta';
+  return clean.length > 34 ? `${clean.slice(0, 31).trim()}...` : clean;
+}
+
 /**
  * Monta o briefing determinístico a partir do resumo de fluxo de caixa e das
  * anomalias detectadas. É o estado padrão (e o fallback quando a IA não responde).
@@ -48,45 +58,66 @@ export function buildComputedBriefing(input: {
   const { summary } = input;
   const anomalies = input.anomalies ?? [];
   const highlights: PayableBriefingHighlight[] = [];
-  const sentences: string[] = [];
-
-  if (summary.nextSevenCount > 0) {
-    sentences.push(
-      `Saem ${fmtBRL(summary.nextSevenTotal)} nos próximos 7 dias em ${summary.nextSevenCount} ${plural(summary.nextSevenCount, 'conta', 'contas')}.`,
-    );
-    highlights.push({ kind: 'saida', text: `${fmtBRL(summary.nextSevenTotal)} · 7 dias` });
-  } else {
-    sentences.push('Nenhum vencimento nos próximos 7 dias.');
-  }
+  const today = summary.runway[0];
+  const topAnomaly = anomalies[0];
 
   if (summary.overdueCount > 0) {
-    sentences.push(
-      `Há ${summary.overdueCount} ${plural(summary.overdueCount, 'boleto atrasado', 'boletos atrasados')} somando ${fmtBRL(summary.overdueTotal)} — quitar evita juros.`,
-    );
-    highlights.push({ kind: 'atraso', text: `${summary.overdueCount} ${plural(summary.overdueCount, 'atraso', 'atrasos')}` });
+    appendHighlight(highlights, { kind: 'atraso', text: `${summary.overdueCount} ${plural(summary.overdueCount, 'vencida', 'vencidas')}` });
+    appendHighlight(highlights, { kind: 'atraso', text: `${fmtBRL(summary.overdueTotal)} em atraso` });
+    return {
+      source: 'auto',
+      headline: 'Resolver atrasos primeiro',
+      body: `Tem ${fmtBRL(summary.overdueTotal)} em atraso. Vale pagar ou remarcar antes de olhar o restante.`,
+      highlights,
+    };
   }
 
-  const topAnomaly = anomalies[0];
+  if (today && today.count > 0) {
+    appendHighlight(highlights, { kind: 'saida', text: `${fmtBRL(today.total)} hoje` });
+    if (summary.nextSevenCount > today.count) appendHighlight(highlights, { kind: 'saida', text: `${summary.nextSevenCount} nos 7 dias` });
+    return {
+      source: 'auto',
+      headline: 'Pagar o que vence hoje',
+      body: `Hoje vence ${fmtBRL(today.total)}. Depois disso, acompanhe o restante da semana com calma.`,
+      highlights,
+    };
+  }
+
   if (topAnomaly) {
-    const who = topAnomaly.supplierName ? ` (${topAnomaly.supplierName})` : '';
-    sentences.push(`${topAnomaly.title}${who} veio ${topAnomaly.badge} do normal — vale conferir antes de pagar.`);
-    highlights.push({ kind: 'anomalia', text: topAnomaly.badge });
+    appendHighlight(highlights, { kind: 'anomalia', text: topAnomaly.badge });
+    if (summary.nextSevenCount > 0) appendHighlight(highlights, { kind: 'saida', text: `${fmtBRL(summary.nextSevenTotal)} em 7 dias` });
+    return {
+      source: 'auto',
+      headline: 'Conferir valor diferente',
+      body: `${shortName(topAnomaly.supplierName ?? topAnomaly.title)} veio fora do padrão. Confira antes de pagar.`,
+      highlights,
+    };
   }
 
   if (summary.laborCount > 0) {
-    sentences.push(`Folha de ${fmtBRL(summary.laborTotal)} já está no radar.`);
-    highlights.push({ kind: 'folha', text: `Folha ${fmtBRL(summary.laborTotal)}` });
+    appendHighlight(highlights, { kind: 'folha', text: `Folha ${fmtBRL(summary.laborTotal)}` });
+    return {
+      source: 'auto',
+      headline: 'Folha no radar',
+      body: `A folha soma ${fmtBRL(summary.laborTotal)}. Reserve esse valor antes das outras contas.`,
+      highlights,
+    };
   }
 
-  let headline = 'Tudo sob controle';
-  if (summary.overdueCount > 0) headline = 'Atenção: contas vencidas';
-  else if (topAnomaly) headline = 'Um valor fugiu do padrão';
-  else if (summary.nextSevenCount >= 4) headline = 'Semana movimentada';
+  if (summary.nextSevenCount > 0) {
+    appendHighlight(highlights, { kind: 'saida', text: `${fmtBRL(summary.nextSevenTotal)} em 7 dias` });
+    return {
+      source: 'auto',
+      headline: summary.nextSevenCount >= 4 ? 'Semana movimentada' : 'Semana organizada',
+      body: `Próximos 7 dias somam ${fmtBRL(summary.nextSevenTotal)}. O fluxo parece controlado.`,
+      highlights,
+    };
+  }
 
   return {
     source: 'auto',
-    headline,
-    body: sentences.join(' '),
+    headline: 'Tudo tranquilo',
+    body: 'Nenhuma conta urgente nos próximos 7 dias.',
     highlights,
   };
 }

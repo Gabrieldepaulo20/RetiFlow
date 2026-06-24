@@ -4,6 +4,31 @@ Atualizado em: 2026-06-24
 
 ---
 
+## Contas A Pagar - Resumo IA Mais Curto E Acionavel - 2026-06-24
+
+- Pedido: o resumo de IA nao pode vir com muita escrita, porque a Retifica pode nao entender; precisa ser
+  interessante, simples e rapido de ler.
+- Ajustes aplicados:
+  - `briefing-contas-pagar` agora limita a resposta da IA a headline curta, 1 ou 2 frases e no maximo 2 chips;
+  - prompt reforcado para escrever como lembrete de decisao, sem relatorio, documentos, IDs ou jargao financeiro;
+  - valores devem vir formatados em reais no padrao brasileiro, exemplo `R$ 6.960`;
+  - fallback automatico em `payablesBriefing.ts` tambem ficou curto e prioriza uma acao: atraso, vencimento hoje,
+    valor fora do padrao, folha ou proximos 7 dias;
+  - cockpit mudou o selo para `Resumo rapido`/`Resumo rapido - IA`, limita titulo/corpo visualmente e remove texto
+    auxiliar desnecessario.
+- Validacao real:
+  - function `briefing-contas-pagar` publicada no projeto `dqeoxxokvvcpssajycgq`;
+  - chamada autenticada via `.env.integration` retornou: headline curta, body com 108 caracteres e 2 highlights.
+- Validacao executada:
+  - `npx tsc --noEmit`: passou;
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh;
+  - `npm test -- --run`: passou, 58 arquivos e 434 testes;
+  - `npm run build`: passou com avisos conhecidos de Browserslist/chunks/import dinamico;
+  - `npm run typecheck`: passou;
+  - `npm run test:integration`: passou, 17 arquivos e 56 testes.
+
+---
+
 ## Contas A Pagar - Gmail Retifica Premium Auto Sync - 2026-06-24
 
 - Complemento em 2026-06-24:
