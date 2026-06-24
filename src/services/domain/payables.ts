@@ -602,6 +602,42 @@ export function summarizeSenderHistory(history: EmailSuggestion[]): Map<string, 
   return map;
 }
 
+const STRONG_PAID_EVIDENCE_PATTERNS = [
+  /\bcomprovante\s+de\s+pagamento\b/i,
+  /\bcomprovante\s+banc[aá]rio\b/i,
+  /\brecibo\s+de\s+pagamento\b/i,
+  /\bpagamento\s+(?:efetuado|realizado|confirmado|liquidado|aprovado)\b/i,
+  /\b(?:pago|paga|quitado|quitada|liquidado|liquidada)\b/i,
+  /\bd[eé]bito\s+autom[aá]tico\s+(?:efetuado|realizado|confirmado)\b/i,
+  /\bpix\s+(?:enviado|efetuado|realizado|confirmado)\b/i,
+  /\btransfer[eê]ncia\s+(?:efetuada|realizada|confirmada)\b/i,
+];
+
+function paidEvidenceText(suggestion: EmailSuggestion): string {
+  return [
+    suggestion.subject,
+    suggestion.suggestedTitle,
+    suggestion.suggestedSupplierName,
+    suggestion.emailSnippet,
+    ...(suggestion.verificationSignals ?? []),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+export function hasStrongPaidSuggestionEvidence(suggestion: EmailSuggestion): boolean {
+  if (suggestion.suggestedStatus !== 'PAGO') return false;
+  if (!suggestion.suggestedPaidAt) return false;
+  if (suggestion.senderRisk !== 'BAIXO') return false;
+  if (suggestion.confidence < 90) return false;
+  if ((suggestion.fraudSignals ?? []).length > 0) return false;
+
+  const text = paidEvidenceText(suggestion);
+  return STRONG_PAID_EVIDENCE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 export function classifyEmailSuggestionForReview(
   suggestion: EmailSuggestion,
   existingPayables: AccountPayable[],
@@ -650,6 +686,17 @@ export function classifyEmailSuggestionForReview(
   }
 
   if (suggestion.suggestedStatus === 'PAGO') {
+    if (!hasStrongPaidSuggestionEvidence(suggestion)) {
+      return {
+        bucket: 'review',
+        match,
+        reasons: Array.from(new Set([
+          ...reasons,
+          'Comprovante marcado como pago sem evidência forte suficiente',
+        ])),
+      };
+    }
+
     return {
       bucket: 'receipt',
       match,

@@ -28,6 +28,11 @@ export async function getSugestoesEmail(p_status?: 'PENDING' | 'ACCEPTED' | 'DIS
   return env.dados ?? [];
 }
 
+export async function reconciliarSugestoesEmail(p_status: 'PENDING' = 'PENDING') {
+  const env = await callRPC('reconciliar_sugestoes_email', { p_status });
+  return Number(env.reconciliadas ?? 0);
+}
+
 export async function insertSugestaoEmail(params: {
   p_assunto: string;
   p_nome_remetente: string;

@@ -146,8 +146,23 @@ describe('classifyPayableMatch', () => {
   });
 
   it('triagem de sugestão separa comprovantes do fluxo principal', () => {
-    const result = classifyEmailSuggestionForReview(suggestion({ suggestedStatus: 'PAGO' }), []);
+    const result = classifyEmailSuggestionForReview(
+      suggestion({
+        suggestedStatus: 'PAGO',
+        suggestedPaidAt: '2026-06-05T00:00:00.000Z',
+        senderRisk: 'BAIXO',
+        verificationSignals: ['Comprovante de pagamento com autenticação bancária'],
+        emailSnippet: 'Pagamento efetuado em 05/06/2026 no valor de R$ 300,00.',
+      }),
+      [],
+    );
     expect(result.bucket).toBe('receipt');
+  });
+
+  it('triagem de sugestão paga sem prova forte fica em revisão', () => {
+    const result = classifyEmailSuggestionForReview(suggestion({ suggestedStatus: 'PAGO', senderRisk: 'BAIXO' }), []);
+    expect(result.bucket).toBe('review');
+    expect(result.reasons).toContain('Comprovante marcado como pago sem evidência forte suficiente');
   });
 
   it('triagem de sugestão bloqueia duplicidade provável na lista principal', () => {

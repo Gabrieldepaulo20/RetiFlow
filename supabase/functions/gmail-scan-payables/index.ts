@@ -803,6 +803,54 @@ function calibrateAnalysisConfidence(analysis: PayableEmailAnalysis, labelIds: s
   };
 }
 
+const strongPaidEvidencePatterns = [
+  /\bcomprovante\s+de\s+pagamento\b/i,
+  /\bcomprovante\s+bancario\b/i,
+  /\brecibo\s+de\s+pagamento\b/i,
+  /\bpagamento\s+(?:efetuado|realizado|confirmado|liquidado|aprovado)\b/i,
+  /\b(?:pago|paga|quitado|quitada|liquidado|liquidada)\b/i,
+  /\bdebito\s+automatico\s+(?:efetuado|realizado|confirmado)\b/i,
+  /\bpix\s+(?:enviado|efetuado|realizado|confirmado)\b/i,
+  /\btransferencia\s+(?:efetuada|realizada|confirmada)\b/i,
+];
+
+function normalizeEvidenceText(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function hasStrongPaidEvidence(analysis: PayableEmailAnalysis, rawText: string) {
+  if (analysis.suggestedStatus !== 'PAGO') return true;
+  if (!analysis.paymentDate) return false;
+  if (analysis.senderRisk !== 'BAIXO') return false;
+  if (analysis.confidence < 90) return false;
+  if (analysis.fraudSignals.length > 0) return false;
+
+  const evidenceText = normalizeEvidenceText([
+    rawText,
+    analysis.reason,
+    analysis.senderVerdict,
+    analysis.title,
+    analysis.supplierName,
+    ...analysis.verificationSignals,
+  ].join(' '));
+
+  return strongPaidEvidencePatterns.some((pattern) => pattern.test(evidenceText));
+}
+
+function enforcePaidEvidence(analysis: PayableEmailAnalysis, rawText: string): PayableEmailAnalysis {
+  if (analysis.suggestedStatus !== 'PAGO' || hasStrongPaidEvidence(analysis, rawText)) {
+    return analysis;
+  }
+
+  return {
+    ...analysis,
+    suggestedStatus: 'INCERTO',
+    paymentDate: null,
+    confidence: Math.min(analysis.confidence, 72),
+    reason: `${analysis.reason || 'Sugestão rebaixada para revisão.'} Comprovante pago sem evidência forte suficiente para marcar como quitado automaticamente.`.slice(0, 240),
+  };
+}
+
 function buildSuggestionSnippet(analysis: PayableEmailAnalysis, snippet: string, labelIds: string[]) {
   const labels = labelIds.filter((label) => label === 'SPAM' || label === 'TRASH');
   const pieces = [
@@ -869,8 +917,9 @@ async function analyzePayableEmail(params: {
     '- Em boletos, confira se beneficiário/cedente/CNPJ/valor/vencimento fazem sentido com o fornecedor e remetente. Se beneficiário divergir do fornecedor, marque risco alto.',
     '- Links encurtados, ameaça/urgência exagerada, Pix para pessoa física desconhecida, anexo executável ou cobrança inesperada são sinais fortes de fraude.',
     '- Quando houver indício sério de golpe, retorne isPayable=false, senderRisk=ALTO, confidence baixo e explique em fraudSignals.',
-    '- suggestedStatus=PAGO quando o e-mail/anexo for comprovante, recibo, confirmação de pagamento, débito automático já realizado, ou disser claramente que algo foi pago/quitado.',
-    '- Para suggestedStatus=PAGO, paymentDate deve ser a data do pagamento quando existir. Se o e-mail disser apenas que está pago sem data clara, use paymentDate=null.',
+    '- suggestedStatus=PAGO SOMENTE quando houver prova explícita de liquidação: comprovante/recibo/autenticação bancária, confirmação de pagamento efetuado, Pix/transferência realizada, débito automático já realizado ou texto equivalente com valor e fornecedor claros.',
+    '- NÃO use suggestedStatus=PAGO para boleto/fatura vencida, lembrete de cobrança, promessa de pagamento, agendamento, simples palavra "pago" sem comprovante, ou e-mail sem data de pagamento clara.',
+    '- Para suggestedStatus=PAGO, paymentDate é obrigatória. Se não houver data de pagamento clara, use suggestedStatus=INCERTO e paymentDate=null.',
     '- suggestedStatus=AGENDADO quando disser que o pagamento está agendado para uma data futura, sem confirmação de liquidação.',
     '- suggestedStatus=PENDENTE para boleto/fatura/cobrança ainda a pagar.',
     '- Salário, holerite, pró-labore, folha de pagamento ou recibo de funcionário também são contas a pagar; use supplierName como nome do funcionário ou "Folha de Pagamento" e trate recorrência como mensal no raciocínio.',
@@ -1174,7 +1223,7 @@ Deno.serve(async (request) => {
       const text = `${subject}\n${from.name}\n${from.email}\n${securityContext}\n${detail.snippet ?? ''}\n${bodyText}`;
       let analysis: PayableEmailAnalysis;
       try {
-        analysis = calibrateAnalysisConfidence(await analyzePayableEmail({
+        analysis = enforcePaidEvidence(calibrateAnalysisConfidence(await analyzePayableEmail({
           apiKey: openAiKey,
           subject,
           senderName: from.name,
@@ -1185,7 +1234,7 @@ Deno.serve(async (request) => {
           snippet: detail.snippet ?? '',
           bodyText,
           attachments,
-        }), labelIds);
+        }), labelIds), text);
       } catch (error) {
         errors.push(`Mensagem ${messageId}: ${error instanceof Error ? error.message : 'falha na IA'}`);
         return;
@@ -1270,7 +1319,7 @@ Deno.serve(async (request) => {
         const amount = analysis.amount ?? 0;
         const match = (pendingMatches ?? []).find((c: Record<string, unknown>) =>
           String(c.status_sugerido) !== 'PAGO' &&
-          normSupplierName(c.fornecedor_sugerido as string) === normSupplierName(analysis.supplierName) &&
+          supplierLooksSame(c.fornecedor_sugerido as string, analysis.supplierName) &&
           Math.abs(Number(c.valor_sugerido) - amount) <= Math.max(1, amount * 0.02) &&
           sameYearMonth(c.vencimento_sugerido as string, analysis.dueDate));
 

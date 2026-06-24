@@ -62,6 +62,7 @@ import {
   definirMotivoDescarteSugestao,
   getSugestoesEmail,
   ignorarSugestaoEmail,
+  reconciliarSugestoesEmail,
   type DismissReason,
   type SugestaoEmail,
 } from '@/api/supabase/sugestoes-email';
@@ -359,6 +360,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const refreshEmailSuggestions = useCallback(async () => {
     if (!IS_REAL_AUTH) return;
+    await reconciliarSugestoesEmail().catch((error) => logError(error, 'DataContext.reconciliarSugestoesEmail'));
     const dados = await getSugestoesEmail();
     setEmailSuggestions(dados.map(supabaseToEmailSuggestion));
   }, []);
@@ -447,15 +449,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     getFornecedores({ p_ativo: true, p_limite: 200 }).then(({ dados }) => {
       if (!cancelled && dados.length > 0) setPayableSuppliers(dados.map(supabaseToPayableSupplier));
     }).catch((error) => logError(error, 'DataContext.getFornecedores'));
-    getSugestoesEmail()
-      .then((dados) => {
-        if (!cancelled) setEmailSuggestions(dados.map(supabaseToEmailSuggestion));
-      })
-      .catch((error) => logError(error, 'DataContext.getSugestoesEmail'));
+    refreshEmailSuggestions()
+      .catch((error) => logError(error, 'DataContext.refreshEmailSuggestions'));
     return () => {
       cancelled = true;
     };
-  }, [activeUserId, isAuthLoading, resetRealData]);
+  }, [activeUserId, isAuthLoading, refreshEmailSuggestions, resetRealData]);
 
   // Grava estado relevante no localStorage após 400ms de inatividade.
   // payableCategories/payableSuppliers são catálogos estáticos do seed — não precisam persistir.
@@ -1021,8 +1020,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setPayables((prev) => [newPayable, ...prev]);
     bumpDataVersion();
     addActivity(`Conta a pagar criada: ${newPayable.title}`);
+    if (IS_REAL_AUTH) {
+      await refreshEmailSuggestions().catch((error) => logError(error, 'DataContext.refreshEmailSuggestions.afterAddPayable'));
+    }
     return newPayable;
-  }, [addActivity, bumpDataVersion]);
+  }, [addActivity, bumpDataVersion, refreshEmailSuggestions]);
 
   const updatePayable = useCallback(async (id: string, data: Partial<AccountPayable>) => {
     // status e paidAt são campos CONTROLADOS pelo servidor: só mudam via
@@ -1191,7 +1193,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
       const refreshed = await getContasPagar({ p_limite: 5000 });
       setPayables(refreshed.dados.map(supabaseToAccountPayable));
-      setEmailSuggestions((prev) => prev.map((s) => s.id === id ? { ...s, status: 'ACCEPTED' } : s));
+      await refreshEmailSuggestions().catch((error) => logError(error, 'DataContext.refreshEmailSuggestions.afterAccept'));
       bumpDataVersion();
       return { ...newPayable, id: dbId };
     }
@@ -1199,7 +1201,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setEmailSuggestions((prev) => prev.map((s) => s.id === id ? { ...s, status: 'ACCEPTED' } : s));
     bumpDataVersion();
     return newPayable;
-  }, [emailSuggestions, bumpDataVersion]);
+  }, [emailSuggestions, bumpDataVersion, refreshEmailSuggestions]);
 
   const dismissEmailSuggestion = useCallback(async (id: string, motivo?: DismissReason) => {
     if (IS_REAL_AUTH) {

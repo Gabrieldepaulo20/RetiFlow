@@ -6,6 +6,25 @@ Atualizado em: 2026-06-24
 
 ## Contas A Pagar - Gmail Retifica Premium Auto Sync - 2026-06-24
 
+- Complemento em 2026-06-24:
+  - criada migration `20260624012804_reconcile_email_suggestions_with_payables.sql`;
+  - adicionada RPC `reconciliar_sugestoes_email` e variante `reconciliar_sugestoes_email_contexto_suporte`;
+  - `get_sugestoes_email` e `aceitar_sugestao_email` agora reconciliam sugestoes pendentes contra
+    `Contas_Pagar` existentes antes de listar/aceitar, usando fornecedor parecido + mesmo vencimento + valor
+    dentro de tolerancia curta;
+  - sugestoes equivalentes a contas ja cadastradas sao marcadas como `DISMISSED` com `motivo_descarte='DUPLICADO'`;
+  - front chama a reconciliacao ao carregar/atualizar sugestoes e depois de criar conta, evitando sugestao velha
+    na lista;
+  - botao principal mudou para `Usar conta`;
+  - `gmail-scan-payables` v43 reforca que `PAGO` so vale com comprovante/recibo/autenticacao bancaria e data de
+    pagamento claros; caso contrario rebaixa para `INCERTO`/revisao;
+  - aplicado em PROD via `supabase db query --linked --file ...`, migration repair `20260624012804` e deploy da
+    function `gmail-scan-payables`;
+  - validacao pontual: reconciliei 2 sugestoes antigas da Retifica Premium e a segunda execucao retornou 0
+    reconciliacoes;
+  - validado com `npm test -- --run src/test/payable-match-classification.test.ts src/test/integration/sugestoes-email.test.ts`
+    e `npm run test:integration -- src/test/integration/sugestoes-email.test.ts`.
+
 - Pedido: a Retifica Premium estava com Gmail conectado e permissao concedida, mas as contas analisadas pela
   IA nao apareciam em `Sugestoes`.
 - Causa raiz confirmada em PROD:

@@ -72,6 +72,53 @@ describe.skipIf(skipIntegration)('Sugestões de e-mail — integração real com
     await client.auth.signOut();
   });
 
+  it('get_sugestoes_email reconcilia sugestão pendente que já existe em contas', async () => {
+    const { client } = await signInAsTestUser();
+
+    const payable = await callRpc(client, 'insert_conta_pagar', {
+      p_titulo: `${TEST_PREFIX} Fornecedor Reconciliado`,
+      p_fk_categorias: TEST_CATEGORY_ID,
+      p_data_vencimento: '2026-10-15T00:00:00',
+      p_valor_original: 777.77,
+      p_nome_fornecedor: 'Fornecedor Reconciliado',
+      p_origem_lancamento: 'MANUAL',
+      p_favorecido_tipo: 'FORNECEDOR',
+    });
+    expect(payable.status).toBe(200);
+
+    const inserted = await callRpc(client, 'insert_sugestao_email', {
+      p_assunto: `${TEST_PREFIX} boleto reconciliado`,
+      p_nome_remetente: 'Fornecedor Reconciliado',
+      p_email_remetente: 'financeiro-reconciliado@example.com',
+      p_recebido_em: '2026-10-01T10:00:00',
+      p_titulo_sugerido: `${TEST_PREFIX} Boleto Fornecedor Reconciliado`,
+      p_valor_sugerido: 777.77,
+      p_vencimento_sugerido: '2026-10-15',
+      p_fornecedor_sugerido: 'Fornecedor Reconciliado',
+      p_forma_pagamento_sugerida: 'BOLETO',
+      p_confianca: 94,
+      p_fk_categorias_sugerida: TEST_CATEGORY_ID,
+    });
+    expect(inserted.status).toBe(200);
+    const suggestionId = inserted.id_sugestoes_email as string;
+
+    const pending = await callRpc(client, 'get_sugestoes_email', { p_status: 'PENDING' });
+    const pendingRows = pending.dados as Array<{ id_sugestoes_email: string }>;
+    expect(pendingRows.some((suggestion) => suggestion.id_sugestoes_email === suggestionId)).toBe(false);
+
+    const service = createServiceClient();
+    const { data: reconciledRow } = await service
+      .schema('RetificaPremium')
+      .from('Sugestoes_Email')
+      .select('status, motivo_descarte')
+      .eq('id_sugestoes_email', suggestionId)
+      .single();
+    expect(reconciledRow?.status).toBe('DISMISSED');
+    expect(reconciledRow?.motivo_descarte).toBe('DUPLICADO');
+
+    await client.auth.signOut();
+  });
+
   it('ignorar_sugestao_email marca sugestão como DISMISSED sem criar conta', async () => {
     const { client } = await signInAsTestUser();
 

@@ -26,6 +26,7 @@ const SUPPORT_CONTEXT_RPC_MAP: Record<string, string> = {
   get_gmail_connection_status: 'get_gmail_connection_status_contexto_suporte',
   // Escritas — Contas a Pagar
   aceitar_sugestao_email: 'aceitar_sugestao_email_contexto_suporte',
+  reconciliar_sugestoes_email: 'reconciliar_sugestoes_email_contexto_suporte',
   cancelar_conta_pagar: 'cancelar_conta_pagar_contexto_suporte',
   excluir_conta_pagar: 'excluir_conta_pagar_contexto_suporte',
   ignorar_sugestao_email: 'ignorar_sugestao_email_contexto_suporte',

@@ -34,6 +34,7 @@ import { useData } from '@/contexts/DataContext';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
+import { logError } from '@/lib/monitoring';
 import { EmailSuggestion } from '@/types';
 import { buildPayableHistoryDescription, classifyEmailSuggestionForReview, getSuggestionOverdueDays, summarizeSenderHistory } from '@/services/domain/payables';
 import { getGmailConnectionStatus, scanGmailPayables, startGmailOAuth, updateGmailAutoSyncSettings, type GmailConnectionStatus } from '@/api/supabase/gmail-payables';
@@ -425,7 +426,7 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, r
                     className={cn('h-8 gap-1 px-2 sm:px-3', isPaid && 'bg-emerald-600 text-white hover:bg-emerald-700')}
                     onClick={onAccept}
                   >
-                    <CheckCircle2 className="h-3.5 w-3.5" />{isPaid ? 'Adicionar paga' : isReview ? 'Revisar e usar' : 'Usar como conta'}
+                    <CheckCircle2 className="h-3.5 w-3.5" />{isPaid ? 'Adicionar paga' : isReview ? 'Revisar e usar' : 'Usar conta'}
                   </Button>
                 </div>
               </div>
@@ -786,6 +787,9 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
       });
       onCreated?.(payable.id);
     } catch (error) {
+      await refreshEmailSuggestions().catch((refreshError) => {
+        logError(refreshError, 'PayableEmailSuggestions.refreshAfterAcceptError');
+      });
       toast({
         title: 'Não foi possível criar a conta',
         description: error instanceof Error ? error.message : 'Tente novamente em instantes.',
@@ -839,6 +843,9 @@ export default function PayableEmailSuggestions({ onCreated, supportMode = false
       toast({ title: 'Conta criada e marcada como paga', description: `"${payable.title}" já entrou como quitada.` });
       onCreated?.(payable.id);
     } catch (error) {
+      await refreshEmailSuggestions().catch((refreshError) => {
+        logError(refreshError, 'PayableEmailSuggestions.refreshAfterMarkPaidError');
+      });
       toast({
         title: 'Não foi possível criar como paga',
         description: error instanceof Error ? error.message : 'Tente novamente. Nenhuma sugestão deve ser considerada quitada sem confirmação.',
