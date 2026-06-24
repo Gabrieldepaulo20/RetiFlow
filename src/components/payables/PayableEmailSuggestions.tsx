@@ -55,6 +55,15 @@ function fmtBRL(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+/** Resumo curto do trecho do e-mail: limpa espaços e corta em ~140 chars, no fim de palavra. */
+function shortSnippet(text: string, max = 140): string {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  if (clean.length <= max) return clean;
+  const cut = clean.slice(0, max);
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${(lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut).trim()}…`;
+}
+
 const paymentIcons: Record<string, LucideIcon> = {
   BOLETO: Barcode,
   PIX: QrCode,
@@ -303,7 +312,7 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, r
 
   return (
     <motion.div
-      layout
+      layout="position"
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -20, transition: { duration: 0.2 } }}
@@ -416,8 +425,8 @@ function SuggestionCard({ suggestion, categoryName, categoryIcon, overdueDays, r
                     </div>
                   ) : null}
                   {suggestion.emailSnippet ? (
-                    <p className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-relaxed text-slate-700">
-                      {suggestion.emailSnippet}
+                    <p className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-relaxed text-slate-600">
+                      {shortSnippet(suggestion.emailSnippet)}
                     </p>
                   ) : null}
                 </div>
