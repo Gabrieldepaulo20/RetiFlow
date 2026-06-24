@@ -69,4 +69,48 @@ describe.skipIf(skipIntegration)('Clientes — integracao real com Supabase', ()
 
     await client.auth.signOut();
   });
+
+  it('bloqueia cliente duplicado pelo mesmo nome no mesmo tenant', async () => {
+    const { client } = await signInAsTestUser();
+    const suffix = String(Date.now()).slice(-8);
+    const duplicateName = `${TEST_PREFIX} Cliente Duplicado ${suffix}`;
+
+    const created = await callRpc(client, 'salvar_cliente_completo', {
+      p_payload: {
+        nome: duplicateName,
+        documento: `8${suffix.padStart(10, '0')}`,
+        tipo_documento: 'CPF',
+        status: true,
+      },
+    });
+
+    expect(created.status).toBe(200);
+    createdClientIds.add(created.id_cliente as string);
+
+    const duplicate = await callRpc(client, 'salvar_cliente_completo', {
+      p_payload: {
+        nome: duplicateName.toLowerCase(),
+        documento: `9${suffix.padStart(10, '0')}`,
+        tipo_documento: 'CPF',
+        status: true,
+      },
+    });
+
+    expect(duplicate.status).not.toBe(200);
+    expect(String(duplicate.mensagem)).toMatch(/cliente com este nome/i);
+
+    const listed = await callRpc(client, 'get_clientes', {
+      p_busca: duplicateName,
+      p_limite: 5,
+    });
+
+    expect(listed.status).toBe(200);
+    expect(
+      (listed.dados as Array<{ nome?: string }>).filter(
+        (item) => item.nome?.toLowerCase() === duplicateName.toLowerCase(),
+      ),
+    ).toHaveLength(1);
+
+    await client.auth.signOut();
+  });
 });

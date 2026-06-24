@@ -56,6 +56,46 @@ Atualizado em: 2026-06-24
 
 ---
 
+## Clientes - Merge De Duplicados E Trava Por Nome - 2026-06-24
+
+- Pedido: corrigir cliente duplicado `Missão Johnny Aparecido da Silva Francisco` na conta Retifica Premium,
+  porque cliente duplicado pode separar O.S. e gerar conflito no fechamento.
+- Causa raiz:
+  - a importacao legada validava reaproveitamento principalmente por documento exato;
+  - havia cadastro com mesmo nome, mas documento/CNPJ digitado diferente;
+  - `40817996000147` e o CNPJ valido/ativo (`JOHNNY APARECIDO DA SILVA FRANCISCO LTDA`, fantasia
+    `AUTO MECANICA MISSAO`);
+  - `40841996000147` era invalido na consulta BrasilAPI;
+  - como o nome nao tinha trava por tenant, os dois cadastros entraram.
+- Correcao de dados aplicada em producao:
+  - mantido o cadastro `60ee619d-1594-4141-b3b0-4d8b09b60b7a`, documento `40817996000147`,
+    `nome_fantasia = Auto Mecânica Missão`;
+  - removido o cadastro com CNPJ invalido `0b1028a4-43b2-4369-82f6-34663a952b69`;
+  - movidas 12 O.S. do cadastro invalido para o valido;
+  - estado final do cliente Missao: 16 O.S. e total direto em O.S. de `R$ 14.262,00`;
+  - observacao: uma consulta anterior com joins em contatos/endereco inflava soma; a validacao final somou
+    direto em `Notas_de_Servico`.
+- Varredura adicional encontrou outro par duplicado na Retifica Premium:
+  - `Erick Pignata - ME`, documentos `27755341000163` (invalido) e `32755341000163` (valido/ativo);
+  - mantido o cadastro valido `f8b5cd41-6fc3-4db3-89f8-aeae2a826735`;
+  - movidas 2 O.S. do cadastro invalido para o valido;
+  - contato de e-mail extra foi preservado quando nao duplicado.
+- Prevencao aplicada:
+  - migration `20260624170651_prevent_duplicate_client_names.sql`;
+  - adicionada funcao `normalizar_nome_cliente(text)` para comparar nome sem acento, caixa e pontuacao;
+  - adicionada trigger `trg_unique_cliente_nome` em `Clientes`, bloqueando novo cadastro/renomeacao que gere
+    nome duplicado dentro do mesmo `fk_criado_por`;
+  - a trigger nao bloqueia edicoes que nao mudam nome/tenant, evitando travar registros antigos por atualizacao
+    de outro campo.
+- Validacao:
+  - 0 grupos restantes com nome normalizado duplicado na base;
+  - migration aplicada via `supabase db query --linked --file ...`;
+  - historico remoto reparado com `supabase migration repair --linked --status applied 20260624170651`;
+  - `npm run test:integration -- src/test/integration/clientes.test.ts` passou e cobre bloqueio de mesmo nome
+    com documento diferente.
+
+---
+
 ## Limpeza De O.S. Excluidas Da Retifica Premium - 2026-06-24
 
 - Pedido: excluir do sistema as O.S. da Retifica Premium que estavam com status `Excluida`.
