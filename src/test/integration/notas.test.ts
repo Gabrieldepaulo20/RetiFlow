@@ -136,8 +136,9 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
     const futureEnd = new Date();
     futureEnd.setDate(futureEnd.getDate() + 9);
 
+    const normalizedOsNumber = `OS-${suffix}`;
     const filteredToday = await callRpc(client, 'get_notas_servico', {
-      p_busca: `${TEST_PREFIX} OS-${suffix}`,
+      p_busca: normalizedOsNumber,
       p_data_inicio: yesterday.toISOString().slice(0, 10),
       p_data_fim: tomorrow.toISOString().slice(0, 10),
       p_limite: 5,
@@ -151,7 +152,7 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
     ]));
 
     const filteredFuture = await callRpc(client, 'get_notas_servico', {
-      p_busca: `${TEST_PREFIX} OS-${suffix}`,
+      p_busca: normalizedOsNumber,
       p_data_inicio: futureStart.toISOString().slice(0, 10),
       p_data_fim: futureEnd.toISOString().slice(0, 10),
       p_limite: 5,
@@ -164,6 +165,7 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
       p_id_nota_servico: noteId,
     });
     expect(details.status).toBe(200);
+    expect((details.cabecalho as { os_numero: string }).os_numero).toBe(normalizedOsNumber);
     expect((details.cabecalho as { contato_nome: string | null }).contato_nome).toBe(`${TEST_PREFIX} Contato Sem Placa`);
     expect((details.cabecalho as { veiculo: { placa: string | null; id: string } }).veiculo.placa).toBeNull();
     createdVehicleIds.add((details.cabecalho as { veiculo: { id: string } }).veiculo.id);
@@ -302,9 +304,10 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
     });
     expect(finalized.status).toBe(200);
 
+    const normalizedClosingOsNumber = `OS-${suffix}`;
     const availableBefore = await callRpc(client, 'get_notas_servico', {
       p_fk_clientes: clientId,
-      p_busca: `${TEST_PREFIX} FECH-${suffix}`,
+      p_busca: normalizedClosingOsNumber,
       p_apenas_sem_fechamento: true,
       p_limite: 5,
     });
@@ -333,7 +336,7 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
         cliente: { id: clientId, nome: `${TEST_PREFIX} Cliente Fechamento ${suffix}` },
         notas: [{
           id: noteId,
-          os: `${TEST_PREFIX} FECH-${suffix}`,
+          os: normalizedClosingOsNumber,
           veiculo: 'Motor fechamento',
           placa: null,
           itens: [],
@@ -350,7 +353,7 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
 
     const availableAfter = await callRpc(client, 'get_notas_servico', {
       p_fk_clientes: clientId,
-      p_busca: `${TEST_PREFIX} FECH-${suffix}`,
+      p_busca: normalizedClosingOsNumber,
       p_apenas_sem_fechamento: true,
       p_limite: 5,
     });
@@ -494,6 +497,7 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
       p_id_nota_servico: noteId,
     });
     expect(firstDetails.status).toBe(200);
+    expect((firstDetails.cabecalho as { os_numero: string }).os_numero).toBe(`OS-${Number(osNumber)}`);
     createdVehicleIds.add((firstDetails.cabecalho as { veiculo: { id: string } }).veiculo.id);
 
     const equivalentNote = await callRpc(client, 'nova_nota', {

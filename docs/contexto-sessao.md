@@ -4,6 +4,39 @@ Atualizado em: 2026-06-24
 
 ---
 
+## Notas De Entrada - Padronizacao Do Numero Da O.S. - 2026-06-25
+
+- Pedido: O.S. legadas da Retifica Premium vieram do sistema antigo como numeros soltos (`1199`, `0014`,
+  `05802`), enquanto as novas usam `OS-4549`; isso poderia confundir busca, ordenacao e leitura da cliente.
+- Diagnostico em producao:
+  - os indices unicos `idx_notas_servico_owner_os_unique` e `idx_notas_servico_owner_os_numeric_unique` ja
+    estavam ativos, bloqueando duplicidade exata e numericamente equivalente na mesma conta;
+  - havia 864 O.S. da Retifica Premium fora do padrao visual `OS-<numero>`;
+  - a normalizacao planejada gerava 864 numeros distintos, sem conflito numerico.
+- Correcao aplicada nesta rodada:
+  - migration `20260625112449_normalize_service_order_numbers.sql`;
+  - criada funcao `normalizar_numero_os(text)`, que transforma `0014`, `14` e `OS-0014` em `OS-14`;
+  - criada trigger `trg_normalizar_numero_os` em `Notas_de_Servico` para futuras insercoes/alteracoes de `os`;
+  - saneamento dos 864 registros antigos atualizou apenas o campo `os`; nao alterou cliente, status, valores,
+    datas, fechamento ou PDFs salvos.
+- Aplicado em producao:
+  - SQL executado via `supabase db query --linked --file ...`;
+  - `supabase migration repair --linked` nao conseguiu conectar por falta de `SUPABASE_DB_PASSWORD` no shell;
+  - como a query via Management API estava funcionando, a versao `20260625112449` foi registrada em
+    `supabase_migrations.schema_migrations` com nome `normalize_service_order_numbers`.
+- Observacao:
+  - os PDFs antigos podem continuar no mesmo path do Storage, porque o banco guarda o path em `pdf_url`; a
+    padronizacao afeta exibicao, busca, ordenacao e regra de duplicidade da O.S., sem quebrar referencia.
+  - existem duas O.S. legadas numericamente muito altas (`OS-50860` e `OS-48510`); foram preservadas porque
+    nao ha evidencia suficiente para concluir que sejam erro de digitacao. Revisar manualmente antes de renumerar.
+- Validacao esperada:
+  - `get_notas_servico`/`get_notas_servico_contexto_suporte` ja aceitam `p_ordem_campo='os'` e
+    `p_ordem_direcao='desc'` para ordenar por O.S. maior primeiro;
+  - teste de integracao de notas confere que numero com zeros a esquerda e salvo como `OS-<numero>`;
+  - query de producao confirmou `0` O.S. da Retifica Premium fora do padrao `OS-<numero>`.
+
+---
+
 ## Crescimento - Acesso Retifica Premium Ao GA4 - 2026-06-24
 
 - Pedido: garantir que a propria Retifica Premium consiga acessar e visualizar o modulo Crescimento com dados
