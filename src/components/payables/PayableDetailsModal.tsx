@@ -323,7 +323,7 @@ export default function PayableDetailsModal({
     if (url.startsWith('local-upload://')) return;
     setOpeningAttachmentId(attachmentId);
     try {
-      const resolvedUrl = IS_REAL_AUTH ? await getAnexoContaPagarUrl(url) : url;
+      const resolvedUrl = IS_REAL_AUTH ? await getAnexoContaPagarUrl(url, { attachmentId }) : url;
       window.open(resolvedUrl, '_blank', 'noopener,noreferrer');
     } catch (err) {
       toast({

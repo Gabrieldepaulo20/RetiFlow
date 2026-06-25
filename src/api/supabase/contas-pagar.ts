@@ -250,9 +250,54 @@ export async function uploadAnexoContaPagar(params: {
   return path;
 }
 
-export async function getAnexoContaPagarUrl(pathOrUrl: string) {
+async function getAnexoContaPagarUrlViaFunction(params: {
+  pathOrUrl: string;
+  attachmentId?: string;
+  supportContext?: ReturnType<typeof readStoredSupportContext>;
+}) {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+
+  if (sessionError || !accessToken) {
+    throw new Error('Sessão Supabase não encontrada. Faça login novamente para abrir o anexo.');
+  }
+
+  const { data, error } = await supabase.functions.invoke<{ signedUrl?: string; error?: string }>('payable-attachment-url', {
+    body: {
+      pathOrUrl: params.pathOrUrl,
+      attachmentId: params.attachmentId,
+      support: params.supportContext ?? undefined,
+    },
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (error) {
+    throw new Error(await getFunctionErrorMessage(error));
+  }
+  if (!data?.signedUrl) {
+    throw new Error(data?.error ?? 'Não foi possível gerar link seguro do anexo.');
+  }
+
+  return data.signedUrl;
+}
+
+export async function getAnexoContaPagarUrl(
+  pathOrUrl: string,
+  options?: { attachmentId?: string },
+) {
   if (!pathOrUrl || pathOrUrl.startsWith('http') || pathOrUrl.startsWith('blob:') || pathOrUrl.startsWith('local-upload://')) {
     return pathOrUrl;
+  }
+
+  const supportContext = readStoredSupportContext();
+  if (supportContext) {
+    return getAnexoContaPagarUrlViaFunction({
+      pathOrUrl,
+      attachmentId: options?.attachmentId,
+      supportContext,
+    });
   }
 
   const { data, error } = await supabase.storage
@@ -260,7 +305,10 @@ export async function getAnexoContaPagarUrl(pathOrUrl: string) {
     .createSignedUrl(pathOrUrl, 60 * 10);
 
   if (error || !data?.signedUrl) {
-    throw new Error(`[getAnexoContaPagarUrl] ${error?.message ?? 'Não foi possível gerar link seguro do anexo.'}`);
+    return getAnexoContaPagarUrlViaFunction({
+      pathOrUrl,
+      attachmentId: options?.attachmentId,
+    });
   }
 
   return data.signedUrl;

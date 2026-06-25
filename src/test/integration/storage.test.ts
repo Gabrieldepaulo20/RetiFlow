@@ -66,7 +66,7 @@ describe.skipIf(skipIntegration)('Storage — PDFs e anexos privados com signed 
 
   it('anexo de conta a pagar é enviado, vinculado e lido por signed URL', async () => {
     const { testUserEmail, testUserPassword } = getTestEnv();
-    const { client } = await signInAsTestUser();
+    const { client, accessToken } = await signInAsTestUser();
     const service = createServiceClient();
     const [{ supabase }, payablesApi] = await Promise.all([
       import('@/lib/supabase'),
@@ -126,6 +126,26 @@ describe.skipIf(skipIntegration)('Storage — PDFs e anexos privados com signed 
     expect(response.ok).toBe(true);
     expect(await response.text()).toBe('comprovante integração');
 
+    const edgeResponse = await fetch(`${getTestEnv().url}/functions/v1/payable-attachment-url`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        apikey: getTestEnv().anonKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        attachmentId: anexoId,
+        pathOrUrl: path,
+      }),
+    });
+    expect(edgeResponse.ok).toBe(true);
+    const edgeBody = await edgeResponse.json() as { signedUrl?: string };
+    expect(edgeBody.signedUrl).toContain('/storage/v1/object/sign/contas-pagar/');
+
+    const edgeSignedResponse = await fetch(edgeBody.signedUrl!);
+    expect(edgeSignedResponse.ok).toBe(true);
+    expect(await edgeSignedResponse.text()).toBe('comprovante integração');
+
     await payablesApi.excluirContaPagar(contaId);
 
     const deletedPayable = await service
@@ -152,7 +172,7 @@ describe.skipIf(skipIntegration)('Storage — PDFs e anexos privados com signed 
       client.auth.signOut(),
       supabase.auth.signOut(),
     ]);
-  });
+  }, 60_000);
 
   it('uploadNotaPDF salva path privado e getNotaPDFSignedUrl permite leitura real', async () => {
     const { testUserEmail, testUserPassword } = getTestEnv();

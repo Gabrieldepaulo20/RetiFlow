@@ -4,6 +4,34 @@ Atualizado em: 2026-06-25
 
 ---
 
+## Contas A Pagar - Anexos Privados Em Modo Suporte - 2026-06-25
+
+- Pedido: em modo suporte na Retifica Premium, a conta
+  `VR BENEFICIOS E SERV PROC - FILIAL · Doc 030126685826000` tinha anexo que nao abria.
+- Diagnostico em producao:
+  - a conta existe para `retificapremium5@gmail.com`;
+  - anexo `c2358c55-d689-417c-a39c-cad11136e38f`, tipo `BOLETO`, path
+    `retifica-premium/2026/junho/24 (Quarta-feira)/756b3f6e-44f1-475e-aed6-09044746dc02/1782310653904-eb7d1155-22f2-41b7-a34d-99d013a3fd01.pdf`;
+  - o objeto existe no bucket privado `contas-pagar`, tem `application/pdf`, 168227 bytes, e a service role
+    gera signed URL normalmente;
+  - causa provavel do erro no front: no modo suporte, o frontend lia a conta via RPC de suporte, mas tentava
+    assinar o arquivo diretamente no Storage com o usuario logado do suporte; a policy do bucket e por
+    `owner = auth.uid()`, entao o suporte nao e dono do objeto.
+- Correcao aplicada:
+  - criada Edge Function `payable-attachment-url`;
+  - a Function valida JWT, busca o anexo, valida permissao via `get_conta_pagar_detalhes` ou
+    `get_conta_pagar_detalhes_contexto_suporte`, e so entao assina o arquivo com service role por 10 minutos;
+  - `getAnexoContaPagarUrl` agora usa a Function quando existe contexto de suporte e tambem como fallback
+    quando a assinatura direta do Storage falha;
+  - `PayableDetailsModal` passa o `id_anexo` ao abrir arquivo, para a Function validar o registro exato.
+- Validacao:
+  - unitario novo `src/test/payable-attachment-url.test.ts` cobre assinatura direta, suporte e fallback;
+  - Edge Function publicada no projeto `dqeoxxokvvcpssajycgq`;
+  - usuario de teste sem permissao recebeu 403 ao tentar abrir o anexo da VR;
+  - teste de integracao de Storage passou com a Function abrindo um anexo temporario real e limpando os dados.
+
+---
+
 ## PDFs De O.S. Apos Padronizacao `OS-<numero>` - 2026-06-25
 
 - Pedido: depois de normalizar o campo `os` das notas antigas para `OS-<numero>`, conferir e corrigir os PDFs
