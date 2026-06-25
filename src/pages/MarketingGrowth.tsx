@@ -67,6 +67,15 @@ const providerLabels: Record<string, string> = {
   internal: 'Eventos do site',
 };
 
+const providerEmptyLabels: Record<string, string> = {
+  ga4: 'Usando a propriedade GA4 configurada',
+  google_ads: 'Aguardando autorização do Google Ads',
+  internal: 'Eventos próprios do site',
+};
+
+const displayedIntegrationProviders: MarketingProvider[] = ['ga4', 'google_ads'];
+const retificaPremiumEmail = 'retificapremium5@gmail.com';
+
 const statusLabels: Record<string, { label: string; className: string }> = {
   connected: { label: 'Conectado', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
   syncing: { label: 'Sincronizando', className: 'border-blue-200 bg-blue-50 text-blue-700' },
@@ -184,12 +193,11 @@ function LoadingGrid() {
 }
 
 function EmptyIntegrationRail({ resumo }: { resumo: MarketingResumo }) {
-  const knownProviders: MarketingProvider[] = ['ga4', 'meta_ads', 'google_ads', 'clarity'];
   const activeByProvider = new Map(resumo.integrations.map((integration) => [integration.provider, integration]));
 
   return (
-    <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-2 xl:grid-cols-4">
-      {knownProviders.map((provider) => {
+    <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-2">
+      {displayedIntegrationProviders.map((provider) => {
         const integration = activeByProvider.get(provider);
         const status = statusLabels[integration?.status ?? 'not_connected'];
         return (
@@ -201,7 +209,9 @@ function EmptyIntegrationRail({ resumo }: { resumo: MarketingResumo }) {
                 </div>
                 <div className="min-w-0">
                   <p className="truncate text-xs font-semibold text-foreground sm:text-sm">{providerLabels[provider]}</p>
-                  <p className="hidden truncate text-xs text-muted-foreground sm:block">{integration?.accountName ?? 'Aguardando conexão segura'}</p>
+                  <p className="hidden truncate text-xs text-muted-foreground sm:block">
+                    {integration?.accountName ?? providerEmptyLabels[provider] ?? 'Aguardando conexão segura'}
+                  </p>
                 </div>
               </div>
               <Badge variant="outline" className={cn('w-fit shrink-0 text-[10px] sm:text-xs', status.className)}>{status.label}</Badge>
@@ -413,16 +423,16 @@ function CampaignsTab({ resumo }: { resumo: MarketingResumo }) {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-2 sm:gap-4 xl:grid-cols-4">
-        <MetricCard title="Investimento" value={financialAvailable ? formatCurrency(resumo.campaigns.current.spend) : 'Pendente'} detail="Meta/Google Ads ainda não conectados" icon={CircleDollarSign} tone="default" />
-        <MetricCard title="Impressões" value={financialAvailable ? formatNumber(resumo.campaigns.current.impressions ?? 0) : 'Pendente'} detail="Search Console/Ads necessário" icon={Eye} tone="blue" />
+        <MetricCard title="Investimento" value={financialAvailable ? formatCurrency(resumo.campaigns.current.spend) : 'Pendente'} detail="Google Ads ainda não conectado" icon={CircleDollarSign} tone="default" />
+        <MetricCard title="Impressões" value={financialAvailable ? formatNumber(resumo.campaigns.current.impressions ?? 0) : 'Pendente'} detail="Google Ads necessário" icon={Eye} tone="blue" />
         <MetricCard title="Cliques pagos" value={formatNumber(resumo.campaigns.current.clicks)} detail="Disponível após integração" icon={MousePointerClick} tone="teal" />
         <MetricCard title="Custo por contato" value={financialAvailable ? formatCurrency(resumo.campaigns.current.cpl) : 'Pendente'} detail="Quanto custou cada possível cliente" icon={TrendingUp} tone="amber" />
       </div>
 
       <SectionEmptyState
         icon={Megaphone}
-        title="Campanhas aguardando integração segura"
-        description="Os dados financeiros entram quando Meta Ads ou Google Ads forem conectados com segurança, sem credenciais no navegador."
+        title="Google Ads aguardando conexão"
+        description="Os dados de campanha entram aqui depois da autorização segura do Google Ads no backend, sem credenciais no navegador."
         className="min-h-[180px] sm:min-h-[240px]"
       />
     </div>
@@ -450,6 +460,11 @@ export default function MarketingGrowth() {
   const selectedUser = useMemo(
     () => selectableUsers.find((user) => user.id === selectedUserId) ?? null,
     [selectableUsers, selectedUserId],
+  );
+  const shouldShowSelectedUserBanner = Boolean(
+    isAdmin
+    && selectedUser
+    && selectedUser.email?.trim().toLowerCase() !== retificaPremiumEmail,
   );
   const targetUserId = isAdmin ? selectedUserId : null;
   const queryEnabled = !isAdmin || Boolean(targetUserId);
@@ -581,7 +596,7 @@ export default function MarketingGrowth() {
 
         {data && !error ? (
           <>
-            {isAdmin && selectedUser ? (
+            {shouldShowSelectedUserBanner && selectedUser ? (
               <div className="rounded-lg border bg-card px-4 py-3 text-sm text-muted-foreground shadow-sm">
                 Visualizando <span className="font-semibold text-foreground">{selectedUser.name}</span>
                 {selectedUser.email ? <span className="hidden sm:inline"> · {selectedUser.email}</span> : null}

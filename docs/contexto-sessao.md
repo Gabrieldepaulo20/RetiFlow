@@ -36,6 +36,14 @@ Atualizado em: 2026-06-24
   - `supabase migration list --linked` mostra `20260624182026` aplicada local/remoto;
   - proximo passo de produto/infra: confirmar o site/domino ativo e instalar a tag `marketing-events` com
     `site_key_hash`, para medir cliques no WhatsApp e leads proprios alem dos dados do GA4.
+- Complemento de UX:
+  - quando o cliente selecionado for a Retifica Premium, o front nao mostra a faixa redundante
+    `Visualizando Retifica Premium`;
+  - o trilho de integracoes do modulo Crescimento passou a exibir apenas Google Analytics e Google Ads;
+  - Meta Ads e Microsoft Clarity foram removidos da visualizacao da Retifica Premium por nao fazerem parte do
+    escopo atual;
+  - Google Ads permanece como pendente/aguardando autorizacao real; nao marcar como conectado sem developer
+    token/customer id/autorizacao OAuth especifica do Google Ads.
 
 ---
 
