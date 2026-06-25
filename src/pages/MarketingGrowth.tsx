@@ -12,7 +12,6 @@ import {
   YAxis,
 } from 'recharts';
 import {
-  Activity,
   ArrowDownRight,
   ArrowUpRight,
   BarChart3,
@@ -622,12 +621,7 @@ export default function MarketingGrowth() {
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Atualizando dados
                   </span>
-                ) : (
-                  <span className="hidden items-center gap-2 text-sm text-muted-foreground sm:inline-flex">
-                    <Activity className="h-4 w-4" />
-                    Sem dados mockados em produção
-                  </span>
-                )}
+                ) : null}
               </div>
 
               <TabsContent value="site">
