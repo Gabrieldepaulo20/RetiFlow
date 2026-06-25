@@ -1,6 +1,41 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-06-24
+Atualizado em: 2026-06-25
+
+---
+
+## PDFs De O.S. Apos Padronizacao `OS-<numero>` - 2026-06-25
+
+- Pedido: depois de normalizar o campo `os` das notas antigas para `OS-<numero>`, conferir e corrigir os PDFs
+  ja salvos, porque arquivos estaticos no Storage nao mudam sozinhos.
+- Correcao aplicada:
+  - criado `scripts/oneoff/regenerate-retifica-premium-note-pdfs.mjs`;
+  - o script carrega a `NotaPDFTemplate` atual via Vite SSR, monta os dados reais da O.S. e sobrescreve o PDF
+    no bucket privado `notas`;
+  - cada upload e validado com signed URL e cabecalho `%PDF-`;
+  - o script tambem normaliza `pdf_url` para o nome atual da O.S. (`OS-13.pdf`, sem zeros a esquerda) e remove
+    o objeto antigo quando o path muda;
+  - o script consegue gerar PDF para O.S. sem `pdf_url`, usando o padrao
+    `retifica-premium/ano/mes/dia (Dia-semana)/OS-xxxx.pdf`.
+- Execucao em producao:
+  - dry-run geral: 946 PDFs existentes gerariam corretamente, 0 falhas;
+  - aplicacao geral: 944 PDFs atualizados de primeira; `OS-1488` e `OS-4137` tiveram timeout temporario na
+    validacao por signed URL e foram reprocessadas individualmente com sucesso;
+  - normalizacao de paths: 32 PDFs com nome antigo tipo `OS-013.pdf` foram regenerados/movidos para
+    `OS-13.pdf` e tiveram `pdf_url` atualizado;
+  - `OS-5571`, que estava sem PDF salvo, recebeu PDF novo em
+    `retifica-premium/2026/junho/10 (Quarta-feira)/OS-5571.pdf`.
+- Validacao final:
+  - Retifica Premium: 947 O.S. totais, 947 com PDF, 0 sem PDF;
+  - `pdf_formato = supabase_storage` em 947/947;
+  - 0 O.S. fora do padrao visual `OS-<numero>`;
+  - 0 divergencias entre `os` e o nome do arquivo no `pdf_url`;
+  - amostras baixadas do Storage (`OS-3401`, `OS-1488`, `OS-4137`, `OS-5571`, `OS-13`) abriram como PDF,
+    tinham cabecalho `%PDF-`, texto com `Retifica Premium` e a O.S. correta no corpo.
+- Observacao:
+  - o renderer do React PDF ainda emite o warning conhecido `Invalid '' string child outside <Text> component`
+    em alguns casos de string vazia, mas a geracao/upload/validacao dos PDFs passou. Tratar esse warning em
+    rodada separada se ele voltar a poluir logs.
 
 ---
 
