@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 const MAX_ITEMS_PER_SECTION = 12;
 
 const brl = (value: number) =>
-  value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  (Number.isFinite(value) ? value : 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const chunkItems = <T,>(items: T[], size: number) => {
   if (items.length === 0) return [[]];
@@ -28,6 +28,11 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
   const company = documentSettings?.company;
   const config = documentSettings?.resolvedConfig;
   const companyName = company?.nomeFantasia?.trim() || 'RETÍFICA PREMIUM';
+  const notas = Array.isArray(dados.notas) ? dados.notas : [];
+  const recebidas = Array.isArray(dados.recebidas) ? dados.recebidas : [];
+  const clienteNome = dados.cliente?.nome ?? 'Cliente';
+  const totalOriginal = Number.isFinite(dados.total_original) ? dados.total_original : 0;
+  const totalComDesconto = Number.isFinite(dados.total_com_desconto) ? dados.total_com_desconto : 0;
   const generatedAt = new Date(dados.gerado_em).toLocaleDateString('pt-BR', {
     day: '2-digit',
     month: 'long',
@@ -37,15 +42,15 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
     company_name: companyName,
     company_phone: company?.telefone,
     company_whatsapp: company?.whatsapp,
-    customer_name: dados.cliente.nome,
+    customer_name: clienteNome,
     closing_number: dados.periodo,
     current_date: generatedAt,
-    total_amount: `R$ ${brl(dados.total_com_desconto)}`,
+    total_amount: `R$ ${brl(totalComDesconto)}`,
   };
   const subtitle = renderTemplateText(config?.subtitle || 'Fechamento mensal de serviços', templateVariables);
 
-  const sections = dados.notas.flatMap((nota) => {
-    const chunks = chunkItems(nota.itens, MAX_ITEMS_PER_SECTION);
+  const sections = notas.flatMap((nota) => {
+    const chunks = chunkItems(Array.isArray(nota.itens) ? nota.itens : [], MAX_ITEMS_PER_SECTION);
     return chunks.map((itens, chunkIndex) => ({
       nota,
       itens,
@@ -64,15 +69,15 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
               <p className="mt-1 text-xs text-cyan-50">{subtitle}</p>
             </div>
             <div className="text-sm text-cyan-50 sm:text-right">
-              <p className="font-semibold text-white">{dados.cliente.nome}</p>
+              <p className="font-semibold text-white">{clienteNome}</p>
               <p>Período: {dados.periodo}</p>
               <p>Emitido em: {generatedAt}</p>
             </div>
           </div>
           <div className="mt-5 grid gap-2 sm:grid-cols-3">
-            <SummaryCard label="Ordens" value={`${dados.notas.length} O.S.`} />
-            <SummaryCard label="Subtotal" value={`R$ ${brl(dados.total_original)}`} />
-            <SummaryCard label="Total" value={`R$ ${brl(dados.total_com_desconto)}`} strong />
+            <SummaryCard label="Ordens" value={`${notas.length} O.S.`} />
+            <SummaryCard label="Subtotal" value={`R$ ${brl(totalOriginal)}`} />
+            <SummaryCard label="Total" value={`R$ ${brl(totalComDesconto)}`} strong />
           </div>
         </div>
 
@@ -152,13 +157,13 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
           })}
         </div>
 
-        {dados.recebidas && dados.recebidas.length > 0 && (
+        {recebidas.length > 0 && (
           <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/60 px-5 py-4 text-sm">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">
               Já recebido no período (não incluso no total a pagar)
             </p>
             <div className="space-y-1">
-              {dados.recebidas.map((r) => (
+              {recebidas.map((r) => (
                 <div key={r.id} className="flex items-center justify-between gap-3 text-slate-600">
                   <span>O.S. {r.os}{r.veiculo ? ` · ${r.veiculo}` : ''}{r.pago_em ? ` · pago em ${new Date(r.pago_em).toLocaleDateString('pt-BR')}` : ''}</span>
                   <span className="font-medium text-emerald-700">R$ {brl(r.total)}</span>
@@ -174,14 +179,14 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
 
         <div className="mt-5 flex flex-col gap-2 rounded-2xl border px-5 py-4 sm:flex-row sm:items-end sm:justify-between" style={{ backgroundColor: `${effectiveAccent}12`, borderColor: `${effectiveAccent}25` }}>
           <div className="text-sm text-slate-600">
-            <p>{dados.notas.length} ordem{dados.notas.length !== 1 ? 's' : ''} de serviço · {dados.periodo}</p>
-            {dados.total_original !== dados.total_com_desconto && (
-              <p className="mt-1">Subtotal: R$ {brl(dados.total_original)} · Descontos: R$ {brl(dados.total_original - dados.total_com_desconto)}</p>
+            <p>{notas.length} ordem{notas.length !== 1 ? 's' : ''} de serviço · {dados.periodo}</p>
+            {totalOriginal !== totalComDesconto && (
+              <p className="mt-1">Subtotal: R$ {brl(totalOriginal)} · Descontos: R$ {brl(totalOriginal - totalComDesconto)}</p>
             )}
           </div>
           <div className="text-right">
             <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: effectiveAccent }}>Total a pagar</p>
-            <p className="text-2xl font-bold" style={{ color: effectiveAccent }}>R$ {brl(dados.total_com_desconto)}</p>
+            <p className="text-2xl font-bold" style={{ color: effectiveAccent }}>R$ {brl(totalComDesconto)}</p>
           </div>
         </div>
       </div>

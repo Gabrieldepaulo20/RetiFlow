@@ -106,6 +106,99 @@ export interface NotaDetalhesResult {
 
 /* ── API Functions ──────────────────────────────────────────────────────── */
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function asString(value: unknown, fallback: string) {
+  return typeof value === 'string' && value.trim() ? value : fallback;
+}
+
+function asNumber(value: unknown, fallback = 0) {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function normalizeFechamentoItem(value: unknown): FechamentoItem | null {
+  if (!isRecord(value)) return null;
+  return {
+    descricao: asString(value.descricao, 'Serviço realizado'),
+    quantidade: asNumber(value.quantidade),
+    preco_unitario: asNumber(value.preco_unitario),
+    desconto_porcentagem: asNumber(value.desconto_porcentagem),
+    subtotal: asNumber(value.subtotal),
+  };
+}
+
+function normalizeFechamentoNota(value: unknown): FechamentoNota | null {
+  if (!isRecord(value)) return null;
+  const id = asString(value.id, '');
+  if (!id) return null;
+  const itens = Array.isArray(value.itens)
+    ? value.itens.map(normalizeFechamentoItem).filter((item): item is FechamentoItem => item !== null)
+    : [];
+  return {
+    id,
+    os: asString(value.os, 'O.S. sem número'),
+    veiculo: asString(value.veiculo, 'Veículo não informado'),
+    placa: typeof value.placa === 'string' && value.placa.trim() ? value.placa : null,
+    itens,
+    total_original: asNumber(value.total_original),
+    desconto_nota: asNumber(value.desconto_nota),
+    total_com_desconto: asNumber(value.total_com_desconto),
+  };
+}
+
+function normalizeFechamentoRecebida(value: unknown): FechamentoRecebida | null {
+  if (!isRecord(value)) return null;
+  const id = asString(value.id, '');
+  if (!id) return null;
+  return {
+    id,
+    os: asString(value.os, 'O.S. sem número'),
+    veiculo: asString(value.veiculo, 'Veículo não informado'),
+    placa: typeof value.placa === 'string' && value.placa.trim() ? value.placa : null,
+    total: asNumber(value.total),
+    pago_em: typeof value.pago_em === 'string' ? value.pago_em : null,
+  };
+}
+
+export function normalizeFechamentoDadosJson(value: unknown): FechamentoDadosJson | null {
+  if (!isRecord(value)) return null;
+
+  const notas = Array.isArray(value.notas)
+    ? value.notas.map(normalizeFechamentoNota).filter((nota): nota is FechamentoNota => nota !== null)
+    : [];
+  const recebidas = Array.isArray(value.recebidas)
+    ? value.recebidas.map(normalizeFechamentoRecebida).filter((nota): nota is FechamentoRecebida => nota !== null)
+    : [];
+  const cliente = isRecord(value.cliente) ? value.cliente : {};
+  const totalOriginal = asNumber(value.total_original, notas.reduce((sum, nota) => sum + nota.total_original, 0));
+  const totalComDesconto = asNumber(
+    value.total_com_desconto,
+    notas.reduce((sum, nota) => sum + nota.total_com_desconto, 0),
+  );
+
+  return {
+    gerado_em: asString(value.gerado_em, new Date().toISOString()),
+    periodo: asString(value.periodo, 'Período não informado'),
+    cliente: {
+      id: asString(cliente.id, ''),
+      nome: asString(cliente.nome, 'Cliente'),
+    },
+    notas,
+    total_original: totalOriginal,
+    total_com_desconto: totalComDesconto,
+    recebidas,
+    total_ja_recebido: asNumber(
+      value.total_ja_recebido,
+      recebidas.reduce((sum, nota) => sum + nota.total, 0),
+    ),
+    divergente: value.divergente === true,
+    divergencias: Array.isArray(value.divergencias) ? value.divergencias as FechamentoDadosJson['divergencias'] : [],
+  };
+}
+
 function rpcMessage(rpcName: string, message: string) {
   const prefix = `[${rpcName}]`;
   return message.startsWith(prefix) ? message : `${prefix} ${message}`;
@@ -143,7 +236,11 @@ export async function getFechamentos(params?: {
   p_offset?: number;
 }) {
   const env = await callRPC('get_fechamentos', params);
-  return { dados: (env.dados ?? []) as FechamentoListItem[], total: env.total ?? 0 };
+  const dados = ((env.dados ?? []) as FechamentoListItem[]).map((item) => ({
+    ...item,
+    dados_json: normalizeFechamentoDadosJson(item.dados_json),
+  }));
+  return { dados, total: env.total ?? 0 };
 }
 
 export async function insertFechamento(params: {

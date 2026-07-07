@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { registrarAcaoFechamento, updateFechamento } from '@/api/supabase/fechamentos';
+import { getFechamentos, normalizeFechamentoDadosJson, registrarAcaoFechamento, updateFechamento } from '@/api/supabase/fechamentos';
 import { SUPPORT_SESSION_STORAGE_KEY } from '@/services/auth/supportContext';
 
 const mocks = vi.hoisted(() => ({
@@ -74,5 +74,45 @@ describe('Fechamentos Supabase mutations', () => {
       .rejects
       .toThrow('Ações de escrita em modo suporte estão bloqueadas');
     expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it('normalizes partial closing JSON returned by the RPC', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        status: 200,
+        total: 1,
+        dados: [{
+          id_fechamentos: 'fechamento-1',
+          periodo: 'Junho 2026',
+          label: 'Fechamento Junho',
+          valor_total: 100,
+          dados_json: { periodo: 'Junho 2026', cliente: { nome: 'Cliente A' }, total_com_desconto: 100 },
+          cliente: { id: 'cliente-1', nome: 'Cliente A' },
+        }],
+      },
+      error: null,
+    });
+
+    const result = await getFechamentos({ p_limite: 10 });
+
+    expect(result.dados[0]?.dados_json?.notas).toEqual([]);
+    expect(result.dados[0]?.dados_json?.cliente.nome).toBe('Cliente A');
+    expect(result.dados[0]?.dados_json?.total_com_desconto).toBe(100);
+  });
+
+  it('keeps closing previews safe when dados_json is malformed', () => {
+    const normalized = normalizeFechamentoDadosJson({
+      cliente: null,
+      notas: 'quebrado',
+      recebidas: 'quebrado',
+      total_original: 'abc',
+      total_com_desconto: '50',
+    });
+
+    expect(normalized?.cliente.nome).toBe('Cliente');
+    expect(normalized?.notas).toEqual([]);
+    expect(normalized?.recebidas).toEqual([]);
+    expect(normalized?.total_original).toBe(0);
+    expect(normalized?.total_com_desconto).toBe(50);
   });
 });

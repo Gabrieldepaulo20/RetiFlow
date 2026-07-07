@@ -6,7 +6,7 @@ import { getDocumentAccentColor, renderTemplateText } from '@/services/domain/do
 const MAX_ITEMS_PER_OS_BLOCK = 12;
 
 const brl = (v: number) =>
-  v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  (Number.isFinite(v) ? v : 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const rgba = (hex: string, alpha: number) => {
   const normalized = /^#[0-9a-fA-F]{6}$/.test(hex) ? hex.slice(1) : '0f7f95';
@@ -93,6 +93,11 @@ export function ClosingPDFTemplate({
   const company = documentSettings?.company;
   const config = documentSettings?.resolvedConfig;
   const companyName = company?.nomeFantasia?.trim() || 'RETÍFICA PREMIUM';
+  const notas = Array.isArray(dados.notas) ? dados.notas : [];
+  const recebidas = Array.isArray(dados.recebidas) ? dados.recebidas : [];
+  const clienteNome = dados.cliente?.nome ?? 'Cliente';
+  const totalOriginal = Number.isFinite(dados.total_original) ? dados.total_original : 0;
+  const totalComDesconto = Number.isFinite(dados.total_com_desconto) ? dados.total_com_desconto : 0;
   const dataFormatada = new Date(geradoEm).toLocaleDateString('pt-BR', {
     day: '2-digit', month: 'long', year: 'numeric',
   });
@@ -100,15 +105,15 @@ export function ClosingPDFTemplate({
     company_name: companyName,
     company_phone: company?.telefone,
     company_whatsapp: company?.whatsapp,
-    customer_name: dados.cliente.nome,
+    customer_name: clienteNome,
     closing_number: dados.periodo,
     current_date: dataFormatada,
-    total_amount: `R$ ${brl(dados.total_com_desconto)}`,
+    total_amount: `R$ ${brl(totalComDesconto)}`,
   };
   const subtitle = renderTemplateText(config?.subtitle || 'Fechamento mensal de serviços', templateVariables);
   const footerText = renderTemplateText(config?.footerText || `${companyName} · Fechamento Mensal`, templateVariables);
-  const notaSections = dados.notas.flatMap((nota) => {
-    const chunks = chunkItems(nota.itens, MAX_ITEMS_PER_OS_BLOCK);
+  const notaSections = notas.flatMap((nota) => {
+    const chunks = chunkItems(Array.isArray(nota.itens) ? nota.itens : [], MAX_ITEMS_PER_OS_BLOCK);
     return chunks.map((itens, chunkIndex) => ({
       nota,
       itens,
@@ -118,7 +123,7 @@ export function ClosingPDFTemplate({
   });
 
   return (
-    <Document title={`Fechamento ${dados.periodo} — ${dados.cliente.nome}`}>
+    <Document title={`Fechamento ${dados.periodo} — ${clienteNome}`}>
       <Page size="A4" orientation="portrait" style={s.page}>
         {/* Header */}
         <View style={{ ...s.headerCard, backgroundColor: effectiveAccent }} fixed>
@@ -128,7 +133,7 @@ export function ClosingPDFTemplate({
               <Text style={s.subtitle}>{subtitle}</Text>
             </View>
             <View style={s.headerRight}>
-              <Text style={{ ...s.headerMeta, fontWeight: 600 }}>{dados.cliente.nome}</Text>
+              <Text style={{ ...s.headerMeta, fontWeight: 600 }}>{clienteNome}</Text>
               <Text style={s.headerMeta}>Período: {dados.periodo}</Text>
               <Text style={s.headerMeta}>Emitido em: {dataFormatada}</Text>
             </View>
@@ -136,15 +141,15 @@ export function ClosingPDFTemplate({
           <View style={s.summaryStrip}>
             <View style={s.summaryPill}>
               <Text style={s.summaryLabel}>Ordens</Text>
-              <Text style={{ ...s.summaryValue, color: effectiveAccent }}>{dados.notas.length} O.S.</Text>
+              <Text style={{ ...s.summaryValue, color: effectiveAccent }}>{notas.length} O.S.</Text>
             </View>
             <View style={s.summaryPill}>
               <Text style={s.summaryLabel}>Subtotal</Text>
-              <Text style={{ ...s.summaryValue, color: effectiveAccent }}>R$ {brl(dados.total_original)}</Text>
+              <Text style={{ ...s.summaryValue, color: effectiveAccent }}>R$ {brl(totalOriginal)}</Text>
             </View>
             <View style={s.summaryPill}>
               <Text style={s.summaryLabel}>Total</Text>
-              <Text style={{ ...s.summaryValue, color: effectiveAccent }}>R$ {brl(dados.total_com_desconto)}</Text>
+              <Text style={{ ...s.summaryValue, color: effectiveAccent }}>R$ {brl(totalComDesconto)}</Text>
             </View>
           </View>
         </View>
@@ -219,12 +224,12 @@ export function ClosingPDFTemplate({
         })}
 
         {/* Já recebido no período (informativo, fora do total a pagar) */}
-        {dados.recebidas && dados.recebidas.length > 0 && (
+        {recebidas.length > 0 && (
           <View style={{ marginTop: 10, padding: 8, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 4, backgroundColor: '#f8fafc' }}>
             <Text style={{ fontSize: 8, color: '#555', marginBottom: 4 }}>
               Já recebido no período (não incluso no total a pagar):
             </Text>
-            {dados.recebidas.map((r) => (
+            {recebidas.map((r) => (
               <View key={r.id} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
                 <Text style={{ fontSize: 8, color: '#555' }}>
                   O.S. {r.os}{r.veiculo ? ` · ${r.veiculo}` : ''}{r.pago_em ? ` · pago em ${new Date(r.pago_em).toLocaleDateString('pt-BR')}` : ''}
@@ -243,17 +248,17 @@ export function ClosingPDFTemplate({
         <View style={{ ...s.totalSection, backgroundColor: rgba(effectiveAccent, 0.08), borderColor: rgba(effectiveAccent, 0.2) }}>
           <View>
             <Text style={{ fontSize: 8, color: '#555' }}>
-              {dados.notas.length} ordem{dados.notas.length !== 1 ? 's' : ''} de serviço · Período: {dados.periodo}
+              {notas.length} ordem{notas.length !== 1 ? 's' : ''} de serviço · Período: {dados.periodo}
             </Text>
-            {dados.total_original !== dados.total_com_desconto && (
+            {totalOriginal !== totalComDesconto && (
               <Text style={{ fontSize: 8, color: '#555', marginTop: 2 }}>
-                Subtotal: R$ {brl(dados.total_original)} · Descontos: −R$ {brl(dados.total_original - dados.total_com_desconto)}
+                Subtotal: R$ {brl(totalOriginal)} · Descontos: −R$ {brl(totalOriginal - totalComDesconto)}
               </Text>
             )}
           </View>
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={{ fontSize: 8, color: '#555' }}>TOTAL A PAGAR</Text>
-            <Text style={{ ...s.totalValue, color: effectiveAccent }}>R$ {brl(dados.total_com_desconto)}</Text>
+            <Text style={{ ...s.totalValue, color: effectiveAccent }}>R$ {brl(totalComDesconto)}</Text>
           </View>
         </View>
 

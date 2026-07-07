@@ -32,6 +32,7 @@ import {
   buildFechamentoDocumentSnapshotParams,
   marcarFechamentoPago,
   estornarFechamentoPago,
+  normalizeFechamentoDadosJson,
   type FechamentoListItem,
   type FechamentoDadosJson,
   type FechamentoNota,
@@ -130,12 +131,15 @@ const recalcNoteTotal = (items: PreviewNote['itens']) =>
 /** O.S. já recebida (paga) no período — informativa, nunca entra no total do fechamento. */
 const isReceivedNote = (note: Pick<PreviewNote, 'paymentStatus'>) => note.paymentStatus === 'PAGO';
 
-const getReceivedDraftNotes = (draft: Pick<ClosingDraft, 'notes'>) => draft.notes.filter(isReceivedNote);
+const getReceivedDraftNotes = (draft: Pick<ClosingDraft, 'notes'>) => (
+  Array.isArray(draft.notes) ? draft.notes : []
+).filter(isReceivedNote);
 
 const getIncludedDraftNotes = (draft: Pick<ClosingDraft, 'notes' | 'includedNoteIds'>) => {
+  const notes = Array.isArray(draft.notes) ? draft.notes : [];
   const base = draft.includedNoteIds
-    ? draft.notes.filter((note) => new Set(draft.includedNoteIds).has(note.id))
-    : draft.notes;
+    ? notes.filter((note) => new Set(draft.includedNoteIds).has(note.id))
+    : notes;
   // Notas já recebidas nunca entram no total/cascata do fechamento (só informativas).
   return base.filter((note) => !isReceivedNote(note));
 };
@@ -185,6 +189,102 @@ const buildDadosFromDraft = (draft: ClosingDraft): FechamentoDadosJson => {
 
 const createDraftId = () =>
   `draft-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const asString = (value: unknown, fallback: string) =>
+  typeof value === 'string' && value.trim() ? value : fallback;
+
+const asNumber = (value: unknown, fallback = 0) => {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+};
+
+const normalizePreviewItem = (value: unknown, fallbackId: string): PreviewNote['itens'][number] | null => {
+  if (!isRecord(value)) return null;
+  return {
+    id: asString(value.id, fallbackId),
+    descricao: asString(value.descricao, 'Serviço realizado'),
+    quantidade: asNumber(value.quantidade),
+    preco_unitario: asNumber(value.preco_unitario),
+    desconto_porcentagem: clampPercent(asNumber(value.desconto_porcentagem)),
+    subtotal: asNumber(value.subtotal),
+  };
+};
+
+const normalizePreviewNote = (value: unknown): PreviewNote | null => {
+  if (!isRecord(value)) return null;
+  const id = asString(value.id, '');
+  if (!id) return null;
+  const total = asNumber(value.total);
+  const itens = Array.isArray(value.itens)
+    ? value.itens
+        .map((item, index) => normalizePreviewItem(item, `${id}-item-${index}`))
+        .filter((item): item is PreviewNote['itens'][number] => item !== null)
+    : [];
+
+  return {
+    id,
+    os: asString(value.os, 'O.S. sem número'),
+    veiculo: asString(value.veiculo, 'Veículo não informado'),
+    placa: typeof value.placa === 'string' && value.placa.trim() ? value.placa : null,
+    total,
+    updatedAt: asString(value.updatedAt, new Date().toISOString()),
+    paymentStatus: value.paymentStatus === 'PAGO' ? 'PAGO' : 'PENDENTE',
+    pagoEm: typeof value.pagoEm === 'string' ? value.pagoEm : null,
+    itens: itens.length > 0 ? itens : [{
+      id: `${id}-fallback`,
+      descricao: 'Serviços realizados',
+      quantidade: 1,
+      preco_unitario: total,
+      desconto_porcentagem: 0,
+      subtotal: total,
+    }],
+  };
+};
+
+const normalizeDiscounts = (value: unknown) => {
+  if (!isRecord(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).map(([key, raw]) => [key, clampPercent(asNumber(raw))]),
+  );
+};
+
+const normalizeClosingDraft = (value: unknown, fallbackMonth: string, fallbackYear: string): ClosingDraft | null => {
+  if (!isRecord(value)) return null;
+  const id = asString(value.id, '');
+  const clientId = asString(value.clientId, '');
+  if (!id || !clientId) return null;
+
+  const notes = Array.isArray(value.notes)
+    ? value.notes.map(normalizePreviewNote).filter((note): note is PreviewNote => note !== null)
+    : [];
+  const month = asString(value.month, fallbackMonth);
+  const year = asString(value.year, fallbackYear);
+  const periodMode: MonthlyClosingDateMode = value.periodMode === 'custom' ? 'custom' : 'month';
+  const includedNoteIds = Array.isArray(value.includedNoteIds)
+    ? value.includedNoteIds.filter((noteId): noteId is string => typeof noteId === 'string')
+    : notes.filter((note) => note.paymentStatus !== 'PAGO').map((note) => note.id);
+
+  return {
+    id,
+    clientId,
+    clientName: asString(value.clientName, 'Cliente'),
+    periodMode,
+    startDate: typeof value.startDate === 'string' ? value.startDate : null,
+    endDate: typeof value.endDate === 'string' ? value.endDate : null,
+    cutoffDate: typeof value.cutoffDate === 'string' ? value.cutoffDate : null,
+    month,
+    year,
+    periodLabel: asString(value.periodLabel, `${MONTHS[Number(month) - 1] ?? 'Período'} ${year}`),
+    notes,
+    includedNoteIds,
+    discounts: normalizeDiscounts(value.discounts),
+    createdAt: asString(value.createdAt, new Date().toISOString()),
+    updatedAt: asString(value.updatedAt, new Date().toISOString()),
+  };
+};
 
 const normalizeAvailablePeriods = (dates: string[]) => {
   const map = new Map<string, AvailableClosingPeriod>();
@@ -243,8 +343,8 @@ function DualSpinner() {
 
 /* ── Divergence check ───────────────────────────────────────────────────── */
 function getDivergencias(fechamento: FechamentoListItem, notes: IntakeNote[]) {
-  if (!fechamento.dados_json) return [];
-  return fechamento.dados_json.notas.flatMap((n) => {
+  const notas = Array.isArray(fechamento.dados_json?.notas) ? fechamento.dados_json.notas : [];
+  return notas.flatMap((n) => {
     const curr = notes.find((cn) => cn.id === n.id);
     if (!curr) return [];
     if (Math.abs(curr.totalAmount - n.total_com_desconto) < 0.01) return [];
@@ -375,14 +475,19 @@ export default function MonthlyClosing() {
         setDraftsHydratedKey(draftsStorageKey);
         return;
       }
-      const parsed = JSON.parse(raw) as ClosingDraft[];
-      setDrafts(Array.isArray(parsed) ? parsed : []);
+      const parsed = JSON.parse(raw) as unknown;
+      const normalized = Array.isArray(parsed)
+        ? parsed
+            .map((draft) => normalizeClosingDraft(draft, defaultMonth, defaultYear))
+            .filter((draft): draft is ClosingDraft => draft !== null)
+        : [];
+      setDrafts(normalized);
     } catch {
       setDrafts([]);
     } finally {
       setDraftsHydratedKey(draftsStorageKey);
     }
-  }, [draftsStorageKey]);
+  }, [defaultMonth, defaultYear, draftsStorageKey]);
 
   useEffect(() => {
     if (!draftsStorageKey || draftsHydratedKey !== draftsStorageKey) return;
@@ -744,12 +849,17 @@ export default function MonthlyClosing() {
   const receivedTotal = useMemo(() => receivedNotes.reduce((sum, note) => sum + note.total, 0), [receivedNotes]);
   const includedNotesCount = includedNoteIds.length;
   const modalPreviewDados = useMemo(
-    () => generatedPreviewFechamento?.dados_json ?? (activeDraft ? buildDadosFromDraft({
-      ...activeDraft,
-      notes: previewNotes,
-      includedNoteIds,
-      discounts: descontos,
-    }) : null),
+    () => {
+      if (generatedPreviewFechamento) {
+        return normalizeFechamentoDadosJson(generatedPreviewFechamento.dados_json);
+      }
+      return activeDraft ? buildDadosFromDraft({
+        ...activeDraft,
+        notes: previewNotes,
+        includedNoteIds,
+        discounts: descontos,
+      }) : null;
+    },
     [activeDraft, generatedPreviewFechamento, previewNotes, includedNoteIds, descontos],
   );
   const modalPreviewTitle = generatedPreviewFechamento
@@ -1341,7 +1451,7 @@ export default function MonthlyClosing() {
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          {f.dados_json?.notas.length ?? 0} OS · Total:
+                          {Array.isArray(f.dados_json?.notas) ? f.dados_json.notas.length : 0} OS · Total:
                           <span className="font-semibold text-foreground ml-1">
                             R$ {f.valor_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </span>

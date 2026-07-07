@@ -4,6 +4,33 @@ Atualizado em: 2026-06-25
 
 ---
 
+## Fechamento Mensal - ErrorBoundary Ao Emitir - 2026-07-07
+
+- Pedido: a dona da Retifica nao conseguia emitir fechamento e a tela caia no fallback:
+  `Estamos restaurando esta tela. A pagina encontrou uma inconsistencia temporaria...`.
+- Diagnostico:
+  - esse texto vem do `ErrorBoundary`, indicando quebra de runtime na tela;
+  - producao tem 9 fechamentos gravados, todos do usuario Mega Master, com `dados_json.notas` valido;
+  - a Retifica Premium ainda nao possui fechamento gravado, mas possui O.S. faturaveis sem fechamento
+    (ex.: 109 em 2026-06), entao o bloqueio nao era falta de O.S.;
+  - causa provavel: rascunho local antigo/corrompido no navegador ou JSON parcial de fechamento, pois a tela
+    acessava `dados_json.notas`, `draft.notes` e arrays de preview sem normalizacao defensiva.
+- Correcao aplicada:
+  - `getFechamentos` agora normaliza `dados_json` vindo da RPC antes de expor ao componente;
+  - `MonthlyClosing` normaliza rascunhos salvos no `localStorage`, recuperando defaults seguros para
+    `notes`, `includedNoteIds`, `discounts`, periodo, cliente e itens;
+  - divergencias, cards de fechamentos gerados, preview HTML e template PDF passaram a tolerar arrays ausentes
+    ou valores numericos invalidos sem derrubar a rota.
+- Validacao:
+  - `npm test -- --run src/test/supabase-fechamentos.test.ts src/test/monthly-closing.service.test.ts`;
+  - `npx tsc --noEmit`;
+  - `npm run lint` (passou com 8 warnings antigos de Fast Refresh);
+  - `npm test -- --run` (59 arquivos, 441 testes);
+  - `npm run build` (passou com avisos conhecidos de Browserslist/chunks);
+  - `npm run test:integration` (17 arquivos, 57 testes).
+
+---
+
 ## Contas A Pagar - Anexos Privados Em Modo Suporte - 2026-06-25
 
 - Pedido: em modo suporte na Retifica Premium, a conta
