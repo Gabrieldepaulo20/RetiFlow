@@ -86,6 +86,12 @@ Atualizado em: 2026-07-07
   - `npm test -- --run src/test/dialog-accessibility.test.tsx`;
   - `npm test -- --run` (59 arquivos, 443 testes);
   - `npm run build` (passou com avisos conhecidos de Browserslist/chunks).
+- Deploy:
+  - commit `5de8afd` foi enviado para `main`, mas o Amplify job `285` falhou no `npm run typecheck`;
+  - causa do deploy falhar: `MonthlyClosing` usava `p_ordem_campo: 'data'`, enquanto o contrato tipado
+    `IntakeNoteSortField` aceita `date` ou `os`;
+  - correcao aplicada em seguida: trocar para `p_ordem_campo: 'date'` e validar com `npm run typecheck`,
+    mesmo comando usado pelo Amplify.
 
 ---
 

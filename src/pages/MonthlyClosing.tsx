@@ -759,7 +759,7 @@ export default function MonthlyClosing() {
             p_offset: 0,
             p_data_inicio: toDateInputValue(inicio),
             p_data_fim: toDateInputValue(fim),
-            p_ordem_campo: 'data',
+            p_ordem_campo: 'date',
             p_ordem_direcao: 'asc',
             ...(supportContextActive ? {} : { p_apenas_sem_fechamento: true }),
           })).dados.filter((note) => {
