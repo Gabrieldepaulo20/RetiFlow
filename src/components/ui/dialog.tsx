@@ -3,6 +3,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { elementHasDisplayName } from "./dialog-content-helpers";
 
 const Dialog = DialogPrimitive.Root;
 
@@ -15,9 +16,7 @@ const DialogClose = DialogPrimitive.Close;
 function containsDialogDescription(children: React.ReactNode): boolean {
   return React.Children.toArray(children).some((child) => {
     if (!React.isValidElement(child)) return false;
-    if (typeof child.type !== "string" && "displayName" in child.type) {
-      if (child.type.displayName === DialogPrimitive.Description.displayName) return true;
-    }
+    if (elementHasDisplayName(child, DialogPrimitive.Description.displayName ?? "")) return true;
     return containsDialogDescription(child.props.children);
   });
 }
@@ -25,9 +24,7 @@ function containsDialogDescription(children: React.ReactNode): boolean {
 function containsDialogTitle(children: React.ReactNode): boolean {
   return React.Children.toArray(children).some((child) => {
     if (!React.isValidElement(child)) return false;
-    if (typeof child.type !== "string" && "displayName" in child.type) {
-      if (child.type.displayName === DialogPrimitive.Title.displayName) return true;
-    }
+    if (elementHasDisplayName(child, DialogPrimitive.Title.displayName ?? "")) return true;
     return containsDialogTitle(child.props.children);
   });
 }

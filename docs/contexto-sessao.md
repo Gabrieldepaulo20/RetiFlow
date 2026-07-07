@@ -65,6 +65,30 @@ Atualizado em: 2026-07-07
 
 ---
 
+## UI Base - Dialog/Sheet Com React.Fragment - 2026-07-07
+
+- Pedido: producao ainda caiu no `ErrorBoundary` ao abrir/usar Fechamento, com erro:
+  `Cannot use 'in' operator to search for 'displayName' in Symbol(react.fragment)`.
+- Diagnostico:
+  - `DialogContent` e `SheetContent` percorriam `children` para detectar `Title`/`Description`;
+  - a checagem fazia `"displayName" in child.type` sempre que `child.type` nao era string;
+  - quando o filho era `React.Fragment`, `child.type` era `Symbol(react.fragment)`, e o operador `in` em
+    symbol derrubava a rota;
+  - o stack apontava para `MonthlyClosing`, mas o defeito era do componente base de UI.
+- Correcao aplicada:
+  - criado helper seguro `elementHasDisplayName`, que so consulta `displayName` quando o tipo e objeto ou
+    funcao;
+  - `DialogContent` e `SheetContent` passaram a usar esse helper;
+  - teste de acessibilidade cobre `DialogContent` e `SheetContent` com titulo dentro de fragmento.
+- Validacao:
+  - `npx tsc --noEmit`;
+  - `npm run lint` (passou com 8 warnings antigos de Fast Refresh);
+  - `npm test -- --run src/test/dialog-accessibility.test.tsx`;
+  - `npm test -- --run` (59 arquivos, 443 testes);
+  - `npm run build` (passou com avisos conhecidos de Browserslist/chunks).
+
+---
+
 ## Contas A Pagar - Anexos Privados Em Modo Suporte - 2026-06-25
 
 - Pedido: em modo suporte na Retifica Premium, a conta

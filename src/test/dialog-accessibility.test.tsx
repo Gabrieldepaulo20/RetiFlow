@@ -30,6 +30,22 @@ describe('Dialog accessibility defaults', () => {
     expect(screen.queryByRole('heading', { name: 'Janela de dialogo' })).not.toBeInTheDocument();
   });
 
+  it('finds dialog titles nested inside fragments without crashing', () => {
+    render(
+      <Dialog open>
+        <DialogContent>
+          <>
+            <DialogTitle>Titulo em fragmento</DialogTitle>
+            <p>Conteudo do modal</p>
+          </>
+        </DialogContent>
+      </Dialog>,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Titulo em fragmento' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Janela de dialogo' })).not.toBeInTheDocument();
+  });
+
   it('adds a hidden title when sheet content does not provide one', () => {
     render(
       <Sheet open>
@@ -53,6 +69,22 @@ describe('Dialog accessibility defaults', () => {
     );
 
     expect(screen.getByRole('heading', { name: 'Menu proprio' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Painel lateral' })).not.toBeInTheDocument();
+  });
+
+  it('finds sheet titles nested inside fragments without crashing', () => {
+    render(
+      <Sheet open>
+        <SheetContent>
+          <>
+            <SheetTitle>Menu em fragmento</SheetTitle>
+            <p>Conteudo do painel</p>
+          </>
+        </SheetContent>
+      </Sheet>,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Menu em fragmento' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Painel lateral' })).not.toBeInTheDocument();
   });
 });

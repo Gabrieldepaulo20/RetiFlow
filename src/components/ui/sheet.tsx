@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
+import { elementHasDisplayName } from "./dialog-content-helpers";
 
 const Sheet = SheetPrimitive.Root;
 
@@ -31,9 +32,7 @@ SheetOverlay.displayName = SheetPrimitive.Overlay.displayName;
 function containsSheetTitle(children: React.ReactNode): boolean {
   return React.Children.toArray(children).some((child) => {
     if (!React.isValidElement(child)) return false;
-    if (typeof child.type !== "string" && "displayName" in child.type) {
-      if (child.type.displayName === SheetPrimitive.Title.displayName) return true;
-    }
+    if (elementHasDisplayName(child, SheetPrimitive.Title.displayName ?? "")) return true;
     return containsSheetTitle(child.props.children);
   });
 }
@@ -41,9 +40,7 @@ function containsSheetTitle(children: React.ReactNode): boolean {
 function containsSheetDescription(children: React.ReactNode): boolean {
   return React.Children.toArray(children).some((child) => {
     if (!React.isValidElement(child)) return false;
-    if (typeof child.type !== "string" && "displayName" in child.type) {
-      if (child.type.displayName === SheetPrimitive.Description.displayName) return true;
-    }
+    if (elementHasDisplayName(child, SheetPrimitive.Description.displayName ?? "")) return true;
     return containsSheetDescription(child.props.children);
   });
 }
