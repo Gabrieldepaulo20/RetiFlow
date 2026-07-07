@@ -1,6 +1,6 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-06-25
+Atualizado em: 2026-07-07
 
 ---
 
@@ -22,6 +22,40 @@ Atualizado em: 2026-06-25
   - divergencias, cards de fechamentos gerados, preview HTML e template PDF passaram a tolerar arrays ausentes
     ou valores numericos invalidos sem derrubar a rota.
 - Validacao:
+  - `npm test -- --run src/test/supabase-fechamentos.test.ts src/test/monthly-closing.service.test.ts`;
+  - `npx tsc --noEmit`;
+  - `npm run lint` (passou com 8 warnings antigos de Fast Refresh);
+  - `npm test -- --run` (59 arquivos, 441 testes);
+  - `npm run build` (passou com avisos conhecidos de Browserslist/chunks);
+  - `npm run test:integration` (17 arquivos, 57 testes).
+
+---
+
+## Fechamento Mensal - Geracao De Rascunho - 2026-07-07
+
+- Pedido: o botao `Gerar rascunho` ainda apresentava problema no modulo Fechamento.
+- Diagnostico:
+  - a RPC normal `get_notas_servico` aceita `p_data_inicio`, `p_data_fim`, `p_apenas_sem_fechamento`
+    e ordenacao; a variante de suporte aceita periodo e ordenacao, mas nao aceita `p_apenas_sem_fechamento`;
+  - a tela buscava ate 500 O.S. do cliente e filtrava o periodo no front, o que podia cortar cliente grande
+    e deixar a contagem do seletor diferente da montagem do rascunho;
+  - a montagem do rascunho ainda usava `det.itens_servico.map`, `draft.notes` e `nota.itens` diretamente em
+    alguns pontos, vulneravel a detalhe incompleto ou rascunho antigo no navegador;
+  - consulta read-only em producao confirmou que a Retifica Premium possui 109 O.S. faturaveis sem fechamento
+    em junho/2026, totalizando R$ 99.845,00, entao nao era falta de dados.
+- Correcao aplicada:
+  - o rascunho em auth real passou a buscar direto no periodo selecionado, com `p_limite=1000`,
+    `p_ordem_campo='data'`, `p_ordem_direcao='asc'` e `p_apenas_sem_fechamento=true`;
+  - em modo suporte, o front omite `p_apenas_sem_fechamento` para nao quebrar a RPC de suporte e mantem o
+    filtro local por `fk_fechamentos`;
+  - abertura de rascunhos agora re-normaliza o draft antes de popular o editor;
+  - preview, totais, snapshot e renderizacao de itens usam arrays seguros e fallback de item quando o detalhe
+    da O.S. vier sem itens;
+  - tentativa de gravar fechamento em modo suporte mostra mensagem clara, porque as RPCs de fechamento ainda
+    nao possuem variante de escrita auditada para suporte.
+- Validacao:
+  - query read-only das assinaturas das RPCs;
+  - query read-only das O.S. elegiveis da Retifica Premium em junho/2026;
   - `npm test -- --run src/test/supabase-fechamentos.test.ts src/test/monthly-closing.service.test.ts`;
   - `npx tsc --noEmit`;
   - `npm run lint` (passou com 8 warnings antigos de Fast Refresh);

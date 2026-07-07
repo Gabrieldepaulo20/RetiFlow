@@ -52,6 +52,7 @@ import {
 } from '@/services/domain/monthlyClosing';
 import { PAYMENT_METHOD_LABELS, type IntakeNote, type NotePaymentStatus, type PaymentMethod } from '@/types';
 import { isBillableNoteStatus } from '@/services/domain/intakeNotes';
+import { readStoredSupportContext } from '@/services/auth/supportContext';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
@@ -135,8 +136,14 @@ const getReceivedDraftNotes = (draft: Pick<ClosingDraft, 'notes'>) => (
   Array.isArray(draft.notes) ? draft.notes : []
 ).filter(isReceivedNote);
 
+const getDraftNotes = (draft: Pick<ClosingDraft, 'notes'>) =>
+  Array.isArray(draft.notes) ? draft.notes : [];
+
+const getPreviewItems = (note: Pick<PreviewNote, 'itens'>) =>
+  Array.isArray(note.itens) ? note.itens : [];
+
 const getIncludedDraftNotes = (draft: Pick<ClosingDraft, 'notes' | 'includedNoteIds'>) => {
-  const notes = Array.isArray(draft.notes) ? draft.notes : [];
+  const notes = getDraftNotes(draft);
   const base = draft.includedNoteIds
     ? notes.filter((note) => new Set(draft.includedNoteIds).has(note.id))
     : notes;
@@ -167,7 +174,7 @@ const buildDadosFromDraft = (draft: ClosingDraft): FechamentoDadosJson => {
         os: note.os,
         veiculo: note.veiculo,
         placa: note.placa,
-        itens: note.itens,
+        itens: getPreviewItems(note),
         total_original: note.total,
         desconto_nota: desconto,
         total_com_desconto: note.total * (1 - desconto / 100),
@@ -203,13 +210,18 @@ const asNumber = (value: unknown, fallback = 0) => {
 
 const normalizePreviewItem = (value: unknown, fallbackId: string): PreviewNote['itens'][number] | null => {
   if (!isRecord(value)) return null;
+  const quantidade = asNumber(value.quantidade);
+  const precoUnitario = asNumber(value.preco_unitario);
+  const descontoPorcentagem = clampPercent(asNumber(value.desconto_porcentagem));
+  const subtotal = asNumber(value.subtotal, quantidade * precoUnitario * (1 - descontoPorcentagem / 100));
+
   return {
     id: asString(value.id, fallbackId),
     descricao: asString(value.descricao, 'Serviço realizado'),
-    quantidade: asNumber(value.quantidade),
-    preco_unitario: asNumber(value.preco_unitario),
-    desconto_porcentagem: clampPercent(asNumber(value.desconto_porcentagem)),
-    subtotal: asNumber(value.subtotal),
+    quantidade,
+    preco_unitario: precoUnitario,
+    desconto_porcentagem: descontoPorcentagem,
+    subtotal,
   };
 };
 
@@ -510,7 +522,17 @@ export default function MonthlyClosing() {
   );
 
   const loadDraftIntoEditor = useCallback((draft: ClosingDraft) => {
-    if (!scopedClientIdSet.has(draft.clientId)) {
+    const safeDraft = normalizeClosingDraft(draft, defaultMonth, defaultYear);
+    if (!safeDraft) {
+      toast({
+        title: 'Rascunho inválido',
+        description: 'Este rascunho estava incompleto e não pôde ser aberto com segurança.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!scopedClientIdSet.has(safeDraft.clientId)) {
       toast({
         title: 'Rascunho fora do escopo atual',
         description: 'Este rascunho pertence a outra conta ou cliente e foi bloqueado nesta sessão.',
@@ -519,27 +541,27 @@ export default function MonthlyClosing() {
       return;
     }
 
-    setActiveDraftId(draft.id);
-    setSelClientId(draft.clientId);
-    setPeriodMode(draft.periodMode ?? 'month');
-    if (draft.periodMode === 'custom') {
-      const legacyCutoff = parseDateInputValue(draft.cutoffDate ?? '');
+    setActiveDraftId(safeDraft.id);
+    setSelClientId(safeDraft.clientId);
+    setPeriodMode(safeDraft.periodMode ?? 'month');
+    if (safeDraft.periodMode === 'custom') {
+      const legacyCutoff = parseDateInputValue(safeDraft.cutoffDate ?? '');
       setCustomStartDate(
-        draft.startDate
+        safeDraft.startDate
           ?? (legacyCutoff ? toDateInputValue(new Date(legacyCutoff.getFullYear(), legacyCutoff.getMonth(), 1)) : defaultCustomStartDate),
       );
-      setCustomEndDate(draft.endDate ?? draft.cutoffDate ?? defaultCustomEndDate);
+      setCustomEndDate(safeDraft.endDate ?? safeDraft.cutoffDate ?? defaultCustomEndDate);
     } else {
       setCustomStartDate(defaultCustomStartDate);
       setCustomEndDate(defaultCustomEndDate);
     }
-    setSelMonth(draft.month);
-    setSelYear(draft.year);
-    setPreviewNotes(draft.notes);
-    setDescontos(draft.discounts);
-    setIncludedNoteIds(draft.includedNoteIds ?? draft.notes.map((note) => note.id));
+    setSelMonth(safeDraft.month);
+    setSelYear(safeDraft.year);
+    setPreviewNotes(safeDraft.notes);
+    setDescontos(safeDraft.discounts);
+    setIncludedNoteIds(safeDraft.includedNoteIds ?? safeDraft.notes.filter((note) => note.paymentStatus !== 'PAGO').map((note) => note.id));
     setEditingItems({});
-  }, [defaultCustomEndDate, defaultCustomStartDate, scopedClientIdSet, toast]);
+  }, [defaultCustomEndDate, defaultCustomStartDate, defaultMonth, defaultYear, scopedClientIdSet, toast]);
 
   const openDraft = useCallback((draft: ClosingDraft) => {
     loadDraftIntoEditor(draft);
@@ -729,20 +751,31 @@ export default function MonthlyClosing() {
     setLoadingPreview(true);
     try {
       const localClosingIdByNoteId = new Map(notes.map((note) => [note.id, note.closingId ?? null]));
+      const supportContextActive = Boolean(readStoredSupportContext());
       const notasFiltradas = IS_REAL_AUTH
-        ? (await getNotasServico({ p_fk_clientes: selClientId, p_limite: 500, p_offset: 0 })).dados.filter((note) => {
+        ? (await getNotasServico({
+            p_fk_clientes: selClientId,
+            p_limite: 1000,
+            p_offset: 0,
+            p_data_inicio: toDateInputValue(inicio),
+            p_data_fim: toDateInputValue(fim),
+            p_ordem_campo: 'data',
+            p_ordem_direcao: 'asc',
+            ...(supportContextActive ? {} : { p_apenas_sem_fechamento: true }),
+          })).dados.filter((note) => {
             const closingId = note.fk_fechamentos ?? localClosingIdByNoteId.get(note.id_notas_servico);
             if (closingId) return false;
-            if (!isBillableNoteStatus(mapStatusNome(note.status.nome))) return false;
+            if (!isBillableNoteStatus(mapStatusNome(note.status?.nome ?? ''))) return false;
             const dt = new Date(note.created_at);
+            if (Number.isNaN(dt.getTime())) return false;
             return dt >= inicio && dt <= fim;
           }).map((note) => ({
             id: note.id_notas_servico,
-            number: note.os,
-            vehicleModel: note.veiculo.modelo,
-            plate: note.veiculo.placa,
-            totalAmount: note.total,
-            updatedAt: note.created_at,
+            number: asString(note.os, 'O.S. sem número'),
+            vehicleModel: asString(note.veiculo?.modelo, 'Veículo não informado'),
+            plate: typeof note.veiculo?.placa === 'string' && note.veiculo.placa.trim() ? note.veiculo.placa : null,
+            totalAmount: asNumber(note.total),
+            updatedAt: asString(note.created_at, new Date().toISOString()),
             paymentStatus: (note.payment_status === 'PAGO' ? 'PAGO' : 'PENDENTE') as NotePaymentStatus,
             pagoEm: note.pago_em ?? null,
           }))
@@ -771,6 +804,15 @@ export default function MonthlyClosing() {
 
       for (const nota of notasFiltradas) {
         const det = IS_REAL_AUTH ? await getNotaDetalhesParaFechamento(nota.id) : null;
+        const itensServico = Array.isArray(det?.itens_servico) ? det.itens_servico : [];
+        const fallbackItem = {
+          id: `${nota.id}-fallback`,
+          descricao: 'Serviços realizados',
+          quantidade: 1,
+          preco_unitario: nota.totalAmount,
+          desconto_porcentagem: 0,
+          subtotal: nota.totalAmount,
+        };
         resultado.push({
           id: nota.id,
           os: nota.number,
@@ -780,21 +822,21 @@ export default function MonthlyClosing() {
           updatedAt: nota.updatedAt,
           paymentStatus: nota.paymentStatus,
           pagoEm: nota.pagoEm,
-          itens: det?.itens_servico.map((i) => ({
-            id: i.id_rel,
-            descricao: i.descricao,
-            quantidade: i.quantidade,
-            preco_unitario: i.preco_unitario,
-            desconto_porcentagem: i.desconto_porcentagem,
-            subtotal: i.subtotal_item,
-          })) ?? [{
-            id: `${nota.id}-fallback`,
-            descricao: 'Serviços realizados',
-            quantidade: 1,
-            preco_unitario: nota.totalAmount,
-            desconto_porcentagem: 0,
-            subtotal: nota.totalAmount,
-          }],
+          itens: itensServico.length > 0
+            ? itensServico.map((i, index) => {
+                const quantidade = asNumber(i.quantidade);
+                const precoUnitario = asNumber(i.preco_unitario);
+                const descontoPorcentagem = clampPercent(asNumber(i.desconto_porcentagem));
+                return {
+                  id: asString(i.id_rel, `${nota.id}-item-${index}`),
+                  descricao: asString(i.descricao, 'Serviço realizado'),
+                  quantidade,
+                  preco_unitario: precoUnitario,
+                  desconto_porcentagem: descontoPorcentagem,
+                  subtotal: asNumber(i.subtotal_item, quantidade * precoUnitario * (1 - descontoPorcentagem / 100)),
+                };
+              })
+            : [fallbackItem],
         });
       }
 
@@ -833,21 +875,26 @@ export default function MonthlyClosing() {
     }
   }, [clients, customEndDate, customStartDate, notes, openDraft, periodMode, scopedClientIdSet, selClientId, selectedPeriodRange, toast]);
 
+  const safePreviewNotes = useMemo(
+    () => (Array.isArray(previewNotes) ? previewNotes : []),
+    [previewNotes],
+  );
+
   /* ── Computed totals ── */
   const totals = useMemo(() => {
     const included = new Set(includedNoteIds);
-    return previewNotes.filter((note) => included.has(note.id)).map((n) => {
+    return safePreviewNotes.filter((note) => included.has(note.id)).map((n) => {
       const disc = descontos[n.id] ?? 0;
       return { id: n.id, totalBruto: n.total, totalComDesconto: n.total * (1 - disc / 100) };
     });
-  }, [previewNotes, descontos, includedNoteIds]);
+  }, [safePreviewNotes, descontos, includedNoteIds]);
 
   const grandTotal = useMemo(() => totals.reduce((a, b) => a + b.totalComDesconto, 0), [totals]);
   const grandTotalOriginal = useMemo(() => totals.reduce((a, n) => a + n.totalBruto, 0), [totals]);
   // O.S. já recebidas no período (informativas, fora do total a pagar).
-  const receivedNotes = useMemo(() => previewNotes.filter((note) => note.paymentStatus === 'PAGO'), [previewNotes]);
+  const receivedNotes = useMemo(() => safePreviewNotes.filter((note) => note.paymentStatus === 'PAGO'), [safePreviewNotes]);
   const receivedTotal = useMemo(() => receivedNotes.reduce((sum, note) => sum + note.total, 0), [receivedNotes]);
-  const includedNotesCount = includedNoteIds.length;
+  const includedNotesCount = totals.length;
   const modalPreviewDados = useMemo(
     () => {
       if (generatedPreviewFechamento) {
@@ -855,12 +902,12 @@ export default function MonthlyClosing() {
       }
       return activeDraft ? buildDadosFromDraft({
         ...activeDraft,
-        notes: previewNotes,
+        notes: safePreviewNotes,
         includedNoteIds,
         discounts: descontos,
       }) : null;
     },
-    [activeDraft, generatedPreviewFechamento, previewNotes, includedNoteIds, descontos],
+    [activeDraft, generatedPreviewFechamento, safePreviewNotes, includedNoteIds, descontos],
   );
   const modalPreviewTitle = generatedPreviewFechamento
     ? `Fechamento ${generatedPreviewFechamento.periodo}`
@@ -879,14 +926,14 @@ export default function MonthlyClosing() {
       draft.id === activeDraftId
         ? {
             ...draft,
-            notes: previewNotes,
+            notes: safePreviewNotes,
             includedNoteIds,
             discounts: descontos,
             updatedAt: new Date().toISOString(),
           }
         : draft
     )));
-  }, [draftModalOpen, activeDraftId, previewNotes, includedNoteIds, descontos]);
+  }, [draftModalOpen, activeDraftId, safePreviewNotes, includedNoteIds, descontos]);
 
   const updatePreviewItem = useCallback((
     noteId: string,
@@ -924,6 +971,14 @@ export default function MonthlyClosing() {
   const generateDraft = useCallback(async (draft: ClosingDraft) => {
     setGenerating(true);
     try {
+      if (isSupportImpersonating || readStoredSupportContext()) {
+        toast({
+          title: 'Geração bloqueada em modo suporte',
+          description: 'Você pode revisar o rascunho em suporte, mas a gravação do fechamento precisa ser feita na sessão real da Retífica Premium.',
+          variant: 'destructive',
+        });
+        return;
+      }
       if (!scopedClientIdSet.has(draft.clientId)) {
         toast({
           title: 'Fechamento bloqueado',
@@ -991,19 +1046,19 @@ export default function MonthlyClosing() {
     } finally {
       setGenerating(false);
     }
-  }, [scopedClientIdSet, toast, renderClosingPdfBlob, loadFechamentos, removeDraft, closeDraftModal, documentSettings]);
+  }, [isSupportImpersonating, scopedClientIdSet, toast, renderClosingPdfBlob, loadFechamentos, removeDraft, closeDraftModal, documentSettings]);
 
   const handleGerar = useCallback(async () => {
     if (!activeDraft) return;
     const draftSnapshot: ClosingDraft = {
       ...activeDraft,
-      notes: previewNotes,
+      notes: safePreviewNotes,
       includedNoteIds,
       discounts: descontos,
       updatedAt: new Date().toISOString(),
     };
     await generateDraft(draftSnapshot);
-  }, [activeDraft, previewNotes, includedNoteIds, descontos, generateDraft]);
+  }, [activeDraft, safePreviewNotes, includedNoteIds, descontos, generateDraft]);
 
   /* ── Download PDF ── */
   const handleDownload = useCallback(async (fechamento: FechamentoListItem) => {
@@ -1362,7 +1417,9 @@ export default function MonthlyClosing() {
             {drafts.map((draft, idx) => {
               const palette = PALETTE[idx % PALETTE.length];
               const totals = computeDraftTotals(draft);
-              const initials = draft.clientName.slice(0, 2).toUpperCase();
+              const draftClientName = asString(draft.clientName, 'Cliente');
+              const draftNotes = getDraftNotes(draft);
+              const initials = draftClientName.slice(0, 2).toUpperCase();
               return (
                 <Card key={draft.id} className={cn('border-l-4 overflow-hidden', palette.border)}>
                   <CardContent className="p-3 sm:p-4">
@@ -1372,12 +1429,12 @@ export default function MonthlyClosing() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-semibold text-sm truncate">{draft.clientName}</p>
+                          <p className="font-semibold text-sm truncate">{draftClientName}</p>
                           <Badge variant="secondary" className="text-xs">{draft.periodLabel}</Badge>
                           <Badge variant="outline" className="text-xs">Rascunho</Badge>
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          {draft.notes.length} OS · Total atual:
+                          {draftNotes.length} OS · Total atual:
                           <span className="font-semibold text-foreground ml-1">R$ {toMoney(totals.totalComDesconto)}</span>
                         </p>
                         <p className="text-xs text-muted-foreground mt-1">
@@ -1552,12 +1609,13 @@ export default function MonthlyClosing() {
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-thin">
               <div className="grid min-h-full gap-0 xl:grid-cols-[minmax(0,1fr)_280px]">
                 <div className="p-4 sm:p-5 space-y-4">
-                {previewNotes.map((nota) => {
+                {safePreviewNotes.map((nota) => {
                   const disc = descontos[nota.id] ?? 0;
                   const totalComDesc = nota.total * (1 - disc / 100);
                   const editing = editingItems[nota.id] ?? true;
                   const isPaid = nota.paymentStatus === 'PAGO';
                   const included = !isPaid && includedNoteIds.includes(nota.id);
+                  const itens = getPreviewItems(nota);
                   return (
                     <Card key={nota.id} className={cn('overflow-hidden border-border/70 transition', !included && 'opacity-70', isPaid && 'bg-muted/30')}>
                       <div className="bg-muted/40 border-b border-border/50 px-4 py-3 flex items-center justify-between gap-3">
@@ -1611,7 +1669,7 @@ export default function MonthlyClosing() {
                             <span className="text-right">Desc. item</span>
                             <span className="text-right">Subtotal</span>
                           </div>
-                          {nota.itens.map((item) => (
+                          {itens.map((item) => (
                             <div
                               key={item.id}
                               className="grid gap-3 px-4 py-3 text-xs lg:grid-cols-[minmax(180px,1fr)_76px_104px_104px_112px] lg:items-center"
@@ -1675,7 +1733,7 @@ export default function MonthlyClosing() {
                   <div className="space-y-4 xl:sticky xl:top-4">
                     <div className="rounded-2xl border bg-background p-4 shadow-sm">
                       <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Total a pagar no fechamento</p>
-                      <p className="mt-2 text-sm text-muted-foreground">{includedNotesCount} de {previewNotes.length} O.S. marcadas · {activeDraft?.periodLabel ?? '—'}</p>
+                      <p className="mt-2 text-sm text-muted-foreground">{includedNotesCount} de {safePreviewNotes.length} O.S. marcadas · {activeDraft?.periodLabel ?? '—'}</p>
                       <p className="mt-1 text-3xl font-bold text-primary">R$ {toMoney(grandTotal)}</p>
                       {grandTotalOriginal !== grandTotal && <p className="mt-1 text-xs text-muted-foreground">Bruto: R$ {toMoney(grandTotalOriginal)}</p>}
                       {receivedNotes.length > 0 && (
