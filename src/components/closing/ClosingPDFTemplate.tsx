@@ -11,12 +11,20 @@ const brl = (v: number) =>
 const pct = (v: number) =>
   `${(Number.isFinite(v) ? v : 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
 
-const rgba = (hex: string, alpha: number) => {
+/**
+ * Mistura a cor de destaque com branco e devolve cor SÓLIDA (sem alpha).
+ * Transparência real (rgba) cria blend groups no PDF, que deixam o scroll
+ * pesado em viewers quando o fechamento tem muitas O.S.
+ */
+const tint = (hex: string, alpha: number) => {
   const normalized = /^#[0-9a-fA-F]{6}$/.test(hex) ? hex.slice(1) : '0f7f95';
-  const r = parseInt(normalized.slice(0, 2), 16);
-  const g = parseInt(normalized.slice(2, 4), 16);
-  const b = parseInt(normalized.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  const channel = (offset: number) => {
+    const value = parseInt(normalized.slice(offset, offset + 2), 16);
+    return Math.round(value * alpha + 255 * (1 - alpha))
+      .toString(16)
+      .padStart(2, '0');
+  };
+  return `#${channel(0)}${channel(2)}${channel(4)}`;
 };
 
 const chunkItems = <T,>(items: T[], size: number) => {
@@ -165,7 +173,7 @@ export function ClosingPDFTemplate({
           return (
             <View key={`${nota.id}-${chunkIndex}`} style={s.osBlock} wrap={false}>
               {/* OS header */}
-              <View style={{ ...s.osHeader, backgroundColor: rgba(effectiveAccent, 0.09), borderBottomColor: rgba(effectiveAccent, 0.2) }}>
+              <View style={{ ...s.osHeader, backgroundColor: tint(effectiveAccent, 0.09), borderBottomColor: tint(effectiveAccent, 0.2) }}>
                 <View>
                   <Text style={{ ...s.osNumber, color: effectiveAccent }}>{nota.os}{isContinuation ? ' · continuação' : ''}</Text>
                   <Text style={s.osVehicle}>{nota.veiculo}</Text>
@@ -215,7 +223,7 @@ export function ClosingPDFTemplate({
                     </>
                   )}
                   <View style={temDesconto ? s.footGroup : s.footGroupFirst}>
-                    <Text style={{ ...s.footLabel, fontWeight: 700 }}>Total {nota.os}:</Text>
+                    <Text style={{ ...s.footLabel, fontWeight: 700 }}>Total:</Text>
                     <Text style={{ ...s.footTotal, color: effectiveAccent }}>R$ {brl(nota.total_com_desconto)}</Text>
                   </View>
                 </View>
@@ -248,7 +256,7 @@ export function ClosingPDFTemplate({
         )}
 
         {/* Grand total */}
-        <View style={{ ...s.totalSection, backgroundColor: rgba(effectiveAccent, 0.08), borderColor: rgba(effectiveAccent, 0.2) }}>
+        <View style={{ ...s.totalSection, backgroundColor: tint(effectiveAccent, 0.08), borderColor: tint(effectiveAccent, 0.2) }}>
           <View>
             <Text style={{ fontSize: 8, color: '#555' }}>
               {notas.length} {notas.length === 1 ? 'ordem' : 'ordens'} de serviço · Período: {dados.periodo}

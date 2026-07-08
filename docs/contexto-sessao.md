@@ -4,6 +4,33 @@ Atualizado em: 2026-07-08
 
 ---
 
+## Fechamento Mensal - PDF Leve No Scroll E Rotulo "Total" - 2026-07-08
+
+- Pedidos: (1) no rodape de cada O.S. do PDF gerado, trocar `Total OS-xxxx:` por so `Total:`;
+  (2) o PDF estava "muito pesado para rodar scroll", mesmo baixado — investigar a causa.
+- Rotulo: `ClosingPDFTemplate.tsx` agora imprime `Total:` no rodape de cada O.S. (o numero da O.S.
+  ja aparece no cabecalho do bloco, entao repetir era redundante).
+- **Causa raiz do scroll pesado (confirmada, nao hipotese):** os fundos coloridos usavam
+  `rgba(cor, alpha)` (cabecalho de cada O.S. em 0.09, total geral em 0.08). No PDF isso vira
+  graphics-states de transparencia (`ExtGState` com `/ca`), e o viewer (Chrome/PDFium) precisa
+  **ler o fundo e fazer blend a cada repaint do scroll**. Com muitas O.S., cada bloco tem fundo
+  translucido, multiplicando o custo.
+  - Prova medida em PDF de amostra com 14 O.S. (4 paginas): versao antiga tinha `/ca 0.078431` e
+    `/ca 0.090196` (os dois alphas); versao nova so tem `/ca 1` (opaco padrao) — zero compositing.
+- Correcao: helper `tint(hex, alpha)` mistura a cor de destaque com branco e devolve cor **solida**
+  (hex de 6 digitos, sem alpha). Visual identico (mesma cor aparente sobre fundo branco), mas sem
+  transparencia real. Aplicado nos 3 pontos: cabecalho da O.S., borda e fundo do total geral.
+- Preview HTML (`ClosingHtmlPreview.tsx`) nao mudou aqui: e DOM/CSS, o scroll pesado era so no PDF.
+- Validacao: PDF de amostra com 14 O.S. renderizado via Vite SSR e conferido visualmente (colunas
+  alinhadas, `Total:` em cada O.S., cores mantidas, matematica batendo R$ 17.337,60 -
+  R$ 433,44 = R$ 16.904,16); `grep` de `/ca` confirmou 3 alphas antes / 1 depois; `npm run typecheck`;
+  `npm run lint` (8 warnings antigos); `npm test -- --run` (477 testes); `npm run build`;
+  `npm run test:integration -- storage.test.ts` (4/4). A rodada completa de integracao teve 14 falhas,
+  todas `Request rate limit reached` no login do Supabase (ambiental, rodadas consecutivas), nao
+  regressao.
+
+---
+
 ## Fechamento Mensal - Download De PDF Da Retifica - 2026-07-08
 
 - Problema reportado apos deploy: a cliente Retifica ainda nao conseguia baixar o PDF do fechamento.
