@@ -146,13 +146,36 @@ export function downloadPdfBlob(blob: Blob, filename: string) {
 }
 
 /**
+ * Dispara download/navegacao de uma URL assinada sem passar por fetch.
+ * Importante para Storage privado: alguns navegadores bloqueiam fetch por CORS,
+ * mas aceitam a navegacao direta para a signed URL com `download`.
+ */
+export function downloadPdfUrl(url: string, filename: string) {
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = sanitizePdfFilename(filename);
+  anchor.target = '_blank';
+  anchor.rel = 'noopener noreferrer';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
+/**
  * Baixa o PDF de uma URL (assinada) diretamente para o disco, sem abrir guia.
- * Lança erro se a resposta não for OK — o caller decide o fallback.
+ * Se o navegador bloquear o fetch da signed URL, cai para navegacao direta.
  */
 export async function downloadPdfFromUrl(url: string, filename: string) {
-  const response = await fetch(url, { credentials: 'omit' });
-  if (!response.ok) {
-    throw new Error(`Falha ao baixar o PDF (HTTP ${response.status}).`);
+  try {
+    const response = await fetch(url, { credentials: 'omit' });
+    if (!response.ok) {
+      throw new Error(`Falha ao baixar o PDF (HTTP ${response.status}).`);
+    }
+    downloadPdfBlob(await response.blob(), filename);
+  } catch (error) {
+    if (error instanceof Error && /^Falha ao baixar o PDF \(HTTP/.test(error.message)) {
+      throw error;
+    }
+    downloadPdfUrl(url, filename);
   }
-  downloadPdfBlob(await response.blob(), filename);
 }

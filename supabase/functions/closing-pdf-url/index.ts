@@ -191,6 +191,11 @@ Deno.serve(async (request) => {
     const pathOrUrl = isRecord(body) && typeof body.pathOrUrl === 'string' ? body.pathOrUrl.trim() : '';
     const support = isRecord(body) && isRecord(body.support) ? body.support : null;
     const expiresIn = clampExpiresIn(isRecord(body) ? body.expiresIn : undefined);
+    const downloadFilename = isRecord(body)
+      && (typeof body.downloadFilename === 'string' || typeof body.downloadFilename === 'boolean')
+      && body.downloadFilename
+      ? body.downloadFilename
+      : undefined;
 
     if (!closingId && !pathOrUrl) {
       return jsonResponse({ error: 'Informe o fechamento para gerar o link seguro.' }, 400, request);
@@ -253,9 +258,11 @@ Deno.serve(async (request) => {
       return jsonResponse({ error: 'Voce nao tem permissao para abrir este PDF.' }, 403, request);
     }
 
-    const { data: signed, error: signError } = await serviceClient.storage
-      .from(FECHAMENTOS_BUCKET)
-      .createSignedUrl(closingStoragePath, expiresIn);
+    const { data: signed, error: signError } = downloadFilename
+      ? await serviceClient.storage.from(FECHAMENTOS_BUCKET).createSignedUrl(closingStoragePath, expiresIn, {
+        download: downloadFilename,
+      })
+      : await serviceClient.storage.from(FECHAMENTOS_BUCKET).createSignedUrl(closingStoragePath, expiresIn);
 
     if (signError || !signed?.signedUrl) {
       return jsonResponse({ error: signError?.message ?? 'Nao foi possivel gerar link seguro do PDF.' }, 404, request);

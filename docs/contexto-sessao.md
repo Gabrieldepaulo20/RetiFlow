@@ -4,6 +4,25 @@ Atualizado em: 2026-07-08
 
 ---
 
+## Fechamento Mensal - Download De PDF Da Retifica - 2026-07-08
+
+- Problema reportado apos deploy: a cliente Retifica ainda nao conseguia baixar o PDF do fechamento.
+- Diagnostico provavel: o botao `PDF` tentava buscar a signed URL por `fetch` para transformar em blob.
+  Em navegador real, URLs assinadas de Storage privado podem falhar por CORS/headers mesmo quando a
+  navegacao direta para a signed URL funciona.
+- Correcao:
+  - `getFechamentoPDFSignedUrl` agora aceita `downloadFilename` e chama Supabase Storage com
+    `{ download: filename }`, gerando signed URL com cabecalho de download;
+  - `closing-pdf-url` tambem aceita `downloadFilename` e repassa para `createSignedUrl` quando o
+    fluxo precisa passar pela Edge Function (ex.: suporte/fallback);
+  - `MonthlyClosing` usa navegacao direta para a signed URL no botao `PDF`, sem depender de `fetch`;
+  - `downloadPdfFromUrl` ganhou fallback para `downloadPdfUrl` caso algum fluxo futuro ainda caia
+    em fetch bloqueado pelo navegador.
+- Teste focado: `npm test -- --run src/test/supabase-fechamentos.test.ts src/test/print-pdf.test.ts`
+  passou 15/15.
+
+---
+
 ## Fechamento Mensal - Desconto Por Linha No Rascunho - 2026-07-08
 
 - Pedido: deixar o desconto por item mais claro dentro das O.S. no popup de rascunho do fechamento.

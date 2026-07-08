@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 import { formatDateBR, formatDateTimeShortBR } from '@/lib/dates';
 import { ClosingHtmlPreview } from '@/components/closing/ClosingHtmlPreview';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { createPdfPreviewWindow, downloadPdfBlob, downloadPdfFromUrl, openPdfInBrowser } from '@/lib/printPdf';
+import { createPdfPreviewWindow, downloadPdfBlob, downloadPdfUrl, openPdfInBrowser } from '@/lib/printPdf';
 import {
   getFechamentos,
   insertFechamento,
@@ -953,8 +953,9 @@ export default function MonthlyClosing() {
       if (fechamento.pdf_url) {
         const url = await getFechamentoPDFSignedUrl(fechamento.pdf_url, {
           fechamentoId: fechamento.id_fechamentos,
+          downloadFilename: filename,
         });
-        await downloadPdfFromUrl(url, filename);
+        downloadPdfUrl(url, filename);
       } else if (fechamento.dados_json) {
         const blob = await renderClosingPdfBlob(fechamento.dados_json, fechamento.created_at);
         downloadPdfBlob(blob, filename);

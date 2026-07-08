@@ -176,6 +176,26 @@ describe('Fechamentos Supabase mutations', () => {
     expect(mocks.createSignedUrl).toHaveBeenCalledWith('usuario-1/fechamento-1.pdf', 60 * 60);
   });
 
+  it('asks Supabase Storage for a downloadable signed URL when filename is provided', async () => {
+    mocks.createSignedUrl.mockResolvedValue({
+      data: { signedUrl: 'https://signed.example/fechamento.pdf?download=Fechamento.pdf' },
+      error: null,
+    });
+
+    await expect(getFechamentoPDFSignedUrl('usuario-1/fechamento-1.pdf', {
+      fechamentoId: 'fechamento-1',
+      downloadFilename: 'Fechamento Retifica Junho 2026.pdf',
+    }))
+      .resolves
+      .toBe('https://signed.example/fechamento.pdf?download=Fechamento.pdf');
+
+    expect(mocks.createSignedUrl).toHaveBeenCalledWith(
+      'usuario-1/fechamento-1.pdf',
+      60 * 60,
+      { download: 'Fechamento Retifica Junho 2026.pdf' },
+    );
+  });
+
   it('uses the Edge Function when opening a closing PDF in support mode', async () => {
     window.localStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify({
       id: '11111111-1111-4111-8111-111111111111',
@@ -201,6 +221,42 @@ describe('Fechamentos Supabase mutations', () => {
           targetUserId: '22222222-2222-4222-8222-222222222222',
         },
         expiresIn: 60 * 60,
+      },
+      headers: {
+        Authorization: 'Bearer access-token-test',
+      },
+    });
+  });
+
+  it('passes the download filename through the Edge Function in support mode', async () => {
+    window.localStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify({
+      id: '11111111-1111-4111-8111-111111111111',
+      actorUser: { id: 'actor-id', email: 'gabrielwilliam208@gmail.com', name: 'Gabriel' },
+      targetUser: { id: '22222222-2222-4222-8222-222222222222', email: 'retifica@example.com', name: 'Retifica' },
+    }));
+    mocks.invoke.mockResolvedValue({
+      data: { signedUrl: 'https://signed.example/suporte.pdf?download=1' },
+      error: null,
+    });
+
+    await expect(getFechamentoPDFSignedUrl('usuario-1/fechamento-1.pdf', {
+      fechamentoId: 'fechamento-1',
+      downloadFilename: 'Fechamento Retifica Junho 2026.pdf',
+    }))
+      .resolves
+      .toBe('https://signed.example/suporte.pdf?download=1');
+
+    expect(mocks.createSignedUrl).not.toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith('closing-pdf-url', {
+      body: {
+        pathOrUrl: 'usuario-1/fechamento-1.pdf',
+        closingId: 'fechamento-1',
+        support: {
+          sessionId: '11111111-1111-4111-8111-111111111111',
+          targetUserId: '22222222-2222-4222-8222-222222222222',
+        },
+        expiresIn: 60 * 60,
+        downloadFilename: 'Fechamento Retifica Junho 2026.pdf',
       },
       headers: {
         Authorization: 'Bearer access-token-test',

@@ -408,6 +408,7 @@ async function getFechamentoPDFSignedUrlViaFunction(params: {
   fechamentoId?: string;
   supportContext?: ReturnType<typeof readStoredSupportContext>;
   expiresIn?: number;
+  downloadFilename?: string | boolean;
 }) {
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
   const accessToken = sessionData.session?.access_token;
@@ -416,13 +417,18 @@ async function getFechamentoPDFSignedUrlViaFunction(params: {
     throw new Error('Sessão Supabase não encontrada. Faça login novamente para abrir o PDF.');
   }
 
+  const body: Record<string, unknown> = {
+    pathOrUrl: params.pathOrUrl,
+    closingId: params.fechamentoId,
+    support: params.supportContext ?? undefined,
+    expiresIn: params.expiresIn,
+  };
+  if (params.downloadFilename) {
+    body.downloadFilename = params.downloadFilename;
+  }
+
   const { data, error } = await supabase.functions.invoke<{ signedUrl?: string; error?: string }>('closing-pdf-url', {
-    body: {
-      pathOrUrl: params.pathOrUrl,
-      closingId: params.fechamentoId,
-      support: params.supportContext ?? undefined,
-      expiresIn: params.expiresIn,
-    },
+    body,
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -440,7 +446,7 @@ async function getFechamentoPDFSignedUrlViaFunction(params: {
 
 export async function getFechamentoPDFSignedUrl(
   pathOrUrl: string,
-  options: { fechamentoId?: string; expiresIn?: number } = {},
+  options: { fechamentoId?: string; expiresIn?: number; downloadFilename?: string | boolean } = {},
 ): Promise<string> {
   if (!pathOrUrl || pathOrUrl.startsWith('blob:')) {
     return pathOrUrl;
@@ -460,18 +466,23 @@ export async function getFechamentoPDFSignedUrl(
       fechamentoId: options.fechamentoId,
       supportContext,
       expiresIn,
+      downloadFilename: options.downloadFilename,
     });
   }
 
-  const { data, error } = await supabase.storage
-    .from(FECHAMENTOS_BUCKET)
-    .createSignedUrl(path, expiresIn);
+  const signOptions = options.downloadFilename
+    ? { download: options.downloadFilename }
+    : undefined;
+  const { data, error } = signOptions
+    ? await supabase.storage.from(FECHAMENTOS_BUCKET).createSignedUrl(path, expiresIn, signOptions)
+    : await supabase.storage.from(FECHAMENTOS_BUCKET).createSignedUrl(path, expiresIn);
 
   if (error || !data?.signedUrl) {
     return getFechamentoPDFSignedUrlViaFunction({
       pathOrUrl: path,
       fechamentoId: options.fechamentoId,
       expiresIn,
+      downloadFilename: options.downloadFilename,
     });
   }
 
