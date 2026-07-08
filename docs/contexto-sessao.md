@@ -4,6 +4,26 @@ Atualizado em: 2026-07-08
 
 ---
 
+## Fechamento Mensal - Divergencia: Limpeza Final Dos Campos Mortos - 2026-07-08
+
+- Contexto: usuaria reclamou que "ainda aparece" a tag desatualizado/OS modificadas nos fechamentos
+  gerados, mesmo depois da remocao do render (commit f6c9b33).
+- Investigacao: `MonthlyClosing.tsx` esta LIMPO (sem badge, sem getDivergencias, sem linhas de
+  modificacao); nenhum componente le/renderiza `divergencias`/`divergente`; nao ha service worker/PWA
+  cacheando. Amplify job 296 (commit f6c9b33) = SUCCEED as 17:24 -03, ou seja o codigo sem divergencia
+  JA estava no ar. Conclusao: a usuaria viu durante o job anterior 295 (a34da74, que ainda tinha o
+  badge) ou com bundle antigo em cache no navegador. Solucao para ela: hard refresh (Cmd/Ctrl+Shift+R).
+- Limpeza aplicada nesta rodada: removidos os campos mortos `divergente`/`divergencias` de
+  `FechamentoDadosJson` (tipo) e a leitura deles em `normalizeFechamentoDadosJson`. Fechamentos antigos
+  que ainda tem esses campos no jsonb simplesmente os ignoram (normalize descarta). Fecha de vez o
+  ciclo da feature de divergencia — nao sobra nada no codigo.
+- `'DIVERGENTE'` em `types/index.ts` e de `PayableReconciliationStatus` (Contas a Pagar), sem relacao
+  com fechamento — mantido.
+- Sem migration. Validacao: `npm run typecheck`; `npm run lint` (8 warnings antigos);
+  `npm test -- --run` (63 arquivos, 477 testes); `npm run build`.
+
+---
+
 ## Fechamento Mensal - Remocao Da Divergencia (Tag Desatualizado) - 2026-07-08
 
 - Pedido: a Retifica reclamou do alerta vermelho "Desatualizado" + linhas de modificacao que

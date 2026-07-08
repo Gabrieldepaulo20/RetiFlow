@@ -48,13 +48,6 @@ export interface FechamentoDadosJson {
   recebidas?: FechamentoRecebida[];
   /** Soma das O.S. já recebidas no período. */
   total_ja_recebido?: number;
-  divergente?: boolean;
-  divergencias?: Array<{
-    os: string;
-    total_original: number;
-    total_atual: number;
-    alterado_em: string;
-  }>;
 }
 
 export interface FechamentoListItem {
@@ -197,8 +190,6 @@ export function normalizeFechamentoDadosJson(value: unknown): FechamentoDadosJso
       value.total_ja_recebido,
       recebidas.reduce((sum, nota) => sum + nota.total, 0),
     ),
-    divergente: value.divergente === true,
-    divergencias: Array.isArray(value.divergencias) ? value.divergencias as FechamentoDadosJson['divergencias'] : [],
   };
 }
 
