@@ -63,19 +63,24 @@ Atualizado em: 2026-07-07
   `IntakeNoteDetail.tsx`.
 - Validacao: `npm run typecheck`; `npm run lint` (8 warnings antigos); `npm test -- --run`
   (61 arquivos, 457 testes); `npm run build`; `npm run test:integration` (16/17 arquivos).
-- **REGRESSAO DE BACKEND DETECTADA PELA INTEGRACAO (nao causada por esta sessao, PENDENTE):**
-  - `src/test/integration/notas.test.ts` falhou: `update_nota_servico` com `prazo` de ontem
-    retornou `200` em vez de `400 invalid_payload` ("prazo nao pode ser anterior");
-  - a regra existe na migration `20260624163711` e nenhuma migration posterior do repo toca a
-    funcao — a versao em producao parece ter sido substituida fora do historico de migrations;
-  - a mesma validacao passou na rodada de integracao da manha de 2026-07-07, entao a mudanca e
-    recente;
-  - inspecao read-only da definicao em producao (`pg_get_functiondef`) precisa de autorizacao do
-    usuario (query direta em prod foi bloqueada pelo modo de permissao). Proximo passo: aprovar a
-    inspecao, comparar com a migration e reaplicar a regra se confirmado o drift;
-  - obs.: numa segunda rodada de integracao, outros 4 arquivos falharam apenas por
-    `Request rate limit reached` no login do Supabase (rodadas consecutivas) — ambiental, nao e
-    defeito de codigo.
+- **FALSO ALARME RESOLVIDO — teste de integracao de prazo era flaky apos as 21h locais:**
+  - `src/test/integration/notas.test.ts` falhou a noite com `update_nota_servico` retornando `200`
+    onde o teste esperava `400` ("prazo nao pode ser anterior");
+  - primeira hipotese foi drift da funcao em producao; com autorizacao do usuario, inspecao
+    read-only via `pg_get_functiondef` confirmou que `update_nota_servico` e `nova_nota` em prod
+    estao integras — travas de prazo presentes, identicas a migration `20260624163711` +
+    evolucoes de pagamento/contato/lock de fechamento. Nenhuma mudanca de banco foi necessaria;
+  - causa real: o teste calculava "ontem" com `new Date()` local e convertia com
+    `toISOString().slice(0,10)` (UTC). Depois das 21h em -03, o rollover de dia em UTC faz
+    "ontem local" virar a propria data de entrada da O.S.; prazo igual a entrada e valido, entao
+    o backend respondia `200` corretamente e o teste quebrava. De manha nao ha rollover — por
+    isso passava;
+  - correcao: os casos de prazo invalido agora derivam as datas da `data_criacao` real retornada
+    pelo servidor (`dayFromEntry(-1)` e `dayFromEntry(11)`), deterministico em qualquer horario;
+  - validado: `npm run test:integration -- src/test/integration/notas.test.ts` passou as 22:36
+    (dentro da janela que antes quebrava), com os dois `400 invalid_payload` corretos;
+  - obs.: numa rodada anterior, outros 4 arquivos de integracao falharam apenas por
+    `Request rate limit reached` no login do Supabase (rodadas consecutivas) — ambiental.
 
 ---
 

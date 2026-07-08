@@ -175,24 +175,33 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
       subtotal_item: 0,
     }));
 
-    const invalidPastDeadline = new Date();
-    invalidPastDeadline.setDate(invalidPastDeadline.getDate() - 1);
+    // As datas dos casos de prazo derivam da data de entrada REAL gravada no servidor.
+    // Usar `new Date()` local + toISOString() torna o teste flaky depois das 21h (-03):
+    // o rollover de dia em UTC faz "ontem local" virar a própria data de entrada,
+    // e prazo igual à entrada é válido (200), quebrando a expectativa de 400.
+    const serverCreatedDate = String(
+      (details.cabecalho as { data_criacao: string }).data_criacao,
+    ).slice(0, 10);
+    const dayFromEntry = (offsetDays: number) => {
+      const base = new Date(`${serverCreatedDate}T12:00:00Z`);
+      base.setUTCDate(base.getUTCDate() + offsetDays);
+      return base.toISOString().slice(0, 10);
+    };
+
     const pastDeadlineUpdate = await callRpc(client, 'update_nota_servico', {
       p_payload: {
         id_notas_servico: noteId,
-        prazo: invalidPastDeadline.toISOString().slice(0, 10),
+        prazo: dayFromEntry(-1),
       },
     });
     expect(pastDeadlineUpdate.status).toBe(400);
     expect(pastDeadlineUpdate.code).toBe('invalid_payload');
     expect(pastDeadlineUpdate.mensagem).toContain('prazo não pode ser anterior');
 
-    const invalidLongDeadline = new Date();
-    invalidLongDeadline.setDate(invalidLongDeadline.getDate() + 11);
     const longDeadlineUpdate = await callRpc(client, 'update_nota_servico', {
       p_payload: {
         id_notas_servico: noteId,
-        prazo: invalidLongDeadline.toISOString().slice(0, 10),
+        prazo: dayFromEntry(11),
       },
     });
     expect(longDeadlineUpdate.status).toBe(400);
