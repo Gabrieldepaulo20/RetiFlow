@@ -51,6 +51,18 @@ import {
   toDateInputValue,
   type MonthlyClosingDateMode,
 } from '@/services/domain/monthlyClosing';
+import {
+  buildDadosFromDraft,
+  clampPercent,
+  computeDraftTotals,
+  getDraftNotes,
+  getIncludedDraftNotes,
+  getPreviewItems,
+  recalcItemSubtotal,
+  recalcNoteTotal,
+  type ClosingDraft,
+  type PreviewNote,
+} from '@/services/domain/monthlyClosingDraft';
 import { PAYMENT_METHOD_LABELS, type IntakeNote, type NotePaymentStatus, type PaymentMethod } from '@/types';
 import { isBillableNoteStatus } from '@/services/domain/intakeNotes';
 import { readStoredSupportContext } from '@/services/auth/supportContext';
@@ -71,44 +83,6 @@ const PALETTE = [
   { border: 'border-l-rose-400',    avatar: 'bg-rose-100 text-rose-700'   },
 ] as const;
 
-interface PreviewNote {
-  id: string;
-  os: string;
-  veiculo: string;
-  placa: string | null;
-  total: number;
-  updatedAt: string;
-  /** Eixo financeiro: se já foi recebida (fora do total do fechamento) ou pendente. */
-  paymentStatus: NotePaymentStatus;
-  pagoEm: string | null;
-  itens: Array<{
-    id: string;
-    descricao: string;
-    quantidade: number;
-    preco_unitario: number;
-    desconto_porcentagem: number;
-    subtotal: number;
-  }>;
-}
-
-interface ClosingDraft {
-  id: string;
-  clientId: string;
-  clientName: string;
-  periodMode?: MonthlyClosingDateMode;
-  startDate?: string | null;
-  endDate?: string | null;
-  cutoffDate?: string | null;
-  month: string;
-  year: string;
-  periodLabel: string;
-  notes: PreviewNote[];
-  includedNoteIds?: string[];
-  discounts: Record<string, number>;
-  createdAt: string;
-  updatedAt: string;
-}
-
 interface AvailableClosingPeriod {
   key: string;
   month: string;
@@ -119,81 +93,6 @@ interface AvailableClosingPeriod {
 
 const toMoney = (value: number) =>
   value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-const clampPercent = (value: number) => Math.min(100, Math.max(0, value));
-
-const recalcItemSubtotal = (item: PreviewNote['itens'][number]) => {
-  const bruto = Math.max(0, item.quantidade) * Math.max(0, item.preco_unitario);
-  return bruto * (1 - clampPercent(item.desconto_porcentagem) / 100);
-};
-
-const recalcNoteTotal = (items: PreviewNote['itens']) =>
-  items.reduce((sum, item) => sum + recalcItemSubtotal(item), 0);
-
-/** O.S. já recebida (paga) no período — informativa, nunca entra no total do fechamento. */
-const isReceivedNote = (note: Pick<PreviewNote, 'paymentStatus'>) => note.paymentStatus === 'PAGO';
-
-const getReceivedDraftNotes = (draft: Pick<ClosingDraft, 'notes'>) => (
-  Array.isArray(draft.notes) ? draft.notes : []
-).filter(isReceivedNote);
-
-const getDraftNotes = (draft: Pick<ClosingDraft, 'notes'>) =>
-  Array.isArray(draft.notes) ? draft.notes : [];
-
-const getPreviewItems = (note: Pick<PreviewNote, 'itens'>) =>
-  Array.isArray(note.itens) ? note.itens : [];
-
-const getIncludedDraftNotes = (draft: Pick<ClosingDraft, 'notes' | 'includedNoteIds'>) => {
-  const notes = getDraftNotes(draft);
-  const base = draft.includedNoteIds
-    ? notes.filter((note) => new Set(draft.includedNoteIds).has(note.id))
-    : notes;
-  // Notas já recebidas nunca entram no total/cascata do fechamento (só informativas).
-  return base.filter((note) => !isReceivedNote(note));
-};
-
-const computeDraftTotals = (draft: Pick<ClosingDraft, 'notes' | 'discounts' | 'includedNoteIds'>) => {
-  const includedNotes = getIncludedDraftNotes(draft);
-  const totalOriginal = includedNotes.reduce((sum, note) => sum + note.total, 0);
-  const totalComDesconto = includedNotes.reduce((sum, note) => {
-    const desconto = draft.discounts[note.id] ?? 0;
-    return sum + note.total * (1 - desconto / 100);
-  }, 0);
-  return { totalOriginal, totalComDesconto };
-};
-
-const buildDadosFromDraft = (draft: ClosingDraft): FechamentoDadosJson => {
-  const totals = computeDraftTotals(draft);
-  return {
-    gerado_em: new Date().toISOString(),
-    periodo: draft.periodLabel,
-    cliente: { id: draft.clientId, nome: draft.clientName },
-    notas: getIncludedDraftNotes(draft).map((note) => {
-      const desconto = draft.discounts[note.id] ?? 0;
-      return {
-        id: note.id,
-        os: note.os,
-        veiculo: note.veiculo,
-        placa: note.placa,
-        itens: getPreviewItems(note),
-        total_original: note.total,
-        desconto_nota: desconto,
-        total_com_desconto: note.total * (1 - desconto / 100),
-      };
-    }),
-    total_original: totals.totalOriginal,
-    total_com_desconto: totals.totalComDesconto,
-    recebidas: getReceivedDraftNotes(draft).map((note) => ({
-      id: note.id,
-      os: note.os,
-      veiculo: note.veiculo,
-      placa: note.placa,
-      total: note.total,
-      pago_em: note.pagoEm,
-    })),
-    total_ja_recebido: getReceivedDraftNotes(draft).reduce((sum, note) => sum + note.total, 0),
-  };
-};
 
 const createDraftId = () =>
   `draft-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -1717,7 +1616,7 @@ export default function MonthlyClosing() {
                         <div className="px-4 py-3 bg-muted/20 border-t border-border/30 flex items-center justify-between gap-4 flex-wrap">
                           <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
                             <span>Desconto final desta O.S.:</span>
-                            <Input type="number" min="0" max="100" step="1" value={descontos[nota.id] ?? ''} onChange={(e) => setDescontos((prev) => ({ ...prev, [nota.id]: parseFloat(e.target.value) || 0 }))} placeholder="0" className="w-20 h-8 text-xs text-center" />
+                            <Input type="number" min="0" max="100" step="1" value={descontos[nota.id] ?? ''} onChange={(e) => setDescontos((prev) => ({ ...prev, [nota.id]: clampPercent(parseFloat(e.target.value) || 0) }))} placeholder="0" className="w-20 h-8 text-xs text-center" />
                             <span>%</span>
                           </div>
                           <div className="text-right text-xs">

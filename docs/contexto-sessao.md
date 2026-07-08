@@ -4,6 +4,51 @@ Atualizado em: 2026-07-07
 
 ---
 
+## Fechamento Mensal - Auditoria Da Matematica E Garantia De Geracao - 2026-07-07
+
+- Pedido: garantir que fechamentos e rascunhos gerem sempre e que as contas estejam corretas;
+  levantar melhorias.
+- Auditoria completa do fluxo (rascunho -> edicao -> geracao -> PDF -> divergencias):
+  - falha em `get_nota_servico_detalhes` de uma O.S. degrada para item-fallback (1x total da O.S.),
+    nao derruba o rascunho; falha total mostra toast e preserva estado anterior;
+  - normalizacao de rascunho do localStorage cobre todos os campos (id/clientId obrigatorios,
+    `includedNoteIds` reconstruido, descontos clampados, item-fallback);
+  - edicao de item re-sincroniza subtotal e total da O.S. (`updatePreviewItem` usa
+    `recalcNoteTotal`); O.S. PAGO nunca entra no total (so informativa em `recebidas`);
+  - PDF renderiza ANTES do `insert_fechamento`, entao falha de render nao cria orfao;
+  - divergencias comparam `total_com_desconto` salvo vs `totalAmount` atual com tolerancia 0.01.
+- **Bug corrigido (ALTO): desconto por O.S. sem clamp na digitacao** —
+  `MonthlyClosing` linha ~1720 aceitava `150`/`-10` via teclado (atributo HTML max nao impede);
+  desconto >100 gerava total NEGATIVO no card, no snapshot e no `p_valor_total` gravado.
+  O clamp de `normalizeDiscounts` so rodava ao recarregar do storage. Agora o input clampa na
+  digitacao e a matematica de dominio clampa de novo por defesa.
+- **Melhoria aplicada: arredondamento em centavos ao persistir** — `valor_total` e todos os
+  totais de `dados_json` agora passam por `roundMoney` (2 casas); soma dos por-O.S. arredondados
+  = total consolidado exato (sem poeira de float tipo `1084.9999999999998` no banco).
+- **Refactor pequeno alinhado a arquitetura:** matematica pura do rascunho extraida de
+  `MonthlyClosing.tsx` para `src/services/domain/monthlyClosingDraft.ts`
+  (`computeDraftTotals`, `buildDadosFromDraft`, `recalcItemSubtotal`, `clampPercent`,
+  `roundMoney`, tipos `PreviewNote`/`ClosingDraft`), permitindo teste unitario direto.
+  Testes novos: `src/test/monthly-closing-draft-math.test.ts` (10 casos: clamp, PAGO fora,
+  includedNoteIds, dizimas, snapshot consistente).
+- **Codigo morto identificado (nao removido nesta rodada):** `generateClosingRecords`,
+  `recalcClosing`, `normalizeClosingRecord`, `calcServiceTotal` em
+  `services/domain/monthlyClosing.ts` nao tem call site no app (so testes). Atencao: esse
+  caminho morto tem bugs proprios (desconto percentual >100 sem clamp; `recalcClosing` zera
+  nota sem services). Remover em rodada de limpeza junto com os testes correspondentes.
+- **Melhorias recomendadas (backend, nao aplicadas):**
+  - RPC transacional `gerar_fechamento_completo` (insert + dados_json + vinculo das O.S. em uma
+    transacao): hoje, se `uploadFechamentoPDF`/`updateFechamento` falhar depois do insert, fica
+    cabecalho orfao e o retry insere segundo cabecalho;
+  - divergencias nao apontam O.S. deletada do fechamento (so alteracao de valor);
+  - item-fallback ("Servicos realizados") poderia ter selo visual indicando que o detalhe da
+    O.S. nao carregou.
+- Validacao: `npm run typecheck`; `npm run lint` (8 warnings antigos); `npm test -- --run`
+  (62 arquivos, 467 testes); `CI=1 npx playwright test e2e/monthly-closing.spec.ts` (2/2);
+  `npm run build`.
+
+---
+
 ## Auditoria Preventiva De Estabilidade + Divergencia Local x Amplify - 2026-07-07
 
 - Pedido: auditoria profunda para achar bugs semelhantes aos do ErrorBoundary do Fechamento
