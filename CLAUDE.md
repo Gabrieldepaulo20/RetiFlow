@@ -19,7 +19,9 @@ npm run dev              # local dev server (Vite, port 8080)
 npm run build            # production build
 npm run build:dev        # development-mode build
 npm run preview          # preview local build
-npx tsc --noEmit         # typecheck (or: npm run typecheck)
+npm run typecheck        # typecheck real (tsc -p tsconfig.app.json — mesmo gate do Amplify)
+                         # NÃO use `npx tsc --noEmit`: o tsconfig raiz é solution-style
+                         # (files: []) e esse comando passa sem checar arquivo nenhum
 npm run lint             # eslint
 npm test -- --run        # unit tests (vitest, single run)
 npm run test:watch       # unit tests in watch mode
@@ -34,7 +36,7 @@ gitleaks detect --source . --no-git --redact=100 # scan working tree
 
 Run a single unit test: `npm test -- --run src/path/to/file.test.ts` (add `-t "name"` to filter).
 
-**Required before delivering a normal change:** `npx tsc --noEmit` → `npm run lint` → `npm test -- --run` → `npm run build`.
+**Required before delivering a normal change:** `npm run typecheck` → `npm run lint` → `npm test -- --run` → `npm run build`.
 If the change touches real Supabase/Storage/RPCs/Functions, also run `npm run test:integration` (or report it was skipped for lack of env).
 
 ## Auth modes

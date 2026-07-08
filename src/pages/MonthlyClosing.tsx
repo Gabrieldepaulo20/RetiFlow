@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { formatDateBR, formatDateTimeShortBR } from '@/lib/dates';
 import { ClosingHtmlPreview } from '@/components/closing/ClosingHtmlPreview';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { createPdfPreviewWindow, openPdfInBrowser } from '@/lib/printPdf';
@@ -1516,7 +1517,7 @@ export default function MonthlyClosing() {
                         </p>
                         {isPago && f.pago_em && (
                           <p className="mt-0.5 text-xs text-emerald-700">
-                            Recebido em {new Date(f.pago_em).toLocaleDateString('pt-BR')}
+                            Recebido em {formatDateBR(f.pago_em) ?? 'data não registrada'}
                             {f.pago_com ? ` · ${PAYMENT_METHOD_LABELS[f.pago_com as PaymentMethod] ?? f.pago_com}` : ''}
                           </p>
                         )}
@@ -1525,8 +1526,8 @@ export default function MonthlyClosing() {
                             {divs.map((d, i) => (
                               <p key={i} className="text-xs text-destructive flex items-center gap-1">
                                 <AlertTriangle className="w-3 h-3 shrink-0" />
-                                {d.os} · era R$ {d.total_original.toFixed(2)} → R$ {d.total_atual.toFixed(2)} ·{' '}
-                                {new Date(d.alterado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                {d.os} · era R$ {d.total_original.toFixed(2)} → R$ {d.total_atual.toFixed(2)}
+                                {formatDateTimeShortBR(d.alterado_em) ? ` · ${formatDateTimeShortBR(d.alterado_em)}` : ''}
                               </p>
                             ))}
                           </div>
@@ -1635,7 +1636,7 @@ export default function MonthlyClosing() {
                             <p className="font-semibold text-sm">{nota.os}</p>
                             {isPaid ? (
                               <Badge className="bg-emerald-100 text-emerald-700 text-[10px]">
-                                Já recebido{nota.pagoEm ? ` · ${new Date(nota.pagoEm).toLocaleDateString('pt-BR')}` : ''}
+                                Já recebido{formatDateBR(nota.pagoEm) ? ` · ${formatDateBR(nota.pagoEm)}` : ''}
                               </Badge>
                             ) : (
                               <>

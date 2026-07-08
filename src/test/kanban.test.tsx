@@ -188,6 +188,58 @@ describe('Kanban', () => {
     });
   });
 
+  it('recupera o board quando o localStorage só tem status removidos na reforma', () => {
+    localStorage.setItem('kanban.visibleColumns.v1', JSON.stringify(['PRONTO', 'FINALIZADO']));
+
+    try {
+      render(
+        <MemoryRouter
+          initialEntries={['/kanban']}
+          future={{
+            v7_startTransition: true,
+            v7_relativeSplatPath: true,
+          }}
+        >
+          <Kanban />
+        </MemoryRouter>,
+      );
+
+      // Todos os valores salvos são inválidos → volta ao padrão (todas as colunas),
+      // então o card EM_EXECUCAO continua visível em vez de um board vazio.
+      expect(screen.getByText('OS-1')).toBeInTheDocument();
+    } finally {
+      localStorage.removeItem('kanban.visibleColumns.v1');
+    }
+  });
+
+  it('mantém apenas os status conhecidos das preferências salvas', () => {
+    localStorage.setItem(
+      'kanban.visibleColumns.v1',
+      JSON.stringify(['PRONTO', 'EM_EXECUCAO']),
+    );
+
+    try {
+      render(
+        <MemoryRouter
+          initialEntries={['/kanban']}
+          future={{
+            v7_startTransition: true,
+            v7_relativeSplatPath: true,
+          }}
+        >
+          <Kanban />
+        </MemoryRouter>,
+      );
+
+      // 'PRONTO' (legado) é descartado; 'EM_EXECUCAO' permanece e mostra a O.S.
+      expect(screen.getByText('OS-1')).toBeInTheDocument();
+      // Coluna ABERTO ("Aberta") não está nas preferências válidas → não renderiza.
+      expect(screen.queryByText('Aberta')).not.toBeInTheDocument();
+    } finally {
+      localStorage.removeItem('kanban.visibleColumns.v1');
+    }
+  });
+
   it('opens the note detail modal from the card without runtime errors', async () => {
     render(
       <MemoryRouter

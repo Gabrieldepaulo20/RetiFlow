@@ -586,6 +586,19 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   DEBITO_AUTOMATICO: 'Débito Automático',
 };
 
+const PAYMENT_METHOD_VALUES = new Set<string>(Object.keys(PAYMENT_METHOD_LABELS));
+
+/**
+ * Valida valor vindo do banco/IA antes de tratá-lo como PaymentMethod.
+ * Valores fora do union (legado, sugestão de IA fora do padrão) viram undefined
+ * em vez de quebrar lookups em PAYMENT_METHOD_LABELS.
+ */
+export function toPaymentMethod(value: unknown): PaymentMethod | undefined {
+  return typeof value === 'string' && PAYMENT_METHOD_VALUES.has(value)
+    ? (value as PaymentMethod)
+    : undefined;
+}
+
 export const RECURRENCE_TYPE_LABELS: Record<RecurrenceType, string> = {
   NENHUMA:    'Sem recorrência',
   SEMANAL:    'Semanal',

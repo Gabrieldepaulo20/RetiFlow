@@ -1,5 +1,5 @@
 import { callRPC } from './_base';
-import { NoteStatus, NotePaymentStatus, NoteType, IntakeNote, PaymentMethod, STATUS_LABELS } from '@/types';
+import { NoteStatus, NotePaymentStatus, NoteType, IntakeNote, STATUS_LABELS, toPaymentMethod } from '@/types';
 import { readStoredSupportContext } from '@/services/auth/supportContext';
 import { getPerfil } from './auth';
 import { buildNotePdfStoragePath } from '@/services/storage/storagePaths';
@@ -76,6 +76,15 @@ export interface NovaNotaPayload {
   }>;
 }
 
+/**
+ * Contrato wire do SQL: `p_ordem_campo` aceita apenas 'data' | 'os'
+ * (migration 20260620124500 — valor desconhecido cai no fallback 'data').
+ * O domínio usa 'date' | 'os'; a tradução acontece aqui, no boundary.
+ */
+function toWireOrdemCampo(field: IntakeNoteSortField): 'data' | 'os' {
+  return field === 'date' ? 'data' : field;
+}
+
 export async function getNotasServico(params?: {
   p_fk_clientes?: string;
   p_fk_status?: number;
@@ -88,7 +97,10 @@ export async function getNotasServico(params?: {
   p_ordem_campo?: IntakeNoteSortField;
   p_ordem_direcao?: IntakeNoteSortDirection;
 }) {
-  const env = await callRPC<NotaServico[]>('get_notas_servico', params);
+  const wireParams = params?.p_ordem_campo
+    ? { ...params, p_ordem_campo: toWireOrdemCampo(params.p_ordem_campo) }
+    : params;
+  const env = await callRPC<NotaServico[]>('get_notas_servico', wireParams);
   return { dados: env.dados ?? [], total: env.total ?? 0 };
 }
 
@@ -346,7 +358,7 @@ export function supabaseToIntakeNote(row: NotaServico): IntakeNote {
     finalizedAt:      row.finalizado_em ?? undefined,
     paymentStatus,
     paidAt:           extra.pago_em ?? undefined,
-    paidWith:         (extra.pago_com as PaymentMethod) ?? undefined,
+    paidWith:         toPaymentMethod(extra.pago_com),
     pdfUrl:           row.pdf_url ?? undefined,
   };
 }

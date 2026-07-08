@@ -4,6 +4,81 @@ Atualizado em: 2026-07-07
 
 ---
 
+## Auditoria Preventiva De Estabilidade + Divergencia Local x Amplify - 2026-07-07
+
+- Pedido: auditoria profunda para achar bugs semelhantes aos do ErrorBoundary do Fechamento
+  (`displayName in Symbol(react.fragment)`) e da falha de deploy do Amplify (typecheck) antes que
+  usuarias reais encontrem.
+- Estado inicial confirmado: Amplify job `286` (commit `abb406b`, HEAD) = `SUCCEED`; jobs `284`/`285`
+  falharam no `npm run typecheck` (caso conhecido do `p_ordem_campo`).
+- **Causa raiz da divergencia local x Amplify (CRITICO, corrigido em docs):**
+  - `npx tsc --noEmit` na raiz checa **zero arquivos** — o `tsconfig.json` raiz e solution-style com
+    `files: []` + references, entao o comando passa sempre, trivialmente;
+  - o Amplify roda `npm run typecheck` (`tsc --noEmit -p tsconfig.app.json`, strict), o gate real;
+  - `AGENTS.md` e `CLAUDE.md` foram atualizados: validacao obrigatoria agora e `npm run typecheck`,
+    com aviso explicito de que `npx tsc --noEmit` nao vale como validacao.
+- **Contrato wire de ordenacao (ALTO, corrigido):**
+  - o SQL (`migration 20260620124500`) aceita `p_ordem_campo` = `'data' | 'os'`; valor desconhecido
+    cai em fallback `'data'`;
+  - o dominio TS usa `'date' | 'os'`, entao `'date'` so funcionava por causa do fallback do SQL;
+  - `getNotasServico` agora traduz `'date'`→`'data'` no boundary da API (`src/api/supabase/notas.ts`),
+    com teste `src/test/notas-sort-wire.test.ts` cobrindo a traducao.
+- **Contas a Pagar - Duplicar sem feedback de erro (ALTO, corrigido):**
+  - `handleDuplicate` em `src/pages/ContasAPagar.tsx` era o unico handler de escrita sem try/catch;
+    falha de rede/RPC virava rejeicao silenciosa (usuaria achava que duplicou e nada acontecia);
+  - agora segue o mesmo padrao dos vizinhos: catch + toast destrutivo com a mensagem real.
+- **Kanban - board vazio por preferencias antigas (MEDIO, corrigido):**
+  - `kanban.visibleColumns.v1` no localStorage podia conter status removidos na reforma
+    (`PRONTO`, `FINALIZADO`); se todos fossem invalidos o board abria vazio sem explicacao;
+  - `loadVisibleStatuses` agora filtra contra `NOTE_STATUS_ORDER` e volta ao padrao quando nada
+    sobra; testes de regressao em `src/test/kanban.test.tsx`.
+- **Enums de pagamento sem validacao (MEDIO, corrigido):**
+  - casts diretos `as PaymentMethod` em `notas.ts` e `DataContext.tsx` (incluindo sugestao vinda da
+    IA do Gmail) deixavam valor fora do union passar e quebrar lookups de label;
+  - novo guard `toPaymentMethod` em `src/types/index.ts` aplicado nos 4 pontos; valor invalido vira
+    `undefined` (ou `BOLETO` na sugestao); testes em `src/test/supabase-notas.test.ts`.
+- **Datas corrompidas renderizando "Invalid Date" (MEDIO, corrigido):**
+  - `MonthlyClosing` formatava `pago_em`, `alterado_em` e `pagoEm` com `new Date(...)` direto;
+  - novo helper defensivo `src/lib/dates.ts` (`formatDateBR`/`formatDateTimeShortBR`) retorna null
+    para timestamp invalido; testes em `src/test/dates.test.ts`.
+- **Higiene de repositorio (corrigido):** `/outputs/` e `/tmp/` (relatorios e scripts locais com
+  dados reais de cliente) adicionados ao `.gitignore` — nao estavam ignorados.
+- Auditoria dos componentes base de UI (Dialog/Sheet/Select/Popover/Dropdown/chart/Slot):
+  nenhum risco restante — `elementHasDisplayName` cobre todos os pontos de `displayName`, sem
+  `cloneElement`, todo acesso a `child.type` protegido por `isValidElement`.
+- Falsos positivos descartados na triagem: `STATUS_DOT[note.status]` e seguro porque
+  `mapStatusNome` tem fallback `'ABERTO'`; drag-and-drop do Kanban usa droppableIds das proprias
+  colunas; omissao de `p_apenas_sem_fechamento` em modo suporte e intencional (filtro local).
+- **Pendencias conhecidas de modo suporte (nao corrigidas — exigem backend, relatar antes de mexer):**
+  - RPCs sem variante `*_contexto_suporte` mapeada leem/escrevem dados do usuario de suporte
+    (ex.: `get_categorias_conta_pagar` — categorias exibidas em suporte sao do suporte, nao do
+    tenant, enquanto `insert_categoria_conta_pagar` JA e remapeada — inconsistencia real);
+  - variantes de suporte de notas nao retornam payment/contato (ja documentado em AGENTS.md);
+  - `getFechamentoPDFSignedUrl` e `getNotaPDFSignedUrl` nao tem fallback via Edge Function em modo
+    suporte (padrao `payable-attachment-url` existe e pode ser replicado);
+  - `insert_log` chama RPC direto sem passar por `callRPC` (log de acao em suporte cai no usuario
+    de suporte).
+- Diff pendente pre-existente (nao é desta sessao, mantido sem commit): remocao da restricao
+  `role === 'ADMIN'` do botao "Estornar recebimento" em `NoteDetailModal.tsx` e
+  `IntakeNoteDetail.tsx`.
+- Validacao: `npm run typecheck`; `npm run lint` (8 warnings antigos); `npm test -- --run`
+  (61 arquivos, 457 testes); `npm run build`; `npm run test:integration` (16/17 arquivos).
+- **REGRESSAO DE BACKEND DETECTADA PELA INTEGRACAO (nao causada por esta sessao, PENDENTE):**
+  - `src/test/integration/notas.test.ts` falhou: `update_nota_servico` com `prazo` de ontem
+    retornou `200` em vez de `400 invalid_payload` ("prazo nao pode ser anterior");
+  - a regra existe na migration `20260624163711` e nenhuma migration posterior do repo toca a
+    funcao — a versao em producao parece ter sido substituida fora do historico de migrations;
+  - a mesma validacao passou na rodada de integracao da manha de 2026-07-07, entao a mudanca e
+    recente;
+  - inspecao read-only da definicao em producao (`pg_get_functiondef`) precisa de autorizacao do
+    usuario (query direta em prod foi bloqueada pelo modo de permissao). Proximo passo: aprovar a
+    inspecao, comparar com a migration e reaplicar a regra se confirmado o drift;
+  - obs.: numa segunda rodada de integracao, outros 4 arquivos falharam apenas por
+    `Request rate limit reached` no login do Supabase (rodadas consecutivas) — ambiental, nao e
+    defeito de codigo.
+
+---
+
 ## Fechamento Mensal - ErrorBoundary Ao Emitir - 2026-07-07
 
 - Pedido: a dona da Retifica nao conseguia emitir fechamento e a tela caia no fallback:

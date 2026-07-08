@@ -130,9 +130,15 @@ function loadVisibleStatuses(): Set<NoteStatus> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as string[];
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return new Set(parsed as NoteStatus[]);
+      const parsed: unknown = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        // Preferências antigas podem conter status removidos na reforma
+        // (ex.: PRONTO, FINALIZADO); sem este filtro o board pode abrir vazio.
+        const known = parsed.filter(
+          (s): s is NoteStatus =>
+            typeof s === 'string' && (NOTE_STATUS_ORDER as string[]).includes(s),
+        );
+        if (known.length > 0) return new Set(known);
       }
     }
   } catch {

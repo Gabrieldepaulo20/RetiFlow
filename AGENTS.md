@@ -14,7 +14,9 @@ Este arquivo orienta agentes que forem trabalhar no Retiflow. Ele deve ser lido 
 - Rodar ambiente local: `npm run dev`
 - Build de produção: `npm run build`
 - Build de desenvolvimento: `npm run build:dev`
-- Typecheck: `npx tsc --noEmit`
+- Typecheck: `npm run typecheck` (mesmo comando do Amplify: `tsc --noEmit -p tsconfig.app.json`).
+  **Atenção:** `npx tsc --noEmit` na raiz NÃO checa nada (tsconfig raiz é solution-style com
+  `files: []`) e passa sempre — não usar como validação.
 - Lint: `npm run lint`
 - Testes unitários: `npm test -- --run`
 - Testes em watch: `npm run test:watch`
@@ -36,7 +38,7 @@ Este arquivo orienta agentes que forem trabalhar no Retiflow. Ele deve ser lido 
 
 Antes de entregar uma alteração normal:
 
-1. `npx tsc --noEmit`
+1. `npm run typecheck` (obrigatório — é o gate real do Amplify; `npx tsc --noEmit` não vale)
 2. `npm run lint`
 3. `npm test -- --run`
 4. `npm run build`

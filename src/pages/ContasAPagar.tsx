@@ -487,33 +487,41 @@ export default function ContasAPagar() {
   }
 
   async function handleDuplicate(payable: AccountPayable) {
-    const created = await addPayable({
-      title: `${payable.title} (cópia)`,
-      supplierId: payable.supplierId,
-      supplierName: payable.supplierName,
-      favorecidoTipo: payable.favorecidoTipo,
-      categoryId: payable.categoryId,
-      docNumber: payable.docNumber,
-      issueDate: payable.issueDate,
-      dueDate: payable.dueDate,
-      originalAmount: payable.originalAmount,
-      interest: payable.interest,
-      discount: payable.discount,
-      finalAmount: payable.finalAmount,
-      status: 'PENDENTE',
-      paymentMethod: payable.paymentMethod,
-      recurrence: payable.recurrence,
-      recurrenceIndex: payable.recurrenceIndex,
-      totalInstallments: payable.totalInstallments,
-      observations: payable.observations,
-      isUrgent: payable.isUrgent,
-      entrySource: payable.entrySource,
-      competencyDate: payable.competencyDate,
-      paymentExecutionStatus: 'MANUAL',
-      createdByUserId: user?.id ?? 'user-2',
-    });
-    addPayableHistoryEntry(buildPayableHistoryDescription({ payableId: created.id, action: 'CREATED', userId: user?.id ?? 'user-2' }));
-    toast({ title: 'Conta duplicada', description: 'Criamos uma cópia pronta para ajustes rápidos.' });
+    try {
+      const created = await addPayable({
+        title: `${payable.title} (cópia)`,
+        supplierId: payable.supplierId,
+        supplierName: payable.supplierName,
+        favorecidoTipo: payable.favorecidoTipo,
+        categoryId: payable.categoryId,
+        docNumber: payable.docNumber,
+        issueDate: payable.issueDate,
+        dueDate: payable.dueDate,
+        originalAmount: payable.originalAmount,
+        interest: payable.interest,
+        discount: payable.discount,
+        finalAmount: payable.finalAmount,
+        status: 'PENDENTE',
+        paymentMethod: payable.paymentMethod,
+        recurrence: payable.recurrence,
+        recurrenceIndex: payable.recurrenceIndex,
+        totalInstallments: payable.totalInstallments,
+        observations: payable.observations,
+        isUrgent: payable.isUrgent,
+        entrySource: payable.entrySource,
+        competencyDate: payable.competencyDate,
+        paymentExecutionStatus: 'MANUAL',
+        createdByUserId: user?.id ?? 'user-2',
+      });
+      addPayableHistoryEntry(buildPayableHistoryDescription({ payableId: created.id, action: 'CREATED', userId: user?.id ?? 'user-2' }));
+      toast({ title: 'Conta duplicada', description: 'Criamos uma cópia pronta para ajustes rápidos.' });
+    } catch (error) {
+      toast({
+        title: 'Não foi possível duplicar a conta',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    }
   }
 
   async function handleSubmitPayment() {

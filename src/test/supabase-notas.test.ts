@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { extractNotaStoragePath, getNotaPDFSignedUrl, mapStatusNome } from '@/api/supabase/notas';
+import { extractNotaStoragePath, getNotaPDFSignedUrl, mapStatusNome, supabaseToIntakeNote, type NotaServico } from '@/api/supabase/notas';
+import { toPaymentMethod } from '@/types';
 
 const mocks = vi.hoisted(() => ({
   from: vi.fn(),
@@ -150,5 +151,56 @@ describe('Notas Supabase PDF storage helpers', () => {
         upsert: true,
       },
     );
+  });
+});
+
+describe('toPaymentMethod', () => {
+  it('aceita valores do union PaymentMethod', () => {
+    expect(toPaymentMethod('PIX')).toBe('PIX');
+    expect(toPaymentMethod('DEBITO_AUTOMATICO')).toBe('DEBITO_AUTOMATICO');
+  });
+
+  it('rejeita valores legados/desconhecidos vindos do banco ou da IA', () => {
+    expect(toPaymentMethod('CREDITO')).toBeUndefined();
+    expect(toPaymentMethod('pix')).toBeUndefined();
+    expect(toPaymentMethod(null)).toBeUndefined();
+    expect(toPaymentMethod(undefined)).toBeUndefined();
+    expect(toPaymentMethod(42)).toBeUndefined();
+  });
+});
+
+describe('supabaseToIntakeNote — campos de pagamento', () => {
+  const baseRow: NotaServico = {
+    id_notas_servico: 'nota-1',
+    os: 'OS-10',
+    prazo: '2026-06-20',
+    defeito: 'Teste',
+    observacoes: null,
+    total: 100,
+    total_servicos: 100,
+    total_produtos: 0,
+    created_at: '2026-06-15T10:00:00Z',
+    updated_at: '2026-06-15T10:00:00Z',
+    pdf_url: null,
+    finalizado_em: null,
+    cliente: { id: 'c1', nome: 'Cliente' },
+    veiculo: { id: 'v1', modelo: 'Gol', placa: null, km: 0, motor: 'AP' },
+    status: { id: 26, nome: 'Entregue', index: 8, tipo_status: 'fechado' },
+  };
+
+  it('mantém paidWith válido e descarta valor fora do union sem quebrar', () => {
+    const valid = supabaseToIntakeNote({ ...baseRow, payment_status: 'PAGO', pago_com: 'PIX' } as NotaServico);
+    expect(valid.paidWith).toBe('PIX');
+
+    const legacy = supabaseToIntakeNote({ ...baseRow, payment_status: 'PAGO', pago_com: 'CREDITO' } as NotaServico);
+    expect(legacy.paymentStatus).toBe('PAGO');
+    expect(legacy.paidWith).toBeUndefined();
+  });
+
+  it('trata ausência dos campos de pagamento (variante de suporte) como PENDENTE sem paidWith', () => {
+    const note = supabaseToIntakeNote(baseRow);
+    expect(note.paymentStatus).toBe('PENDENTE');
+    expect(note.paidWith).toBeUndefined();
+    expect(note.paidAt).toBeUndefined();
   });
 });

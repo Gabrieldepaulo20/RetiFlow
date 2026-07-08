@@ -20,6 +20,7 @@ import {
   PayableSupplier,
   PaymentMethod,
   RecurrenceType,
+  toPaymentMethod,
 } from '@/types';
 import * as seed from '@/data/seed';
 import { debouncedSaveToStorage, loadStateFromStorage, type PersistedData } from '@/services/storage/dataPersistence';
@@ -98,9 +99,9 @@ function supabaseToAccountPayable(row: ContaPagar): AccountPayable {
     finalAmount: row.valor_final,
     paidAmount: row.valor_pago ?? undefined,
     status: row.status,
-    paymentMethod: (row.forma_pagamento_prevista as PaymentMethod) ?? undefined,
+    paymentMethod: toPaymentMethod(row.forma_pagamento_prevista),
     paidAt: row.pago_em ?? undefined,
-    paidWith: (row.pago_com as PaymentMethod) ?? undefined,
+    paidWith: toPaymentMethod(row.pago_com),
     recurrence: (row.recorrencia as RecurrenceType) ?? 'NENHUMA',
     recurrenceParentId: row.fk_conta_pai ?? undefined,
     recurrenceIndex: row.indice_recorrencia ?? undefined,
@@ -169,7 +170,7 @@ function supabaseToEmailSuggestion(item: SugestaoEmail): EmailSuggestion {
     suggestedDueDate: item.vencimento_sugerido,
     suggestedCategoryId: item.categoria_sugerida?.id ?? '',
     suggestedSupplierName: item.fornecedor_sugerido,
-    suggestedPaymentMethod: (item.forma_pagamento_sugerida as PaymentMethod) ?? 'BOLETO',
+    suggestedPaymentMethod: toPaymentMethod(item.forma_pagamento_sugerida) ?? 'BOLETO',
     confidence: item.confianca,
     status: item.status,
     suggestedStatus: item.status_sugerido ?? 'PENDENTE',

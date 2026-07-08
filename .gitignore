@@ -73,3 +73,8 @@ supabase/.branches/
 .ai-audit/
 .claude-context/
 
+# ── Saídas locais de auditoria/relatórios e scripts temporários ────────────────
+# Podem conter dados reais de clientes — nunca versionar
+/outputs/
+/tmp/
+
