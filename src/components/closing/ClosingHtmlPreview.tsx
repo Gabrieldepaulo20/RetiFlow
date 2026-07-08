@@ -8,6 +8,9 @@ const MAX_ITEMS_PER_SECTION = 12;
 const brl = (value: number) =>
   (Number.isFinite(value) ? value : 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const pct = (value: number) =>
+  `${(Number.isFinite(value) ? value : 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
+
 const chunkItems = <T,>(items: T[], size: number) => {
   if (items.length === 0) return [[]];
   const chunks: T[][] = [];
@@ -129,7 +132,7 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
                         <span className="min-w-0 pr-3 leading-snug">{item.descricao}</span>
                         <span className="text-center tabular-nums">{informational ? '' : item.quantidade}</span>
                         <span className="text-right tabular-nums">{informational ? '' : `R$ ${brl(item.preco_unitario)}`}</span>
-                        <span className="text-right tabular-nums">{informational ? '' : item.desconto_porcentagem > 0 ? `${item.desconto_porcentagem}%` : '-'}</span>
+                        <span className="text-right tabular-nums">{informational ? '' : item.desconto_porcentagem > 0 ? pct(item.desconto_porcentagem) : '-'}</span>
                         <span className="text-right font-semibold tabular-nums">{informational ? '' : `R$ ${brl(item.subtotal)}`}</span>
                       </div>
                     );
@@ -142,7 +145,7 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
                     {hasDiscount && (
                       <>
                         <p><span className="text-slate-500">Subtotal:</span> R$ {brl(nota.total_original)}</p>
-                        <p><span className="text-slate-500">Desconto:</span> {nota.desconto_nota}%</p>
+                        <p><span className="text-slate-500">Desconto:</span> {pct(nota.desconto_nota)}</p>
                       </>
                     )}
                     <p className="font-bold" style={{ color: effectiveAccent }}>Total {nota.os}: R$ {brl(nota.total_com_desconto)}</p>
@@ -179,7 +182,7 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
 
         <div className="mt-5 flex flex-col gap-2 rounded-2xl border px-5 py-4 sm:flex-row sm:items-end sm:justify-between" style={{ backgroundColor: `${effectiveAccent}12`, borderColor: `${effectiveAccent}25` }}>
           <div className="text-sm text-slate-600">
-            <p>{notas.length} ordem{notas.length !== 1 ? 's' : ''} de serviço · {dados.periodo}</p>
+            <p>{notas.length} {notas.length === 1 ? 'ordem' : 'ordens'} de serviço · {dados.periodo}</p>
             {totalOriginal !== totalComDesconto && (
               <p className="mt-1">Subtotal: R$ {brl(totalOriginal)} · Descontos: R$ {brl(totalOriginal - totalComDesconto)}</p>
             )}

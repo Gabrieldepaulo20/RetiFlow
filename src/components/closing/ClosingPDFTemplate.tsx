@@ -8,6 +8,9 @@ const MAX_ITEMS_PER_OS_BLOCK = 12;
 const brl = (v: number) =>
   (Number.isFinite(v) ? v : 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const pct = (v: number) =>
+  `${(Number.isFinite(v) ? v : 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
+
 const rgba = (hex: string, alpha: number) => {
   const normalized = /^#[0-9a-fA-F]{6}$/.test(hex) ? hex.slice(1) : '0f7f95';
   const r = parseInt(normalized.slice(0, 2), 16);
@@ -60,8 +63,8 @@ const s = StyleSheet.create({
   // OS footer
   osFoot: { flexDirection: 'row', justifyContent: 'flex-end', paddingVertical: 6, paddingHorizontal: 10, backgroundColor: '#f5f9fb' },
   footLabel: { fontSize: 8, color: '#60758a' },
-  footValue: { fontSize: 8, fontWeight: 600, color: '#152033' },
-  footTotal: { fontSize: 9.5, fontWeight: 700, color: '#0f6172' },
+  footValue: { fontSize: 8, fontWeight: 600, color: '#152033', marginLeft: 3 },
+  footTotal: { fontSize: 9.5, fontWeight: 700, color: '#0f6172', marginLeft: 3 },
   footGroup: { flexDirection: 'row', marginLeft: 16 },
   footGroupFirst: { flexDirection: 'row' },
   continuesFoot: { paddingVertical: 6, paddingHorizontal: 10, backgroundColor: '#f5f9fb', color: '#60758a', fontSize: 8 },
@@ -190,7 +193,7 @@ export function ClosingPDFTemplate({
                     <Text style={s.colDesc}>{item.descricao}</Text>
                     <Text style={s.colNum}>{informational ? '' : item.quantidade}</Text>
                     <Text style={s.colVal}>{informational ? '' : `R$ ${brl(item.preco_unitario)}`}</Text>
-                    <Text style={s.colNum}>{informational ? '' : item.desconto_porcentagem > 0 ? `${item.desconto_porcentagem}%` : '—'}</Text>
+                    <Text style={s.colVal}>{informational ? '' : item.desconto_porcentagem > 0 ? pct(item.desconto_porcentagem) : '-'}</Text>
                     <Text style={s.colVal}>{informational ? '' : `R$ ${brl(item.subtotal)}`}</Text>
                   </View>
                 );
@@ -206,8 +209,8 @@ export function ClosingPDFTemplate({
                         <Text style={s.footValue}>R$ {brl(nota.total_original)}</Text>
                       </View>
                       <View style={s.footGroup}>
-                        <Text style={s.footLabel}>Desconto ({nota.desconto_nota}%):</Text>
-                        <Text style={s.footValue}>−R$ {brl(nota.total_original * nota.desconto_nota / 100)}</Text>
+                        <Text style={s.footLabel}>Desconto ({pct(nota.desconto_nota)}):</Text>
+                        <Text style={s.footValue}>-R$ {brl(nota.total_original * nota.desconto_nota / 100)}</Text>
                       </View>
                     </>
                   )}
@@ -248,11 +251,11 @@ export function ClosingPDFTemplate({
         <View style={{ ...s.totalSection, backgroundColor: rgba(effectiveAccent, 0.08), borderColor: rgba(effectiveAccent, 0.2) }}>
           <View>
             <Text style={{ fontSize: 8, color: '#555' }}>
-              {notas.length} ordem{notas.length !== 1 ? 's' : ''} de serviço · Período: {dados.periodo}
+              {notas.length} {notas.length === 1 ? 'ordem' : 'ordens'} de serviço · Período: {dados.periodo}
             </Text>
             {totalOriginal !== totalComDesconto && (
               <Text style={{ fontSize: 8, color: '#555', marginTop: 2 }}>
-                Subtotal: R$ {brl(totalOriginal)} · Descontos: −R$ {brl(totalOriginal - totalComDesconto)}
+                Subtotal: R$ {brl(totalOriginal)} · Descontos: -R$ {brl(totalOriginal - totalComDesconto)}
               </Text>
             )}
           </View>

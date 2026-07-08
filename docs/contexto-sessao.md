@@ -4,6 +4,33 @@ Atualizado em: 2026-07-08
 
 ---
 
+## Fechamento Mensal - Coluna De Desconto No PDF E Acabamento - 2026-07-08
+
+- Pedido urgente: a Retifica precisa dar desconto por servico (cada item de uma O.S. pode ter
+  desconto diferente) no rascunho, com o desconto saindo correto no PDF e download funcionando.
+- Estado encontrado: o rascunho JA tinha input `Desc. item` por servico + `Desconto final desta O.S.`
+  por nota, e o PDF ja tinha coluna `Desc.%` — porem com bugs visuais reais no template.
+- Bugs corrigidos em `ClosingPDFTemplate.tsx` (validados renderizando PDF real de amostra):
+  - **coluna Desc.% desalinhada**: header usava `colVal` (54pt) e a celula usava `colNum` (36pt),
+    deslocando Desc.% e Total em todas as linhas; celula agora usa `colVal`;
+  - sinal de menos U+2212 (`−R$`) trocado por hifen ASCII — Helvetica padrao do react-pdf usa
+    WinAnsi e nao tem esse glifo;
+  - rodape da O.S. sem espaco (`Subtotal:R$ 1.238,40`) — `footValue`/`footTotal` ganharam
+    `marginLeft: 3`;
+  - plural errado `2 ordems de servico` → `2 ordens de servico`;
+  - percentual com ponto (`5.5%`) → formatado pt-BR (`5,5%`) via helper `pct`.
+- Mesmos ajustes de plural e percentual aplicados em `ClosingHtmlPreview.tsx` (preview do modal).
+- Validacao: PDF de amostra re-renderizado via Vite SSR conferido visualmente (colunas alinhadas,
+  descontos por item e por O.S. corretos, totais batendo); `npm run typecheck`; `npm run lint`
+  (8 warnings antigos); `npm test -- --run` (62 arquivos, 471 testes); `npm run build`;
+  `npm run test:integration` (17 arquivos, 58 testes); gitleaks no working tree (23 achados, todos
+  em `outputs/` local ja ignorado pelo git).
+- Este commit tambem entrega o trabalho ja validado de 2026-07-08 (abaixo): Edge Function
+  `closing-pdf-url` + normalizacao de URL legada em `getFechamentoPDFSignedUrl` — a function ja
+  estava publicada, mas o frontend ainda nao tinha sido commitado/deployado.
+
+---
+
 ## Fechamento Mensal - PDF Privado Abrindo Em Suporte E URLs Legadas - 2026-07-08
 
 - Pedido urgente: PDF de fechamento nao abria nem pelo botao de visualizar/baixar.
