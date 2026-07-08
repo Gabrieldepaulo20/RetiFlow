@@ -3,6 +3,9 @@ import { supabase } from '@/lib/supabase';
 import { readStoredSupportContext } from '@/services/auth/supportContext';
 import type { ResolvedDocumentCustomization } from '@/services/domain/documentCustomization';
 
+const FECHAMENTOS_BUCKET = 'fechamentos';
+const DEFAULT_FECHAMENTO_PDF_SIGNED_URL_TTL = 60 * 60;
+
 /* ── Types ──────────────────────────────────────────────────────────────── */
 
 export interface FechamentoItem {
@@ -335,7 +338,7 @@ export async function uploadFechamentoPDF(
   if (!user?.id) throw new Error('[uploadFechamentoPDF] Sessão sem usuário autenticado.');
   const path = `${user.id}/${idFechamento}.pdf`;
   const { error } = await supabase.storage
-    .from('fechamentos')
+    .from(FECHAMENTOS_BUCKET)
     .upload(path, pdfBlob, { contentType: 'application/pdf', cacheControl: '3600', upsert: true });
 
   if (error) {
@@ -345,17 +348,131 @@ export async function uploadFechamentoPDF(
   return path;
 }
 
-export async function getFechamentoPDFSignedUrl(pathOrUrl: string): Promise<string> {
-  if (!pathOrUrl || pathOrUrl.startsWith('http') || pathOrUrl.startsWith('blob:')) {
+function extractFechamentoStoragePath(pathOrUrl: string | null | undefined): string | null {
+  const value = pathOrUrl?.trim();
+  if (!value || value.startsWith('blob:')) return null;
+
+  const normalizePath = (path: string) => {
+    const decoded = decodeURIComponent(path)
+      .replace(/^\/+/, '')
+      .replace(/^object\/(?:public|sign)\/fechamentos\//, '');
+
+    return decoded || null;
+  };
+
+  if (!/^https?:\/\//i.test(value)) {
+    return normalizePath(value);
+  }
+
+  try {
+    const url = new URL(value);
+    const publicMarker = `/storage/v1/object/public/${FECHAMENTOS_BUCKET}/`;
+    const signedMarker = `/storage/v1/object/sign/${FECHAMENTOS_BUCKET}/`;
+    const marker = url.pathname.includes(publicMarker)
+      ? publicMarker
+      : url.pathname.includes(signedMarker)
+        ? signedMarker
+        : null;
+
+    if (!marker) return null;
+
+    const [, storagePath = ''] = url.pathname.split(marker);
+    return normalizePath(storagePath);
+  } catch {
+    return null;
+  }
+}
+
+async function getFunctionErrorMessage(error: unknown) {
+  let message = error instanceof Error ? error.message : 'Erro ao chamar função de PDF.';
+  const context = typeof error === 'object' && error !== null && 'context' in error
+    ? (error as { context?: unknown }).context
+    : null;
+
+  if (context instanceof Response) {
+    try {
+      const text = await context.clone().text();
+      const parsed = JSON.parse(text) as { message?: string; error?: string; code?: string };
+      message = parsed.message ?? parsed.error ?? message;
+      if (parsed.code) message = `${parsed.code}: ${message}`;
+    } catch {
+      // Mantém a mensagem original do SDK quando o corpo não é JSON.
+    }
+  }
+
+  return message;
+}
+
+async function getFechamentoPDFSignedUrlViaFunction(params: {
+  pathOrUrl: string;
+  fechamentoId?: string;
+  supportContext?: ReturnType<typeof readStoredSupportContext>;
+  expiresIn?: number;
+}) {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+
+  if (sessionError || !accessToken) {
+    throw new Error('Sessão Supabase não encontrada. Faça login novamente para abrir o PDF.');
+  }
+
+  const { data, error } = await supabase.functions.invoke<{ signedUrl?: string; error?: string }>('closing-pdf-url', {
+    body: {
+      pathOrUrl: params.pathOrUrl,
+      closingId: params.fechamentoId,
+      support: params.supportContext ?? undefined,
+      expiresIn: params.expiresIn,
+    },
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (error) {
+    throw new Error(await getFunctionErrorMessage(error));
+  }
+  if (!data?.signedUrl) {
+    throw new Error(data?.error ?? 'Não foi possível gerar link seguro do PDF.');
+  }
+
+  return data.signedUrl;
+}
+
+export async function getFechamentoPDFSignedUrl(
+  pathOrUrl: string,
+  options: { fechamentoId?: string; expiresIn?: number } = {},
+): Promise<string> {
+  if (!pathOrUrl || pathOrUrl.startsWith('blob:')) {
     return pathOrUrl;
   }
 
+  const path = extractFechamentoStoragePath(pathOrUrl);
+  if (!path) {
+    if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+    throw new Error('[getFechamentoPDFSignedUrl] PDF sem caminho de Storage válido.');
+  }
+
+  const expiresIn = options.expiresIn ?? DEFAULT_FECHAMENTO_PDF_SIGNED_URL_TTL;
+  const supportContext = readStoredSupportContext();
+  if (supportContext) {
+    return getFechamentoPDFSignedUrlViaFunction({
+      pathOrUrl: path,
+      fechamentoId: options.fechamentoId,
+      supportContext,
+      expiresIn,
+    });
+  }
+
   const { data, error } = await supabase.storage
-    .from('fechamentos')
-    .createSignedUrl(pathOrUrl, 60 * 60);
+    .from(FECHAMENTOS_BUCKET)
+    .createSignedUrl(path, expiresIn);
 
   if (error || !data?.signedUrl) {
-    throw new Error(`[getFechamentoPDFSignedUrl] ${error?.message ?? 'Não foi possível gerar link seguro do PDF.'}`);
+    return getFechamentoPDFSignedUrlViaFunction({
+      pathOrUrl: path,
+      fechamentoId: options.fechamentoId,
+      expiresIn,
+    });
   }
 
   return data.signedUrl;

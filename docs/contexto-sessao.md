@@ -1,6 +1,40 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-07-07
+Atualizado em: 2026-07-08
+
+---
+
+## Fechamento Mensal - PDF Privado Abrindo Em Suporte E URLs Legadas - 2026-07-08
+
+- Pedido urgente: PDF de fechamento nao abria nem pelo botao de visualizar/baixar.
+- Diagnostico:
+  - PDFs de fechamento ficam no bucket privado `fechamentos`;
+  - no modo suporte, o usuario autenticado e o Mega Master, mas o arquivo pertence ao tenant alvo,
+    entao a assinatura direta via Storage pode ser negada por policy;
+  - havia pendencia registrada para adicionar fallback de Edge Function em `getFechamentoPDFSignedUrl`,
+    seguindo o padrao ja usado em `payable-attachment-url`;
+  - alguns fechamentos antigos ainda tinham `pdf_url` como URL publica legada do Supabase Storage,
+    que o helper antigo retornava sem converter para signed URL privada.
+- Correcao aplicada:
+  - criada Edge Function `closing-pdf-url`;
+  - a function exige JWT, valida acesso pelo RPC `get_fechamentos` ou
+    `get_fechamentos_contexto_suporte`, confere se o PDF pertence ao fechamento e so entao gera
+    signed URL com service role;
+  - `getFechamentoPDFSignedUrl` agora normaliza path/URL publica/URL assinada legada para path do
+    bucket `fechamentos`;
+  - em modo suporte, o helper sempre usa `closing-pdf-url`;
+  - quando a assinatura direta falha, o helper cai para a function como fallback seguro;
+  - `MonthlyClosing` passa `id_fechamentos` ao abrir preview/baixar PDF para evitar ambiguidade.
+- Deploy:
+  - `supabase functions deploy closing-pdf-url --project-ref dqeoxxokvvcpssajycgq`: publicado;
+  - chamada sem token confirmou endpoint protegido (`401` do gateway Supabase).
+- Validacao:
+  - `npm test -- --run src/test/supabase-fechamentos.test.ts`: 11/11;
+  - `npm run typecheck`: passou;
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh;
+  - `npm test -- --run`: 62 arquivos, 471 testes;
+  - `npm run build`: passou com avisos conhecidos de Browserslist/chunks/import dinamico;
+  - `npm run test:integration`: 17 arquivos, 58 testes; incluiu Storage real de fechamento.
 
 ---
 

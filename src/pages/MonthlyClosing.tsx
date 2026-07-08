@@ -552,7 +552,9 @@ export default function MonthlyClosing() {
     if (!fechamento.pdf_url) return false;
     const previewWindow = createPdfPreviewWindow(`Fechamento ${fechamento.periodo}`);
     try {
-      const url = await getFechamentoPDFSignedUrl(fechamento.pdf_url);
+      const url = await getFechamentoPDFSignedUrl(fechamento.pdf_url, {
+        fechamentoId: fechamento.id_fechamentos,
+      });
       const opened = openPdfInBrowser(url, {
         title: `Fechamento ${fechamento.periodo}`,
         previewWindow,
@@ -606,7 +608,9 @@ export default function MonthlyClosing() {
     if (fechamento.pdf_url) {
       setTemplatePreviewLoading(true);
       try {
-        const url = await getFechamentoPDFSignedUrl(fechamento.pdf_url);
+        const url = await getFechamentoPDFSignedUrl(fechamento.pdf_url, {
+          fechamentoId: fechamento.id_fechamentos,
+        });
         setGeneratedPreviewFechamento(null);
         setStoredPdfPreviewUrl(url);
         setStoredPdfPreviewTitle(`Fechamento ${fechamento.periodo}`);

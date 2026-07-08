@@ -1,22 +1,51 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getFechamentos, normalizeFechamentoDadosJson, registrarAcaoFechamento, updateFechamento } from '@/api/supabase/fechamentos';
+import {
+  getFechamentoPDFSignedUrl,
+  getFechamentos,
+  normalizeFechamentoDadosJson,
+  registrarAcaoFechamento,
+  updateFechamento,
+} from '@/api/supabase/fechamentos';
 import { SUPPORT_SESSION_STORAGE_KEY } from '@/services/auth/supportContext';
 
 const mocks = vi.hoisted(() => ({
+  createSignedUrl: vi.fn(),
+  from: vi.fn(),
+  getSession: vi.fn(),
+  invoke: vi.fn(),
   rpc: vi.fn(),
 }));
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
+    auth: {
+      getSession: mocks.getSession,
+    },
+    functions: {
+      invoke: mocks.invoke,
+    },
     schema: vi.fn(() => ({
       rpc: mocks.rpc,
     })),
+    storage: {
+      from: mocks.from,
+    },
   },
 }));
 
 describe('Fechamentos Supabase mutations', () => {
   beforeEach(() => {
+    mocks.createSignedUrl.mockReset();
+    mocks.from.mockReset();
+    mocks.getSession.mockReset();
+    mocks.invoke.mockReset();
     mocks.rpc.mockReset();
+    mocks.from.mockReturnValue({ createSignedUrl: mocks.createSignedUrl });
+    mocks.getSession.mockResolvedValue({
+      data: { session: { access_token: 'access-token-test' } },
+      error: null,
+    });
+    window.localStorage.clear();
     window.sessionStorage.clear();
   });
 
@@ -114,5 +143,95 @@ describe('Fechamentos Supabase mutations', () => {
     expect(normalized?.recebidas).toEqual([]);
     expect(normalized?.total_original).toBe(0);
     expect(normalized?.total_com_desconto).toBe(50);
+  });
+
+  it('creates a signed URL directly for stored closing PDFs', async () => {
+    mocks.createSignedUrl.mockResolvedValue({
+      data: { signedUrl: 'https://signed.example/fechamento.pdf' },
+      error: null,
+    });
+
+    await expect(getFechamentoPDFSignedUrl('usuario-1/fechamento-1.pdf', { fechamentoId: 'fechamento-1' }))
+      .resolves
+      .toBe('https://signed.example/fechamento.pdf');
+
+    expect(mocks.from).toHaveBeenCalledWith('fechamentos');
+    expect(mocks.createSignedUrl).toHaveBeenCalledWith('usuario-1/fechamento-1.pdf', 60 * 60);
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it('converts legacy public closing URLs into private signed URLs', async () => {
+    mocks.createSignedUrl.mockResolvedValue({
+      data: { signedUrl: 'https://signed.example/legado.pdf' },
+      error: null,
+    });
+
+    await expect(getFechamentoPDFSignedUrl(
+      'https://dqeoxxokvvcpssajycgq.supabase.co/storage/v1/object/public/fechamentos/usuario-1/fechamento-1.pdf',
+      { fechamentoId: 'fechamento-1' },
+    ))
+      .resolves
+      .toBe('https://signed.example/legado.pdf');
+
+    expect(mocks.createSignedUrl).toHaveBeenCalledWith('usuario-1/fechamento-1.pdf', 60 * 60);
+  });
+
+  it('uses the Edge Function when opening a closing PDF in support mode', async () => {
+    window.localStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify({
+      id: '11111111-1111-4111-8111-111111111111',
+      actorUser: { id: 'actor-id', email: 'gabrielwilliam208@gmail.com', name: 'Gabriel' },
+      targetUser: { id: '22222222-2222-4222-8222-222222222222', email: 'retifica@example.com', name: 'Retifica' },
+    }));
+    mocks.invoke.mockResolvedValue({
+      data: { signedUrl: 'https://signed.example/suporte.pdf' },
+      error: null,
+    });
+
+    await expect(getFechamentoPDFSignedUrl('usuario-1/fechamento-1.pdf', { fechamentoId: 'fechamento-1' }))
+      .resolves
+      .toBe('https://signed.example/suporte.pdf');
+
+    expect(mocks.createSignedUrl).not.toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith('closing-pdf-url', {
+      body: {
+        pathOrUrl: 'usuario-1/fechamento-1.pdf',
+        closingId: 'fechamento-1',
+        support: {
+          sessionId: '11111111-1111-4111-8111-111111111111',
+          targetUserId: '22222222-2222-4222-8222-222222222222',
+        },
+        expiresIn: 60 * 60,
+      },
+      headers: {
+        Authorization: 'Bearer access-token-test',
+      },
+    });
+  });
+
+  it('falls back to the Edge Function when direct Storage signing fails', async () => {
+    mocks.createSignedUrl.mockResolvedValue({
+      data: null,
+      error: { message: 'new row violates row-level security policy' },
+    });
+    mocks.invoke.mockResolvedValue({
+      data: { signedUrl: 'https://signed.example/fallback.pdf' },
+      error: null,
+    });
+
+    await expect(getFechamentoPDFSignedUrl('usuario-1/fechamento-1.pdf', { fechamentoId: 'fechamento-1' }))
+      .resolves
+      .toBe('https://signed.example/fallback.pdf');
+
+    expect(mocks.invoke).toHaveBeenCalledWith('closing-pdf-url', {
+      body: {
+        pathOrUrl: 'usuario-1/fechamento-1.pdf',
+        closingId: 'fechamento-1',
+        support: undefined,
+        expiresIn: 60 * 60,
+      },
+      headers: {
+        Authorization: 'Bearer access-token-test',
+      },
+    });
   });
 });

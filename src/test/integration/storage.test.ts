@@ -11,6 +11,8 @@ describe.skipIf(skipIntegration)('Storage — PDFs e anexos privados com signed 
   const fechamentoPaths: string[] = [];
   const payableAttachmentPaths: string[] = [];
   const notaPaths: string[] = [];
+  const createdClientIds = new Set<string>();
+  const createdClosingIds = new Set<string>();
 
   beforeAll(async () => {
     const { testUserEmail, testUserPassword } = getTestEnv();
@@ -20,6 +22,20 @@ describe.skipIf(skipIntegration)('Storage — PDFs e anexos privados com signed 
 
   afterAll(async () => {
     const service = createServiceClient();
+    if (createdClosingIds.size > 0) {
+      await service
+        .schema('RetificaPremium')
+        .from('Fechamentos')
+        .delete()
+        .in('id_fechamentos', Array.from(createdClosingIds));
+    }
+    if (createdClientIds.size > 0) {
+      await service
+        .schema('RetificaPremium')
+        .from('Clientes')
+        .delete()
+        .in('id_clientes', Array.from(createdClientIds));
+    }
     if (fechamentoPaths.length > 0) {
       await service.storage.from('fechamentos').remove(fechamentoPaths);
     }
@@ -63,6 +79,76 @@ describe.skipIf(skipIntegration)('Storage — PDFs e anexos privados com signed 
 
     await supabase.auth.signOut();
   });
+
+  it('closing-pdf-url gera signed URL real para fechamento gravado no banco', async () => {
+    const { testUserEmail, testUserPassword } = getTestEnv();
+    const { client, accessToken } = await signInAsTestUser();
+    const [{ supabase }, fechamentoApi] = await Promise.all([
+      import('@/lib/supabase'),
+      import('@/api/supabase/fechamentos'),
+    ]);
+
+    const login = await supabase.auth.signInWithPassword({
+      email: testUserEmail,
+      password: testUserPassword,
+    });
+    expect(login.error).toBeNull();
+
+    const suffix = String(Date.now()).slice(-8);
+    const createdClient = await callRpc(client, 'salvar_cliente_completo', {
+      p_payload: {
+        nome: `${TEST_PREFIX} Cliente Fechamento PDF ${suffix}`,
+        documento: `7${suffix.padStart(10, '0')}`,
+        tipo_documento: 'CPF',
+        status: true,
+      },
+    });
+    expect(createdClient.status).toBe(200);
+    const clientId = createdClient.id_cliente as string;
+    createdClientIds.add(clientId);
+
+    const createdClosing = await callRpc(client, 'insert_fechamento', {
+      p_fk_clientes: clientId,
+      p_mes: 'Junho',
+      p_ano: 2026,
+      p_periodo: `${TEST_PREFIX} Junho 2026 ${suffix}`,
+      p_label: `${TEST_PREFIX} Fechamento PDF ${suffix}`,
+      p_valor_total: 123.45,
+    });
+    expect(createdClosing.status).toBe(200);
+    const closingId = createdClosing.id_fechamentos as string;
+    createdClosingIds.add(closingId);
+
+    const pdfBlob = new Blob(['%PDF-1.4\n% integration test edge closing\n'], { type: 'application/pdf' });
+    const path = await fechamentoApi.uploadFechamentoPDF(closingId, pdfBlob);
+    fechamentoPaths.push(path);
+    await fechamentoApi.updateFechamento(closingId, { p_pdf_url: path });
+
+    const edgeResponse = await fetch(`${getTestEnv().url}/functions/v1/closing-pdf-url`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        apikey: getTestEnv().anonKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        closingId,
+        pathOrUrl: path,
+      }),
+    });
+    expect(edgeResponse.ok).toBe(true);
+    const edgeBody = await edgeResponse.json() as { signedUrl?: string };
+    expect(edgeBody.signedUrl).toContain('/storage/v1/object/sign/fechamentos/');
+
+    const edgeSignedResponse = await fetch(edgeBody.signedUrl!);
+    expect(edgeSignedResponse.ok).toBe(true);
+    expect(await edgeSignedResponse.text()).toContain('integration test edge closing');
+
+    await Promise.all([
+      client.auth.signOut(),
+      supabase.auth.signOut(),
+    ]);
+  }, 60_000);
 
   it('anexo de conta a pagar é enviado, vinculado e lido por signed URL', async () => {
     const { testUserEmail, testUserPassword } = getTestEnv();
