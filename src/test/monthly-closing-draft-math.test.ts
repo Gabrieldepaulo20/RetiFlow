@@ -3,7 +3,6 @@ import {
   buildDadosFromDraft,
   canDiscountPreviewItem,
   clampPercent,
-  computeClosingDivergencias,
   computeDraftTotals,
   getIncludedDraftNotes,
   recalcItemSubtotal,
@@ -12,19 +11,6 @@ import {
   type ClosingDraft,
   type PreviewNote,
 } from '@/services/domain/monthlyClosingDraft';
-import type { FechamentoNota } from '@/api/supabase/fechamentos';
-
-const makeSnapshotNota = (overrides: Partial<FechamentoNota> & { id: string }): FechamentoNota => ({
-  os: `OS-${overrides.id}`,
-  veiculo: 'Gol',
-  placa: null,
-  itens: [],
-  total_nota: 1000,
-  total_original: 1000,
-  desconto_nota: 0,
-  total_com_desconto: 1000,
-  ...overrides,
-});
 
 const makeNote = (overrides: Partial<PreviewNote> & { id: string }): PreviewNote => ({
   os: `OS-${overrides.id}`,
@@ -93,67 +79,6 @@ describe('recalcItemSubtotal / recalcNoteTotal', () => {
     expect(canDiscountPreviewItem({ quantidade: 0, preco_unitario: 100 })).toBe(false);
     expect(canDiscountPreviewItem({ quantidade: 1, preco_unitario: 0 })).toBe(false);
     expect(canDiscountPreviewItem({ quantidade: -1, preco_unitario: 100 })).toBe(false);
-  });
-});
-
-describe('computeClosingDivergencias', () => {
-  const currentNote = (id: string, totalAmount: number) => ({
-    id,
-    totalAmount,
-    updatedAt: '2026-07-05T10:00:00Z',
-  });
-
-  it('NÃO acusa divergência quando há só desconto por O.S. no rascunho', () => {
-    // Nota vale 1000 bruto; fechamento deu 10% de desconto por O.S.
-    const snapshot = [makeSnapshotNota({ id: 'n1', total_nota: 1000, total_original: 1000, desconto_nota: 10, total_com_desconto: 900 })];
-    // A nota no banco continua 1000 (não foi mexida).
-    expect(computeClosingDivergencias(snapshot, [currentNote('n1', 1000)])).toEqual([]);
-  });
-
-  it('NÃO acusa divergência quando o rascunho editou itens (total_nota pristine)', () => {
-    // Itens foram ajustados no rascunho: total_original caiu para 800, mas a nota
-    // no banco continua 1000. total_nota pristine = 1000 evita o falso positivo.
-    const snapshot = [makeSnapshotNota({ id: 'n1', total_nota: 1000, total_original: 800, desconto_nota: 0, total_com_desconto: 800 })];
-    expect(computeClosingDivergencias(snapshot, [currentNote('n1', 1000)])).toEqual([]);
-  });
-
-  it('acusa divergência quando a nota é alterada no banco DEPOIS do fechamento', () => {
-    const snapshot = [makeSnapshotNota({ id: 'n1', total_nota: 1000, total_com_desconto: 900, desconto_nota: 10 })];
-    // Alguém mudou a nota para 1200 depois de gerado.
-    const result = computeClosingDivergencias(snapshot, [currentNote('n1', 1200)]);
-    expect(result).toEqual([
-      { os: 'OS-n1', total_original: 1000, total_atual: 1200, alterado_em: '2026-07-05T10:00:00Z' },
-    ]);
-  });
-
-  it('fechamento antigo sem total_nota cai em total_original e ignora desconto por O.S.', () => {
-    // Sem total_nota: baseline = total_original (1000). Desconto por O.S. levou o
-    // total_com_desconto para 900, mas a nota no banco segue 1000 → sem divergência.
-    const snapshot: FechamentoNota[] = [{
-      id: 'n1', os: 'OS-n1', veiculo: 'Gol', placa: null, itens: [],
-      total_original: 1000, desconto_nota: 10, total_com_desconto: 900,
-    }];
-    expect(computeClosingDivergencias(snapshot, [currentNote('n1', 1000)])).toEqual([]);
-    // e ainda acusa alteração real da nota
-    expect(computeClosingDivergencias(snapshot, [currentNote('n1', 1200)])).toHaveLength(1);
-  });
-
-  it('ignora nota do snapshot que não existe mais na lista atual', () => {
-    const snapshot = [makeSnapshotNota({ id: 'n1', total_nota: 1000 })];
-    expect(computeClosingDivergencias(snapshot, [])).toEqual([]);
-  });
-
-  it('buildDadosFromDraft grava total_nota pristine mesmo com desconto por O.S.', () => {
-    const draft = makeDraft({
-      notes: [makeNote({ id: 'n1', total: 1000, totalNota: 1000 })],
-      includedNoteIds: ['n1'],
-      discounts: { n1: 10 },
-    });
-    const dados = buildDadosFromDraft(draft);
-    expect(dados.notas[0].total_nota).toBe(1000);
-    expect(dados.notas[0].total_com_desconto).toBe(900);
-    // Nota não mexida no banco → sem divergência.
-    expect(computeClosingDivergencias(dados.notas, [{ id: 'n1', totalAmount: 1000, updatedAt: '2026-07-05T10:00:00Z' }])).toEqual([]);
   });
 });
 

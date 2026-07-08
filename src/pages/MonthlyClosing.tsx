@@ -8,7 +8,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import {
-  AlertTriangle, Download, Building2,
+  Download, Building2,
   PlusCircle, RefreshCcw, ChevronLeft, Eye, EyeOff, Sparkles, PencilLine, Printer,
   Wallet, CheckCircle2, RotateCcw,
 } from 'lucide-react';
@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { formatDateBR, formatDateTimeShortBR } from '@/lib/dates';
+import { formatDateBR } from '@/lib/dates';
 import { ClosingHtmlPreview } from '@/components/closing/ClosingHtmlPreview';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { createPdfPreviewWindow, downloadPdfBlob, downloadPdfUrl, openPdfInBrowser } from '@/lib/printPdf';
@@ -55,7 +55,6 @@ import {
   buildDadosFromDraft,
   canDiscountPreviewItem,
   clampPercent,
-  computeClosingDivergencias,
   computeDraftTotals,
   getDraftNotes,
   getIncludedDraftNotes,
@@ -132,7 +131,6 @@ const normalizePreviewNote = (value: unknown): PreviewNote | null => {
   const id = asString(value.id, '');
   if (!id) return null;
   const total = asNumber(value.total);
-  const totalNota = value.totalNota !== undefined ? asNumber(value.totalNota, total) : total;
   const itens = Array.isArray(value.itens)
     ? value.itens
         .map((item, index) => normalizePreviewItem(item, `${id}-item-${index}`))
@@ -145,7 +143,6 @@ const normalizePreviewNote = (value: unknown): PreviewNote | null => {
     veiculo: asString(value.veiculo, 'Veículo não informado'),
     placa: typeof value.placa === 'string' && value.placa.trim() ? value.placa : null,
     total,
-    totalNota,
     updatedAt: asString(value.updatedAt, new Date().toISOString()),
     paymentStatus: value.paymentStatus === 'PAGO' ? 'PAGO' : 'PENDENTE',
     pagoEm: typeof value.pagoEm === 'string' ? value.pagoEm : null,
@@ -255,11 +252,6 @@ function DualSpinner() {
       <style>{`@keyframes spin-ccw { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }`}</style>
     </div>
   );
-}
-
-/* ── Divergence check ───────────────────────────────────────────────────── */
-function getDivergencias(fechamento: FechamentoListItem, notes: IntakeNote[]) {
-  return computeClosingDivergencias(fechamento.dados_json?.notas, notes);
 }
 
 /* ── Main component ─────────────────────────────────────────────────────── */
@@ -696,9 +688,6 @@ export default function MonthlyClosing() {
           veiculo: nota.vehicleModel,
           placa: nota.plate ?? null,
           total: nota.totalAmount,
-          // Pristine: total bruto da nota na montagem. Nunca muda com edição/desconto
-          // no rascunho — só serve de baseline para a checagem de divergência.
-          totalNota: nota.totalAmount,
           updatedAt: nota.updatedAt,
           paymentStatus: nota.paymentStatus,
           pagoEm: nota.pagoEm,
@@ -1373,7 +1362,6 @@ export default function MonthlyClosing() {
           <div className="grid gap-3">
             {fechamentos.map((f, idx) => {
               const palette = PALETTE[idx % PALETTE.length];
-              const divs = getDivergencias(f, notes);
               const initials = (f.cliente?.nome ?? 'SEM CLIENTE').slice(0, 2).toUpperCase();
               const isPago = f.status_pagamento === 'PAGO';
               return (
@@ -1391,12 +1379,6 @@ export default function MonthlyClosing() {
                             {isPago ? <CheckCircle2 className="w-3 h-3" /> : <Wallet className="w-3 h-3" />}
                             {isPago ? 'Pago' : 'A receber'}
                           </Badge>
-                          {divs.length > 0 && (
-                            <Badge variant="destructive" className="text-xs gap-1">
-                              <AlertTriangle className="w-3 h-3" />
-                              Desatualizado
-                            </Badge>
-                          )}
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5">
                           {Array.isArray(f.dados_json?.notas) ? f.dados_json.notas.length : 0} OS · Total:
@@ -1410,17 +1392,6 @@ export default function MonthlyClosing() {
                             Recebido em {formatDateBR(f.pago_em) ?? 'data não registrada'}
                             {f.pago_com ? ` · ${PAYMENT_METHOD_LABELS[f.pago_com as PaymentMethod] ?? f.pago_com}` : ''}
                           </p>
-                        )}
-                        {divs.length > 0 && (
-                          <div className="mt-2 space-y-1">
-                            {divs.map((d, i) => (
-                              <p key={i} className="text-xs text-destructive flex items-center gap-1">
-                                <AlertTriangle className="w-3 h-3 shrink-0" />
-                                {d.os} · era R$ {d.total_original.toFixed(2)} → R$ {d.total_atual.toFixed(2)}
-                                {formatDateTimeShortBR(d.alterado_em) ? ` · ${formatDateTimeShortBR(d.alterado_em)}` : ''}
-                              </p>
-                            ))}
-                          </div>
                         )}
                       </div>
                       <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:shrink-0">

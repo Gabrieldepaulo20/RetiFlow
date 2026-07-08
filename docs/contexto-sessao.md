@@ -4,6 +4,31 @@ Atualizado em: 2026-07-08
 
 ---
 
+## Fechamento Mensal - Remocao Da Divergencia (Tag Desatualizado) - 2026-07-08
+
+- Pedido: a Retifica reclamou do alerta vermelho "Desatualizado" + linhas de modificacao que
+  apareciam nos fechamentos ja gerados. Remover de vez.
+- Decisao de produto: a feature de divergencia foi removida inteira (nao so escondida), porque
+  confundia/assustava a usuaria na lista de fechamentos.
+- Removido:
+  - badge `Desatualizado` (destructive) e o bloco de linhas `OS · era R$ x → R$ y` no card de cada
+    fechamento gerado em `MonthlyClosing.tsx`;
+  - funcao local `getDivergencias` e a chamada `const divs = ...`;
+  - `computeClosingDivergencias` + interfaces `DivergenceCurrentNote`/`ClosingDivergence` em
+    `services/domain/monthlyClosingDraft.ts` (ficaram sem uso);
+  - campo `total_nota` de `FechamentoNota` (tipo + passthrough em `normalizeFechamentoNota`) e o
+    `PreviewNote.totalNota` + sua captura em `handleBuildPreview`/`normalizePreviewNote` e a escrita
+    em `buildDadosFromDraft` — todo o maquinario existia so para a divergencia (introduzido no commit
+    a34da74 e agora revertido);
+  - imports orfaos `AlertTriangle`, `formatDateTimeShortBR`, `computeClosingDivergencias`;
+  - 6 testes de divergencia em `monthly-closing-draft-math.test.ts`.
+- Sem migration: `total_nota` so vivia dentro do jsonb `dados_json`; parar de gravar/ler nao mexe em
+  schema. Fechamentos que ja tinham o campo no jsonb simplesmente o ignoram (normalize descarta).
+- Validacao: `npm run typecheck`; `npm run lint` (8 warnings antigos); `npm test -- --run`
+  (477 testes); `npm run build`; `CI=1 npx playwright test e2e/monthly-closing.spec.ts` (2/2).
+
+---
+
 ## Fechamento Mensal - Divergencia Falsa Por Desconto Do Rascunho - 2026-07-08
 
 - Problema reportado: ao gerar fechamento (e ate nos ja gerados), aparecia em VERMELHO que o valor

@@ -1,5 +1,5 @@
 import type { NotePaymentStatus } from '@/types';
-import type { FechamentoDadosJson, FechamentoNota } from '@/api/supabase/fechamentos';
+import type { FechamentoDadosJson } from '@/api/supabase/fechamentos';
 import type { MonthlyClosingDateMode } from '@/services/domain/monthlyClosing';
 
 /**
@@ -23,13 +23,6 @@ export interface PreviewNote {
   veiculo: string;
   placa: string | null;
   total: number;
-  /**
-   * Total BRUTO da nota de entrada no momento em que o rascunho foi montado.
-   * Nunca é alterado por edição de item ou desconto no rascunho — serve de
-   * referência pristine para detectar divergência (nota alterada no banco
-   * DEPOIS do fechamento). Fallback para `total` quando ausente.
-   */
-  totalNota?: number;
   updatedAt: string;
   /** Eixo financeiro: se já foi recebida (fora do total do fechamento) ou pendente. */
   paymentStatus: NotePaymentStatus;
@@ -128,7 +121,6 @@ export const buildDadosFromDraft = (draft: ClosingDraft): FechamentoDadosJson =>
       veiculo: note.veiculo,
       placa: note.placa,
       itens: getPreviewItems(note),
-      total_nota: roundMoney(note.totalNota ?? note.total),
       total_original: roundMoney(note.total),
       desconto_nota: getNoteDiscountPercent(draft, note.id),
       total_com_desconto: noteTotalComDesconto(draft, note),
@@ -147,43 +139,4 @@ export const buildDadosFromDraft = (draft: ClosingDraft): FechamentoDadosJson =>
       getReceivedDraftNotes(draft).reduce((sum, note) => sum + roundMoney(note.total), 0),
     ),
   };
-};
-
-/** Nota atual (do banco) comparada contra o snapshot do fechamento. */
-export interface DivergenceCurrentNote {
-  id: string;
-  totalAmount: number;
-  updatedAt: string;
-}
-
-export interface ClosingDivergence {
-  os: string;
-  total_original: number;
-  total_atual: number;
-  alterado_em: string;
-}
-
-/**
- * Divergência = a NOTA DE ENTRADA foi alterada no banco DEPOIS do fechamento.
- * Compara o total BRUTO atual da nota contra o total bruto pristine gravado na
- * geração (`total_nota`). Descontos do rascunho (por item ou por O.S.) NÃO
- * contam — são ajustes do fechamento, não mudança da nota. Fechamentos antigos
- * sem `total_nota` caem em `total_original` (total da nota antes do desconto
- * final), que também ignora o desconto por O.S.
- */
-export const computeClosingDivergencias = (
-  snapshotNotas: FechamentoNota[] | null | undefined,
-  currentNotes: DivergenceCurrentNote[],
-): ClosingDivergence[] => {
-  const notas = Array.isArray(snapshotNotas) ? snapshotNotas : [];
-  return notas.flatMap((n) => {
-    const curr = currentNotes.find((cn) => cn.id === n.id);
-    if (!curr) return [];
-    const baseline = typeof n.total_nota === 'number' && Number.isFinite(n.total_nota)
-      ? n.total_nota
-      : n.total_original;
-    if (!Number.isFinite(baseline)) return [];
-    if (Math.abs(curr.totalAmount - baseline) < 0.01) return [];
-    return [{ os: n.os, total_original: baseline, total_atual: curr.totalAmount, alterado_em: curr.updatedAt }];
-  });
 };
