@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildDadosFromDraft,
+  canDiscountPreviewItem,
   clampPercent,
   computeDraftTotals,
   getIncludedDraftNotes,
@@ -71,6 +72,13 @@ describe('recalcItemSubtotal / recalcNoteTotal', () => {
 
   it('soma itens e devolve 0 para lista vazia', () => {
     expect(recalcNoteTotal([])).toBe(0);
+  });
+
+  it('permite desconto de item somente quando a linha tem quantidade e valor unitario', () => {
+    expect(canDiscountPreviewItem({ quantidade: 1, preco_unitario: 100 })).toBe(true);
+    expect(canDiscountPreviewItem({ quantidade: 0, preco_unitario: 100 })).toBe(false);
+    expect(canDiscountPreviewItem({ quantidade: 1, preco_unitario: 0 })).toBe(false);
+    expect(canDiscountPreviewItem({ quantidade: -1, preco_unitario: 100 })).toBe(false);
   });
 });
 
@@ -157,5 +165,31 @@ describe('buildDadosFromDraft', () => {
     expect(dados.notas[0].desconto_nota).toBe(100);
     expect(dados.notas[0].total_com_desconto).toBe(0);
     expect(dados.total_com_desconto).toBe(0);
+  });
+
+  it('mantém o desconto por linha no snapshot do fechamento', () => {
+    const draft = makeDraft({
+      notes: [
+        makeNote({
+          id: 'n1',
+          total: 90,
+          itens: [{
+            id: 'n1-item-0',
+            descricao: 'Servico com desconto por linha',
+            quantidade: 2,
+            preco_unitario: 50,
+            desconto_porcentagem: 10,
+            subtotal: 90,
+          }],
+        }),
+      ],
+    });
+
+    const dados = buildDadosFromDraft(draft);
+
+    expect(dados.notas[0].itens[0].desconto_porcentagem).toBe(10);
+    expect(dados.notas[0].itens[0].subtotal).toBe(90);
+    expect(dados.notas[0].total_original).toBe(90);
+    expect(dados.notas[0].total_com_desconto).toBe(90);
   });
 });

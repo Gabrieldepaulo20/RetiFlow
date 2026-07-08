@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 import { formatDateBR, formatDateTimeShortBR } from '@/lib/dates';
 import { ClosingHtmlPreview } from '@/components/closing/ClosingHtmlPreview';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { createPdfPreviewWindow, openPdfInBrowser } from '@/lib/printPdf';
+import { createPdfPreviewWindow, downloadPdfBlob, downloadPdfFromUrl, openPdfInBrowser } from '@/lib/printPdf';
 import {
   getFechamentos,
   insertFechamento,
@@ -53,6 +53,7 @@ import {
 } from '@/services/domain/monthlyClosing';
 import {
   buildDadosFromDraft,
+  canDiscountPreviewItem,
   clampPercent,
   computeDraftTotals,
   getDraftNotes,
@@ -294,6 +295,7 @@ export default function MonthlyClosing() {
   const [generatedPreviewFechamento, setGeneratedPreviewFechamento] = useState<FechamentoListItem | null>(null);
   const [storedPdfPreviewUrl, setStoredPdfPreviewUrl] = useState<string | null>(null);
   const [storedPdfPreviewTitle, setStoredPdfPreviewTitle] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   // Preview state
   const [periodMode, setPeriodMode] = useState<MonthlyClosingDateMode>('month');
@@ -548,32 +550,6 @@ export default function MonthlyClosing() {
     }
   }, [renderClosingPdfBlob, toast]);
 
-  const openStoredClosingPdf = useCallback(async (fechamento: FechamentoListItem) => {
-    if (!fechamento.pdf_url) return false;
-    const previewWindow = createPdfPreviewWindow(`Fechamento ${fechamento.periodo}`);
-    try {
-      const url = await getFechamentoPDFSignedUrl(fechamento.pdf_url, {
-        fechamentoId: fechamento.id_fechamentos,
-      });
-      const opened = openPdfInBrowser(url, {
-        title: `Fechamento ${fechamento.periodo}`,
-        previewWindow,
-      });
-      if (!opened) {
-        toast({
-          title: 'Pop-up bloqueado',
-          description: 'Permita pop-ups para abrir o PDF em uma nova aba.',
-          variant: 'destructive',
-        });
-      }
-      return opened;
-    } catch {
-      previewWindow?.close();
-      toast({ title: 'Erro ao abrir PDF', description: 'Não foi possível gerar link seguro.', variant: 'destructive' });
-      return false;
-    }
-  }, [toast]);
-
   const openDraftPreview = useCallback((draft: ClosingDraft) => {
     loadDraftIntoEditor(draft);
     setGeneratedPreviewFechamento(null);
@@ -788,7 +764,7 @@ export default function MonthlyClosing() {
   const totals = useMemo(() => {
     const included = new Set(includedNoteIds);
     return safePreviewNotes.filter((note) => included.has(note.id)).map((n) => {
-      const disc = descontos[n.id] ?? 0;
+      const disc = clampPercent(descontos[n.id] ?? 0);
       return { id: n.id, totalBruto: n.total, totalComDesconto: n.total * (1 - disc / 100) };
     });
   }, [safePreviewNotes, descontos, includedNoteIds]);
@@ -854,10 +830,13 @@ export default function MonthlyClosing() {
         }
         const numeric = parseFloat(value.replace(',', '.'));
         const safe = Number.isFinite(numeric) ? numeric : 0;
-        const nextItem = {
+        const changedItem = {
           ...item,
           [field]: field === 'desconto_porcentagem' ? clampPercent(safe) : Math.max(0, safe),
         };
+        const nextItem = canDiscountPreviewItem(changedItem)
+          ? changedItem
+          : { ...changedItem, desconto_porcentagem: 0 };
         return { ...nextItem, subtotal: recalcItemSubtotal(nextItem) };
       });
       return { ...note, itens, total: recalcNoteTotal(itens) };
@@ -964,29 +943,36 @@ export default function MonthlyClosing() {
     await generateDraft(draftSnapshot);
   }, [activeDraft, safePreviewNotes, includedNoteIds, descontos, generateDraft]);
 
-  /* ── Download PDF ── */
+  /* ── Download PDF (direto para o disco, sem abrir guias) ── */
   const handleDownload = useCallback(async (fechamento: FechamentoListItem) => {
-    if (fechamento.pdf_url) {
-      const opened = await openStoredClosingPdf(fechamento);
-      if (opened) await registrarAcaoFechamento({ p_id_fechamentos: fechamento.id_fechamentos, p_tipo: 'baixado' }).catch(() => {});
-      return;
-    }
-    if (!fechamento.dados_json) { toast({ title: 'PDF não disponível', variant: 'destructive' }); return; }
-    const previewWindow = createPdfPreviewWindow(`Fechamento ${fechamento.periodo}`);
+    const filename = ['Fechamento', fechamento.cliente?.nome, fechamento.periodo]
+      .filter(Boolean)
+      .join(' ');
+    setDownloadingId(fechamento.id_fechamentos);
     try {
-      const blob = await renderClosingPdfBlob(fechamento.dados_json, fechamento.created_at);
-      const url = URL.createObjectURL(blob);
-      openPdfInBrowser(url, {
-        title: `Fechamento ${fechamento.periodo}`,
-        previewWindow,
-        revokeObjectUrlAfterMs: 30_000,
+      if (fechamento.pdf_url) {
+        const url = await getFechamentoPDFSignedUrl(fechamento.pdf_url, {
+          fechamentoId: fechamento.id_fechamentos,
+        });
+        await downloadPdfFromUrl(url, filename);
+      } else if (fechamento.dados_json) {
+        const blob = await renderClosingPdfBlob(fechamento.dados_json, fechamento.created_at);
+        downloadPdfBlob(blob, filename);
+      } else {
+        toast({ title: 'PDF não disponível', variant: 'destructive' });
+        return;
+      }
+      await registrarAcaoFechamento({ p_id_fechamentos: fechamento.id_fechamentos, p_tipo: 'baixado' }).catch(() => {});
+    } catch (err) {
+      toast({
+        title: 'Erro ao baixar PDF',
+        description: err instanceof Error ? err.message : 'Tente novamente.',
+        variant: 'destructive',
       });
-      await registrarAcaoFechamento({ p_id_fechamentos: fechamento.id_fechamentos, p_tipo: 'baixado' });
-    } catch {
-      previewWindow?.close();
-      toast({ title: 'Erro ao gerar PDF', variant: 'destructive' });
+    } finally {
+      setDownloadingId(null);
     }
-  }, [openStoredClosingPdf, renderClosingPdfBlob, toast]);
+  }, [renderClosingPdfBlob, toast]);
 
   const handleMarcarPago = useCallback(async () => {
     if (!payFechamento) return;
@@ -1446,8 +1432,16 @@ export default function MonthlyClosing() {
                         >
                           <Eye className="w-3.5 h-3.5 mr-1.5" /> Visualizar
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => handleDownload(f)} className="flex-1 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800 sm:flex-none">
-                          <Download className="w-3.5 h-3.5 mr-1.5" /> PDF
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleDownload(f)}
+                          disabled={downloadingId === f.id_fechamentos}
+                          className="flex-1 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800 sm:flex-none"
+                        >
+                          {downloadingId === f.id_fechamentos
+                            ? <RefreshCcw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                            : <Download className="w-3.5 h-3.5 mr-1.5" />} PDF
                         </Button>
                         {!isPago ? (
                           <Button
@@ -1514,12 +1508,17 @@ export default function MonthlyClosing() {
               <div className="grid min-h-full gap-0 xl:grid-cols-[minmax(0,1fr)_280px]">
                 <div className="p-4 sm:p-5 space-y-4">
                 {safePreviewNotes.map((nota) => {
-                  const disc = descontos[nota.id] ?? 0;
+                  const disc = clampPercent(descontos[nota.id] ?? 0);
                   const totalComDesc = nota.total * (1 - disc / 100);
                   const editing = editingItems[nota.id] ?? true;
                   const isPaid = nota.paymentStatus === 'PAGO';
                   const included = !isPaid && includedNoteIds.includes(nota.id);
                   const itens = getPreviewItems(nota);
+                  const itensBruto = itens.reduce((sum, item) => (
+                    sum + (Math.max(0, item.quantidade) * Math.max(0, item.preco_unitario))
+                  ), 0);
+                  const descontoItens = Math.max(0, itensBruto - nota.total);
+                  const descontoFinalOs = Math.max(0, nota.total - totalComDesc);
                   return (
                     <Card key={nota.id} className={cn('overflow-hidden border-border/70 transition', !included && 'opacity-70', isPaid && 'bg-muted/30')}>
                       <div className="bg-muted/40 border-b border-border/50 px-4 py-3 flex items-center justify-between gap-3">
@@ -1559,7 +1558,7 @@ export default function MonthlyClosing() {
                             {editing ? 'Recolher' : 'Editar'}
                           </Button>
                           <div className="text-right">
-                            <p className="text-[11px] text-muted-foreground">Total</p>
+                            <p className="text-[11px] text-muted-foreground">Total O.S.</p>
                             <p className="font-bold text-primary text-sm">R$ {toMoney(totalComDesc)}</p>
                           </div>
                         </div>
@@ -1570,60 +1569,86 @@ export default function MonthlyClosing() {
                             <span>Descrição</span>
                             <span className="text-center">Qtd</span>
                             <span className="text-right">Unit.</span>
-                            <span className="text-right">Desc. item</span>
-                            <span className="text-right">Subtotal</span>
+                            <span className="text-right">Desc. %</span>
+                            <span className="text-right">Total item</span>
                           </div>
-                          {itens.map((item) => (
-                            <div
-                              key={item.id}
-                              className="grid gap-3 px-4 py-3 text-xs lg:grid-cols-[minmax(180px,1fr)_76px_104px_104px_112px] lg:items-center"
-                            >
-                              <div className="min-w-0">
-                                <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Descrição</p>
-                                {editing ? (
-                                  <Input value={item.descricao} onChange={(e) => updatePreviewItem(nota.id, item.id, 'descricao', e.target.value)} className="h-8 text-xs" />
-                                ) : (
-                                  <span className="break-words">{item.descricao}</span>
-                                )}
+                          {itens.map((item) => {
+                            const canApplyItemDiscount = canDiscountPreviewItem(item);
+                            const brutoItem = Math.max(0, item.quantidade) * Math.max(0, item.preco_unitario);
+                            const descontoItem = Math.max(0, brutoItem - item.subtotal);
+
+                            return (
+                              <div
+                                key={item.id}
+                                className="grid gap-3 px-4 py-3 text-xs lg:grid-cols-[minmax(180px,1fr)_76px_104px_104px_112px] lg:items-center"
+                              >
+                                <div className="min-w-0">
+                                  <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Descrição</p>
+                                  {editing ? (
+                                    <Input value={item.descricao} onChange={(e) => updatePreviewItem(nota.id, item.id, 'descricao', e.target.value)} className="h-8 text-xs" />
+                                  ) : (
+                                    <span className="break-words">{item.descricao}</span>
+                                  )}
+                                </div>
+                                <div>
+                                  <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Qtd</p>
+                                  {editing ? (
+                                    <Input type="number" min="0" step="1" value={item.quantidade} onChange={(e) => updatePreviewItem(nota.id, item.id, 'quantidade', e.target.value)} className="h-8 text-xs text-center" />
+                                  ) : (
+                                    <p className="lg:text-center">{item.quantidade}</p>
+                                  )}
+                                </div>
+                                <div>
+                                  <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Unit.</p>
+                                  {editing ? (
+                                    <Input type="number" min="0" step="0.01" value={item.preco_unitario} onChange={(e) => updatePreviewItem(nota.id, item.id, 'preco_unitario', e.target.value)} className="h-8 text-xs lg:text-right" />
+                                  ) : (
+                                    <p className="lg:text-right">R$ {toMoney(item.preco_unitario)}</p>
+                                  )}
+                                </div>
+                                <div>
+                                  <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Desc. %</p>
+                                  {editing ? (
+                                    <div className="relative">
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        step="0.01"
+                                        value={canApplyItemDiscount ? item.desconto_porcentagem : ''}
+                                        disabled={!canApplyItemDiscount}
+                                        onChange={(e) => updatePreviewItem(nota.id, item.id, 'desconto_porcentagem', e.target.value)}
+                                        placeholder={canApplyItemDiscount ? '0' : '-'}
+                                        className="h-8 pr-6 text-xs disabled:opacity-60 lg:text-right"
+                                      />
+                                      {canApplyItemDiscount && (
+                                        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">%</span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <p className="lg:text-right">{canApplyItemDiscount && item.desconto_porcentagem > 0 ? `${item.desconto_porcentagem}%` : '-'}</p>
+                                  )}
+                                  {canApplyItemDiscount && descontoItem > 0 ? (
+                                    <p className="mt-1 text-[10px] font-medium text-emerald-700 lg:text-right">-R$ {toMoney(descontoItem)}</p>
+                                  ) : null}
+                                </div>
+                                <div>
+                                  <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Total item</p>
+                                  <p className="font-semibold lg:text-right">R$ {toMoney(item.subtotal)}</p>
+                                </div>
                               </div>
-                              <div>
-                                <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Qtd</p>
-                                {editing ? (
-                                  <Input type="number" min="0" step="1" value={item.quantidade} onChange={(e) => updatePreviewItem(nota.id, item.id, 'quantidade', e.target.value)} className="h-8 text-xs text-center" />
-                                ) : (
-                                  <p className="lg:text-center">{item.quantidade}</p>
-                                )}
-                              </div>
-                              <div>
-                                <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Unit.</p>
-                                {editing ? (
-                                  <Input type="number" min="0" step="0.01" value={item.preco_unitario} onChange={(e) => updatePreviewItem(nota.id, item.id, 'preco_unitario', e.target.value)} className="h-8 text-xs lg:text-right" />
-                                ) : (
-                                  <p className="lg:text-right">R$ {toMoney(item.preco_unitario)}</p>
-                                )}
-                              </div>
-                              <div>
-                                <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Desc. item</p>
-                                {editing ? (
-                                  <Input type="number" min="0" max="100" step="0.01" value={item.desconto_porcentagem} onChange={(e) => updatePreviewItem(nota.id, item.id, 'desconto_porcentagem', e.target.value)} className="h-8 text-xs lg:text-right" />
-                                ) : (
-                                  <p className="lg:text-right">{item.desconto_porcentagem > 0 ? `${item.desconto_porcentagem}%` : '—'}</p>
-                                )}
-                              </div>
-                              <div>
-                                <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Subtotal</p>
-                                <p className="font-semibold lg:text-right">R$ {toMoney(item.subtotal)}</p>
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                         <div className="px-4 py-3 bg-muted/20 border-t border-border/30 flex items-center justify-between gap-4 flex-wrap">
                           <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-                            <span>Desconto final desta O.S.:</span>
+                            <span>Desconto final da O.S. inteira:</span>
                             <Input type="number" min="0" max="100" step="1" value={descontos[nota.id] ?? ''} onChange={(e) => setDescontos((prev) => ({ ...prev, [nota.id]: clampPercent(parseFloat(e.target.value) || 0) }))} placeholder="0" className="w-20 h-8 text-xs text-center" />
                             <span>%</span>
                           </div>
                           <div className="text-right text-xs">
+                            {descontoItens > 0 ? <p className="text-muted-foreground">Itens: -R$ {toMoney(descontoItens)}</p> : null}
+                            {descontoFinalOs > 0 ? <p className="text-muted-foreground">Final: -R$ {toMoney(descontoFinalOs)}</p> : null}
                             <p className="font-bold">R$ {toMoney(totalComDesc)}</p>
                           </div>
                         </div>

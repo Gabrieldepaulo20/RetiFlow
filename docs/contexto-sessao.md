@@ -4,6 +4,31 @@ Atualizado em: 2026-07-08
 
 ---
 
+## Fechamento Mensal - Desconto Por Linha No Rascunho - 2026-07-08
+
+- Pedido: deixar o desconto por item mais claro dentro das O.S. no popup de rascunho do fechamento.
+- Ajustes:
+  - botao `PDF` de fechamentos gerados agora baixa direto para o disco por signed URL/blob, com nome
+    amigavel e estado de carregamento no botao;
+  - coluna `Desc. %` no rascunho, com campo numerico e sufixo `%`;
+  - linhas apenas descritivas ou sem quantidade/valor ficam sem desconto financeiro editavel;
+  - desconto por item mostra o abatimento em reais na propria linha;
+  - rodape da O.S. separa `Itens: -R$ ...` de `Final: -R$ ...`, para diferenciar desconto por linha
+    do desconto final da O.S. inteira;
+  - totais visuais do modal tambem clampam o desconto em 0-100, igual a matematica de dominio.
+- Regra de negocio preservada: desconto por item so altera linhas com quantidade e valor unitario;
+  descricoes informativas continuam sem cobrar e sem desconto.
+- Validacao:
+  - `npm test -- --run src/test/monthly-closing-draft-math.test.ts`: 12/12;
+  - `npm run typecheck`: passou;
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh;
+  - `npm test -- --run`: 62 arquivos, 473 testes;
+  - `npm run build`: passou com avisos conhecidos de Browserslist/chunks/import dinamico.
+- Integracao real nao executada nesta rodada porque a mudanca foi apenas UI/matematica local do rascunho,
+  sem migration, Storage, Auth, RPC ou Edge Function.
+
+---
+
 ## Fechamento Mensal - Coluna De Desconto No PDF E Acabamento - 2026-07-08
 
 - Pedido urgente: a Retifica precisa dar desconto por servico (cada item de uma O.S. pode ter

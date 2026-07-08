@@ -61,6 +61,9 @@ export const recalcItemSubtotal = (item: PreviewItem) => {
   return bruto * (1 - clampPercent(item.desconto_porcentagem) / 100);
 };
 
+export const canDiscountPreviewItem = (item: Pick<PreviewItem, 'quantidade' | 'preco_unitario'>) =>
+  Math.max(0, item.quantidade) > 0 && Math.max(0, item.preco_unitario) > 0;
+
 export const recalcNoteTotal = (items: PreviewItem[]) =>
   items.reduce((sum, item) => sum + recalcItemSubtotal(item), 0);
 

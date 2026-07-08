@@ -55,7 +55,10 @@ export function openPdfPrintDialog(url: string, title = 'Imprimir documento') {
 }
 
 export function createPdfPreviewWindow(title = 'Abrindo PDF') {
-  const popup = window.open('', '_blank', 'noopener,noreferrer');
+  // Sem 'noopener' na feature string: com ela o Chrome abre a guia mas retorna
+  // null, o que órfã a guia em branco e força o caller a abrir outra. O opener
+  // é anulado manualmente logo abaixo, já que o documento é nosso (about:blank).
+  const popup = window.open('', '_blank');
   if (!popup) return null;
 
   const safeTitle = escapeHtmlAttribute(title);
@@ -81,6 +84,11 @@ export function createPdfPreviewWindow(title = 'Abrindo PDF') {
     </html>
   `);
   popup.document.close();
+  try {
+    popup.opener = null;
+  } catch {
+    // Alguns navegadores bloqueiam a escrita; a guia continua utilizável.
+  }
   return popup;
 }
 
@@ -92,11 +100,16 @@ export function openPdfInBrowser(
     revokeObjectUrlAfterMs?: number;
   } = {},
 ) {
-  const popup = options.previewWindow ?? window.open('', '_blank', 'noopener,noreferrer');
+  const popup = options.previewWindow ?? window.open('', '_blank');
 
   if (!popup) {
-    const fallback = window.open(url, '_blank', 'noopener,noreferrer');
+    const fallback = window.open(url, '_blank');
     if (!fallback) return false;
+    try {
+      fallback.opener = null;
+    } catch {
+      // Navegação cruzada pode bloquear a escrita; seguimos mesmo assim.
+    }
   } else {
     try {
       if (options.title) popup.document.title = options.title;
@@ -111,4 +124,35 @@ export function openPdfInBrowser(
   }
 
   return true;
+}
+
+const sanitizePdfFilename = (value: string) => {
+  const clean = value.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim();
+  const base = clean || 'documento.pdf';
+  return base.toLowerCase().endsWith('.pdf') ? base : `${base}.pdf`;
+};
+
+/** Baixa um blob de PDF diretamente (sem abrir guia), com nome de arquivo amigável. */
+export function downloadPdfBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = sanitizePdfFilename(filename);
+  anchor.rel = 'noopener';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/**
+ * Baixa o PDF de uma URL (assinada) diretamente para o disco, sem abrir guia.
+ * Lança erro se a resposta não for OK — o caller decide o fallback.
+ */
+export async function downloadPdfFromUrl(url: string, filename: string) {
+  const response = await fetch(url, { credentials: 'omit' });
+  if (!response.ok) {
+    throw new Error(`Falha ao baixar o PDF (HTTP ${response.status}).`);
+  }
+  downloadPdfBlob(await response.blob(), filename);
 }
