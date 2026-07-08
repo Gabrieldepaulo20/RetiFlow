@@ -55,6 +55,7 @@ import {
   buildDadosFromDraft,
   canDiscountPreviewItem,
   clampPercent,
+  computeClosingDivergencias,
   computeDraftTotals,
   getDraftNotes,
   getIncludedDraftNotes,
@@ -131,6 +132,7 @@ const normalizePreviewNote = (value: unknown): PreviewNote | null => {
   const id = asString(value.id, '');
   if (!id) return null;
   const total = asNumber(value.total);
+  const totalNota = value.totalNota !== undefined ? asNumber(value.totalNota, total) : total;
   const itens = Array.isArray(value.itens)
     ? value.itens
         .map((item, index) => normalizePreviewItem(item, `${id}-item-${index}`))
@@ -143,6 +145,7 @@ const normalizePreviewNote = (value: unknown): PreviewNote | null => {
     veiculo: asString(value.veiculo, 'Veículo não informado'),
     placa: typeof value.placa === 'string' && value.placa.trim() ? value.placa : null,
     total,
+    totalNota,
     updatedAt: asString(value.updatedAt, new Date().toISOString()),
     paymentStatus: value.paymentStatus === 'PAGO' ? 'PAGO' : 'PENDENTE',
     pagoEm: typeof value.pagoEm === 'string' ? value.pagoEm : null,
@@ -256,13 +259,7 @@ function DualSpinner() {
 
 /* ── Divergence check ───────────────────────────────────────────────────── */
 function getDivergencias(fechamento: FechamentoListItem, notes: IntakeNote[]) {
-  const notas = Array.isArray(fechamento.dados_json?.notas) ? fechamento.dados_json.notas : [];
-  return notas.flatMap((n) => {
-    const curr = notes.find((cn) => cn.id === n.id);
-    if (!curr) return [];
-    if (Math.abs(curr.totalAmount - n.total_com_desconto) < 0.01) return [];
-    return [{ os: n.os, total_original: n.total_com_desconto, total_atual: curr.totalAmount, alterado_em: curr.updatedAt }];
-  });
+  return computeClosingDivergencias(fechamento.dados_json?.notas, notes);
 }
 
 /* ── Main component ─────────────────────────────────────────────────────── */
@@ -699,6 +696,9 @@ export default function MonthlyClosing() {
           veiculo: nota.vehicleModel,
           placa: nota.plate ?? null,
           total: nota.totalAmount,
+          // Pristine: total bruto da nota na montagem. Nunca muda com edição/desconto
+          // no rascunho — só serve de baseline para a checagem de divergência.
+          totalNota: nota.totalAmount,
           updatedAt: nota.updatedAt,
           paymentStatus: nota.paymentStatus,
           pagoEm: nota.pagoEm,

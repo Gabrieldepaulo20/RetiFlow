@@ -4,6 +4,38 @@ Atualizado em: 2026-07-08
 
 ---
 
+## Fechamento Mensal - Divergencia Falsa Por Desconto Do Rascunho - 2026-07-08
+
+- Problema reportado: ao gerar fechamento (e ate nos ja gerados), aparecia em VERMELHO que o valor
+  da nota de entrada estava "desatualizado" so por ter dado desconto no rascunho. Atrapalhava quem
+  estava gerando. A divergencia so deveria aparecer quando alguem gera o fechamento e DEPOIS altera
+  manualmente a nota de entrada para outro valor.
+- Causa raiz: `getDivergencias` comparava o total BRUTO atual da nota (`totalAmount`) contra o
+  `total_com_desconto` gravado no snapshot. Como o desconto (por O.S. ou por item) faz os dois
+  diferirem por definicao, todo fechamento com desconto acusava divergencia falsa.
+- Correcao (fix robusto contra qualquer desconto do rascunho):
+  - novo campo `total_nota` em `FechamentoNota`/`dados_json`: total BRUTO pristine da nota no momento
+    da geracao, que NUNCA muda por edicao de item ou desconto no rascunho;
+  - `PreviewNote.totalNota` captura `nota.totalAmount` na montagem do rascunho (`handleBuildPreview`)
+    e e preservado por `updatePreviewItem` (que so mexe em `itens`/`total`);
+  - `buildDadosFromDraft` grava `total_nota: roundMoney(note.totalNota ?? note.total)`;
+  - a checagem de divergencia agora compara `totalAmount` atual contra `total_nota` (baseline
+    pristine). Descontos do rascunho nao contam; so alteracao real da nota no banco DEPOIS do
+    fechamento dispara o alerta;
+  - fechamentos antigos sem `total_nota` caem em `total_original` (total antes do desconto final),
+    que tambem ja ignora o desconto por O.S. — some com o falso positivo retroativo tambem.
+  - logica pura extraida para `computeClosingDivergencias` em `services/domain/monthlyClosingDraft.ts`
+    (alinha com a arquitetura e permite teste direto). `getDivergencias` no page so delega.
+- Sem migration/RPC nova: `total_nota` entra no jsonb `dados_json` gravado por `update_fechamento`
+  (o SQL guarda o jsonb como esta). Nenhum contrato de banco mudou.
+- Validacao: `npm test -- --run src/test/monthly-closing-draft-math.test.ts` (18 testes, +6 de
+  divergencia: desconto por O.S. nao acusa, desconto por item nao acusa via total_nota pristine,
+  alteracao real da nota acusa, fechamento antigo sem total_nota cai em total_original, nota sumida
+  ignorada, snapshot grava total_nota); `npm run typecheck`; `npm run lint` (8 warnings antigos);
+  `npm test -- --run` (483 testes); `npm run build`.
+
+---
+
 ## Fechamento Mensal - PDF Leve No Scroll E Rotulo "Total" - 2026-07-08
 
 - Pedidos: (1) no rodape de cada O.S. do PDF gerado, trocar `Total OS-xxxx:` por so `Total:`;

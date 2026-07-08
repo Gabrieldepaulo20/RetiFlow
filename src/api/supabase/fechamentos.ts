@@ -22,6 +22,13 @@ export interface FechamentoNota {
   veiculo: string;
   placa: string | null;
   itens: FechamentoItem[];
+  /**
+   * Total BRUTO da nota de entrada no momento da geração — pristine, ignora
+   * qualquer desconto do rascunho (por item ou por O.S.). Usado só para detectar
+   * divergência (alteração manual da nota DEPOIS do fechamento). Opcional para
+   * compatibilidade com fechamentos antigos que não gravaram este campo.
+   */
+  total_nota?: number;
   total_original: number;
   desconto_nota: number;
   total_com_desconto: number;
@@ -146,6 +153,7 @@ function normalizeFechamentoNota(value: unknown): FechamentoNota | null {
     veiculo: asString(value.veiculo, 'Veículo não informado'),
     placa: typeof value.placa === 'string' && value.placa.trim() ? value.placa : null,
     itens,
+    ...(value.total_nota !== undefined ? { total_nota: asNumber(value.total_nota) } : {}),
     total_original: asNumber(value.total_original),
     desconto_nota: asNumber(value.desconto_nota),
     total_com_desconto: asNumber(value.total_com_desconto),
