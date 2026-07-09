@@ -4,6 +4,35 @@ Atualizado em: 2026-07-08
 
 ---
 
+## Fechamento Mensal - Total Antigo, Marcar O.S. Paga E Consulta De Descontos - 2026-07-08
+
+- Pedidos: (1) rodape de cada O.S. no PDF deve ser so "Total:" (sem numero da O.S.); (2) no rascunho,
+  poder marcar uma O.S. como ja paga (sai do total do fechamento); (3) poder consultar quanto de
+  desconto foi aplicado por O.S. (so visual, num botao); (4) ver o desconto TOTAL do fechamento na
+  interface (visual); (5) sugestoes de melhoria.
+- **"Total:" — ja estava no template.** O que a usuaria via ("Total OS-xxxx") era de fechamentos
+  ANTIGOS: o PDF fica salvo no Storage no momento da geracao, e os antigos foram gerados antes da
+  correcao. Correcao de raiz: **o download agora re-renderiza do `dados_json`** (snapshot imutavel)
+  com o template atual, em vez de servir o PDF antigo salvo. Assim antigos e novos saem com "Total:"
+  e o download bate 1:1 com o preview (WYSIWYG). `pdf_url` vira so fallback.
+- **Marcar O.S. como paga no rascunho:** botao "Marcar paga" em cada O.S. do editor -> dialog (forma
+  de pagamento + data) -> `registrarRecebimentoNota` (DataContext, grava recebimento real na nota) ->
+  a O.S. vira PAGO localmente, sai de `includedNoteIds` e do total, e passa para "ja recebido"
+  (informativo). Reversivel pelo detalhe da nota (estorno). DataContext carrega ate 5000 notas, entao
+  a O.S. do fechamento esta sempre na lista para o registro funcionar.
+- **Desconto total (visual):** painel lateral do rascunho agora mostra "Bruto" + "Desconto total:
+  -R$ X" alem do total a pagar.
+- **Consulta de descontos por O.S. (visual):** no card do fechamento gerado, quando ha desconto,
+  aparece "Desconto total: R$ X · ver N O.S."; clicando, expande a lista `OS-x · Y% : bruto -> final`
+  a partir do snapshot. So leitura, nao altera nada. (Substitui de forma nao-intrusiva a antiga tag
+  vermelha de divergencia que a usuaria pediu para remover.)
+- Helpers novos no page: `pctBR`, `confirmMarcarNotaPaga`; estados `payNota`/`payNotaForma`/
+  `payNotaData` e `descontosAbertos`.
+- Validacao: `npm run typecheck`; `npm run lint` (8 warnings antigos); `npm test -- --run`
+  (63 arquivos, 477 testes); `npm run build`; `CI=1 npx playwright test e2e/monthly-closing.spec.ts` (2/2).
+
+---
+
 ## Fechamento Mensal - Preview WYSIWYG (PDF Real A4) E Diagnostico Do Scroll - 2026-07-08
 
 - Pedidos: (1) "Visualizar" deve mostrar o PDF REAL como sera baixado (A4), pra poder ajustar vendo

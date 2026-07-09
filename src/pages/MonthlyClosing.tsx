@@ -95,6 +95,9 @@ interface AvailableClosingPeriod {
 const toMoney = (value: number) =>
   value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const pctBR = (value: number) =>
+  `${(Number.isFinite(value) ? value : 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
+
 const createDraftId = () =>
   `draft-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -256,7 +259,7 @@ function DualSpinner() {
 
 /* ── Main component ─────────────────────────────────────────────────────── */
 export default function MonthlyClosing() {
-  const { notes, clients } = useData();
+  const { notes, clients, registrarRecebimentoNota } = useData();
   const { operationalUser, user, isSupportImpersonating } = useAuth();
   const { toast } = useToast();
   const { data: templateSettings } = useDocumentTemplateSettings();
@@ -274,6 +277,12 @@ export default function MonthlyClosing() {
   const [payData, setPayData] = useState(() => new Date().toISOString().slice(0, 10));
   const [payForma, setPayForma] = useState<PaymentMethod>('PIX');
   const [payBusy, setPayBusy] = useState(false);
+  // Marcar uma O.S. do rascunho como já paga (sai do total do fechamento).
+  const [payNota, setPayNota] = useState<PreviewNote | null>(null);
+  const [payNotaData, setPayNotaData] = useState(() => new Date().toISOString().slice(0, 10));
+  const [payNotaForma, setPayNotaForma] = useState<PaymentMethod>('PIX');
+  // Fechamento gerado com o painel de descontos aberto (consulta visual).
+  const [descontosAbertos, setDescontosAbertos] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<ClosingDraft[]>([]);
   const [draftsHydratedKey, setDraftsHydratedKey] = useState<string | null>(null);
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
@@ -857,6 +866,20 @@ export default function MonthlyClosing() {
     });
   }, []);
 
+  // Marca a O.S. do rascunho como já recebida: registra o recebimento na nota
+  // (via DataContext) e reflete localmente para ela sair do total do fechamento.
+  const confirmMarcarNotaPaga = useCallback(() => {
+    if (!payNota) return;
+    const paidAt = new Date(`${payNotaData}T12:00:00`).toISOString();
+    registrarRecebimentoNota(payNota.id, { paidWith: payNotaForma, paidAt });
+    setPreviewNotes((current) => current.map((note) => (
+      note.id === payNota.id ? { ...note, paymentStatus: 'PAGO', pagoEm: paidAt } : note
+    )));
+    setIncludedNoteIds((current) => current.filter((id) => id !== payNota.id));
+    toast({ title: 'O.S. marcada como recebida', description: `${payNota.os} saiu do total do fechamento e ficou como já recebida.` });
+    setPayNota(null);
+  }, [payNota, payNotaData, payNotaForma, registrarRecebimentoNota, toast]);
+
   /* ── Gerar fechamento ── */
   const generateDraft = useCallback(async (draft: ClosingDraft) => {
     setGenerating(true);
@@ -957,15 +980,19 @@ export default function MonthlyClosing() {
       .join(' ');
     setDownloadingId(fechamento.id_fechamentos);
     try {
-      if (fechamento.pdf_url) {
+      // Preferimos re-renderizar do snapshot imutável (dados_json): assim o arquivo
+      // baixado usa SEMPRE o template atual (ex.: "Total:") e bate 1:1 com o preview,
+      // sem depender do PDF antigo salvo no Storage. pdf_url fica só como fallback.
+      if (fechamento.dados_json) {
+        const dados = normalizeFechamentoDadosJson(fechamento.dados_json) ?? fechamento.dados_json;
+        const blob = await renderClosingPdfBlob(dados, dados.gerado_em ?? fechamento.created_at);
+        downloadPdfBlob(blob, filename);
+      } else if (fechamento.pdf_url) {
         const url = await getFechamentoPDFSignedUrl(fechamento.pdf_url, {
           fechamentoId: fechamento.id_fechamentos,
           downloadFilename: filename,
         });
         downloadPdfUrl(url, filename);
-      } else if (fechamento.dados_json) {
-        const blob = await renderClosingPdfBlob(fechamento.dados_json, fechamento.created_at);
-        downloadPdfBlob(blob, filename);
       } else {
         toast({ title: 'PDF não disponível', variant: 'destructive' });
         return;
@@ -1382,6 +1409,11 @@ export default function MonthlyClosing() {
               const palette = PALETTE[idx % PALETTE.length];
               const initials = (f.cliente?.nome ?? 'SEM CLIENTE').slice(0, 2).toUpperCase();
               const isPago = f.status_pagamento === 'PAGO';
+              // Consulta visual dos descontos aplicados por O.S. (a partir do snapshot imutável).
+              const notasFechamento = Array.isArray(f.dados_json?.notas) ? f.dados_json.notas : [];
+              const notasComDesconto = notasFechamento.filter((n) => (n.total_original - n.total_com_desconto) > 0.005);
+              const descontoTotal = notasComDesconto.reduce((sum, n) => sum + (n.total_original - n.total_com_desconto), 0);
+              const descontosVisiveis = descontosAbertos === f.id_fechamentos;
               return (
                 <Card key={f.id_fechamentos} className={cn('border-l-4 overflow-hidden', palette.border)}>
                   <CardContent className="p-4">
@@ -1410,6 +1442,34 @@ export default function MonthlyClosing() {
                             Recebido em {formatDateBR(f.pago_em) ?? 'data não registrada'}
                             {f.pago_com ? ` · ${PAYMENT_METHOD_LABELS[f.pago_com as PaymentMethod] ?? f.pago_com}` : ''}
                           </p>
+                        )}
+                        {descontoTotal > 0.005 && (
+                          <div className="mt-1">
+                            <button
+                              type="button"
+                              onClick={() => setDescontosAbertos((cur) => (cur === f.id_fechamentos ? null : f.id_fechamentos))}
+                              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                            >
+                              Desconto total: R$ {toMoney(descontoTotal)}
+                              <span className="text-muted-foreground">· {descontosVisiveis ? 'ocultar' : `ver ${notasComDesconto.length} O.S.`}</span>
+                            </button>
+                            {descontosVisiveis && (
+                              <div className="mt-2 space-y-1 rounded-lg border bg-muted/30 p-3">
+                                {notasComDesconto.map((n) => (
+                                  <div key={n.id} className="flex items-center justify-between gap-3 text-xs">
+                                    <span className="truncate text-muted-foreground">
+                                      {n.os}{n.desconto_nota > 0 ? ` · ${pctBR(n.desconto_nota)}` : ''}
+                                    </span>
+                                    <span className="shrink-0 tabular-nums">
+                                      <span className="text-muted-foreground line-through">R$ {toMoney(n.total_original)}</span>
+                                      {' → '}
+                                      <span className="font-semibold text-foreground">R$ {toMoney(n.total_com_desconto)}</span>
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                       <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:shrink-0">
@@ -1543,6 +1603,16 @@ export default function MonthlyClosing() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
+                          {!isPaid && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+                              onClick={() => { setPayNotaForma('PIX'); setPayNotaData(new Date().toISOString().slice(0, 10)); setPayNota(nota); }}
+                            >
+                              <Wallet className="mr-1.5 h-3.5 w-3.5" /> Marcar paga
+                            </Button>
+                          )}
                           <Button variant="outline" size="sm" className="h-8" onClick={() => setEditingItems((prev) => ({ ...prev, [nota.id]: !editing }))}>
                             {editing ? <EyeOff className="mr-1.5 h-3.5 w-3.5" /> : <PencilLine className="mr-1.5 h-3.5 w-3.5" />}
                             {editing ? 'Recolher' : 'Editar'}
@@ -1654,7 +1724,12 @@ export default function MonthlyClosing() {
                       <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Total a pagar no fechamento</p>
                       <p className="mt-2 text-sm text-muted-foreground">{includedNotesCount} de {safePreviewNotes.length} O.S. marcadas · {activeDraft?.periodLabel ?? '—'}</p>
                       <p className="mt-1 text-3xl font-bold text-primary">R$ {toMoney(grandTotal)}</p>
-                      {grandTotalOriginal !== grandTotal && <p className="mt-1 text-xs text-muted-foreground">Bruto: R$ {toMoney(grandTotalOriginal)}</p>}
+                      {grandTotalOriginal !== grandTotal && (
+                        <div className="mt-2 space-y-0.5 text-xs">
+                          <p className="text-muted-foreground">Bruto: R$ {toMoney(grandTotalOriginal)}</p>
+                          <p className="font-medium text-emerald-700">Desconto total: -R$ {toMoney(grandTotalOriginal - grandTotal)}</p>
+                        </div>
+                      )}
                       {receivedNotes.length > 0 && (
                         <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
                           Já recebido no período: <span className="font-semibold">R$ {toMoney(receivedTotal)}</span>
@@ -1769,6 +1844,43 @@ export default function MonthlyClosing() {
             <Button onClick={() => void handleMarcarPago()} disabled={payBusy} className="bg-emerald-600 text-white hover:bg-emerald-700">
               {payBusy ? <RefreshCcw className="w-4 h-4 mr-2 animate-spin" /> : <Wallet className="w-4 h-4 mr-2" />}
               Confirmar pagamento
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Marcar uma O.S. do rascunho como já recebida (sai do total do fechamento) */}
+      <Dialog open={!!payNota} onOpenChange={(open) => { if (!open) setPayNota(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Marcar O.S. como já paga</DialogTitle>
+            <DialogDescription>
+              {payNota?.os ?? ''}{payNota?.veiculo ? ` · ${payNota.veiculo}` : ''} — R$ {toMoney(payNota?.total ?? 0)}.
+              Ela sai do total deste fechamento e passa a constar como já recebida no período.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Forma de pagamento</label>
+              <Select value={payNotaForma} onValueChange={(v) => setPayNotaForma(v as PaymentMethod)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethod[]).map((m) => (
+                    <SelectItem key={m} value={m}>{PAYMENT_METHOD_LABELS[m]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Data do recebimento</label>
+              <Input type="date" value={payNotaData} onChange={(e) => setPayNotaData(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPayNota(null)}>Cancelar</Button>
+            <Button onClick={confirmMarcarNotaPaga} className="bg-emerald-600 text-white hover:bg-emerald-700">
+              <Wallet className="w-4 h-4 mr-2" />
+              Confirmar recebimento
             </Button>
           </DialogFooter>
         </DialogContent>
