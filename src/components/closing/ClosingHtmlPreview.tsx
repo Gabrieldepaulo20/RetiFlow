@@ -1,6 +1,6 @@
 import type { FechamentoDadosJson } from '@/api/supabase/fechamentos';
 import type { ResolvedDocumentCustomization, TemplateVariableKey } from '@/services/domain/documentCustomization';
-import { getDocumentAccentColor, renderTemplateText } from '@/services/domain/documentCustomization';
+import { getDocumentAccentColor, renderTemplateText, normalizeDocumentCompanyName } from '@/services/domain/documentCustomization';
 import { cn } from '@/lib/utils';
 
 const MAX_ITEMS_PER_SECTION = 12;
@@ -30,7 +30,7 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
   const effectiveAccent = getDocumentAccentColor(documentSettings, accentColor);
   const company = documentSettings?.company;
   const config = documentSettings?.resolvedConfig;
-  const companyName = company?.nomeFantasia?.trim() || 'RETÍFICA PREMIUM';
+  const companyName = normalizeDocumentCompanyName(company?.nomeFantasia);
   const notas = Array.isArray(dados.notas) ? dados.notas : [];
   const recebidas = Array.isArray(dados.recebidas) ? dados.recebidas : [];
   const clienteNome = dados.cliente?.nome ?? 'Cliente';

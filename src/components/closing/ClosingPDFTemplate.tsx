@@ -1,7 +1,7 @@
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { FechamentoDadosJson } from '@/api/supabase/fechamentos';
 import type { ResolvedDocumentCustomization, TemplateVariableKey } from '@/services/domain/documentCustomization';
-import { getDocumentAccentColor, renderTemplateText } from '@/services/domain/documentCustomization';
+import { getDocumentAccentColor, renderTemplateText, normalizeDocumentCompanyName } from '@/services/domain/documentCustomization';
 
 const MAX_ITEMS_PER_OS_BLOCK = 12;
 
@@ -78,9 +78,12 @@ const s = StyleSheet.create({
   continuesFoot: { paddingVertical: 6, paddingHorizontal: 10, backgroundColor: '#f5f9fb', color: '#60758a', fontSize: 8 },
 
   // Grand total
-  totalSection: { marginTop: 8, borderRadius: 10, padding: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', backgroundColor: '#e9f7fa', borderWidth: 1, borderColor: '#cae3ea' },
-  totalLabel: { fontSize: 10, fontWeight: 700, color: '#0f6172' },
-  totalValue: { fontSize: 16, fontWeight: 700, color: '#0f6172' },
+  totalSection: { marginTop: 8, borderRadius: 10, paddingVertical: 11, paddingHorizontal: 14, flexDirection: 'column', backgroundColor: '#e9f7fa', borderWidth: 1, borderColor: '#cae3ea' },
+  totalContext: { fontSize: 8, color: '#5c7680' },
+  totalRow: { marginTop: 8, paddingTop: 8, borderTopWidth: 0.5, borderTopColor: '#cae3ea', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  // Rótulo e valor do total: MESMA fonte/tamanho, uma linha só (value não encolhe).
+  totalLabel: { fontSize: 13, fontWeight: 700, color: '#0f6172' },
+  totalValue: { fontSize: 13, fontWeight: 700, color: '#0f6172', flexShrink: 0 },
 
   // Footer
   pageFooter: { position: 'absolute', bottom: '7mm', left: '12mm', right: '12mm', flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 0.5, borderTopColor: '#cbd5df', paddingTop: 4 },
@@ -103,7 +106,9 @@ export function ClosingPDFTemplate({
   const effectiveAccent = getDocumentAccentColor(documentSettings, accentColor);
   const company = documentSettings?.company;
   const config = documentSettings?.resolvedConfig;
-  const companyName = company?.nomeFantasia?.trim() || 'RETÍFICA PREMIUM';
+  // Normaliza o nome: nunca deixar vazar placeholder de dev (ex.: "GAWI") no
+  // documento do cliente — cai para "Retífica Premium".
+  const companyName = normalizeDocumentCompanyName(company?.nomeFantasia);
   const notas = Array.isArray(dados.notas) ? dados.notas : [];
   const recebidas = Array.isArray(dados.recebidas) ? dados.recebidas : [];
   const clienteNome = dados.cliente?.nome ?? 'Cliente';
@@ -122,7 +127,9 @@ export function ClosingPDFTemplate({
     total_amount: `R$ ${brl(totalComDesconto)}`,
   };
   const subtitle = renderTemplateText(config?.subtitle || 'Fechamento mensal de serviços', templateVariables);
-  const footerText = renderTemplateText(config?.footerText || `${companyName} · Fechamento Mensal`, templateVariables);
+  // Rodapé do fechamento é institucional (empresa · período) — não usa o
+  // footerText configurável (que trazia "Obrigado pela preferência.").
+  const footerText = `${companyName} · Fechamento mensal · ${dados.periodo}`;
   const notaSections = notas.flatMap((nota) => {
     const chunks = chunkItems(Array.isArray(nota.itens) ? nota.itens : [], MAX_ITEMS_PER_OS_BLOCK);
     return chunks.map((itens, chunkIndex) => ({
@@ -256,19 +263,17 @@ export function ClosingPDFTemplate({
         )}
 
         {/* Grand total */}
-        <View style={{ ...s.totalSection, backgroundColor: tint(effectiveAccent, 0.08), borderColor: tint(effectiveAccent, 0.2) }}>
-          <View>
-            <Text style={{ fontSize: 8, color: '#555' }}>
-              {notas.length} {notas.length === 1 ? 'ordem' : 'ordens'} de serviço · Período: {dados.periodo}
+        <View style={{ ...s.totalSection, backgroundColor: tint(effectiveAccent, 0.08), borderColor: tint(effectiveAccent, 0.2) }} wrap={false}>
+          <Text style={s.totalContext}>
+            {notas.length} {notas.length === 1 ? 'ordem' : 'ordens'} de serviço · Período: {dados.periodo}
+          </Text>
+          {totalOriginal !== totalComDesconto && (
+            <Text style={{ ...s.totalContext, marginTop: 2 }}>
+              Subtotal: R$ {brl(totalOriginal)} · Descontos: -R$ {brl(totalOriginal - totalComDesconto)}
             </Text>
-            {totalOriginal !== totalComDesconto && (
-              <Text style={{ fontSize: 8, color: '#555', marginTop: 2 }}>
-                Subtotal: R$ {brl(totalOriginal)} · Descontos: -R$ {brl(totalOriginal - totalComDesconto)}
-              </Text>
-            )}
-          </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text style={{ fontSize: 8, color: '#555' }}>TOTAL A PAGAR</Text>
+          )}
+          <View style={{ ...s.totalRow, borderTopColor: tint(effectiveAccent, 0.25) }}>
+            <Text style={{ ...s.totalLabel, color: effectiveAccent }}>Total a Pagar:</Text>
             <Text style={{ ...s.totalValue, color: effectiveAccent }}>R$ {brl(totalComDesconto)}</Text>
           </View>
         </View>

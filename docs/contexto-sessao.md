@@ -4,6 +4,33 @@ Atualizado em: 2026-07-09
 
 ---
 
+## Fechamento Mensal - GAWI No PDF, Rodape E Total A Pagar - 2026-07-09
+
+- Pedidos: (1) tirar "Obrigado pela preferencia." do rodape; (2) "Total a Pagar: xxxx" numa linha so,
+  mesma fonte/tamanho, sem quebrar; (3) CRITICO: nunca aparecer "GAWI" no PDF da Retifica; (4) regerar
+  os PDFs salvos; (5) deixar o design mais harmonioso/profissional (sem descaracterizar o layout).
+- **Causa do "GAWI":** `ClosingPDFTemplate`/`ClosingHtmlPreview` liam `company.nomeFantasia` cru. Ja
+  existia `normalizeDocumentCompanyName` (mapeia 'gawi'/'retifica premium'/vazio -> 'Retífica Premium',
+  unit-testado) mas NAO era aplicado no fechamento. Agora ambos usam o normalizador — GAWI nunca vaza.
+- **Causa do "Obrigado pela preferencia.":** era o default de `footerText` em
+  `getDefaultDocumentTemplateConfig('closing_report')`, e o template usava `config?.footerText`. O
+  rodape do fechamento agora e institucional e fixo: `"{empresa} · Fechamento mensal · {periodo}"`,
+  ignorando o footerText configuravel.
+- **Total a Pagar:** secao do total virou coluna com linha final dedicada `Total a Pagar: <valor>` —
+  label e valor no MESMO tamanho (13pt, bold, cor de destaque), `flexDirection row` + `space-between`,
+  `value flexShrink:0` e `wrap={false}` no bloco, entao nunca quebra para a linha de baixo. Antes o
+  rotulo era 8pt caixa-alta e o valor 16pt (desalinhado).
+- Layout geral preservado (a usuaria gosta); mudanca foi acabamento/harmonia + correcao de dados.
+- **Regeneracao dos PDFs (`--apply`) autorizada explicitamente e executada** — ver bloco de execucao
+  abaixo. O script renderiza sem documentSettings, entao sai "Retífica Premium" (nunca GAWI) e o rodape
+  limpo.
+- Validado antes do apply: PDF de amostra renderizado e conferido (empresa "Retífica Premium", rodape
+  sem thank-you, "Total a Pagar: R$ 1.476,48" numa linha); `npm run typecheck`; `npm run lint`
+  (8 warnings antigos); `npm test -- --run` (63 arquivos, 477 testes); `npm run build`;
+  `CI=1 npx playwright test e2e/monthly-closing.spec.ts` (2/2).
+
+---
+
 ## Fechamento Mensal - Pacote De Melhorias (Sem Mexer No Layout Do PDF) - 2026-07-09
 
 - Pedido: aplicar todas as melhorias sugeridas, de forma eficiente, retestar tudo, SEM alterar o layout
