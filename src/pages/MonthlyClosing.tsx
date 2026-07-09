@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import {
   Download, Building2,
   PlusCircle, RefreshCcw, ChevronLeft, Eye, EyeOff, Sparkles, PencilLine, Printer,
-  Wallet, CheckCircle2, RotateCcw,
+  Wallet, CheckCircle2, RotateCcw, MessageCircle,
 } from 'lucide-react';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -259,7 +259,7 @@ function DualSpinner() {
 
 /* ── Main component ─────────────────────────────────────────────────────── */
 export default function MonthlyClosing() {
-  const { notes, clients, registrarRecebimentoNota } = useData();
+  const { notes, clients, registrarRecebimentoNota, estornarRecebimentoNota } = useData();
   const { operationalUser, user, isSupportImpersonating } = useAuth();
   const { toast } = useToast();
   const { data: templateSettings } = useDocumentTemplateSettings();
@@ -272,6 +272,12 @@ export default function MonthlyClosing() {
   const defaultCustomEndDate = toDateInputValue(now);
   const [fechamentos, setFechamentos] = useState<FechamentoListItem[]>([]);
   const [loadingList, setLoadingList] = useState(false);
+  // Filtro/ordenação da lista de fechamentos gerados.
+  const [fechamentoBusca, setFechamentoBusca] = useState('');
+  const [fechamentoStatus, setFechamentoStatus] = useState<'todos' | 'pago' | 'pendente'>('todos');
+  const [fechamentoOrdem, setFechamentoOrdem] = useState<'recentes' | 'valor'>('recentes');
+  // Gerando link do WhatsApp para compartilhar o PDF do fechamento.
+  const [sharingId, setSharingId] = useState<string | null>(null);
   // Pagamento do fechamento (B2B): marcar pago + cascata.
   const [payFechamento, setPayFechamento] = useState<FechamentoListItem | null>(null);
   const [payData, setPayData] = useState(() => new Date().toISOString().slice(0, 10));
@@ -816,6 +822,31 @@ export default function MonthlyClosing() {
   const modalPreviewTitle = storedPdfPreviewTitle ?? 'Prévia do fechamento';
   const modalPreviewDescription = 'Prévia real do PDF em tamanho A4 — é exatamente o arquivo que será baixado.';
 
+  // Resumo financeiro dos fechamentos gerados (interface, não altera o PDF).
+  const resumoFechamentos = useMemo(() => {
+    const faturado = fechamentos.reduce((sum, f) => sum + (f.valor_total ?? 0), 0);
+    const recebido = fechamentos
+      .filter((f) => f.status_pagamento === 'PAGO')
+      .reduce((sum, f) => sum + (f.valor_total ?? 0), 0);
+    return { total: fechamentos.length, faturado, recebido, aReceber: faturado - recebido };
+  }, [fechamentos]);
+
+  // Lista de fechamentos após busca/filtro/ordenação.
+  const fechamentosFiltrados = useMemo(() => {
+    const q = fechamentoBusca.trim().toLowerCase();
+    const filtrados = fechamentos.filter((f) => {
+      if (fechamentoStatus === 'pago' && f.status_pagamento !== 'PAGO') return false;
+      if (fechamentoStatus === 'pendente' && f.status_pagamento === 'PAGO') return false;
+      if (q && !`${f.cliente?.nome ?? ''} ${f.periodo ?? ''}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+    return [...filtrados].sort((a, b) => (
+      fechamentoOrdem === 'valor'
+        ? (b.valor_total ?? 0) - (a.valor_total ?? 0)
+        : new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    ));
+  }, [fechamentos, fechamentoBusca, fechamentoStatus, fechamentoOrdem]);
+
   useEffect(() => {
     if (!draftModalOpen || !activeDraftId) return;
     setDrafts((current) => current.map((draft) => (
@@ -879,6 +910,16 @@ export default function MonthlyClosing() {
     toast({ title: 'O.S. marcada como recebida', description: `${payNota.os} saiu do total do fechamento e ficou como já recebida.` });
     setPayNota(null);
   }, [payNota, payNotaData, payNotaForma, registrarRecebimentoNota, toast]);
+
+  // Desfaz o recebimento de uma O.S. dentro do rascunho (estorno) e a devolve ao total.
+  const desfazerNotaPaga = useCallback((note: PreviewNote) => {
+    estornarRecebimentoNota(note.id);
+    setPreviewNotes((current) => current.map((n) => (
+      n.id === note.id ? { ...n, paymentStatus: 'PENDENTE', pagoEm: null } : n
+    )));
+    setIncludedNoteIds((current) => (current.includes(note.id) ? current : [...current, note.id]));
+    toast({ title: 'Recebimento desfeito', description: `${note.os} voltou para o total do fechamento.` });
+  }, [estornarRecebimentoNota, toast]);
 
   /* ── Gerar fechamento ── */
   const generateDraft = useCallback(async (draft: ClosingDraft) => {
@@ -1008,6 +1049,40 @@ export default function MonthlyClosing() {
       setDownloadingId(null);
     }
   }, [renderClosingPdfBlob, toast]);
+
+  /* ── Compartilhar no WhatsApp (link do PDF assinado, validade estendida) ── */
+  const handleShareWhatsApp = useCallback(async (fechamento: FechamentoListItem) => {
+    if (!fechamento.pdf_url) {
+      toast({ title: 'Compartilhamento indisponível', description: 'Este fechamento ainda não tem PDF salvo para gerar o link.', variant: 'destructive' });
+      return;
+    }
+    setSharingId(fechamento.id_fechamentos);
+    try {
+      // Link válido por 7 dias para o cliente conseguir abrir com calma.
+      const url = await getFechamentoPDFSignedUrl(fechamento.pdf_url, {
+        fechamentoId: fechamento.id_fechamentos,
+        expiresIn: 60 * 60 * 24 * 7,
+      });
+      const cliente = clients.find((c) => c.id === fechamento.cliente?.id);
+      const digits = (cliente?.phone ?? '').replace(/\D/g, '');
+      const phone = digits ? (digits.length <= 11 ? `55${digits}` : digits) : '';
+      const mensagem = `Olá! Segue o fechamento de ${fechamento.periodo}`
+        + `${fechamento.cliente?.nome ? ` — ${fechamento.cliente.nome}` : ''}.`
+        + `\nTotal: R$ ${toMoney(fechamento.valor_total)}.`
+        + `\n\nPDF (link válido por 7 dias): ${url}`;
+      const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(mensagem)}`;
+      window.open(waUrl, '_blank', 'noopener,noreferrer');
+      await registrarAcaoFechamento({ p_id_fechamentos: fechamento.id_fechamentos, p_tipo: 'compartilhado' }).catch(() => {});
+    } catch (err) {
+      toast({
+        title: 'Erro ao gerar link do WhatsApp',
+        description: err instanceof Error ? err.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSharingId(null);
+    }
+  }, [clients, toast]);
 
   const handleMarcarPago = useCallback(async () => {
     if (!payFechamento) return;
@@ -1397,15 +1472,71 @@ export default function MonthlyClosing() {
           </div>
         </div>
 
+        {!loadingList && fechamentos.length > 0 && (
+          <>
+            {/* Resumo financeiro (interface) */}
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="rounded-xl border bg-background p-3">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Fechamentos</p>
+                <p className="mt-0.5 text-lg font-bold">{resumoFechamentos.total}</p>
+              </div>
+              <div className="rounded-xl border bg-background p-3">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Faturado</p>
+                <p className="mt-0.5 text-lg font-bold">R$ {toMoney(resumoFechamentos.faturado)}</p>
+              </div>
+              <div className="rounded-xl border bg-background p-3">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Recebido</p>
+                <p className="mt-0.5 text-lg font-bold text-emerald-700">R$ {toMoney(resumoFechamentos.recebido)}</p>
+              </div>
+              <div className="rounded-xl border bg-background p-3">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">A receber</p>
+                <p className="mt-0.5 text-lg font-bold text-amber-700">R$ {toMoney(resumoFechamentos.aReceber)}</p>
+              </div>
+            </div>
+
+            {/* Busca / filtro / ordenação */}
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Input
+                value={fechamentoBusca}
+                onChange={(e) => setFechamentoBusca(e.target.value)}
+                placeholder="Buscar por cliente ou período…"
+                className="h-9 sm:max-w-xs"
+                aria-label="Buscar fechamento"
+              />
+              <div className="flex gap-2">
+                <Select value={fechamentoStatus} onValueChange={(v) => setFechamentoStatus(v as typeof fechamentoStatus)}>
+                  <SelectTrigger className="h-9 w-[150px]" aria-label="Filtrar por status"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos</SelectItem>
+                    <SelectItem value="pendente">A receber</SelectItem>
+                    <SelectItem value="pago">Pagos</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={fechamentoOrdem} onValueChange={(v) => setFechamentoOrdem(v as typeof fechamentoOrdem)}>
+                  <SelectTrigger className="h-9 w-[160px]" aria-label="Ordenar"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="recentes">Mais recentes</SelectItem>
+                    <SelectItem value="valor">Maior valor</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </>
+        )}
+
         {loadingList ? (
           <div className="flex justify-center py-12"><DualSpinner /></div>
         ) : fechamentos.length === 0 ? (
           <div className="rounded-xl border border-dashed py-16 text-center text-muted-foreground text-sm">
             Nenhum fechamento gerado ainda.
           </div>
+        ) : fechamentosFiltrados.length === 0 ? (
+          <div className="rounded-xl border border-dashed py-16 text-center text-muted-foreground text-sm">
+            Nenhum fechamento encontrado para o filtro.
+          </div>
         ) : (
           <div className="grid gap-3">
-            {fechamentos.map((f, idx) => {
+            {fechamentosFiltrados.map((f, idx) => {
               const palette = PALETTE[idx % PALETTE.length];
               const initials = (f.cliente?.nome ?? 'SEM CLIENTE').slice(0, 2).toUpperCase();
               const isPago = f.status_pagamento === 'PAGO';
@@ -1492,6 +1623,18 @@ export default function MonthlyClosing() {
                           {downloadingId === f.id_fechamentos
                             ? <RefreshCcw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
                             : <Download className="w-3.5 h-3.5 mr-1.5" />} PDF
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void handleShareWhatsApp(f)}
+                          disabled={sharingId === f.id_fechamentos || !f.pdf_url}
+                          title={!f.pdf_url ? 'Sem PDF salvo para compartilhar' : 'Enviar por WhatsApp'}
+                          className="flex-1 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800 sm:flex-none"
+                        >
+                          {sharingId === f.id_fechamentos
+                            ? <RefreshCcw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                            : <MessageCircle className="w-3.5 h-3.5 mr-1.5" />} WhatsApp
                         </Button>
                         {!isPago ? (
                           <Button
@@ -1603,7 +1746,16 @@ export default function MonthlyClosing() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          {!isPaid && (
+                          {isPaid ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 border-amber-200 text-amber-700 hover:bg-amber-50 hover:text-amber-800"
+                              onClick={() => desfazerNotaPaga(nota)}
+                            >
+                              <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Desfazer
+                            </Button>
+                          ) : (
                             <Button
                               variant="outline"
                               size="sm"
@@ -1613,10 +1765,12 @@ export default function MonthlyClosing() {
                               <Wallet className="mr-1.5 h-3.5 w-3.5" /> Marcar paga
                             </Button>
                           )}
-                          <Button variant="outline" size="sm" className="h-8" onClick={() => setEditingItems((prev) => ({ ...prev, [nota.id]: !editing }))}>
-                            {editing ? <EyeOff className="mr-1.5 h-3.5 w-3.5" /> : <PencilLine className="mr-1.5 h-3.5 w-3.5" />}
-                            {editing ? 'Recolher' : 'Editar'}
-                          </Button>
+                          {!isPaid && (
+                            <Button variant="outline" size="sm" className="h-8" onClick={() => setEditingItems((prev) => ({ ...prev, [nota.id]: !editing }))}>
+                              {editing ? <EyeOff className="mr-1.5 h-3.5 w-3.5" /> : <PencilLine className="mr-1.5 h-3.5 w-3.5" />}
+                              {editing ? 'Recolher' : 'Editar'}
+                            </Button>
+                          )}
                           <div className="text-right">
                             <p className="text-[11px] text-muted-foreground">Total O.S.</p>
                             <p className="font-bold text-primary text-sm">R$ {toMoney(totalComDesc)}</p>

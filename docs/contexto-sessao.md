@@ -1,6 +1,39 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-07-08
+Atualizado em: 2026-07-09
+
+---
+
+## Fechamento Mensal - Pacote De Melhorias (Sem Mexer No Layout Do PDF) - 2026-07-09
+
+- Pedido: aplicar todas as melhorias sugeridas, de forma eficiente, retestar tudo, SEM alterar o layout
+  do PDF do fechamento (a usuaria gosta do visual). Isso descarta a otimizacao de scroll via
+  simplificacao visual — o layout ficou intocado.
+- Entregue (tudo em `MonthlyClosing.tsx`, so UI/logica; o template do PDF nao mudou):
+  - **Estorno no rascunho:** O.S. marcada como paga ganha botao "Desfazer" (`estornarRecebimentoNota`)
+    que a devolve ao total do fechamento.
+  - **Compartilhar no WhatsApp:** botao no fechamento gerado gera signed URL do PDF com validade de
+    7 dias e abre `wa.me` com mensagem + telefone do cliente (quando cadastrado); registra acao
+    `compartilhado`. Fallback sem numero abre o seletor de contato. So funciona com PDF salvo.
+  - **Resumo financeiro da lista:** cards Fechamentos / Faturado / Recebido / A receber acima da lista.
+  - **Busca + filtro (todos/a receber/pagos) + ordenacao (recentes/maior valor)** da lista de
+    fechamentos gerados (`fechamentosFiltrados`/`resumoFechamentos`).
+  - (Ja entregues antes nesta rodada de fechamento: download re-renderiza do dados_json com template
+    atual; marcar O.S. paga no rascunho; consulta visual de descontos por O.S.; desconto total no
+    painel; preview WYSIWYG A4.)
+- **Script oneoff `scripts/oneoff/regenerate-fechamento-pdfs.mjs`** (dry-run por padrao, `--apply`
+  grava): re-renderiza os PDFs salvos no bucket `fechamentos` a partir do `dados_json` com o template
+  atual (padroniza os arquivos fisicos antigos que tem "Total OS-xxxx"). Dry-run em prod validado: 16
+  fechamentos, 13 regenerariam, 3 sem pdf_url (dependem do re-render do download). `--apply` NAO foi
+  executado — sobrescreve arquivos em producao; aguarda autorizacao explicita (o problema visivel ja
+  esta resolvido pelo re-render no download, entao isso e so higiene dos arquivos fisicos/links legados).
+- **NAO feito de proposito (backend, exige plano+rollback e teste em prod):** RPC transacional
+  `gerar_fechamento_completo` (insert+snapshot+vinculo numa transacao, contra header orfao). Fica como
+  proximo item de backend a decidir/revisar separadamente — nao dava para entrar num pacote "aplicar
+  tudo + retestar" com seguranca sem prod.
+- Validacao: `npm run typecheck`; `npm run lint` (8 warnings antigos); `npm test -- --run`
+  (63 arquivos, 477 testes); `npm run build`; `CI=1 npx playwright test e2e/monthly-closing.spec.ts
+  e2e/route-surface.spec.ts` (5/5); dry-run do script oneoff contra prod (leitura, 16 fechamentos).
 
 ---
 
