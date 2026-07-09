@@ -4,6 +4,43 @@ Atualizado em: 2026-07-08
 
 ---
 
+## Fechamento Mensal - Preview WYSIWYG (PDF Real A4) E Diagnostico Do Scroll - 2026-07-08
+
+- Pedidos: (1) "Visualizar" deve mostrar o PDF REAL como sera baixado (A4), pra poder ajustar vendo
+  o resultado verdadeiro; (2) o PDF baixado trava no scroll mesmo com poucas O.S. (5-6), no MacBook e
+  no Chrome, enquanto o preview no sistema era fluido.
+- **Diagnostico do scroll travado (medido, nao hipotese):** o preview no sistema era fluido porque
+  era HTML/DOM (`ClosingHtmlPreview`), composto por GPU. O PDF do `@react-pdf/renderer` e rasterizado
+  pelo viewer (PDFium do Chrome / Preview do macOS). Inspecionando o content stream de um PDF de 6
+  O.S. (2 paginas): ~973 `q/Q` (push/pop de estado grafico) + ~200 graphics-states + ~380 curvas
+  bezier POR PAGINA. O `@react-pdf` desenha CADA caixa como um path de recorte (rounded-rect com
+  bezier, mesmo raio 0) + fill, e embrulha CADA `<Text>` em `q...Q` + transform, com 7-9 niveis de
+  aninhamento de View. Isso e ~40x mais pesado que um PDF de texto comum → viewer rasteriza devagar
+  no scroll, mesmo com 2 paginas. Nao e volume de O.S.
+- Testes de reducao de decoracao (bordas por linha, zebra, header fixo, fundo de pagina, borderRadius,
+  overflow:hidden) reduziram so ~3-11% dos operadores — o grosso e texto+wrapping inerente da lib e
+  nao da pra remover sem mudar o visual. Como a usuaria gosta do visual atual, os experimentos foram
+  revertidos.
+- **Correcao entregue (pedido 1 — WYSIWYG):** "Visualizar" agora renderiza o PDF real (mesmo blob do
+  download) via `renderClosingPdfBlob` e exibe num `<iframe>` em A4, para rascunho ativo, rascunho
+  salvo e fechamento gerado. Antes mostrava uma aproximacao em HTML que nao batia com o arquivo. Novo
+  helper `showClosingPdfPreview(dados, title, returnToDraft)`; object URL revogado ao gerar novo e no
+  unmount (`previewObjectUrlRef`); rascunho ativo lido via `modalPreviewDadosRef` pra nao recriar
+  callbacks a cada tecla. `ClosingHtmlPreview` fica so como fallback se a renderizacao do PDF falhar.
+  Efeito colateral esperado: o preview agora rola igual ao PDF baixado (mesma engine) — e proposital,
+  e a fidelidade que ela pediu pra conseguir ajustar.
+- Copy do modal ajustada: "Previa real do PDF em tamanho A4 — e exatamente o arquivo que sera baixado."
+- e2e `monthly-closing.spec.ts` atualizado: o preview agora e um iframe de PDF, entao o teste espera o
+  iframe + botao "Abrir PDF" (nao mais texto HTML do template).
+- **Pendente / a decidir com a usuaria:** reduzir de fato o peso do PDF exige simplificar o visual
+  (tirar fundo de pagina, cantos arredondados, fundos por celula, achatar o aninhamento de Views) —
+  troca perf x estetica. Aguardando ela listar os "ajustes" que quer (ela ja vera o PDF real no
+  preview agora) pra fazer junto com a otimizacao.
+- Validacao: `npm run typecheck`; `npm run lint` (8 warnings antigos); `npm test -- --run`
+  (63 arquivos, 477 testes); `npm run build`; `CI=1 npx playwright test e2e/monthly-closing.spec.ts` (2/2).
+
+---
+
 ## Fechamento Mensal - Divergencia: Limpeza Final Dos Campos Mortos - 2026-07-08
 
 - Contexto: usuaria reclamou que "ainda aparece" a tag desatualizado/OS modificadas nos fechamentos

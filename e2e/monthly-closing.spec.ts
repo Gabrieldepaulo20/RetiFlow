@@ -28,10 +28,11 @@ test.describe('Fechamento Mensal', () => {
 
     await draftDialog.getByRole('button', { name: /visualizar/i }).click();
 
-    const previewDialog = page.getByRole('dialog').filter({ hasText: /template final do fechamento/i });
+    // Preview agora renderiza o PDF real (WYSIWYG) em um iframe A4.
+    const previewDialog = page.getByRole('dialog').filter({ hasText: /prévia real do pdf/i });
     await expect(previewDialog).toBeVisible();
-    await expect(previewDialog.getByText(/aparência de impressão/i)).toBeVisible();
-    await expect(previewDialog.getByText(/retífica premium/i).first()).toBeVisible();
+    await expect(previewDialog.getByRole('button', { name: /abrir pdf/i })).toBeVisible();
+    await expect(previewDialog.locator('iframe')).toBeVisible({ timeout: 20000 });
   });
 
   test('mostra intervalo personalizado com data inicial e final', async ({ page }) => {

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
@@ -285,6 +285,12 @@ export default function MonthlyClosing() {
   const [storedPdfPreviewUrl, setStoredPdfPreviewUrl] = useState<string | null>(null);
   const [storedPdfPreviewTitle, setStoredPdfPreviewTitle] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  // Object URL do PDF renderizado no preview (WYSIWYG). Mantido em ref para revogar
+  // o anterior ao gerar um novo e no unmount, sem vazar memória.
+  const previewObjectUrlRef = useRef<string | null>(null);
+  // Última versão de `modalPreviewDados` (rascunho ativo em edição), lida sob demanda
+  // ao abrir a visualização sem recriar os callbacks a cada tecla.
+  const modalPreviewDadosRef = useRef<FechamentoDadosJson | null>(null);
 
   // Preview state
   const [periodMode, setPeriodMode] = useState<MonthlyClosingDateMode>('month');
@@ -475,6 +481,11 @@ export default function MonthlyClosing() {
     [customEndDate, customStartDate, periodMode, selMonth, selYear],
   );
 
+  // Revoga o PDF de preview ao desmontar (o anterior já é revogado ao gerar um novo).
+  useEffect(() => () => {
+    if (previewObjectUrlRef.current) URL.revokeObjectURL(previewObjectUrlRef.current);
+  }, []);
+
   const closeTemplatePreview = useCallback(() => {
     setTemplatePreviewOpen(false);
     setTemplatePreviewLoading(false);
@@ -539,34 +550,48 @@ export default function MonthlyClosing() {
     }
   }, [renderClosingPdfBlob, toast]);
 
+  // WYSIWYG: renderiza o PDF real (mesmo blob do download) e exibe no iframe A4.
+  // Assim a visualização é idêntica ao arquivo baixado, sem aproximação em HTML.
+  const showClosingPdfPreview = useCallback(async (
+    dados: FechamentoDadosJson,
+    title: string,
+    returnToDraft: boolean,
+  ) => {
+    setGeneratedPreviewFechamento(null);
+    setStoredPdfPreviewUrl(null);
+    setStoredPdfPreviewTitle(title);
+    setReturnToDraftAfterPreview(returnToDraft);
+    setDraftModalOpen(false);
+    setTemplatePreviewOpen(true);
+    setTemplatePreviewLoading(true);
+    try {
+      const blob = await renderClosingPdfBlob(dados, dados.gerado_em);
+      const url = URL.createObjectURL(blob);
+      if (previewObjectUrlRef.current) URL.revokeObjectURL(previewObjectUrlRef.current);
+      previewObjectUrlRef.current = url;
+      setStoredPdfPreviewUrl(url);
+    } catch {
+      toast({ title: 'Erro ao gerar visualização', description: 'Não foi possível montar o PDF do fechamento.', variant: 'destructive' });
+    } finally {
+      setTemplatePreviewLoading(false);
+    }
+  }, [renderClosingPdfBlob, toast]);
+
   const openDraftPreview = useCallback((draft: ClosingDraft) => {
     loadDraftIntoEditor(draft);
-    setGeneratedPreviewFechamento(null);
-    setStoredPdfPreviewUrl(null);
-    setStoredPdfPreviewTitle(null);
-    setReturnToDraftAfterPreview(false);
-    setDraftModalOpen(false);
-    setTemplatePreviewOpen(true);
-  }, [loadDraftIntoEditor]);
+    void showClosingPdfPreview(buildDadosFromDraft(draft), `Fechamento ${draft.periodLabel}`, false);
+  }, [loadDraftIntoEditor, showClosingPdfPreview]);
 
   const openActiveDraftPreview = useCallback(() => {
-    if (!activeDraft) return;
-    setGeneratedPreviewFechamento(null);
-    setStoredPdfPreviewUrl(null);
-    setStoredPdfPreviewTitle(null);
-    setReturnToDraftAfterPreview(true);
-    setDraftModalOpen(false);
-    setTemplatePreviewOpen(true);
-  }, [activeDraft]);
+    const dados = modalPreviewDadosRef.current;
+    if (!dados) return;
+    void showClosingPdfPreview(dados, `Fechamento ${dados.periodo}`, true);
+  }, [showClosingPdfPreview]);
 
   const openGeneratedPreview = useCallback(async (fechamento: FechamentoListItem) => {
     if (fechamento.dados_json) {
-      setGeneratedPreviewFechamento(fechamento);
-      setStoredPdfPreviewUrl(null);
-      setStoredPdfPreviewTitle(null);
-      setReturnToDraftAfterPreview(false);
-      setDraftModalOpen(false);
-      setTemplatePreviewOpen(true);
+      const dados = normalizeFechamentoDadosJson(fechamento.dados_json) ?? fechamento.dados_json;
+      await showClosingPdfPreview(dados, `Fechamento ${fechamento.periodo}`, false);
       return;
     }
 
@@ -591,7 +616,7 @@ export default function MonthlyClosing() {
     }
 
     toast({ title: 'Visualização indisponível', description: 'Este fechamento não possui template salvo nem PDF armazenado.', variant: 'destructive' });
-  }, [toast]);
+  }, [toast, showClosingPdfPreview]);
 
   const removeDraft = useCallback((draftId: string) => {
     setDrafts((current) => current.filter((draft) => draft.id !== draftId));
@@ -778,16 +803,9 @@ export default function MonthlyClosing() {
     },
     [activeDraft, generatedPreviewFechamento, safePreviewNotes, includedNoteIds, descontos],
   );
-  const modalPreviewTitle = generatedPreviewFechamento
-    ? `Fechamento ${generatedPreviewFechamento.periodo}`
-    : storedPdfPreviewTitle
-      ? storedPdfPreviewTitle
-    : 'Template final do fechamento';
-  const modalPreviewDescription = generatedPreviewFechamento
-    ? 'Esta é a visualização do template salvo para este fechamento já gerado.'
-    : storedPdfPreviewUrl
-      ? 'Este PDF salvo está aberto dentro da tela para conferência rápida.'
-    : 'Esta é a aparência de impressão e do PDF que ficará armazenado.';
+  modalPreviewDadosRef.current = modalPreviewDados;
+  const modalPreviewTitle = storedPdfPreviewTitle ?? 'Prévia do fechamento';
+  const modalPreviewDescription = 'Prévia real do PDF em tamanho A4 — é exatamente o arquivo que será baixado.';
 
   useEffect(() => {
     if (!draftModalOpen || !activeDraftId) return;
@@ -1693,7 +1711,15 @@ export default function MonthlyClosing() {
                 <div className="flex h-full items-center justify-center">
                   <DualSpinner />
                 </div>
+              ) : storedPdfPreviewUrl ? (
+                // PDF real (A4) — idêntico ao arquivo que será baixado.
+                <iframe
+                  title={storedPdfPreviewTitle ?? 'PDF do fechamento'}
+                  src={storedPdfPreviewUrl}
+                  className="h-full w-full border-0 bg-white"
+                />
               ) : modalPreviewDados ? (
+                // Fallback só se a renderização do PDF falhar.
                 <div className="h-full min-h-0 overflow-y-auto overscroll-contain scroll-smooth px-0 scrollbar-thin">
                   <ClosingHtmlPreview
                     dados={modalPreviewDados}
@@ -1701,12 +1727,6 @@ export default function MonthlyClosing() {
                     documentSettings={documentSettings}
                   />
                 </div>
-              ) : storedPdfPreviewUrl ? (
-                <iframe
-                  title={storedPdfPreviewTitle ?? 'PDF do fechamento'}
-                  src={storedPdfPreviewUrl}
-                  className="h-full w-full border-0 bg-white"
-                />
               ) : (
                 <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                   Nenhum rascunho selecionado.
