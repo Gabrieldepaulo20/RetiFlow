@@ -25,9 +25,9 @@ test.describe('Configurações', () => {
     }
   });
 
-  test('visualiza dados da empresa', async ({ page }) => {
+  test('explica indisponibilidade dos dados da empresa no modo local', async ({ page }) => {
     await page.getByRole('tab', { name: /empresa/i }).click();
-    await expect(page.getByText('Razão Social', { exact: true })).toBeVisible();
-    await expect(page.getByText('CNPJ', { exact: true })).toBeVisible();
+    await expect(page.getByText('Modo local', { exact: true })).toBeVisible();
+    await expect(page.getByText(/configurações da empresa dependem do Supabase em modo real/i)).toBeVisible();
   });
 });

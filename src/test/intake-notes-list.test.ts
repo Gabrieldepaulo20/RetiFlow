@@ -92,6 +92,8 @@ describe('intake notes list sorting', () => {
     expect(firstPageSummary.totalAmount).toBe(5000);
     expect(fullSummary.totalCount).toBe(80);
     expect(fullSummary.totalAmount).toBe(8000);
+    expect(firstPageSummary.activeCount).toBe(0);
+    expect(fullSummary.activeCount).toBe(20);
     expect(fullSummary.billableCount).toBe(60);
     expect(fullSummary.billableAmount).toBe(6000);
   });

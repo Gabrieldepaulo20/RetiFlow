@@ -682,7 +682,7 @@ export default function Kanban() {
                   <h2 className="text-[13px] font-semibold text-foreground tracking-tight leading-none">
                     {col.label}
                     {FINAL_STATUSES.has(col.status) && (
-                      <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">
+                      <span aria-hidden="true" className="ml-1.5 text-[10px] font-normal text-muted-foreground">
                         final
                       </span>
                     )}

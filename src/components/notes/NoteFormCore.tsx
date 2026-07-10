@@ -52,6 +52,7 @@ import { getTiposDeMotor, getServicosItens } from '@/api/supabase/catalogo';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
 import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 import { getNotaItemDetailLines } from '@/components/notes/notaItemDetails';
+import { PURCHASE_NOTES_ENABLED } from '@/services/domain/intakeNotes';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
@@ -206,13 +207,14 @@ export default function NoteFormCore({
 
   const isEditing = Boolean(editingNote);
   const isLocked = editingNote ? FINAL_STATUSES.has(editingNote.status) : false;
+  const canShowPurchaseType = PURCHASE_NOTES_ENABLED || editingNote?.type === 'COMPRA';
 
   /* ── Form state ── */
   const [noteType, setNoteType] = useState<NoteType>(
-    editingNote?.type ?? (preParentId ? 'COMPRA' : 'SERVICO'),
+    editingNote?.type ?? (PURCHASE_NOTES_ENABLED && preParentId ? 'COMPRA' : 'SERVICO'),
   );
   const [parentNoteId, setParentNoteId] = useState(
-    editingNote?.parentNoteId ?? preParentId,
+    editingNote?.parentNoteId ?? (PURCHASE_NOTES_ENABLED ? preParentId : ''),
   );
   const [data, setData] = useState(() => editingNote?.createdAt.split('T')[0] || getTodayInputValue());
   const [prazo, setPrazo] = useState(() => editingNote?.deadline?.split('T')[0] || getFutureInputValue(DEFAULT_NOTE_DEADLINE_DAYS));
@@ -833,12 +835,12 @@ export default function NoteFormCore({
             }}
             disabled={isEditing}
           >
-            <SelectTrigger>
+            <SelectTrigger aria-label="Tipo da Nota">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="SERVICO">Serviço</SelectItem>
-              <SelectItem value="COMPRA">Compra</SelectItem>
+              {canShowPurchaseType && <SelectItem value="COMPRA">Compra</SelectItem>}
             </SelectContent>
           </Select>
         </Field>

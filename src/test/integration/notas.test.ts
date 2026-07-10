@@ -11,6 +11,7 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
   const createdClientIds = new Set<string>();
   const createdVehicleIds = new Set<string>();
   const createdClosingIds = new Set<string>();
+  const createdPurchaseIds = new Set<string>();
   const serviceDescription = `${TEST_PREFIX} Linha somente descritiva`;
 
   beforeAll(async () => {
@@ -22,6 +23,15 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
     const service = createServiceClient();
     const noteIds = [...createdNoteIds];
     const closingIds = [...createdClosingIds];
+    const purchaseIds = [...createdPurchaseIds];
+
+    if (purchaseIds.length > 0) {
+      await service
+        .schema('RetificaPremium')
+        .from('Notas_de_Compra')
+        .delete()
+        .in('id_notas_compra', purchaseIds);
+    }
 
     if (noteIds.length > 0) {
       await service
@@ -242,6 +252,67 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
       preco_unitario: 0,
       subtotal_item: 0,
     }));
+
+    await client.auth.signOut();
+  });
+
+  it('permite Nota de Compra somente quando a O.S. vinculada pertence à própria conta', async () => {
+    const { client } = await signInAsTestUser();
+    const suffix = String(Date.now()).slice(-8);
+
+    const createdClient = await callRpc(client, 'salvar_cliente_completo', {
+      p_payload: {
+        nome: `${TEST_PREFIX} Cliente Compra ${suffix}`,
+        documento: `4${suffix.padStart(10, '0')}`,
+        tipo_documento: 'CPF',
+        status: true,
+      },
+    });
+    expect(createdClient.status).toBe(200);
+    const clientId = createdClient.id_cliente as string;
+    createdClientIds.add(clientId);
+
+    const createdNote = await callRpc(client, 'nova_nota', {
+      p_payload: {
+        tipo_nota: 'Serviço',
+        numero_nota: `${TEST_PREFIX} PARENT-COMPRA-${suffix}`,
+        fk_clientes: clientId,
+        contato_nome: `${TEST_PREFIX} Contato Compra`,
+        defeito: 'O.S. pai para validar isolamento da compra',
+        total_servicos: 0,
+        total_produtos: 0,
+        total: 0,
+        veiculo: {
+          modelo: 'Motor compra',
+          placa: null,
+          km: 0,
+          motor: 'Gasolina',
+        },
+        itens: [],
+      },
+    });
+    expect(createdNote.status).toBe(200);
+    const noteId = createdNote.id_nota as string;
+    createdNoteIds.add(noteId);
+
+    const details = await callRpc(client, 'get_nota_servico_detalhes', {
+      p_id_nota_servico: noteId,
+    });
+    expect(details.status).toBe(200);
+    createdVehicleIds.add((details.cabecalho as { veiculo: { id: string } }).veiculo.id);
+
+    const createdPurchase = await callRpc(client, 'nova_nota', {
+      p_payload: {
+        tipo_nota: 'Compra',
+        numero_nota: `${TEST_PREFIX} COMPRA-${suffix}`,
+        fk_notas_servico: noteId,
+        observacoes: 'Compra de integração vinculada à própria conta',
+      },
+    });
+
+    expect(createdPurchase.status).toBe(200);
+    expect(createdPurchase.tipo_nota).toBe('Compra');
+    createdPurchaseIds.add(createdPurchase.id_nota as string);
 
     await client.auth.signOut();
   });

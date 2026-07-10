@@ -229,4 +229,39 @@ describe('Note edit flow', () => {
     expect(replaceProductsForNote).toHaveBeenCalledWith('note-1', []);
     expect(onSuccess).toHaveBeenCalledWith(editingNote);
   });
+
+  it('keeps Nota de Compra unavailable for new service orders, including direct parent links', async () => {
+    mockedUseData.mockReturnValue({
+      ...makeDataCtx(),
+      customers: [],
+      clients: [],
+      notes: [],
+      noteCounter: 42,
+    });
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <NoteFormCore
+          preParentId="parent-from-direct-url"
+          onSuccess={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    const typeSelector = screen.getByRole('combobox', { name: 'Tipo da Nota' });
+    expect(typeSelector).toHaveTextContent('Serviço');
+
+    fireEvent.click(typeSelector);
+
+    expect(screen.queryByRole('option', { name: 'Compra' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Vincular a O.S. de Serviço')).not.toBeInTheDocument();
+  });
 });

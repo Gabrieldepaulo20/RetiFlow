@@ -15,8 +15,10 @@ test.describe('Notas de Entrada', () => {
   test('lista O.S. e abre detalhe da nota', async ({ page }) => {
     await openNotes(page);
 
-    await page.getByPlaceholder(/buscar por o\.s\. ou cliente/i).fill('OS-2');
-    const row = page.locator('tr').filter({ hasText: 'OS-2' }).first();
+    await page.getByPlaceholder(/buscar o\.s\. ou cliente/i).fill('OS-2');
+    const row = page.getByRole('row').filter({
+      has: page.getByText('OS-2', { exact: true }),
+    });
 
     await expect(row.getByText('OS-2', { exact: true })).toBeVisible();
     await row.click();
@@ -29,7 +31,7 @@ test.describe('Notas de Entrada', () => {
   test('abre preview do documento com itens da O.S.', async ({ page }) => {
     await openNotes(page);
 
-    await page.getByPlaceholder(/buscar por o\.s\. ou cliente/i).fill('OS-2');
+    await page.getByPlaceholder(/buscar o\.s\. ou cliente/i).fill('OS-2');
     const row = page.locator('tr').filter({ hasText: 'OS-2' }).first();
     await expect(row).toBeVisible();
 
@@ -45,7 +47,7 @@ test.describe('Notas de Entrada', () => {
   test('ação de baixar nota não expõe href público direto na listagem', async ({ page }) => {
     await openNotes(page);
 
-    await page.getByPlaceholder(/buscar por o\.s\. ou cliente/i).fill('OS-1');
+    await page.getByPlaceholder(/buscar o\.s\. ou cliente/i).fill('OS-1');
     const row = page.locator('tr').filter({ hasText: 'OS-1' }).first();
     await expect(row).toBeVisible();
 
@@ -63,11 +65,15 @@ test.describe('Notas de Entrada', () => {
     await page.getByRole('button', { name: /nova o\.s\./i }).click();
     await expect(page.getByRole('heading', { name: /nova ordem de serviço/i })).toBeVisible();
 
-    await page.getByRole('button', { name: /selecionar data/i }).click();
-    await page.locator('button').filter({ hasText: /^20$/ }).first().click();
+    const typeSelector = page.getByRole('combobox', { name: 'Tipo da Nota' });
+    await expect(typeSelector).toContainText('Serviço');
+    await typeSelector.click();
+    await expect(page.getByRole('option', { name: 'Compra' })).toHaveCount(0);
+    await page.keyboard.press('Escape');
 
     await page.getByPlaceholder(/digite o nome, documento ou telefone/i).fill('José');
     await page.getByRole('button', { name: /José Carlos Mendes/i }).click();
+    await page.getByPlaceholder(/funcionário \/ responsável que trouxe a peça/i).fill('João E2E');
 
     await page.getByPlaceholder(/ex: gol 1\.0 8v/i).fill('Uno Mille E2E');
 
@@ -79,6 +85,8 @@ test.describe('Notas de Entrada', () => {
 
     await page.getByRole('button', { name: /salvar o\.s\./i }).click();
 
-    await expect(page.getByText(/criada com sucesso/i).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Notas de Entrada' })).toBeVisible();
+    await page.getByPlaceholder(/buscar o\.s\. ou cliente/i).fill('Uno Mille E2E');
+    await expect(page.getByRole('row').filter({ hasText: 'Uno Mille E2E' })).toBeVisible();
   });
 });

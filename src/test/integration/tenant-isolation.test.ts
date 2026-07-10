@@ -135,6 +135,29 @@ describe.skipIf(skipIntegration)('Tenant isolation — dados operacionais por us
         p_id_nota_servico: otherNote.data.id_notas_servico,
       });
       expect(details.status).toBe(404);
+
+      const crossTenantPurchase = await callRpc(client, 'nova_nota', {
+        p_payload: {
+          tipo_nota: 'Compra',
+          numero_nota: `[INTEGRATION-TEST] CROSS-TENANT-${Date.now()}`,
+          fk_notas_servico: otherNote.data.id_notas_servico,
+          observacoes: 'Tentativa de vínculo entre contas deve ser bloqueada',
+        },
+      });
+
+      // Cleanup defensivo: se a proteção regredir, o teste ainda remove a linha
+      // indevida antes de falhar e não deixa resíduo ligado à O.S. de produção.
+      if (typeof crossTenantPurchase.id_nota === 'string') {
+        await service
+          .schema('RetificaPremium')
+          .from('Notas_de_Compra')
+          .delete()
+          .eq('id_notas_compra', crossTenantPurchase.id_nota);
+      }
+
+      expect(crossTenantPurchase.status).toBe(403);
+      expect(crossTenantPurchase.code).toBe('forbidden');
+      expect(crossTenantPurchase.mensagem).toContain('não encontrada para este usuário');
     }
 
     if (otherPayable.data) {

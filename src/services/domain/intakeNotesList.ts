@@ -12,7 +12,6 @@ export const ACTIVE_INTAKE_NOTE_STATUSES = new Set<NoteStatus>([
   'EM_EXECUCAO',
   'AGUARDANDO_COMPRA',
   'PRONTA',
-  'ENTREGUE',
 ]);
 
 export type IntakeNotesSummary = {

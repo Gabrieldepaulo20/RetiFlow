@@ -455,7 +455,7 @@ export default function IntakeNotes() {
       tone: notesSummary.activeCount > 0 ? 'text-amber-700 bg-amber-50' : 'text-emerald-700 bg-emerald-50',
     },
     {
-      label: 'Finalizadas',
+      label: 'Faturáveis',
       value: notesSummary.billableCount.toLocaleString('pt-BR'),
       sub: 'O.S. faturáveis',
       icon: Check,

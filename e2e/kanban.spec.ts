@@ -11,18 +11,20 @@ test.describe('Kanban (Produção)', () => {
 
   test('lista colunas do Kanban', async ({ page }) => {
     const visibleColumns = [
-      'Aberto',
+      'Aberta',
       'Em Análise',
       'Orçamento',
       'Aprovado',
       'Em Execução',
       'Aguardando Compra',
-      'Pronto',
+      'Pronta',
       'Entregue',
     ];
 
     for (const column of visibleColumns) {
-      await expect(page.getByText(column, { exact: true }).first()).toBeVisible();
+      const heading = page.getByRole('heading', { name: column, exact: true });
+      await heading.scrollIntoViewIfNeeded();
+      await expect(heading).toBeVisible();
     }
   });
 

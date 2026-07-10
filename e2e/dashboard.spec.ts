@@ -8,10 +8,10 @@ test.describe('Dashboard', () => {
     await page.goto('/dashboard');
   });
 
-  test('visualiza KPIs operacionais', async ({ page }) => {
-    await expect(page.getByText('Em andamento', { exact: true })).toBeVisible();
-    await expect(page.getByText('Finalizadas', { exact: true })).toBeVisible();
-    await expect(page.getByText('Ticket médio', { exact: true })).toBeVisible();
+  test('visualiza KPIs financeiros', async ({ page }) => {
+    await expect(page.getByRole('button', { name: /Entradas previstas/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Faturamento real/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Ticket médio/i })).toBeVisible();
   });
 
   test('visualiza gráficos de faturamento e status', async ({ page }) => {
@@ -20,7 +20,8 @@ test.describe('Dashboard', () => {
   });
 
   test('visualiza seção financeira', async ({ page }) => {
-    await expect(page.getByText('Financeiro — Entradas x Saídas', { exact: true })).toBeVisible();
-    await expect(page.getByText('Próximos vencimentos e parcelas', { exact: true })).toBeVisible();
+    await expect(page.getByText('Resultado financeiro', { exact: true })).toBeVisible();
+    await expect(page.getByText('Caixa do período', { exact: true })).toBeVisible();
+    await expect(page.getByText('DRE — resultado do período', { exact: true })).toBeVisible();
   });
 });

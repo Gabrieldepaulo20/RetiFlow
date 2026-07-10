@@ -1,5 +1,13 @@
 import { BILLABLE_STATUSES, FINAL_STATUSES, IntakeNote, NoteStatus, PaymentMethod } from '@/types';
 
+/**
+ * Nota de Compra permanece fora da UI até que persistência, retomada da O.S.
+ * pai, status e PDF usem o contrato próprio de Notas_de_Compra ponta a ponta.
+ * O backend continua aceitando a RPC somente para compatibilidade e testes de
+ * isolamento, com validação obrigatória do tenant da O.S. vinculada.
+ */
+export const PURCHASE_NOTES_ENABLED = false;
+
 interface StatusTransitionInput {
   nextStatus: NoteStatus;
   previousNote: IntakeNote;
