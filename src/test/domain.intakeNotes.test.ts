@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { applyNoteStatusTransition, isTerminalNoteStatus, resolveNoteFinalizedAt, isDirectStatusTransitionAllowed } from '@/services/domain/intakeNotes';
+import {
+  applyNoteStatusTransition,
+  getManualNoteStatusTargets,
+  getNoteStatusTransitionBlockReason,
+  getPreviousNoteWorkflowStatus,
+  isDirectStatusTransitionAllowed,
+  isTerminalNoteStatus,
+  resolveNoteFinalizedAt,
+  shouldConfirmNoteStatusTransition,
+} from '@/services/domain/intakeNotes';
 import { ALLOWED_TRANSITIONS, FINAL_STATUSES, NoteStatus } from '@/types';
 import type { IntakeNote } from '@/types';
 
@@ -68,6 +77,18 @@ describe('applyNoteStatusTransition', () => {
     expect(result.finalizedAt).toBe('2026-03-05T10:00:00.000Z');
   });
 
+  it('allows a direct ABERTO -> ENTREGUE correction and records finalization', () => {
+    const note = buildNote({ status: 'ABERTO', finalizedAt: undefined });
+    const result = applyNoteStatusTransition({
+      nextStatus: 'ENTREGUE',
+      previousNote: note,
+      changedAt: '2026-03-05T10:00:00.000Z',
+    });
+
+    expect(result.status).toBe('ENTREGUE');
+    expect(result.finalizedAt).toBe('2026-03-05T10:00:00.000Z');
+  });
+
   it('preserves existing finalizedAt when transitioning to a billable status', () => {
     const note = buildNote({
       status: 'PRONTA',
@@ -91,6 +112,21 @@ describe('applyNoteStatusTransition', () => {
     expect(result.finalizedAt).toBeUndefined();
   });
 
+  it('keeps a recorded payment when reopening a delivered O.S.', () => {
+    const note = buildNote({
+      status: 'ENTREGUE',
+      finalizedAt: '2026-02-20T00:00:00.000Z',
+      paymentStatus: 'PAGO',
+      paidAt: '2026-02-21T00:00:00.000Z',
+      paidWith: 'PIX',
+    });
+    const result = applyNoteStatusTransition({ nextStatus: 'PRONTA', previousNote: note });
+
+    expect(result.paymentStatus).toBe('PAGO');
+    expect(result.paidAt).toBe('2026-02-21T00:00:00.000Z');
+    expect(result.paidWith).toBe('PIX');
+  });
+
   it('does not touch finalizedAt for transitions between non-billable statuses', () => {
     const note = buildNote({ status: 'APROVADO', finalizedAt: undefined });
     const result = applyNoteStatusTransition({
@@ -111,6 +147,55 @@ describe('applyNoteStatusTransition', () => {
     const note = buildNote({ status: 'ENTREGUE', finalizedAt: '2026-02-20T00:00:00.000Z' });
     const result = applyNoteStatusTransition({ nextStatus: 'EM_EXECUCAO', previousNote: note });
     expect(result.status).toBe('EM_EXECUCAO');
+  });
+});
+
+describe('manual workflow corrections', () => {
+  it.each([
+    ['ENTREGUE', 'PRONTA'],
+    ['RECUSADO', 'ORCAMENTO'],
+    ['SEM_CONSERTO', 'EM_EXECUCAO'],
+    ['EXCLUIDA', 'ABERTO'],
+  ] as const)('reopens %s through its canonical business stage', (current, expected) => {
+    expect(getPreviousNoteWorkflowStatus(current)).toBe(expected);
+  });
+
+  it('offers direct normal-workflow destinations, including Entregue', () => {
+    const targets = getManualNoteStatusTargets(buildNote({ status: 'ABERTO' }));
+
+    expect(targets).toContain('ENTREGUE');
+    expect(targets).not.toContain('ABERTO');
+    expect(targets).not.toContain('AGUARDANDO_COMPRA');
+  });
+
+  it('requires confirmation when stages are skipped or billing changes', () => {
+    const openNote = buildNote({ status: 'ABERTO' });
+    const deliveredNote = buildNote({ status: 'ENTREGUE' });
+
+    expect(shouldConfirmNoteStatusTransition(openNote, 'EM_ANALISE')).toBe(false);
+    expect(shouldConfirmNoteStatusTransition(openNote, 'APROVADO')).toBe(true);
+    expect(shouldConfirmNoteStatusTransition(openNote, 'ENTREGUE')).toBe(true);
+    expect(shouldConfirmNoteStatusTransition(deliveredNote, 'PRONTA')).toBe(true);
+  });
+
+  it('blocks notes already included in a closing', () => {
+    const note = buildNote({ status: 'ENTREGUE', closingId: 'closing-1' });
+
+    expect(getManualNoteStatusTargets(note)).toEqual([]);
+    expect(getNoteStatusTransitionBlockReason(note, 'PRONTA')).toContain('fechamento');
+  });
+
+  it('blocks manual changes while waiting for a linked purchase', () => {
+    const note = buildNote({ status: 'AGUARDANDO_COMPRA' });
+
+    expect(getManualNoteStatusTargets(note)).toEqual([]);
+    expect(getNoteStatusTransitionBlockReason(note, 'EM_EXECUCAO')).toContain('compra vinculada');
+  });
+
+  it('keeps contextual final states tied to the correct business stage', () => {
+    expect(getNoteStatusTransitionBlockReason(buildNote({ status: 'ABERTO' }), 'RECUSADO')).toContain('Orçamento');
+    expect(getNoteStatusTransitionBlockReason(buildNote({ status: 'APROVADO' }), 'SEM_CONSERTO')).toContain('Em Execução');
+    expect(getNoteStatusTransitionBlockReason(buildNote({ status: 'RECUSADO' }), 'ABERTO')).toContain('Orçamento');
   });
 });
 

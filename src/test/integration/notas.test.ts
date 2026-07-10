@@ -253,6 +253,46 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
       subtotal_item: 0,
     }));
 
+    const statuses = await callRpc(client, 'get_status_notas', { p_tipo_nota: 'Serviço' });
+    const serviceStatuses = statuses.dados as Array<{ id_status_notas: number; nome: string }>;
+    const aberta = serviceStatuses.find((status) => status.nome === 'Aberta');
+    const entregue = serviceStatuses.find((status) => status.nome === 'Entregue');
+    expect(aberta).toBeDefined();
+    expect(entregue).toBeDefined();
+
+    const finalizedAt = new Date().toISOString();
+    const delivered = await callRpc(client, 'update_nota_servico', {
+      p_payload: {
+        id_notas_servico: noteId,
+        fk_status: entregue!.id_status_notas,
+        finalizado_em: finalizedAt,
+      },
+    });
+    expect(delivered.status).toBe(200);
+
+    const deliveredDetails = await callRpc(client, 'get_nota_servico_detalhes', {
+      p_id_nota_servico: noteId,
+    });
+    expect(deliveredDetails.status).toBe(200);
+    expect((deliveredDetails.cabecalho as { status: { nome: string } }).status.nome).toBe('Entregue');
+    expect((deliveredDetails.cabecalho as { finalizado_em: string | null }).finalizado_em).not.toBeNull();
+
+    const reopened = await callRpc(client, 'update_nota_servico', {
+      p_payload: {
+        id_notas_servico: noteId,
+        fk_status: aberta!.id_status_notas,
+        finalizado_em: null,
+      },
+    });
+    expect(reopened.status).toBe(200);
+
+    const reopenedDetails = await callRpc(client, 'get_nota_servico_detalhes', {
+      p_id_nota_servico: noteId,
+    });
+    expect(reopenedDetails.status).toBe(200);
+    expect((reopenedDetails.cabecalho as { status: { nome: string } }).status.nome).toBe('Aberta');
+    expect((reopenedDetails.cabecalho as { finalizado_em: string | null }).finalizado_em).toBeNull();
+
     await client.auth.signOut();
   });
 

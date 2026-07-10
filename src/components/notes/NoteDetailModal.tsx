@@ -10,6 +10,7 @@ import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { getNotaPDFSignedUrl, getNotaServicoDetalhes, type NotaServicoDetalhesItem, type NotaServicoDetalhes } from '@/api/supabase/notas';
 import { LazyNotaPDFViewer } from '@/components/notes/LazyNotaPDFViewer';
+import NoteStatusMoveControl from '@/components/notes/NoteStatusMoveControl';
 import {
   Dialog,
   DialogContent,
@@ -36,13 +37,16 @@ import {
   PAYMENT_STATUS_LABELS,
   PAYMENT_METHOD_LABELS,
   FINAL_STATUSES,
-  ALLOWED_TRANSITIONS,
   NoteStatus,
   IntakeNote,
   Client,
   type PaymentMethod,
 } from '@/types';
-import { isBillableNoteStatus } from '@/services/domain/intakeNotes';
+import {
+  getNextNoteWorkflowStatus,
+  getPreviousNoteWorkflowStatus,
+  isBillableNoteStatus,
+} from '@/services/domain/intakeNotes';
 import {
   User,
   Car,
@@ -91,22 +95,6 @@ const MAIN_FLOW: NoteStatus[] = [
   'APROVADO',
   'EM_EXECUCAO',
   'AGUARDANDO_COMPRA',
-  'PRONTA',
-  'ENTREGUE',
-];
-
-/**
- * Linear flow used for "Voltar status". Excludes AGUARDANDO_COMPRA on purpose:
- * that pause is only valid when created via a purchase note (which stamps
- * previousStatus + a child note that auto-resumes the parent). Stepping back
- * into it manually would leave the O.S. in an orphan pause with nothing to resume.
- */
-const BACK_FLOW: NoteStatus[] = [
-  'ABERTO',
-  'EM_ANALISE',
-  'ORCAMENTO',
-  'APROVADO',
-  'EM_EXECUCAO',
   'PRONTA',
   'ENTREGUE',
 ];
@@ -213,6 +201,7 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
   const [realDetalhes, setRealDetalhes] = useState<NotaServicoDetalhes | null>(null);
   const [realDetalhesLoading, setRealDetalhesLoading] = useState(false);
   const [showPDF, setShowPDF] = useState(false);
+  const [isChangingStatus, setIsChangingStatus] = useState(false);
   const [recebForma, setRecebForma] = useState<PaymentMethod>('PIX');
   const [recebData, setRecebData] = useState(() => new Date().toISOString().slice(0, 10));
 
@@ -301,18 +290,14 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
 
   const isFinal = FINAL_STATUSES.has(note.status);
   const isAguardando = note.status === 'AGUARDANDO_COMPRA';
-  const allowed = ALLOWED_TRANSITIONS[note.status];
-  const nextMainStatus = allowed.find(
-    (s) => !FINAL_STATUSES.has(s) || s === 'ENTREGUE',
-  );
+  const nextMainStatus = getNextNoteWorkflowStatus(note.status);
+  const previousMainStatus = getPreviousNoteWorkflowStatus(note.status);
   const canManageWorkflowStatus = user?.role === 'ADMIN'
     || can('notes.status.manage')
     || can('notes.manage')
     || can('kanban.manage');
-  const canAdvance = canManageWorkflowStatus && !isFinal && !isAguardando && nextMainStatus !== undefined;
-  const backFlowIdx = BACK_FLOW.indexOf(note.status);
-  const canGoBack =
-    canManageWorkflowStatus && backFlowIdx > 0 && !isFinal && !isAguardando;
+  const canAdvance = canManageWorkflowStatus && !note.closingId && nextMainStatus !== undefined;
+  const canGoBack = canManageWorkflowStatus && !note.closingId && previousMainStatus !== undefined;
   const daysInStatus = Math.floor(
     (Date.now() - new Date(note.updatedAt).getTime()) / (1000 * 60 * 60 * 24),
   );
@@ -320,28 +305,31 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
   const isAltFinal = isFinal && !MAIN_FLOW.includes(note.status);
   const statusIdxForTimeline = isAltFinal ? -1 : MAIN_FLOW.indexOf(note.status);
 
-  const advance = () => {
-    if (canAdvance && nextMainStatus) {
-      updateNoteStatus(note.id, nextMainStatus);
-      toast({ title: `${note.number} → ${STATUS_LABELS[nextMainStatus]}` });
+  const moveStatus = async (status: NoteStatus) => {
+    setIsChangingStatus(true);
+    try {
+      await updateNoteStatus(note.id, status);
+      toast({ title: `${note.number} → ${STATUS_LABELS[status]}` });
+    } finally {
+      setIsChangingStatus(false);
     }
+  };
+
+  const advance = () => {
+    if (canAdvance && nextMainStatus) void moveStatus(nextMainStatus).catch(() => undefined);
   };
 
   const goBack = () => {
-    if (canGoBack) {
-      const prevStatus = BACK_FLOW[backFlowIdx - 1];
-      updateNoteStatus(note.id, prevStatus);
-      toast({ title: `Voltou para ${STATUS_LABELS[prevStatus]}` });
-    }
+    if (canGoBack && previousMainStatus) void moveStatus(previousMainStatus).catch(() => undefined);
   };
 
-  const moveToFinal = (status: NoteStatus, label: string) => {
-    updateNoteStatus(note.id, status);
-    onClose();
-    toast({
-      title: `${note.number} → ${label}`,
-      description: `A O.S. foi movida para "${label}".`,
-    });
+  const moveToFinal = async (status: NoteStatus) => {
+    try {
+      await moveStatus(status);
+      onClose();
+    } catch {
+      // O DataContext já reverte a mudança otimista e informa o erro.
+    }
   };
 
   const hasItems = svcs.length > 0 || prds.length > 0 || atts.length > 0;
@@ -963,13 +951,14 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
           {/* ── Footer (actions) ── */}
           <div className="shrink-0 space-y-2 border-t bg-background/95 backdrop-blur-sm px-4 py-3.5 sm:px-6">
             {/* Primary row */}
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {canGoBack && (
                 <Button
                   variant="outline"
                   size="sm"
                   className="h-9 shrink-0 gap-1.5 px-3 text-xs font-medium"
                   onClick={goBack}
+                  disabled={isChangingStatus}
                   title="Voltar status"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
@@ -977,6 +966,13 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                   <span className="sm:hidden">Voltar</span>
                 </Button>
               )}
+              <NoteStatusMoveControl
+                note={note}
+                canManage={canManageWorkflowStatus}
+                onMove={moveStatus}
+                compact
+                disabled={isChangingStatus}
+              />
               <Button
                 variant="outline"
                 size="sm"
@@ -1015,7 +1011,11 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                 </Button>
               )}
               {canAdvance && (
-                <Button className="h-9 shrink-0 gap-1.5 px-4 text-sm font-semibold" onClick={advance}>
+                <Button
+                  className="h-9 shrink-0 gap-1.5 px-4 text-sm font-semibold"
+                  onClick={advance}
+                  disabled={isChangingStatus}
+                >
                   Avançar
                   <ChevronRight className="w-4 h-4" />
                 </Button>
@@ -1055,7 +1055,7 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                         <AlertDialogAction
                           className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                           onClick={() =>
-                            moveToFinal('RECUSADO', 'Recusada')
+                            void moveToFinal('RECUSADO')
                           }
                         >
                           Confirmar Recusa
@@ -1084,7 +1084,7 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                         </AlertDialogTitle>
                         <AlertDialogDescription>
                           A O.S. será movida para "Sem Conserto" (estágio
-                          final). Essa ação não pode ser desfeita.
+                          final). Se necessário, ela poderá ser reaberta para Em Execução.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
@@ -1092,7 +1092,7 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                         <AlertDialogAction
                           className="bg-rose-600 text-white hover:bg-rose-700"
                           onClick={() =>
-                            moveToFinal('SEM_CONSERTO', 'Sem Conserto')
+                            void moveToFinal('SEM_CONSERTO')
                           }
                         >
                           Confirmar
@@ -1121,7 +1121,7 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                         </AlertDialogTitle>
                         <AlertDialogDescription>
                           A O.S. será movida para "Excluída" (anulação por
-                          engano/duplicata). Essa ação não pode ser desfeita.
+                          engano/duplicata). Se necessário, ela poderá ser restaurada como Aberta.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
@@ -1129,7 +1129,7 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                         <AlertDialogAction
                           className="bg-zinc-600 text-white hover:bg-zinc-700"
                           onClick={() =>
-                            moveToFinal('EXCLUIDA', 'Excluída')
+                            void moveToFinal('EXCLUIDA')
                           }
                         >
                           Confirmar Exclusão

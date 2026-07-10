@@ -8,13 +8,14 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import NoteStatusMoveControl from '@/components/notes/NoteStatusMoveControl';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { STATUS_LABELS, STATUS_COLORS, NOTE_STATUS_ORDER, FINAL_STATUSES, ALLOWED_TRANSITIONS, NoteStatus, PaymentMethod, PAYMENT_STATUS_COLORS, PAYMENT_STATUS_LABELS, PAYMENT_METHOD_LABELS } from '@/types';
+import { STATUS_LABELS, STATUS_COLORS, NOTE_STATUS_ORDER, FINAL_STATUSES, NoteStatus, PaymentMethod, PAYMENT_STATUS_COLORS, PAYMENT_STATUS_LABELS, PAYMENT_METHOD_LABELS } from '@/types';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { isBillableNoteStatus } from '@/services/domain/intakeNotes';
+import { getNextNoteWorkflowStatus, getPreviousNoteWorkflowStatus, isBillableNoteStatus } from '@/services/domain/intakeNotes';
 import { ArrowLeft, Eye, Printer, Share2, ChevronRight, ChevronLeft, Paperclip, Ban, Trash2, XCircle, Link2, Wallet, RotateCcw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -27,13 +28,6 @@ const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
 
 /** Estágios do fluxo principal (sem os finais alternativos) para a timeline */
 const MAIN_FLOW: NoteStatus[] = ['ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'AGUARDANDO_COMPRA', 'PRONTA', 'ENTREGUE'];
-/**
- * Fluxo linear para "Voltar status". Exclui AGUARDANDO_COMPRA: essa pausa só é
- * válida quando criada via nota de compra (grava previousStatus + filha que retoma).
- * Voltar manualmente para ela deixaria a O.S. em pausa órfã, sem retomada automática.
- */
-const BACK_FLOW: NoteStatus[] = ['ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'PRONTA', 'ENTREGUE'];
-
 export default function IntakeNoteDetail() {
   const { id } = useParams();
   const { getNote, getClient, getServicesForNote, getProductsForNote, getAttachmentsForNote, updateNoteStatus, updateNote, registrarRecebimentoNota, estornarRecebimentoNota, getChildNotes, notes } = useOperationalData();
@@ -43,6 +37,7 @@ export default function IntakeNoteDetail() {
   const { data: templateSettings } = useDocumentTemplateSettings();
   const { data: documentSettings } = useDocumentCustomization('entry_note');
   const [showPreview, setShowPreview] = useState(false);
+  const [isChangingStatus, setIsChangingStatus] = useState(false);
   const [realDetalhes, setRealDetalhes] = useState<NotaServicoDetalhes | null>(null);
   const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
   const [recebForma, setRecebForma] = useState<PaymentMethod>('PIX');
@@ -76,36 +71,39 @@ export default function IntakeNoteDetail() {
 
   const isFinal = FINAL_STATUSES.has(note.status);
   const isAguardando = note.status === 'AGUARDANDO_COMPRA';
-  const allowed = ALLOWED_TRANSITIONS[note.status];
-  // Próximo estágio no fluxo principal (exclui finais alternativos e AGUARDANDO)
-  const nextMainStatus = allowed.find(s => !FINAL_STATUSES.has(s) || s === 'ENTREGUE');
+  const nextMainStatus = getNextNoteWorkflowStatus(note.status);
+  const previousMainStatus = getPreviousNoteWorkflowStatus(note.status);
   const canManageWorkflowStatus = user?.role === 'ADMIN'
     || can('notes.status.manage')
     || can('notes.manage')
     || can('kanban.manage');
-  const canAdvance = canManageWorkflowStatus && !isFinal && !isAguardando && nextMainStatus !== undefined;
+  const canAdvance = canManageWorkflowStatus && !note.closingId && nextMainStatus !== undefined;
+  const canGoBack = canManageWorkflowStatus && !note.closingId && previousMainStatus !== undefined;
 
-  const backFlowIdx = BACK_FLOW.indexOf(note.status);
-  const canGoBack = canManageWorkflowStatus && backFlowIdx > 0 && !isFinal && !isAguardando;
+  const moveStatus = async (status: NoteStatus) => {
+    setIsChangingStatus(true);
+    try {
+      await updateNoteStatus(note.id, status);
+      toast({ title: `${note.number} → ${STATUS_LABELS[status]}` });
+    } finally {
+      setIsChangingStatus(false);
+    }
+  };
 
   const advance = () => {
-    if (canAdvance && nextMainStatus) {
-      updateNoteStatus(note.id, nextMainStatus);
-      toast({ title: `Movido para ${STATUS_LABELS[nextMainStatus]}` });
-    }
+    if (canAdvance && nextMainStatus) void moveStatus(nextMainStatus).catch(() => undefined);
   };
   const goBack = () => {
-    if (canGoBack) {
-      const prevStatus = BACK_FLOW[backFlowIdx - 1];
-      updateNoteStatus(note.id, prevStatus);
-      toast({ title: `Voltou para ${STATUS_LABELS[prevStatus]}` });
-    }
+    if (canGoBack && previousMainStatus) void moveStatus(previousMainStatus).catch(() => undefined);
   };
 
-  const moveToFinal = (status: NoteStatus, label: string) => {
-    updateNoteStatus(note.id, status);
-    toast({ title: `${note.number} → ${label}`, description: `A O.S. foi movida para "${label}".` });
-    navigate(-1);
+  const moveToFinal = async (status: NoteStatus) => {
+    try {
+      await moveStatus(status);
+      navigate(-1);
+    } catch {
+      // O DataContext já reverte a mudança otimista e informa o erro.
+    }
   };
 
   const handleWhatsAppShare = () => {
@@ -220,11 +218,17 @@ export default function IntakeNoteDetail() {
             <Share2 className="w-4 h-4" /> WhatsApp
           </Button>
           {canGoBack && (
-            <Button variant="outline" size="sm" onClick={goBack} className="gap-1.5">
+            <Button variant="outline" size="sm" onClick={goBack} className="gap-1.5" disabled={isChangingStatus}>
               <ChevronLeft className="w-4 h-4" /> Voltar status
             </Button>
           )}
-          {canAdvance && <Button size="sm" onClick={advance}>Avançar <ChevronRight className="w-4 h-4 ml-1" /></Button>}
+          <NoteStatusMoveControl
+            note={note}
+            canManage={canManageWorkflowStatus}
+            onMove={moveStatus}
+            disabled={isChangingStatus}
+          />
+          {canAdvance && <Button size="sm" onClick={advance} disabled={isChangingStatus}>Avançar <ChevronRight className="w-4 h-4 ml-1" /></Button>}
 
           {/* Registrar recebimento - somente em nota faturável e pendente */}
           {isBillableNoteStatus(note.status) && note.paymentStatus === 'PENDENTE' && (
@@ -323,7 +327,7 @@ export default function IntakeNoteDetail() {
                   <AlertDialogCancel>Voltar</AlertDialogCancel>
                   <AlertDialogAction
                     className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    onClick={() => moveToFinal('RECUSADO', 'Recusada')}
+                    onClick={() => void moveToFinal('RECUSADO')}
                   >
                     Confirmar Recusa
                   </AlertDialogAction>
@@ -344,12 +348,12 @@ export default function IntakeNoteDetail() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Marcar {note.number} como Sem Conserto?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    A O.S. será movida para "Sem Conserto" (estágio final). Essa ação não pode ser desfeita.
+                    A O.S. será movida para "Sem Conserto" (estágio final). Se necessário, ela poderá ser reaberta para Em Execução.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Voltar</AlertDialogCancel>
-                  <AlertDialogAction className="bg-rose-600 text-white hover:bg-rose-700" onClick={() => moveToFinal('SEM_CONSERTO', 'Sem Conserto')}>
+                  <AlertDialogAction className="bg-rose-600 text-white hover:bg-rose-700" onClick={() => void moveToFinal('SEM_CONSERTO')}>
                     Confirmar
                   </AlertDialogAction>
                 </AlertDialogFooter>
@@ -369,12 +373,12 @@ export default function IntakeNoteDetail() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Excluir {note.number}?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    A O.S. será movida para "Excluída" (anulação por engano/duplicata). Essa ação não pode ser desfeita.
+                    A O.S. será movida para "Excluída" (anulação por engano/duplicata). Se necessário, ela poderá ser restaurada como Aberta.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Voltar</AlertDialogCancel>
-                  <AlertDialogAction className="bg-zinc-600 text-white hover:bg-zinc-700" onClick={() => moveToFinal('EXCLUIDA', 'Excluída')}>
+                  <AlertDialogAction className="bg-zinc-600 text-white hover:bg-zinc-700" onClick={() => void moveToFinal('EXCLUIDA')}>
                     Confirmar Exclusão
                   </AlertDialogAction>
                 </AlertDialogFooter>

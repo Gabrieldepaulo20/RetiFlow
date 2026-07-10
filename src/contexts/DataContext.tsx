@@ -27,7 +27,7 @@ import { debouncedSaveToStorage, loadStateFromStorage, type PersistedData } from
 import { generateId } from '@/lib/generateId';
 import { logError } from '@/lib/monitoring';
 import { formatNoteNumber, getNextNoteCounter, parseNoteNumberValue } from '@/lib/noteNumbers';
-import { applyNoteStatusTransition, applyNotePayment, revertNotePayment, isDirectStatusTransitionAllowed } from '@/services/domain/intakeNotes';
+import { applyNoteStatusTransition, applyNotePayment, revertNotePayment, getNoteStatusTransitionBlockReason } from '@/services/domain/intakeNotes';
 import {
   getClientes,
   novoCliente,
@@ -204,7 +204,7 @@ interface DataCtx {
   addNote: (n: Omit<IntakeNote, 'id' | 'number' | 'createdAt' | 'updatedAt'> & { number?: string }, itens?: NotaItemDB[]) => Promise<IntakeNote>;
   updateNote: (id: string, d: Partial<IntakeNote>, itens?: NotaItemDB[]) => Promise<void>;
   getNote: (id: string) => IntakeNote | undefined;
-  updateNoteStatus: (id: string, status: NoteStatus) => void;
+  updateNoteStatus: (id: string, status: NoteStatus) => Promise<void>;
   registrarRecebimentoNota: (id: string, opts: { paidWith?: PaymentMethod; paidAt?: string }) => void;
   estornarRecebimentoNota: (id: string) => void;
   createPurchaseNote: (parentNoteId: string) => Promise<IntakeNote>;
@@ -773,19 +773,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const getNote = useCallback((id: string) => noteById.get(id), [noteById]);
 
-  const updateNoteStatus = useCallback((id: string, status: NoteStatus) => {
-    // AGUARDANDO_COMPRA só entra via fluxo de nota de compra (grava previousStatus +
-    // nota-filha que retoma). Trocar status direto para cá deixaria a O.S. em pausa órfã.
-    if (!isDirectStatusTransitionAllowed(status)) {
-      if (import.meta.env.DEV) {
-        console.warn(`[updateNoteStatus] Bloqueada transição direta para ${status}; use o fluxo de nota de compra.`);
-      }
+  const updateNoteStatus = useCallback(async (id: string, status: NoteStatus): Promise<void> => {
+    const note = notes.find((candidate) => candidate.id === id);
+    if (!note) throw new Error('O.S. não encontrada.');
+
+    const blockReason = getNoteStatusTransitionBlockReason(note, status);
+    if (blockReason) {
       toast({
         title: 'Ação não permitida',
-        description: 'Para pausar aguardando compra, use o fluxo de nota de compra.',
+        description: blockReason,
         variant: 'destructive',
       });
-      return;
+      throw new Error(blockReason);
     }
 
     const changedAt = new Date().toISOString();
@@ -812,34 +811,39 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setNotes(applyTransition);
     bumpDataVersion();
 
-    const note = notes.find((candidate) => candidate.id === id);
-    if (!note) return;
-
-    addActivity(`${note.number} movida para ${status}`, id);
-    if (note.parentNoteId && FINAL_STATUSES.has(status)) {
-      const parent = notes.find((candidate) => candidate.id === note.parentNoteId);
-      if (parent && parent.status === 'AGUARDANDO_COMPRA' && parent.previousStatus) {
-        addActivity(
-          `${parent.number} retomada automaticamente (compra ${status === 'ENTREGUE' ? 'finalizada' : 'encerrada'})`,
-          parent.id,
-        );
-      }
-    }
-
-    if (IS_REAL_AUTH) {
-      const statusId = statusDbIdRef.current.get(status);
-      if (statusId !== undefined) {
+    try {
+      if (IS_REAL_AUTH) {
+        const statusId = statusDbIdRef.current.get(status);
+        if (statusId === undefined) {
+          throw new Error(`Status ${status} não está disponível no catálogo do Supabase.`);
+        }
         const persistedTransition = applyNoteStatusTransition({ nextStatus: status, previousNote: note, changedAt });
-        updateNotaServicoDB({
+        await updateNotaServicoDB({
           id_notas_servico: id,
           fk_status: statusId,
           finalizado_em: persistedTransition.finalizedAt ?? null,
-        }).catch(() => {
-          setNotes(previousNotes);
-          bumpDataVersion();
-          toast({ title: 'Erro ao salvar status', description: 'Mudança revertida. Tente novamente.', variant: 'destructive' });
         });
       }
+
+      addActivity(`${note.number} movida para ${status}`, id);
+      if (note.parentNoteId && FINAL_STATUSES.has(status)) {
+        const parent = notes.find((candidate) => candidate.id === note.parentNoteId);
+        if (parent && parent.status === 'AGUARDANDO_COMPRA' && parent.previousStatus) {
+          addActivity(
+            `${parent.number} retomada automaticamente (compra ${status === 'ENTREGUE' ? 'finalizada' : 'encerrada'})`,
+            parent.id,
+          );
+        }
+      }
+    } catch (error) {
+      setNotes(previousNotes);
+      bumpDataVersion();
+      toast({
+        title: 'Erro ao salvar status',
+        description: error instanceof Error ? error.message : 'Mudança revertida. Tente novamente.',
+        variant: 'destructive',
+      });
+      throw error;
     }
   }, [addActivity, bumpDataVersion, notes]);
 

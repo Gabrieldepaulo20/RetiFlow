@@ -4,6 +4,7 @@ export const MOCK_PASSWORD = 'demo123';
 
 export const USERS = {
   financeiro: { email: 'financeiro@retifica.com', password: MOCK_PASSWORD },
+  producao: { email: 'producao@retifica.com', password: MOCK_PASSWORD },
   admin: { email: 'admin@retifica.com', password: MOCK_PASSWORD },
 } as const;
 

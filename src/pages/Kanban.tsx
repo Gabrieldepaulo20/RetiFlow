@@ -6,8 +6,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   NOTE_STATUS_ORDER,
   STATUS_LABELS,
+  BILLABLE_STATUSES,
   FINAL_STATUSES,
-  ALLOWED_TRANSITIONS,
   NoteStatus,
 } from "@/types";
 import {
@@ -40,6 +40,20 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  getNoteStatusTransitionBlockReason,
+  shouldConfirmNoteStatusTransition,
+} from "@/services/domain/intakeNotes";
 
 /* ─── Status color maps ─── */
 
@@ -155,7 +169,7 @@ function saveVisibleStatuses(set: Set<NoteStatus>) {
 
 export default function Kanban() {
   const { notes, clients, updateNoteStatus, getAttachmentsForNote } = useOperationalData();
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const { toast } = useToast();
   const boardScrollerRef = useRef<HTMLDivElement | null>(null);
   const boardTouchRef = useRef<{
@@ -167,6 +181,8 @@ export default function Kanban() {
   } | null>(null);
   const suppressCardClickRef = useRef(false);
   const [selectedNote, setSelectedNote] = useState<string | null>(null);
+  const [pendingMove, setPendingMove] = useState<{ noteId: string; status: NoteStatus } | null>(null);
+  const [isMovingStatus, setIsMovingStatus] = useState(false);
   const [searchParams] = useSearchParams();
   const searchQuery = (searchParams.get("q") ?? "").trim().toLowerCase();
 
@@ -176,6 +192,10 @@ export default function Kanban() {
   const [visibleStatuses, setVisibleStatuses] = useState<Set<NoteStatus>>(
     loadVisibleStatuses,
   );
+  const canManageWorkflowStatus = user?.role === "ADMIN"
+    || can("notes.status.manage")
+    || can("notes.manage")
+    || can("kanban.manage");
 
   const availableYears = useMemo(() => {
     const years = Array.from(
@@ -367,6 +387,23 @@ export default function Kanban() {
 
   /* ── Drag & drop ── */
 
+  const persistStatusMove = async (noteId: string, destStatus: NoteStatus): Promise<boolean> => {
+    const note = notes.find((candidate) => candidate.id === noteId);
+    if (!note) return false;
+
+    setIsMovingStatus(true);
+    try {
+      await updateNoteStatus(noteId, destStatus);
+      toast({ title: `${note.number} → ${STATUS_LABELS[destStatus]}` });
+      return true;
+    } catch {
+      // O DataContext já reverte a mudança otimista e informa o erro.
+      return false;
+    } finally {
+      setIsMovingStatus(false);
+    }
+  };
+
   const onDragEnd = (result: DropResult) => {
     if (!result.destination) return;
     const destStatus = result.destination.droppableId as NoteStatus;
@@ -374,52 +411,31 @@ export default function Kanban() {
     const note = notes.find((n) => n.id === noteId);
     if (!note || note.status === destStatus) return;
 
-    if (FINAL_STATUSES.has(note.status)) {
+    if (!canManageWorkflowStatus) {
       toast({
         title: "Ação não permitida",
-        description: `"${STATUS_LABELS[note.status]}" é um estágio final.`,
+        description: "Seu perfil pode consultar o Kanban, mas não pode alterar o status das O.S.",
         variant: "destructive",
       });
       return;
     }
 
-    if (note.status === "AGUARDANDO_COMPRA") {
+    const blockReason = getNoteStatusTransitionBlockReason(note, destStatus);
+    if (blockReason) {
       toast({
         title: "Ação não permitida",
-        description: "Esta nota está aguardando uma compra ser finalizada.",
+        description: blockReason,
         variant: "destructive",
       });
       return;
     }
 
-    if (FINAL_STATUSES.has(destStatus) || destStatus === "AGUARDANDO_COMPRA") {
-      toast({
-        title: "Ação não permitida",
-        description: `Use o botão correspondente para mover para "${STATUS_LABELS[destStatus]}".`,
-        variant: "destructive",
-      });
+    if (shouldConfirmNoteStatusTransition(note, destStatus)) {
+      setPendingMove({ noteId, status: destStatus });
       return;
     }
 
-    const allowed = ALLOWED_TRANSITIONS[note.status];
-    if (!allowed.includes(destStatus)) {
-      const fromIdx = NOTE_STATUS_ORDER.indexOf(note.status);
-      const toIdx = NOTE_STATUS_ORDER.indexOf(destStatus);
-      if (toIdx < fromIdx && user?.role === "ADMIN") {
-        updateNoteStatus(noteId, destStatus);
-        toast({ title: `${note.number} → ${STATUS_LABELS[destStatus]}` });
-        return;
-      }
-      toast({
-        title: "Transição não permitida",
-        description: `Não é possível mover de "${STATUS_LABELS[note.status]}" para "${STATUS_LABELS[destStatus]}".`,
-        variant: "destructive",
-      });
-      return;
-    }
-
-    updateNoteStatus(noteId, destStatus);
-    toast({ title: `${note.number} → ${STATUS_LABELS[destStatus]}` });
+    void persistStatusMove(noteId, destStatus);
   };
 
   /* ── Render ── */
@@ -734,6 +750,13 @@ export default function Kanban() {
                           key={note.id}
                           draggableId={note.id}
                           index={index}
+                          isDragDisabled={
+                            isMovingStatus
+                            || !canManageWorkflowStatus
+                            || Boolean(note.closingId)
+                            || note.status === "AGUARDANDO_COMPRA"
+                            || note.type !== "SERVICO"
+                          }
                         >
                           {(provided, snapshot) => (
                             <div
@@ -762,6 +785,7 @@ export default function Kanban() {
                                     {...provided.dragHandleProps}
                                     data-kanban-drag-handle
                                     aria-label="Arrastar nota"
+                                    title={canManageWorkflowStatus ? "Arrastar para mudar o status" : "Sem permissão para mudar status"}
                                     onClick={(e) => e.stopPropagation()}
                                     className="opacity-50 transition-opacity -ml-0.5 shrink-0 touch-none cursor-grab active:cursor-grabbing rounded p-0.5 -m-0.5 sm:opacity-0 sm:group-hover:opacity-50 sm:active:opacity-100"
                                   >
@@ -863,6 +887,49 @@ export default function Kanban() {
       </DragDropContext>
 
       </ErrorBoundary>
+
+      <AlertDialog
+        open={pendingMove !== null}
+        onOpenChange={(open) => !open && !isMovingStatus && setPendingMove(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Confirmar mudança de status?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {(() => {
+                const note = pendingMove ? notes.find((candidate) => candidate.id === pendingMove.noteId) : null;
+                if (!note || !pendingMove) return 'Revise a mudança antes de continuar.';
+                const changesBilling = BILLABLE_STATUSES.has(note.status) !== BILLABLE_STATUSES.has(pendingMove.status);
+                const changesFinalState = FINAL_STATUSES.has(note.status) || FINAL_STATUSES.has(pendingMove.status);
+                const impact = changesBilling
+                  ? 'Essa mudança altera a competência financeira da O.S.; o recebimento não será alterado.'
+                  : changesFinalState
+                    ? 'Essa mudança altera o encerramento operacional da O.S.; o recebimento não será alterado.'
+                    : 'Etapas intermediárias poderão ser puladas.';
+                return `${note.number}: ${STATUS_LABELS[note.status]} → ${STATUS_LABELS[pendingMove.status]}. ${impact}`;
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isMovingStatus}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!pendingMove || isMovingStatus}
+              onClick={(event) => {
+                event.preventDefault();
+                if (!pendingMove) return;
+                const move = pendingMove;
+                void persistStatusMove(move.noteId, move.status).then((persisted) => {
+                  if (persisted) setPendingMove(null);
+                });
+              }}
+            >
+              Confirmar mudança
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Detail modal */}
       <NoteDetailModal
