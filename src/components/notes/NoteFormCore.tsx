@@ -42,9 +42,8 @@ import {
   parsePositiveNumber,
   toTitleCasePtBr,
   DEFAULT_NOTE_DEADLINE_DAYS,
-  MAX_NOTE_DEADLINE_DAYS,
+  validateDateNotAfter,
   validateDueDateNotBeforeBaseDate,
-  validateDueDateWithinMaxDays,
 } from '@/services/domain/textNormalization';
 import { formatNoteNumber, normalizeNoteNumber } from '@/lib/noteNumbers';
 import { getNotaServicoDetalhes, uploadNotaPDF, updateNotaPdfUrl } from '@/api/supabase/notas';
@@ -538,16 +537,16 @@ export default function NoteFormCore({
       toast({ title: 'Preencha cliente e data', variant: 'destructive' });
       return;
     }
-    if (prazo && !validateDueDateNotBeforeBaseDate(prazo, data)) {
-      toast({ title: 'Prazo inválido', description: 'O prazo não pode ser anterior à data de entrada.', variant: 'destructive' });
-      return;
-    }
-    if (prazo && !validateDueDateWithinMaxDays(prazo, data)) {
+    if (!validateDateNotAfter(data, getTodayInputValue())) {
       toast({
-        title: 'Prazo muito longo',
-        description: `Use no máximo ${MAX_NOTE_DEADLINE_DAYS} dias a partir da data de entrada da O.S.`,
+        title: 'Data de entrada inválida',
+        description: 'A data de entrada da O.S. não pode ser futura.',
         variant: 'destructive',
       });
+      return;
+    }
+    if (prazo && !validateDueDateNotBeforeBaseDate(prazo, data)) {
+      toast({ title: 'Prazo inválido', description: 'O prazo não pode ser anterior à data de entrada.', variant: 'destructive' });
       return;
     }
     const normalizedContatoNome = toTitleCasePtBr(contatoNome);
@@ -616,6 +615,7 @@ export default function NoteFormCore({
 
     const payload = {
       clientId,
+      createdAt: data,
       status: editingNote?.status || ('ABERTO' as const),
       paymentStatus: editingNote?.paymentStatus ?? ('PENDENTE' as const),
       type: noteType,

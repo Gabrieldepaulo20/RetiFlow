@@ -6,6 +6,23 @@ import { getIntegrationEnvStatus, warnIntegrationSkipped } from './helpers/env';
 const skipIntegration = !getIntegrationEnvStatus().configured;
 if (skipIntegration) warnIntegrationSkipped('notas.test');
 
+function addCalendarDays(date: string, offsetDays: number) {
+  const value = new Date(`${date}T12:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + offsetDays);
+  return value.toISOString().slice(0, 10);
+}
+
+function saoPauloCalendarDate(offsetDays = 0) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return addCalendarDays(`${byType.year}-${byType.month}-${byType.day}`, offsetDays);
+}
+
 describe.skipIf(skipIntegration)('Notas de entrada — integração real com Supabase', () => {
   const createdNoteIds = new Set<string>();
   const createdClientIds = new Set<string>();
@@ -106,10 +123,40 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
     expect(missingContact.code).toBe('invalid_payload');
     expect(missingContact.mensagem).toContain('Contato é obrigatório');
 
+    const futureEntry = await callRpc(client, 'nova_nota', {
+      p_payload: {
+        tipo_nota: 'Serviço',
+        numero_nota: `${TEST_PREFIX} FUTURA-${suffix}`,
+        data_entrada: saoPauloCalendarDate(1),
+        prazo: saoPauloCalendarDate(5),
+        fk_clientes: clientId,
+        contato_nome: `${TEST_PREFIX} Contato Data Futura`,
+        defeito: 'Tentativa com data de entrada futura',
+        total_servicos: 0,
+        total_produtos: 0,
+        total: 0,
+        veiculo: {
+          modelo: 'Motor de teste',
+          placa: null,
+          km: 0,
+          motor: 'Gasolina',
+        },
+        itens: [],
+      },
+    });
+    expect(futureEntry.status).toBe(400);
+    expect(futureEntry.code).toBe('invalid_payload');
+    expect(futureEntry.mensagem).toContain('não pode ser futura');
+
+    const historicalEntryDate = saoPauloCalendarDate(-60);
+    const extendedDeadline = addCalendarDays(historicalEntryDate, 45);
+
     const createdNote = await callRpc(client, 'nova_nota', {
       p_payload: {
         tipo_nota: 'Serviço',
         numero_nota: `${TEST_PREFIX} OS-${suffix}`,
+        data_entrada: historicalEntryDate,
+        prazo: extendedDeadline,
         fk_clientes: clientId,
         contato_nome: `${TEST_PREFIX} Contato Sem Placa`,
         defeito: 'Serviço com observação descritiva',
@@ -137,34 +184,30 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
     const noteId = createdNote.id_nota as string;
     createdNoteIds.add(noteId);
 
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const futureStart = new Date();
-    futureStart.setDate(futureStart.getDate() + 8);
-    const futureEnd = new Date();
-    futureEnd.setDate(futureEnd.getDate() + 9);
+    const historicalStart = addCalendarDays(historicalEntryDate, -1);
+    const historicalEnd = addCalendarDays(historicalEntryDate, 1);
+    const futureStart = saoPauloCalendarDate(8);
+    const futureEnd = saoPauloCalendarDate(9);
 
     const normalizedOsNumber = `OS-${suffix}`;
-    const filteredToday = await callRpc(client, 'get_notas_servico', {
+    const filteredHistorical = await callRpc(client, 'get_notas_servico', {
       p_busca: normalizedOsNumber,
-      p_data_inicio: yesterday.toISOString().slice(0, 10),
-      p_data_fim: tomorrow.toISOString().slice(0, 10),
+      p_data_inicio: historicalStart,
+      p_data_fim: historicalEnd,
       p_limite: 5,
       p_ordem_campo: 'os',
       p_ordem_direcao: 'asc',
     });
-    expect(filteredToday.status).toBe(200);
-    expect(filteredToday.total).toBeGreaterThanOrEqual(1);
-    expect(filteredToday.dados).toEqual(expect.arrayContaining([
+    expect(filteredHistorical.status).toBe(200);
+    expect(filteredHistorical.total).toBeGreaterThanOrEqual(1);
+    expect(filteredHistorical.dados).toEqual(expect.arrayContaining([
       expect.objectContaining({ id_notas_servico: noteId }),
     ]));
 
     const filteredFuture = await callRpc(client, 'get_notas_servico', {
       p_busca: normalizedOsNumber,
-      p_data_inicio: futureStart.toISOString().slice(0, 10),
-      p_data_fim: futureEnd.toISOString().slice(0, 10),
+      p_data_inicio: futureStart,
+      p_data_fim: futureEnd,
       p_limite: 5,
     });
     expect(filteredFuture.status).toBe(200);
@@ -176,6 +219,8 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
     });
     expect(details.status).toBe(200);
     expect((details.cabecalho as { os_numero: string }).os_numero).toBe(normalizedOsNumber);
+    expect(String((details.cabecalho as { data_criacao: string }).data_criacao).slice(0, 10)).toBe(historicalEntryDate);
+    expect(String((details.cabecalho as { prazo: string }).prazo).slice(0, 10)).toBe(extendedDeadline);
     expect((details.cabecalho as { contato_nome: string | null }).contato_nome).toBe(`${TEST_PREFIX} Contato Sem Placa`);
     expect((details.cabecalho as { veiculo: { placa: string | null; id: string } }).veiculo.placa).toBeNull();
     createdVehicleIds.add((details.cabecalho as { veiculo: { id: string } }).veiculo.id);
@@ -208,15 +253,21 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
     expect(pastDeadlineUpdate.code).toBe('invalid_payload');
     expect(pastDeadlineUpdate.mensagem).toContain('prazo não pode ser anterior');
 
-    const longDeadlineUpdate = await callRpc(client, 'update_nota_servico', {
+    const flexibleDatesUpdate = await callRpc(client, 'update_nota_servico', {
       p_payload: {
         id_notas_servico: noteId,
-        prazo: dayFromEntry(11),
+        data_entrada: dayFromEntry(-30),
+        prazo: dayFromEntry(60),
       },
     });
-    expect(longDeadlineUpdate.status).toBe(400);
-    expect(longDeadlineUpdate.code).toBe('invalid_payload');
-    expect(longDeadlineUpdate.mensagem).toContain('até 10 dias');
+    expect(flexibleDatesUpdate.status).toBe(200);
+
+    const flexibleDatesDetails = await callRpc(client, 'get_nota_servico_detalhes', {
+      p_id_nota_servico: noteId,
+    });
+    expect(flexibleDatesDetails.status).toBe(200);
+    expect(String((flexibleDatesDetails.cabecalho as { data_criacao: string }).data_criacao).slice(0, 10)).toBe(dayFromEntry(-30));
+    expect(String((flexibleDatesDetails.cabecalho as { prazo: string }).prazo).slice(0, 10)).toBe(dayFromEntry(60));
 
     const updated = await callRpc(client, 'update_nota_servico', {
       p_payload: {

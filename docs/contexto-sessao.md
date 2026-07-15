@@ -1,6 +1,43 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-07-09
+Atualizado em: 2026-07-15
+
+---
+
+## Notas De Entrada - Datas Retroativas E Prazos Flexiveis - 2026-07-15
+
+- Pedido: permitir que a Retifica Premium registre O.S. de meses anteriores e use prazos superiores
+  a 15 dias, sem a mensagem de prazo excessivo.
+- Diagnostico:
+  - o frontend bloqueava prazo acima de 10 dias, embora a necessidade relatada mencionasse 15;
+  - o campo `Data` era exibido e editavel, mas nao era enviado ao Supabase; novas O.S. eram gravadas
+    com a data atual independentemente da selecao da usuaria;
+  - `nova_nota` e `update_nota_servico` repetiam o limite de 10 dias no backend.
+- Regra nova:
+  - `data_entrada` pode ser hoje ou qualquer data passada; data futura continua bloqueada;
+  - prazo pode ter qualquer duracao, desde que nao seja anterior a data de entrada;
+  - criacao e edicao persistem a data escolhida;
+  - O.S. vinculada a fechamento continua bloqueada para edicao;
+  - contrato replicado nas RPCs normais e de modo suporte.
+- Backend:
+  - migration `20260715121702_allow_flexible_service_order_dates.sql` aplicada no Supabase e marcada
+    como aplicada no historico remoto;
+  - sem alteracao de tabela, coluna, RLS, policy, Storage ou Edge Function.
+- Validacao:
+  - dry-run transacional com rollback passou antes da aplicacao;
+  - catalogo remoto confirmou `data_entrada`, bloqueio de data futura e ausencia do limite de 10 dias
+    nas quatro RPCs afetadas;
+  - integracao real criou O.S. retroativa em 60 dias com prazo de 45 dias, editou para uma janela de
+    90 dias, rejeitou prazo anterior a entrada e rejeitou data futura;
+  - navegador local criou O.S. em `15/05/2026` com prazo `20/07/2026` (66 dias), preservando as duas
+    datas e sem erro de console;
+  - `npm run typecheck`: passou;
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh;
+  - `npm test -- --run`: passou, 63 arquivos e 489 testes;
+  - `npm run build`: passou com os avisos conhecidos de Browserslist/chunks;
+  - `npm run test:integration`: passou, 17 arquivos e 59 testes;
+  - cleanup pos-integracao removeu 40 perfis tecnicos acumulados e 1 usuario Auth; auditoria final
+    confirmou 0 usuarios `integration.test`/`tenant-isolation-*` no banco e no Auth.
 
 ---
 

@@ -218,7 +218,6 @@ function localDateValue(value: string | null | undefined) {
 }
 
 export const DEFAULT_NOTE_DEADLINE_DAYS = 5;
-export const MAX_NOTE_DEADLINE_DAYS = 10;
 
 export function validateDueDateNotBeforeBaseDate(dueDate: string | null | undefined, baseDate: string | null | undefined) {
   const due = localDateValue(dueDate);
@@ -227,14 +226,12 @@ export function validateDueDateNotBeforeBaseDate(dueDate: string | null | undefi
   return due >= base;
 }
 
-export function validateDueDateWithinMaxDays(
-  dueDate: string | null | undefined,
-  baseDate: string | null | undefined,
-  maxDays = MAX_NOTE_DEADLINE_DAYS,
+export function validateDateNotAfter(
+  value: string | null | undefined,
+  maximumDate: string | null | undefined,
 ) {
-  const due = localDateValue(dueDate);
-  const base = localDateValue(baseDate);
-  if (due == null || base == null) return true;
-  const days = (due - base) / (24 * 60 * 60 * 1000);
-  return days <= maxDays;
+  const date = localDateValue(value);
+  const maximum = localDateValue(maximumDate);
+  if (date == null || maximum == null) return true;
+  return date <= maximum;
 }

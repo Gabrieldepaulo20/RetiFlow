@@ -128,6 +128,14 @@ function getDefaultNoteDeadlineDate() {
   return `${year}-${month}-${day}`;
 }
 
+function resolveOptimisticNoteCreatedAt(value: string | undefined, fallback: string) {
+  if (!value) return fallback;
+  const calendarDate = value.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(calendarDate)
+    ? `${calendarDate}T12:00:00`
+    : fallback;
+}
+
 const PAYABLE_CLASS_VALUES = new Set(['CUSTO', 'DESPESA', 'IMPOSTO', 'FINANCEIRO']);
 
 function supabaseToPayableCategory(cat: Categoria): PayableCategory {
@@ -193,6 +201,11 @@ export interface NotaItemDB {
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
+type NewIntakeNoteInput = Omit<IntakeNote, 'id' | 'number' | 'createdAt' | 'updatedAt'> & {
+  number?: string;
+  createdAt?: string;
+};
+
 interface DataCtx {
   customers: Customer[];
   clients: Client[];
@@ -201,7 +214,7 @@ interface DataCtx {
   getClient: (id: string) => Client | undefined;
 
   notes: IntakeNote[];
-  addNote: (n: Omit<IntakeNote, 'id' | 'number' | 'createdAt' | 'updatedAt'> & { number?: string }, itens?: NotaItemDB[]) => Promise<IntakeNote>;
+  addNote: (n: NewIntakeNoteInput, itens?: NotaItemDB[]) => Promise<IntakeNote>;
   updateNote: (id: string, d: Partial<IntakeNote>, itens?: NotaItemDB[]) => Promise<void>;
   getNote: (id: string) => IntakeNote | undefined;
   updateNoteStatus: (id: string, status: NoteStatus) => Promise<void>;
@@ -676,17 +689,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const getClient = useCallback((id: string) => clientById.get(id), [clientById]);
 
   const addNote = useCallback(async (
-    note: Omit<IntakeNote, 'id' | 'number' | 'createdAt' | 'updatedAt'> & { number?: string },
+    note: NewIntakeNoteInput,
     itens?: NotaItemDB[],
   ): Promise<IntakeNote> => {
     const now = new Date().toISOString();
     const resolvedNumber = note.number ?? formatNoteNumber(noteCounter);
-    const { number: _number, ...noteWithoutNumber } = note;
+    const { number: _number, createdAt: requestedCreatedAt, ...noteWithoutGeneratedFields } = note;
+    const createdAt = resolveOptimisticNoteCreatedAt(requestedCreatedAt, now);
 
     if (IS_REAL_AUTH) {
       const result = await novaNota({
         tipo_nota: note.type === 'SERVICO' ? 'Serviço' : 'Compra',
         numero_nota: resolvedNumber,
+        data_entrada: requestedCreatedAt?.slice(0, 10),
         prazo: note.deadline ?? getDefaultNoteDeadlineDate(),
         defeito: note.complaint || '-',
         fk_clientes: note.type === 'SERVICO' ? note.clientId : undefined,
@@ -705,10 +720,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         itens,
       });
       const newNote: IntakeNote = {
-        ...noteWithoutNumber,
+        ...noteWithoutGeneratedFields,
         id: result.id_nota,
         number: resolvedNumber,
-        createdAt: now,
+        createdAt,
         updatedAt: now,
       };
       setNotes((previous) => [newNote, ...previous]);
@@ -721,10 +736,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
 
     const newNote: IntakeNote = {
-      ...noteWithoutNumber,
+      ...noteWithoutGeneratedFields,
       id: uid(),
       number: resolvedNumber,
-      createdAt: now,
+      createdAt,
       updatedAt: now,
     };
 
@@ -747,6 +762,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (data.complaint    !== undefined) payload.defeito          = data.complaint;
       if (data.observations !== undefined) payload.observacoes      = data.observations;
       if (data.clientId     !== undefined) payload.fk_clientes      = data.clientId;
+      if (data.createdAt    !== undefined) payload.data_entrada     = data.createdAt.slice(0, 10);
       if (data.deadline     !== undefined) payload.prazo            = data.deadline;
       if (data.totalServices !== undefined) payload.total_servicos  = data.totalServices;
       if (data.totalProducts !== undefined) payload.total_produtos  = data.totalProducts;

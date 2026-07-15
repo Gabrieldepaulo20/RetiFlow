@@ -51,6 +51,7 @@ export interface StatusNota {
 export interface NovaNotaPayload {
   tipo_nota: 'Serviço' | 'Compra';
   numero_nota: string;
+  data_entrada?: string;
   prazo?: string;
   defeito?: string;
   fk_clientes?: string;

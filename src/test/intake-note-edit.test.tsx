@@ -206,6 +206,7 @@ describe('Note edit flow', () => {
       expect(updateNote).toHaveBeenCalledWith(
         'note-1',
         expect.objectContaining({
+          createdAt: '2026-03-20',
           vehicleModel: 'Gol 1.6 Atualizado',
           complaint: 'Plaina Completa',
           totalAmount: 350,
