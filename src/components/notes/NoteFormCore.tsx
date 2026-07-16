@@ -844,19 +844,27 @@ export default function NoteFormCore({
             </SelectContent>
           </Select>
         </Field>
-        <Field label="Data" required>
+        <Field label="Data da O.S. / autorização" required>
           <DatePicker
             value={data}
             onChange={setData}
             placeholder="Selecionar data"
+            ariaLabel="Data da O.S. / autorização"
           />
+          <p className="mt-1.5 text-[10px] leading-snug text-muted-foreground">
+            Pode ser uma data de meses anteriores.
+          </p>
         </Field>
-        <Field label="Prazo de Entrega">
+        <Field label="Entrega / retirada prevista">
           <DatePicker
             value={prazo}
             onChange={setPrazo}
             placeholder="Definir prazo"
+            ariaLabel="Entrega / retirada prevista"
           />
+          <p className="mt-1.5 text-[10px] leading-snug text-muted-foreground">
+            Pode ultrapassar 10 dias; não pode ser anterior à data da O.S.
+          </p>
         </Field>
       </div>
 

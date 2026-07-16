@@ -1,6 +1,6 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-07-15
+Atualizado em: 2026-07-16
 
 ---
 
@@ -19,6 +19,13 @@ Atualizado em: 2026-07-15
   - criacao e edicao persistem a data escolhida;
   - O.S. vinculada a fechamento continua bloqueada para edicao;
   - contrato replicado nas RPCs normais e de modo suporte.
+- Clareza na tela:
+  - `Data` passou a se chamar `Data da O.S. / autorização`;
+  - `Prazo de Entrega` passou a se chamar `Entrega / retirada prevista`;
+  - textos abaixo dos calendarios deixam claro que datas de meses anteriores e intervalos acima de
+    10 dias sao aceitos.
+  - reteste visual do caso relatado: O.S./autorizacao em `10/06/2026` e entrega/retirada em
+    `16/07/2026` foi salva sem bloqueio e preservou as duas datas.
 - Backend:
   - migration `20260715121702_allow_flexible_service_order_dates.sql` aplicada no Supabase e marcada
     como aplicada no historico remoto;

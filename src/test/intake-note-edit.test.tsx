@@ -192,6 +192,11 @@ describe('Note edit flow', () => {
 
     await screen.findByDisplayValue('Gol 1.0');
 
+    expect(screen.getByRole('button', { name: 'Data da O.S. / autorização' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Entrega / retirada prevista' })).toBeInTheDocument();
+    expect(screen.getByText('Pode ser uma data de meses anteriores.')).toBeInTheDocument();
+    expect(screen.getByText(/pode ultrapassar 10 dias/i)).toBeInTheDocument();
+
     fireEvent.change(screen.getByDisplayValue('Gol 1.0'), {
       target: { value: 'Gol 1.6 atualizado' },
     });
