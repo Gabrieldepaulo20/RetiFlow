@@ -51,6 +51,8 @@ import { createPdfPreviewWindow, openPdfInBrowser } from '@/lib/printPdf';
 import {
   calculateIntakeNotesSummary,
   compareIntakeNotes,
+  DEFAULT_INTAKE_NOTE_SORT_DIRECTION,
+  DEFAULT_INTAKE_NOTE_SORT_FIELD,
   getCurrentIntakeMonthInput,
   getIntakeMonthRange,
   getIntakeNoteSortLabel,
@@ -101,8 +103,8 @@ export default function IntakeNotes() {
   const [maxValueFilter, setMaxValueFilter] = useState('');
   const [customStartDate, setCustomStartDate] = useState(() => format(subDays(new Date(), 29), 'yyyy-MM-dd'));
   const [customEndDate, setCustomEndDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
-  const [sortField, setSortField] = useState<IntakeNoteSortField>('date');
-  const [sortDirection, setSortDirection] = useState<IntakeNoteSortDirection>('desc');
+  const [sortField, setSortField] = useState<IntakeNoteSortField>(DEFAULT_INTAKE_NOTE_SORT_FIELD);
+  const [sortDirection, setSortDirection] = useState<IntakeNoteSortDirection>(DEFAULT_INTAKE_NOTE_SORT_DIRECTION);
   const [filterDialogOpen, setFilterDialogOpen] = useState(false);
   const [draftStatusFilters, setDraftStatusFilters] = useState<Set<string>>(() => new Set(statusFilters));
   const [draftClientFilter, setDraftClientFilter] = useState(clientFilter);
@@ -180,8 +182,8 @@ export default function IntakeNotes() {
     setDraftMaxValueFilter('');
     setDraftCustomStartDate(format(subDays(new Date(), 29), 'yyyy-MM-dd'));
     setDraftCustomEndDate(format(new Date(), 'yyyy-MM-dd'));
-    setDraftSortField('date');
-    setDraftSortDirection('desc');
+    setDraftSortField(DEFAULT_INTAKE_NOTE_SORT_FIELD);
+    setDraftSortDirection(DEFAULT_INTAKE_NOTE_SORT_DIRECTION);
   };
 
   const applyDraftFilters = () => {
@@ -316,6 +318,7 @@ export default function IntakeNotes() {
     [statusFilters, statusFiltersAppliedLocally],
   );
   const isServerPaginationActive = IS_REAL_AUTH
+    && sortField !== 'activity'
     && paymentFilter === 'all'
     && !hasValueFilter
     && statusFilters.size <= 1
@@ -344,7 +347,7 @@ export default function IntakeNotes() {
         p_fk_status: selectedStatusId,
         p_data_inicio: dateRange.startInput,
         p_data_fim: dateRange.endInput,
-        p_ordem_campo: sortField,
+        p_ordem_campo: sortField === 'activity' ? 'date' : sortField,
         p_ordem_direcao: sortDirection,
       });
 
@@ -420,7 +423,7 @@ export default function IntakeNotes() {
     (datePreset !== 'all' ? 1 : 0) +
     (paymentFilter !== 'all' ? 1 : 0) +
     (hasValueFilter ? 1 : 0) +
-    (sortField !== 'date' || sortDirection !== 'desc' ? 1 : 0);
+    (sortField !== DEFAULT_INTAKE_NOTE_SORT_FIELD || sortDirection !== DEFAULT_INTAKE_NOTE_SORT_DIRECTION ? 1 : 0);
   const clearAllFilters = () => {
     setStatusFilters(new Set());
     setClientFilter('all');
@@ -429,8 +432,8 @@ export default function IntakeNotes() {
     setPaymentFilter('all');
     setMinValueFilter('');
     setMaxValueFilter('');
-    setSortField('date');
-    setSortDirection('desc');
+    setSortField(DEFAULT_INTAKE_NOTE_SORT_FIELD);
+    setSortDirection(DEFAULT_INTAKE_NOTE_SORT_DIRECTION);
     setCurrentPage(1);
   };
   const isLoadingNotesPage = IS_REAL_AUTH && serverNotesQuery.isFetching;
@@ -756,9 +759,10 @@ export default function IntakeNotes() {
                   <div className="space-y-3 px-4 py-3 sm:px-5">
                     <section className="rounded-2xl border border-border/70 bg-muted/20 p-2.5">
                       <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">Ordenar por</p>
-                      <div className="mt-2 grid grid-cols-2 gap-2">
+                      <div className="mt-2 grid grid-cols-3 gap-2">
                         {([
-                          ['date', 'Data'],
+                          ['activity', 'Atividade'],
+                          ['date', 'Data da O.S.'],
                           ['os', 'Número da O.S.'],
                         ] as const).map(([value, label]) => (
                           <button
@@ -998,13 +1002,13 @@ export default function IntakeNotes() {
                       Valor: {valueFilterLabel}
                     </Badge>
                   )}
-                  {(sortField !== 'date' || sortDirection !== 'desc') && (
+                  {(sortField !== DEFAULT_INTAKE_NOTE_SORT_FIELD || sortDirection !== DEFAULT_INTAKE_NOTE_SORT_DIRECTION) && (
                     <Badge
                       variant="secondary"
                       className="gap-1.5 px-2.5 py-1 rounded-full text-xs cursor-pointer"
                       onClick={() => {
-                        setSortField('date');
-                        setSortDirection('desc');
+                        setSortField(DEFAULT_INTAKE_NOTE_SORT_FIELD);
+                        setSortDirection(DEFAULT_INTAKE_NOTE_SORT_DIRECTION);
                       }}
                     >
                       {getIntakeNoteSortLabel(sortField, sortDirection)}

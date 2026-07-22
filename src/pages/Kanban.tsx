@@ -54,6 +54,7 @@ import {
   getNoteStatusTransitionBlockReason,
   shouldConfirmNoteStatusTransition,
 } from "@/services/domain/intakeNotes";
+import { compareIntakeNotes } from "@/services/domain/intakeNotesList";
 
 /* ─── Status color maps ─── */
 
@@ -381,7 +382,9 @@ export default function Kanban() {
     (status) => ({
       status,
       label: STATUS_LABELS[status],
-      notes: filteredNotes.filter((n) => n.status === status),
+      notes: filteredNotes
+        .filter((n) => n.status === status)
+        .sort((a, b) => compareIntakeNotes(a, b, 'activity', 'desc')),
     }),
   );
 

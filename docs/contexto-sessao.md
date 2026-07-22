@@ -1,6 +1,38 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-07-16
+Atualizado em: 2026-07-21
+
+---
+
+## Notas De Entrada - Novas O.S. No Topo - 2026-07-21
+
+- Pedido: a Retifica Premium relatou que, depois de criar uma O.S., ela nao aparecia mais no topo e
+  precisava pesquisar pelo numero.
+- Causa:
+  - a lista usava `Data da O.S.` descendente como ordenacao padrao;
+  - depois que datas retroativas passaram a ser persistidas corretamente, uma O.S. cadastrada hoje com
+    autorizacao de mes anterior era posicionada no meio da lista;
+  - ordenar apenas pelo maior numero da O.S. nao e seguro, pois a base possui numeros legados fora da
+    sequencia operacional normal.
+- Correcao:
+  - a ordenacao padrao da lista passou a ser `Atividade mais recente`, usando `updatedAt`;
+  - O.S. nova aparece primeiro mesmo quando `createdAt`/data da autorizacao e retroativa;
+  - O.S. recem-movida tambem aparece primeiro na coluna de destino do Kanban;
+  - filtros continuam permitindo ordenar por `Data da O.S.` e `Numero da O.S.`;
+  - a ordenacao por atividade usa a lista operacional ja carregada no contexto; consultas paginadas por
+    data/numero continuam usando a RPC existente.
+- Sem migration, alteracao de RPC, RLS, Storage, Auth ou Edge Function.
+- Validacao:
+  - teste de regressao cobre O.S. criada por ultimo com `createdAt` retroativo aparecendo acima da O.S.
+    de hoje na lista e no Kanban;
+  - navegador local criou primeiro `OS-0` em `21/07/2026` e depois `OS-1` em `10/06/2026`; `OS-1`
+    ficou na primeira linha da lista e no primeiro card da coluna `Aberta`;
+  - modal de filtros conferido em 393x873, sem estouro visual, e console com 0 erros;
+  - `npm run typecheck`: passou;
+  - `npm run lint`: passou com 8 warnings antigos de Fast Refresh;
+  - `npm test -- --run`: passou, 63 arquivos e 491 testes;
+  - `npm run build`: passou com os avisos conhecidos de Browserslist/chunks;
+  - `npm run test:integration`: passou; cleanup final confirmou 0 perfis e 0 usuarios Auth de teste.
 
 ---
 

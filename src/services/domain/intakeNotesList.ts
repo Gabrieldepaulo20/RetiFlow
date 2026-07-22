@@ -1,8 +1,11 @@
 import type { IntakeNote, NoteStatus } from '@/types';
 import { BILLABLE_STATUSES } from '@/types';
 
-export type IntakeNoteSortField = 'date' | 'os';
+export type IntakeNoteSortField = 'activity' | 'date' | 'os';
 export type IntakeNoteSortDirection = 'asc' | 'desc';
+
+export const DEFAULT_INTAKE_NOTE_SORT_FIELD: IntakeNoteSortField = 'activity';
+export const DEFAULT_INTAKE_NOTE_SORT_DIRECTION: IntakeNoteSortDirection = 'desc';
 
 export const ACTIVE_INTAKE_NOTE_STATUSES = new Set<NoteStatus>([
   'ABERTO',
@@ -69,6 +72,10 @@ export function getIntakeNoteSortLabel(field: IntakeNoteSortField, direction: In
     return direction === 'asc' ? 'O.S. menor primeiro' : 'O.S. maior primeiro';
   }
 
+  if (field === 'activity') {
+    return direction === 'asc' ? 'Atividade mais antiga' : 'Atividade mais recente';
+  }
+
   return direction === 'asc' ? 'Data mais antiga' : 'Data mais recente';
 }
 
@@ -109,6 +116,10 @@ export function compareIntakeNotes(
   if (field === 'os') {
     const byOs = osCollator.compare(a.number, b.number);
     if (byOs !== 0) return byOs * multiplier;
+  } else if (field === 'activity') {
+    const byActivity = new Date(a.updatedAt || a.createdAt).getTime()
+      - new Date(b.updatedAt || b.createdAt).getTime();
+    if (byActivity !== 0) return byActivity * multiplier;
   } else {
     const byDate = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
     if (byDate !== 0) return byDate * multiplier;
