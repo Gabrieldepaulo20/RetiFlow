@@ -62,39 +62,35 @@ describe('intake notes list sorting', () => {
       .toEqual(['newer', 'middle', 'older']);
   });
 
-  it('keeps a newly registered backdated service order at the top by default', () => {
+  it('keeps the latest service order number first by default without reacting to edits', () => {
     const notes = [
       note({
-        id: 'today-old-activity',
-        number: 'OS-6000',
-        createdAt: '2026-07-21T12:00:00.000Z',
-        updatedAt: '2026-07-20T15:00:00.000Z',
+        id: 'today-edited',
+        number: 'OS-700',
+        createdAt: '2026-07-22T12:00:00.000Z',
+        updatedAt: '2026-07-22T18:00:00.000Z',
       }),
       note({
-        id: 'backdated-new-activity',
-        number: 'OS-6001',
+        id: 'backdated-created-last',
+        number: 'OS-701',
         createdAt: '2026-06-10T12:00:00.000Z',
-        updatedAt: '2026-07-21T15:00:00.000Z',
+        updatedAt: '2026-07-22T15:00:00.000Z',
       }),
     ];
 
-    expect(DEFAULT_INTAKE_NOTE_SORT_FIELD).toBe('activity');
+    expect(DEFAULT_INTAKE_NOTE_SORT_FIELD).toBe('os');
     expect(DEFAULT_INTAKE_NOTE_SORT_DIRECTION).toBe('desc');
     expect(notes.sort((a, b) => compareIntakeNotes(
       a,
       b,
       DEFAULT_INTAKE_NOTE_SORT_FIELD,
       DEFAULT_INTAKE_NOTE_SORT_DIRECTION,
-    )).map((item) => item.id)).toEqual([
-      'backdated-new-activity',
-      'today-old-activity',
-    ]);
+    )).map((item) => item.id)).toEqual(['backdated-created-last', 'today-edited']);
   });
 
   it('describes selected ordering in user-facing language', () => {
     expect(getIntakeNoteSortLabel('date', 'desc')).toBe('Data mais recente');
     expect(getIntakeNoteSortLabel('os', 'asc')).toBe('O.S. menor primeiro');
-    expect(getIntakeNoteSortLabel('activity', 'desc')).toBe('Atividade mais recente');
   });
 
   it('builds a full month range for note filters', () => {

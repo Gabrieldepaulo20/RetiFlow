@@ -1,38 +1,40 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-07-21
+Atualizado em: 2026-07-22
 
 ---
 
-## Notas De Entrada - Novas O.S. No Topo - 2026-07-21
+## Notas De Entrada - Ordenacao Estavel E Salvamento Sem Trocar Dados - 2026-07-22
 
-- Pedido: a Retifica Premium relatou que, depois de criar uma O.S., ela nao aparecia mais no topo e
-  precisava pesquisar pelo numero.
-- Causa:
-  - a lista usava `Data da O.S.` descendente como ordenacao padrao;
-  - depois que datas retroativas passaram a ser persistidas corretamente, uma O.S. cadastrada hoje com
-    autorizacao de mes anterior era posicionada no meio da lista;
-  - ordenar apenas pelo maior numero da O.S. nao e seguro, pois a base possui numeros legados fora da
-    sequencia operacional normal.
-- Correcao:
-  - a ordenacao padrao da lista passou a ser `Atividade mais recente`, usando `updatedAt`;
-  - O.S. nova aparece primeiro mesmo quando `createdAt`/data da autorizacao e retroativa;
-  - O.S. recem-movida tambem aparece primeiro na coluna de destino do Kanban;
-  - filtros continuam permitindo ordenar por `Data da O.S.` e `Numero da O.S.`;
-  - a ordenacao por atividade usa a lista operacional ja carregada no contexto; consultas paginadas por
-    data/numero continuam usando a RPC existente.
-- Sem migration, alteracao de RPC, RLS, Storage, Auth ou Edge Function.
+- Pedido corrigido: desfazer a ordenacao ampla por `Atividade`/`updatedAt` e a reordenacao do Kanban.
+  O objetivo era somente deixar as O.S. recem-criadas no inicio da pagina de Notas de Entrada.
+- Ordenacao da lista:
+  - o padrao agora e `Numero da O.S. / maior primeiro`, usando a ordenacao paginada que a RPC ja
+    suporta;
+  - uma O.S. retroativa com o proximo numero fica no topo mesmo depois de recarregar a pagina;
+  - editar, mover, receber ou atualizar uma O.S. nao muda sua posicao por `updatedAt`;
+  - `Data` continua disponivel como ordenacao alternativa;
+  - o Kanban voltou a preservar sua ordem anterior e nao participa desse ajuste.
+- Bugs de salvamento encontrados no reteste:
+  - ao editar `OS-0`, o campo bloqueado podia mostrar o proximo contador (`OS-2`), embora o backend
+    ainda atualizasse a nota correta; o formulario agora sempre exibe o numero da propria O.S.;
+  - durante a criacao, o contador podia trocar o numero visivel antes do modal fechar; o numero fica
+    congelado assim que o salvamento comeca e os botoes bloqueiam envio duplicado;
+  - a atualizacao otimista gravava `AAAA-MM-DD` sem horario, que o navegador interpretava como UTC e
+    podia exibir o dia anterior; criacao e edicao agora normalizam a data operacional para meio-dia;
+  - no layout compacto, clicar em `Editar nota` tambem abria os detalhes por baixo; a propagacao do
+    menu foi isolada e somente a acao escolhida abre.
+- Sem migration, alteracao de RPC, banco, RLS, Storage, Auth ou Edge Function.
 - Validacao:
-  - teste de regressao cobre O.S. criada por ultimo com `createdAt` retroativo aparecendo acima da O.S.
-    de hoje na lista e no Kanban;
-  - navegador local criou primeiro `OS-0` em `21/07/2026` e depois `OS-1` em `10/06/2026`; `OS-1`
-    ficou na primeira linha da lista e no primeiro card da coluna `Aberta`;
-  - modal de filtros conferido em 393x873, sem estouro visual, e console com 0 erros;
+  - navegador local criou `OS-0` em `22/07/2026` e depois `OS-1` em `10/06/2026`; `OS-1` ficou no
+    topo inclusive apos recarregar a pagina;
+  - edicao da `OS-0` exibiu numero `0`, salvou mantendo a data `22/07/2026` e permaneceu abaixo da
+    `OS-1`; menu abriu somente a edicao; console com 0 erros e 0 warnings;
   - `npm run typecheck`: passou;
   - `npm run lint`: passou com 8 warnings antigos de Fast Refresh;
-  - `npm test -- --run`: passou, 63 arquivos e 491 testes;
+  - `npm test -- --run`: passou, 63 arquivos e 493 testes;
   - `npm run build`: passou com os avisos conhecidos de Browserslist/chunks;
-  - `npm run test:integration`: passou; cleanup final confirmou 0 perfis e 0 usuarios Auth de teste.
+  - integracao real nao foi executada porque o resultado final nao altera contrato Supabase/backend.
 
 ---
 

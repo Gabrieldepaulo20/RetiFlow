@@ -80,12 +80,9 @@ export interface NovaNotaPayload {
 /**
  * Contrato wire do SQL: `p_ordem_campo` aceita apenas 'data' | 'os'
  * (migration 20260620124500 — valor desconhecido cai no fallback 'data').
- * O domínio também possui 'activity', mas essa ordenação é local porque a RPC
- * não expõe updated_at como chave de paginação. 'date' | 'os' são traduzidos aqui.
+ * O domínio usa 'date' | 'os'; a tradução acontece aqui, no boundary.
  */
-type IntakeNoteServerSortField = Exclude<IntakeNoteSortField, 'activity'>;
-
-function toWireOrdemCampo(field: IntakeNoteServerSortField): 'data' | 'os' {
+function toWireOrdemCampo(field: IntakeNoteSortField): 'data' | 'os' {
   return field === 'date' ? 'data' : field;
 }
 
@@ -98,7 +95,7 @@ export async function getNotasServico(params?: {
   p_data_inicio?: string;
   p_data_fim?: string;
   p_apenas_sem_fechamento?: boolean;
-  p_ordem_campo?: IntakeNoteServerSortField;
+  p_ordem_campo?: IntakeNoteSortField;
   p_ordem_direcao?: IntakeNoteSortDirection;
 }) {
   const wireParams = params?.p_ordem_campo

@@ -258,45 +258,6 @@ describe('Kanban', () => {
     expect(await screen.findByText('note-detail-n1')).toBeInTheDocument();
   });
 
-  it('shows the newly registered backdated service order first in its column', () => {
-    const context = mockedUseData();
-    const existingNote = context.notes[0];
-    mockedUseData.mockReturnValue({
-      ...context,
-      notes: [
-        {
-          ...existingNote,
-          id: 'today-old-activity',
-          number: 'OS-6000',
-          createdAt: '2026-07-21T12:00:00.000Z',
-          updatedAt: '2026-07-20T15:00:00.000Z',
-        },
-        {
-          ...existingNote,
-          id: 'backdated-new-activity',
-          number: 'OS-6001',
-          createdAt: '2026-06-10T12:00:00.000Z',
-          updatedAt: '2026-07-21T15:00:00.000Z',
-        },
-      ],
-    });
-
-    render(
-      <MemoryRouter
-        initialEntries={['/kanban']}
-        future={{
-          v7_startTransition: true,
-          v7_relativeSplatPath: true,
-        }}
-      >
-        <Kanban />
-      </MemoryRouter>,
-    );
-
-    expect(screen.getAllByText(/^OS-600[01]$/).map((element) => element.textContent))
-      .toEqual(['OS-6001', 'OS-6000']);
-  });
-
   it('registers the board wheel handler as non-passive so horizontal scroll can prevent default', () => {
     const addEventListenerSpy = vi.spyOn(HTMLElement.prototype, 'addEventListener');
 

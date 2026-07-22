@@ -1,10 +1,11 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import NoteFormCore from '@/components/notes/NoteFormCore';
 import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { makeAuthCtx, makeDataCtx } from './helpers/contextMocks';
+import type { IntakeNote } from '@/types';
 
 vi.mock('@/contexts/DataContext', () => ({
   useData: vi.fn(),
@@ -192,6 +193,7 @@ describe('Note edit flow', () => {
 
     await screen.findByDisplayValue('Gol 1.0');
 
+    expect(screen.getByDisplayValue('123')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Data da O.S. / autorização' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Entrega / retirada prevista' })).toBeInTheDocument();
     expect(screen.getByText('Pode ser uma data de meses anteriores.')).toBeInTheDocument();
@@ -234,6 +236,99 @@ describe('Note edit flow', () => {
     );
     expect(replaceProductsForNote).toHaveBeenCalledWith('note-1', []);
     expect(onSuccess).toHaveBeenCalledWith(editingNote);
+  });
+
+  it('does not change the service order number while creation is being saved', async () => {
+    let resolveAddNote!: (note: IntakeNote) => void;
+    const addNote = vi.fn(() => new Promise<IntakeNote>((resolve) => {
+      resolveAddNote = resolve;
+    }));
+    const onSuccess = vi.fn();
+    const client = {
+      id: 'client-1',
+      name: 'Cliente Teste',
+      docType: 'CPF' as const,
+      docNumber: '123.456.789-00',
+      phone: '(11) 99999-0000',
+      email: 'cliente@teste.com',
+      address: 'Rua Um',
+      addressNumber: '10',
+      district: 'Centro',
+      city: 'São Paulo',
+      state: 'SP',
+      cep: '01000-000',
+      notes: '',
+      isActive: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    };
+    const initialContext = makeDataCtx({
+      customers: [client],
+      clients: [client],
+      noteCounter: 42,
+      addNote,
+    });
+    mockedUseData.mockReturnValue(initialContext);
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    const form = (
+      <QueryClientProvider client={queryClient}>
+        <NoteFormCore
+          preClientId="client-1"
+          onSuccess={onSuccess}
+          onCancel={vi.fn()}
+        />
+      </QueryClientProvider>
+    );
+    const view = render(form);
+
+    fireEvent.change(screen.getByPlaceholderText('Funcionário / responsável que trouxe a peça'), {
+      target: { value: 'Patrícia' },
+    });
+    fireEvent.change(screen.getAllByPlaceholderText('Descrição do serviço')[0], {
+      target: { value: 'Plaina' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar O.S.' }));
+
+    await waitFor(() => expect(addNote).toHaveBeenCalledTimes(1));
+    expect(screen.getByDisplayValue('42')).toBeDisabled();
+    expect(addNote).toHaveBeenCalledWith(
+      expect.objectContaining({ number: 'OS-42' }),
+      expect.any(Array),
+    );
+
+    mockedUseData.mockReturnValue({ ...initialContext, noteCounter: 43 });
+    view.rerender(form);
+
+    expect(screen.getByDisplayValue('42')).toBeDisabled();
+    expect(screen.queryByDisplayValue('43')).not.toBeInTheDocument();
+
+    const createdNote: IntakeNote = {
+      id: 'created-note',
+      number: 'OS-42',
+      clientId: 'client-1',
+      createdAt: '2026-07-22',
+      updatedAt: '2026-07-22T12:00:00.000Z',
+      createdByUserId: 'user-1',
+      status: 'ABERTO',
+      paymentStatus: 'PENDENTE',
+      type: 'SERVICO',
+      engineType: 'Cabeçote',
+      vehicleModel: '-',
+      complaint: 'Plaina',
+      observations: '',
+      contatoNome: 'Patrícia',
+      totalServices: 0,
+      totalProducts: 0,
+      totalAmount: 0,
+    };
+    await act(async () => resolveAddNote(createdNote));
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith(createdNote));
   });
 
   it('keeps Nota de Compra unavailable for new service orders, including direct parent links', async () => {

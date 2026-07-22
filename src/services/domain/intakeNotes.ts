@@ -9,6 +9,18 @@ import { BILLABLE_STATUSES, FINAL_STATUSES, IntakeNote, NoteStatus, PaymentMetho
 export const PURCHASE_NOTES_ENABLED = false;
 
 /**
+ * Mantém a data operacional da O.S. em um horário local seguro para a UI.
+ * Datas `AAAA-MM-DD` à meia-noite UTC podem aparecer como o dia anterior no Brasil.
+ */
+export function resolveNoteCalendarTimestamp(value: string | undefined, fallback: string) {
+  if (!value) return fallback;
+  const calendarDate = value.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(calendarDate)
+    ? `${calendarDate}T12:00:00`
+    : fallback;
+}
+
+/**
  * Etapas que a equipe pode selecionar manualmente no fluxo operacional.
  * AGUARDANDO_COMPRA fica fora: essa pausa depende de uma compra vinculada.
  */

@@ -6,6 +6,7 @@ import {
   getPreviousNoteWorkflowStatus,
   isDirectStatusTransitionAllowed,
   isTerminalNoteStatus,
+  resolveNoteCalendarTimestamp,
   resolveNoteFinalizedAt,
   shouldConfirmNoteStatusTransition,
 } from '@/services/domain/intakeNotes';
@@ -33,6 +34,21 @@ function buildNote(overrides: Partial<IntakeNote> = {}): IntakeNote {
     ...overrides,
   };
 }
+
+describe('resolveNoteCalendarTimestamp', () => {
+  it('preserves the selected calendar day when the optimistic note is rendered in Brazil', () => {
+    const timestamp = resolveNoteCalendarTimestamp('2026-07-22', 'fallback');
+
+    expect(timestamp).toBe('2026-07-22T12:00:00');
+    expect(new Date(timestamp).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }))
+      .toBe('22/07/2026');
+  });
+
+  it('uses the existing timestamp when the new value is invalid', () => {
+    expect(resolveNoteCalendarTimestamp('data-invalida', '2026-07-22T12:00:00'))
+      .toBe('2026-07-22T12:00:00');
+  });
+});
 
 describe('resolveNoteFinalizedAt', () => {
   it('returns finalizedAt when present', () => {

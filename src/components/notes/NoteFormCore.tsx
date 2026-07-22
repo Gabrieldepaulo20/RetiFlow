@@ -230,7 +230,9 @@ export default function NoteFormCore({
   const [clientSearch, setClientSearch] = useState('');
   const [clientResultsOpen, setClientResultsOpen] = useState(false);
   const clientSearchRef = useRef<HTMLDivElement | null>(null);
-  const [osNumber, setOsNumber] = useState(() => formatNoteNumber(noteCounter));
+  const [osNumber, setOsNumber] = useState(() => editingNote?.number ?? formatNoteNumber(noteCounter));
+  const [hasEditedOsNumber, setHasEditedOsNumber] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [itemsLoadingFromDB, setItemsLoadingFromDB] = useState(false);
   const [engineTypeCatalog, setEngineTypeCatalog] = useState<string[]>([]);
@@ -254,6 +256,7 @@ export default function NoteFormCore({
     setObservations(editingNote.observations);
     setResponsavel(editingNote.responsavel || '');
     setContatoNome(editingNote.contatoNome || '');
+    setOsNumber(editingNote.number);
 
     // Seed items from local state as immediate fallback (real mode overwrites below)
     const localItems =
@@ -328,12 +331,12 @@ export default function NoteFormCore({
     }).catch(() => {});
   }, []);
 
-  /* ── Keep osNumber in sync with noteCounter when not editing ── */
+  /* ── Keep the suggested number in sync until the user edits or saves it ── */
   useEffect(() => {
-    if (!isEditing) {
+    if (!isEditing && !hasEditedOsNumber && !isSaving) {
       setOsNumber(formatNoteNumber(noteCounter));
     }
-  }, [noteCounter, isEditing]);
+  }, [hasEditedOsNumber, isEditing, isSaving, noteCounter]);
 
   /* ── Auto-fill from parent note (COMPRA linked to SERVICO) ── */
   const parentNote = parentNoteId ? notes.find((n) => n.id === parentNoteId) : null;
@@ -652,6 +655,8 @@ export default function NoteFormCore({
       };
     });
 
+    setIsSaving(true);
+
     if (editingNote) {
       try {
       const dbItensEdit = itemPayload.map((item) => ({
@@ -716,6 +721,7 @@ export default function NoteFormCore({
       toast({ title: `O.S. ${editingNote.number} atualizada com sucesso!` });
       onSuccess(editingNote);
       } catch (error) {
+        setIsSaving(false);
         setIsGeneratingPDF(false);
         toast({
           title: 'Erro ao atualizar O.S.',
@@ -796,6 +802,7 @@ export default function NoteFormCore({
       toast({ title: `O.S. ${note.number} criada com sucesso!` });
       onSuccess(note);
     } catch (error) {
+      setIsSaving(false);
       setIsGeneratingPDF(false);
       toast({
         title: 'Erro ao criar O.S.',
@@ -819,9 +826,12 @@ export default function NoteFormCore({
               min={0}
               max={10000}
               value={osNumber.replace(/\D/g, '')}
-              onChange={(e) => setOsNumber(`OS-${e.target.value}`)}
+              onChange={(e) => {
+                setHasEditedOsNumber(true);
+                setOsNumber(`OS-${e.target.value}`);
+              }}
               onBlur={() => setOsNumber(normalizeNoteNumber(osNumber))}
-              disabled={isEditing}
+              disabled={isEditing || isSaving}
               className={cn('font-mono', numberInputClassName)}
             />
           </div>
@@ -1378,11 +1388,11 @@ export default function NoteFormCore({
           <div className="flex items-center justify-between flex-wrap gap-3">
             {financialSummary}
             <div className="flex gap-2 ml-auto">
-              <Button variant="outline" onClick={onCancel} className="h-9 px-5" disabled={isGeneratingPDF || itemsLoadingFromDB}>
+              <Button variant="outline" onClick={onCancel} className="h-9 px-5" disabled={isSaving || isGeneratingPDF || itemsLoadingFromDB}>
                 {isLocked ? 'Fechar' : 'Cancelar'}
               </Button>
               {!isLocked && (
-                <Button onClick={handleSubmit} className="h-9 px-6 font-semibold" disabled={isGeneratingPDF || itemsLoadingFromDB}>
+                <Button onClick={handleSubmit} className="h-9 px-6 font-semibold" disabled={isSaving || isGeneratingPDF || itemsLoadingFromDB}>
                   {isEditing ? 'Salvar alterações' : 'Salvar O.S.'}
                 </Button>
               )}
@@ -1472,10 +1482,10 @@ export default function NoteFormCore({
 
         {/* Actions */}
         <div className="flex justify-end gap-3">
-          <Button variant="outline" onClick={onCancel} className="px-8">
+          <Button variant="outline" onClick={onCancel} className="px-8" disabled={isSaving}>
             Cancelar
           </Button>
-          <Button onClick={handleSubmit} className="px-8 font-semibold">
+          <Button onClick={handleSubmit} className="px-8 font-semibold" disabled={isSaving}>
             {isEditing ? 'Salvar alterações' : 'Salvar O.S.'}
           </Button>
         </div>

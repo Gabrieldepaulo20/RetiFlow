@@ -318,7 +318,6 @@ export default function IntakeNotes() {
     [statusFilters, statusFiltersAppliedLocally],
   );
   const isServerPaginationActive = IS_REAL_AUTH
-    && sortField !== 'activity'
     && paymentFilter === 'all'
     && !hasValueFilter
     && statusFilters.size <= 1
@@ -347,7 +346,7 @@ export default function IntakeNotes() {
         p_fk_status: selectedStatusId,
         p_data_inicio: dateRange.startInput,
         p_data_fim: dateRange.endInput,
-        p_ordem_campo: sortField === 'activity' ? 'date' : sortField,
+        p_ordem_campo: sortField,
         p_ordem_direcao: sortDirection,
       });
 
@@ -484,6 +483,11 @@ export default function IntakeNotes() {
   const refreshNotesPage = () => {
     queryClient.invalidateQueries({ queryKey: ['notas-servico', 'page'] });
     queryClient.invalidateQueries({ queryKey: ['operational', 'notes'] });
+  };
+
+  const handleNoteCreated = () => {
+    setCurrentPage(1);
+    refreshNotesPage();
   };
 
   useEffect(() => {
@@ -759,10 +763,9 @@ export default function IntakeNotes() {
                   <div className="space-y-3 px-4 py-3 sm:px-5">
                     <section className="rounded-2xl border border-border/70 bg-muted/20 p-2.5">
                       <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">Ordenar por</p>
-                      <div className="mt-2 grid grid-cols-3 gap-2">
+                      <div className="mt-2 grid grid-cols-2 gap-2">
                         {([
-                          ['activity', 'Atividade'],
-                          ['date', 'Data da O.S.'],
+                          ['date', 'Data'],
                           ['os', 'Número da O.S.'],
                         ] as const).map(([value, label]) => (
                           <button
@@ -1109,7 +1112,11 @@ export default function IntakeNotes() {
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuContent
+                        align="end"
+                        className="w-52"
+                        onClick={(event) => event.stopPropagation()}
+                      >
                         <DropdownMenuItem onClick={() => setDetailNoteId(n.id)}>
                           <Eye className="mr-2 h-4 w-4" /> Ver detalhes
                         </DropdownMenuItem>
@@ -1425,7 +1432,7 @@ export default function IntakeNotes() {
         <NoteFormModal
           open={newNoteOpen}
           onClose={() => setNewNoteOpen(false)}
-          onSuccess={refreshNotesPage}
+          onSuccess={handleNoteCreated}
         />
 
         {/* Edit note form modal */}

@@ -27,7 +27,13 @@ import { debouncedSaveToStorage, loadStateFromStorage, type PersistedData } from
 import { generateId } from '@/lib/generateId';
 import { logError } from '@/lib/monitoring';
 import { formatNoteNumber, getNextNoteCounter, parseNoteNumberValue } from '@/lib/noteNumbers';
-import { applyNoteStatusTransition, applyNotePayment, revertNotePayment, getNoteStatusTransitionBlockReason } from '@/services/domain/intakeNotes';
+import {
+  applyNoteStatusTransition,
+  applyNotePayment,
+  revertNotePayment,
+  getNoteStatusTransitionBlockReason,
+  resolveNoteCalendarTimestamp,
+} from '@/services/domain/intakeNotes';
 import {
   getClientes,
   novoCliente,
@@ -126,14 +132,6 @@ function getDefaultNoteDeadlineDate() {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
-}
-
-function resolveOptimisticNoteCreatedAt(value: string | undefined, fallback: string) {
-  if (!value) return fallback;
-  const calendarDate = value.slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(calendarDate)
-    ? `${calendarDate}T12:00:00`
-    : fallback;
 }
 
 const PAYABLE_CLASS_VALUES = new Set(['CUSTO', 'DESPESA', 'IMPOSTO', 'FINANCEIRO']);
@@ -695,7 +693,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const now = new Date().toISOString();
     const resolvedNumber = note.number ?? formatNoteNumber(noteCounter);
     const { number: _number, createdAt: requestedCreatedAt, ...noteWithoutGeneratedFields } = note;
-    const createdAt = resolveOptimisticNoteCreatedAt(requestedCreatedAt, now);
+    const createdAt = resolveNoteCalendarTimestamp(requestedCreatedAt, now);
 
     if (IS_REAL_AUTH) {
       const result = await novaNota({
@@ -781,9 +779,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
         await updateNotaServicoDB(payload as { id_notas_servico: string } & Record<string, unknown>);
       }
     }
-    setNotes((previous) =>
-      previous.map((note) => (note.id === id ? { ...note, ...data, updatedAt: new Date().toISOString() } : note)),
-    );
+    setNotes((previous) => previous.map((note) => {
+      if (note.id !== id) return note;
+      const createdAt = data.createdAt === undefined
+        ? note.createdAt
+        : resolveNoteCalendarTimestamp(data.createdAt, note.createdAt);
+      return { ...note, ...data, createdAt, updatedAt: new Date().toISOString() };
+    }));
     bumpDataVersion();
   }, [bumpDataVersion]);
 
