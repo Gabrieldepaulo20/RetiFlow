@@ -4,6 +4,49 @@ Atualizado em: 2026-07-23
 
 ---
 
+## Crescimento Privado - Piloto De Aquisicao E Comissao - 2026-07-23
+
+- Regra de acesso fechada pelo usuario: dados de Crescimento, contatos, atribuicao e comissoes pertencem
+  ao Mega Master/desenvolvedor. O modulo fica oculto para outras contas, a rota exige `megaMasterOnly`,
+  a Edge Function valida `SUPER_ADMIN_EMAILS` e as tabelas privadas nao concedem privilegio ao papel
+  `authenticated`.
+- Frontend:
+  - novo painel em `/crescimento`, com visual azul-marinho/dourado, filtros rapidos de
+    7/10/15/20/30/40/60/90 dias, periodo livre de 1 a 365 dias e atualizacao automatica a cada 10 minutos;
+  - abas de visao executiva, SEO, comportamento, contatos, resultado e qualidade;
+  - fila privada de contatos permite vincular pelo codigo um clique de WhatsApp/telefone ou formulario
+    a um cliente ja cadastrado.
+- Backend:
+  - migrations `20260723220000`, `20260723225500` e `20260723232000`;
+  - eventos v2 persistem UTMs/click IDs, abandono e erros sem guardar texto digitado antes do envio;
+  - clique de WhatsApp e telefone cria intencao de contato; formulario enviado cria lead com PII somente
+    depois do envio;
+  - WhatsApp e deduplicado por sessao durante 30 minutos;
+  - formulario com telefone/e-mail de um unico cliente e atribuido automaticamente;
+  - primeira transicao de O.S. atribuida para `Aprovado` congela snapshot de 20% apenas sobre servicos;
+    pecas/produtos ficam excluidos e mudancas posteriores nao removem o snapshot.
+- Integracoes:
+  - site de producao conectado por chave segura armazenada no Amplify e apenas hash no Supabase;
+  - dominio real confirmado: `premiumretifica.com.br`;
+  - conta tecnica de leitura foi adicionada como usuario Total da propriedade
+    `sc-domain:premiumretifica.com.br` no Search Console;
+  - GA4 usa a propriedade `523704972`;
+  - Google Ads oficial `313-260-4995` continua pendente de acesso; a conta antiga nao deve ser apresentada
+    como a oficial.
+- Validacao de producao:
+  - migration ensaiada com `BEGIN/ROLLBACK` antes da aplicacao;
+  - RLS/privilegios confirmaram que `authenticated` nao le leads nem comissoes;
+  - conta comum recebeu 403 da Edge Function privada;
+  - evento real do site chegou ao Supabase;
+  - dois cliques tecnicos de WhatsApp na mesma sessao produziram um evento, um alerta e
+    `duplicate_count=1`; registros de teste foram removidos depois da conferencia;
+  - ensaio transacional confirmou atribuicao automatica, comissao sobre servicos, exclusao de produtos e
+    snapshot mantido apos mudanca de status.
+- Planilha e Looker Studio ainda nao foram apagados. So remover depois do frontend ser publicado, o Mega
+  Master abrir o painel em producao e os totais/atualizacoes serem conferidos.
+
+---
+
 ## Notas De Entrada - Ordem Real De Cadastro E Salvamento Estavel - 2026-07-23
 
 - Caso real que fechou a regra: a `OS-5791` foi cadastrada em `23/07/2026`, com data de entrada

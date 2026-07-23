@@ -101,6 +101,25 @@ function renderAdminRoute() {
   );
 }
 
+function renderGrowthRoute() {
+  return render(
+    <MemoryRouter
+      initialEntries={['/crescimento']}
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true,
+      }}
+    >
+      <Routes>
+        <Route path="/acesso-negado" element={<div>access-denied</div>} />
+        <Route element={<ProtectedRoute moduleKey="marketing" megaMasterOnly />}>
+          <Route path="/crescimento" element={<div>growth-page</div>} />
+        </Route>
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
 describe('ProtectedRoute', () => {
   beforeEach(() => {
     mockedUseAuth.mockReset();
@@ -220,6 +239,58 @@ describe('ProtectedRoute', () => {
     renderProtectedRoute();
 
     expect(screen.getByText('closing-page')).toBeInTheDocument();
+  });
+
+  it('blocks Growth for a non Mega Master even when module access says true', () => {
+    mockedUseAuth.mockReturnValue({
+      ...authBase,
+      realUser: adminUser,
+      operationalUser: adminUser,
+      authMode: 'development',
+      user: adminUser,
+      session: null,
+      isAuthLoading: false,
+      profileError: null,
+      isAuthenticated: true,
+      login: vi.fn(),
+      logout: vi.fn(),
+      retryAuth: vi.fn(),
+      refreshProfile: vi.fn().mockResolvedValue(true),
+      can: vi.fn(),
+      canAccessModule: vi.fn(() => true),
+      isAdmin: true,
+    });
+
+    renderGrowthRoute();
+
+    expect(screen.getByText('access-denied')).toBeInTheDocument();
+    expect(screen.queryByText('growth-page')).not.toBeInTheDocument();
+  });
+
+  it('renders Growth only for the configured Mega Master', () => {
+    mockedUseAuth.mockReturnValue({
+      ...authBase,
+      realUser: megaMasterUser,
+      operationalUser: megaMasterUser,
+      authMode: 'development',
+      user: megaMasterUser,
+      session: null,
+      isAuthLoading: false,
+      profileError: null,
+      isAuthenticated: true,
+      login: vi.fn(),
+      logout: vi.fn(),
+      retryAuth: vi.fn(),
+      refreshProfile: vi.fn().mockResolvedValue(true),
+      can: vi.fn(),
+      canAccessModule: vi.fn(() => true),
+      isAdmin: true,
+    });
+
+    renderGrowthRoute();
+
+    expect(screen.getByText('growth-page')).toBeInTheDocument();
+    expect(screen.queryByText('access-denied')).not.toBeInTheDocument();
   });
 
   it('keeps the user on a neutral reconnecting state when profile loading is transient', () => {

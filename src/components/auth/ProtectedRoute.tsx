@@ -11,10 +11,11 @@ interface ProtectedRouteProps {
   moduleKey?: AppModuleKey;
   allowedRoles?: UserRole[];
   redirectTo?: string;
+  megaMasterOnly?: boolean;
 }
 
-export default function ProtectedRoute({ moduleKey, allowedRoles, redirectTo }: ProtectedRouteProps) {
-  const { authMode, isAuthenticated, canAccessModule, isAuthLoading, user, profileError, retryAuth, refreshProfile, isProfileFresh } = useAuth();
+export default function ProtectedRoute({ moduleKey, allowedRoles, redirectTo, megaMasterOnly = false }: ProtectedRouteProps) {
+  const { authMode, isAuthenticated, canAccessModule, isAuthLoading, realUser, user, profileError, retryAuth, refreshProfile, isProfileFresh } = useAuth();
   const location = useLocation();
   const loginPath = moduleKey === 'admin' ? '/admin/login' : '/login';
   const accessCheckKey = useMemo(
@@ -128,6 +129,10 @@ export default function ProtectedRoute({ moduleKey, allowedRoles, redirectTo }: 
   }
 
   if (authMode === 'real' && moduleKey === 'admin' && !isSuperAdmin(user)) {
+    return <Navigate to={redirectTo ?? '/acesso-negado'} replace state={{ from: location.pathname, moduleKey }} />;
+  }
+
+  if (megaMasterOnly && !isSuperAdmin(realUser)) {
     return <Navigate to={redirectTo ?? '/acesso-negado'} replace state={{ from: location.pathname, moduleKey }} />;
   }
 

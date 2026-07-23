@@ -151,7 +151,7 @@ const App = () => (
                     <Route element={<ProtectedRoute moduleKey="closing" />}>
                       <Route path="/fechamento" element={<SuspendedPage><MonthlyClosing /></SuspendedPage>} />
                     </Route>
-                    <Route element={<ProtectedRoute moduleKey="marketing" />}>
+                    <Route element={<ProtectedRoute moduleKey="marketing" megaMasterOnly />}>
                       <Route path="/crescimento" element={<SuspendedPage><MarketingGrowth /></SuspendedPage>} />
                     </Route>
                     <Route element={<ProtectedRoute moduleKey="payables" />}>
