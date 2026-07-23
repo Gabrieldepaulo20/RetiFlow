@@ -2,7 +2,7 @@ import type { MarketingResumo } from './marketing';
 
 export const MARKETING_RESUMO_CACHE_TTL_MS = 10 * 60_000;
 
-const STORAGE_KEY_PREFIX = 'retiflow:marketing-growth:v2:';
+const STORAGE_KEY_PREFIX = 'retiflow:marketing-growth:v3:';
 
 interface MarketingResumoCacheEntry {
   savedAt: number;

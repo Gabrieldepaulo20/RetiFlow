@@ -11,8 +11,8 @@ export interface MarketingConfigSummary {
   moduloHabilitado: boolean;
   ga4Status: MarketingIntegrationStatus | 'not_connected';
   searchConsoleStatus?: MarketingIntegrationStatus | 'not_connected';
-  hasSiteKey: boolean;
-  allowedOrigins: string[];
+  hasSiteKey?: boolean;
+  allowedOrigins?: string[];
   updatedAt: string | null;
   ga4PropertyId?: string | null;
   searchConsoleSiteUrl?: string | null;
@@ -152,6 +152,7 @@ export interface MarketingResumo {
     targetName?: string;
     targetEmail?: string;
     privateToMegaMaster?: boolean;
+    accessLevel?: 'basic' | 'full';
   };
   config: MarketingConfigSummary;
   integrations: MarketingIntegrationSummary[];
@@ -239,10 +240,10 @@ export interface MarketingResumo {
   }>;
   quality?: {
     lastEventAt: string | null;
-    alertFailures: number;
-    duplicatedClicks: number;
-    unlinkedLeads: number;
-    eventsWithoutSource: number;
+    alertFailures?: number;
+    duplicatedClicks?: number;
+    unlinkedLeads?: number;
+    eventsWithoutSource?: number;
     refreshIntervalMinutes: number;
     generatedAt: string;
   };

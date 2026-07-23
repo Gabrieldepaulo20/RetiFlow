@@ -112,7 +112,7 @@ function renderGrowthRoute() {
     >
       <Routes>
         <Route path="/acesso-negado" element={<div>access-denied</div>} />
-        <Route element={<ProtectedRoute moduleKey="marketing" megaMasterOnly />}>
+        <Route element={<ProtectedRoute moduleKey="marketing" />}>
           <Route path="/crescimento" element={<div>growth-page</div>} />
         </Route>
       </Routes>
@@ -241,7 +241,7 @@ describe('ProtectedRoute', () => {
     expect(screen.getByText('closing-page')).toBeInTheDocument();
   });
 
-  it('blocks Growth for a non Mega Master even when module access says true', () => {
+  it('renders the basic Growth route for a non Mega Master with module access', () => {
     mockedUseAuth.mockReturnValue({
       ...authBase,
       realUser: adminUser,
@@ -263,11 +263,11 @@ describe('ProtectedRoute', () => {
 
     renderGrowthRoute();
 
-    expect(screen.getByText('access-denied')).toBeInTheDocument();
-    expect(screen.queryByText('growth-page')).not.toBeInTheDocument();
+    expect(screen.getByText('growth-page')).toBeInTheDocument();
+    expect(screen.queryByText('access-denied')).not.toBeInTheDocument();
   });
 
-  it('renders Growth only for the configured Mega Master', () => {
+  it('renders the full Growth route for the configured Mega Master', () => {
     mockedUseAuth.mockReturnValue({
       ...authBase,
       realUser: megaMasterUser,

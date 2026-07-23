@@ -20,6 +20,7 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   BadgeDollarSign,
+  Building2,
   CheckCircle2,
   Clock3,
   ExternalLink,
@@ -392,6 +393,182 @@ function AcquisitionRail({ resumo }: { resumo: MarketingResumo }) {
   );
 }
 
+function BasicAcquisitionRail({ resumo }: { resumo: MarketingResumo }) {
+  const current = resumo.site.current;
+  const steps = [
+    { label: 'Pessoas no site', value: current.visits, icon: Users },
+    { label: 'Páginas vistas', value: current.pageViews ?? 0, icon: Eye },
+    { label: 'Cliques no WhatsApp', value: current.whatsappClicks, icon: MessageCircle },
+    { label: 'Cliques no telefone', value: current.phoneClicks ?? 0, icon: PhoneCall },
+    { label: 'Formulários iniciados', value: current.formStarts ?? 0, icon: FileWarning },
+    { label: 'Formulários enviados', value: current.formSubmits, icon: MailCheck },
+  ];
+
+  return (
+    <Card className="overflow-hidden rounded-3xl border-0 bg-slate-950 text-white shadow-[0_24px_80px_-48px_rgba(15,23,42,0.95)]">
+      <CardContent className="p-0">
+        <div className="flex flex-col gap-2 border-b border-white/10 px-5 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-6">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-300">Caminho até o contato</p>
+            <h2 className="mt-1 text-xl font-bold tracking-tight">Como as pessoas avançam no site</h2>
+          </div>
+          <p className="text-xs text-slate-400">Os números mostram ações no site, sem identificar pessoas.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-px bg-white/10 md:grid-cols-3 xl:grid-cols-6">
+          {steps.map((step, index) => {
+            const Icon = step.icon;
+            return (
+              <div key={step.label} className="bg-slate-950 p-4 sm:p-5">
+                <div className="flex items-center justify-between">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-amber-300">
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <span className="text-[10px] font-semibold text-slate-500">{String(index + 1).padStart(2, '0')}</span>
+                </div>
+                <p className="mt-5 text-2xl font-bold">{formatNumber(step.value)}</p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-400">{step.label}</p>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BasicOverviewTab({ resumo }: { resumo: MarketingResumo }) {
+  const current = resumo.site.current;
+  const previous = resumo.site.previous;
+  const search = resumo.searchConsole;
+  const totalContacts = current.whatsappClicks + (current.phoneClicks ?? 0) + current.formSubmits;
+  const previousContacts = previous.whatsappClicks + (previous.phoneClicks ?? 0) + previous.formSubmits;
+  const pagesPerSession = current.sessions ? (current.pageViews ?? 0) / current.sessions : 0;
+
+  return (
+    <div className="space-y-5">
+      <BasicAcquisitionRail resumo={resumo} />
+
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <Metric
+          label="Impressões no Google"
+          value={search ? formatNumber(search.current.impressions) : 'Aguardando'}
+          detail="Quantas vezes o site apareceu na busca"
+          icon={Search}
+          current={search?.current.impressions}
+          previous={search?.previous.impressions}
+          accent="navy"
+        />
+        <Metric
+          label="Pessoas no site"
+          value={formatNumber(current.visits)}
+          detail={`${formatNumber(current.sessions)} sessões no período`}
+          icon={Users}
+          current={current.visits}
+          previous={previous.visits}
+          accent="teal"
+        />
+        <Metric
+          label="Ações de contato"
+          value={formatNumber(totalContacts)}
+          detail="WhatsApp, telefone e formulários enviados"
+          icon={MessageCircle}
+          current={totalContacts}
+          previous={previousContacts}
+          accent="gold"
+        />
+        <Metric
+          label="Páginas por sessão"
+          value={pagesPerSession.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+          detail={`${formatNumber(current.pageViews)} páginas vistas`}
+          icon={Eye}
+          accent="violet"
+        />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.55fr)]">
+        <Card className="rounded-2xl border-border/70 shadow-sm">
+          <CardContent className="p-4 sm:p-6">
+            <PanelHeading
+              eyebrow="Evolução diária"
+              title="Movimento do site"
+              description="Compare pessoas, páginas vistas e ações de contato ao longo do período."
+            />
+            <div className="mt-5 h-[290px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={resumo.site.daily}>
+                  <defs>
+                    <linearGradient id="basicGrowthVisits" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#0f766e" stopOpacity={0.35} />
+                      <stop offset="100%" stopColor="#0f766e" stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="4 6" stroke="hsl(var(--border))" vertical={false} />
+                  <XAxis dataKey="date" tickFormatter={(value: string) => formatShortDate(value, resumo.periodDays)} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} minTickGap={24} />
+                  <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={28} />
+                  <RechartsTooltip content={<ChartTooltip />} />
+                  <Area type="monotone" dataKey="visits" name="Pessoas" stroke="#0f766e" strokeWidth={2.5} fill="url(#basicGrowthVisits)" />
+                  <Line type="monotone" dataKey="pageViews" name="Páginas" stroke="#0f172a" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="actions" name="Contatos" stroke="#d97706" strokeWidth={2.5} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-2xl border-amber-200 bg-gradient-to-b from-amber-50 to-card shadow-sm">
+          <CardContent className="p-4 sm:p-6">
+            <PanelHeading eyebrow="Leitura rápida" title="Sinais do período" />
+            <div className="mt-5 space-y-3">
+              {[
+                {
+                  icon: Activity,
+                  title: 'Engajamento',
+                  value: formatPercent(current.engagementRate),
+                  detail: 'Sessões com interação real',
+                },
+                {
+                  icon: Clock3,
+                  title: 'Tempo médio no site',
+                  value: formatDuration(current.averageSessionDuration),
+                  detail: 'Duração média de cada sessão',
+                },
+                {
+                  icon: MousePointerClick,
+                  title: 'Cliques orgânicos',
+                  value: search ? formatNumber(search.current.clicks) : 'Aguardando',
+                  detail: 'Visitas vindas da busca do Google',
+                },
+                {
+                  icon: MailCheck,
+                  title: 'Formulários enviados',
+                  value: formatNumber(current.formSubmits),
+                  detail: `${formatNumber(resumo.forms?.current.starts)} formulários iniciados`,
+                },
+              ].map((insight) => {
+                const Icon = insight.icon;
+                return (
+                  <div key={insight.title} className="flex items-center gap-3 rounded-xl border border-amber-200/60 bg-white/80 p-3.5">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-amber-300">
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <p className="truncate text-xs font-semibold text-slate-600">{insight.title}</p>
+                        <p className="shrink-0 text-sm font-bold text-slate-950">{insight.value}</p>
+                      </div>
+                      <p className="mt-0.5 truncate text-[11px] text-slate-500">{insight.detail}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 function OverviewTab({ resumo }: { resumo: MarketingResumo }) {
   const current = resumo.site.current;
   const previous = resumo.site.previous;
@@ -744,6 +921,125 @@ function BehaviorTab({ resumo }: { resumo: MarketingResumo }) {
               ) : (
                 <SectionEmptyState title="Sem origem registrada" description="UTMs e referências passam a compor este gráfico." />
               )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function BasicContactsTab({ resumo }: { resumo: MarketingResumo }) {
+  const current = resumo.site.current;
+  const previous = resumo.site.previous;
+  const forms = resumo.forms?.current;
+  const channels = [
+    {
+      label: 'WhatsApp',
+      description: 'Cliques únicos no botão do site',
+      value: current.whatsappClicks,
+      icon: MessageCircle,
+      color: 'bg-emerald-500',
+    },
+    {
+      label: 'Telefone',
+      description: 'Cliques para iniciar uma ligação',
+      value: current.phoneClicks ?? 0,
+      icon: PhoneCall,
+      color: 'bg-sky-500',
+    },
+    {
+      label: 'Formulário',
+      description: 'Formulários enviados com sucesso',
+      value: current.formSubmits,
+      icon: MailCheck,
+      color: 'bg-amber-500',
+    },
+  ];
+  const largestChannel = Math.max(1, ...channels.map((channel) => channel.value));
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <Metric label="Cliques no WhatsApp" value={formatNumber(current.whatsappClicks)} detail="Intenções de conversa" icon={MessageCircle} current={current.whatsappClicks} previous={previous.whatsappClicks} accent="teal" />
+        <Metric label="Cliques no telefone" value={formatNumber(current.phoneClicks)} detail="Intenções de ligação" icon={PhoneCall} current={current.phoneClicks} previous={previous.phoneClicks} accent="navy" />
+        <Metric label="Formulários iniciados" value={formatNumber(forms?.starts)} detail="Pessoas que começaram a preencher" icon={FileWarning} current={forms?.starts} previous={resumo.forms?.previous.starts} accent="violet" />
+        <Metric label="Formulários enviados" value={formatNumber(forms?.submits)} detail="Envios concluídos no site" icon={MailCheck} current={forms?.submits} previous={resumo.forms?.previous.submits} accent="gold" />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card className="rounded-2xl border-border/70 shadow-sm">
+          <CardContent className="p-4 sm:p-6">
+            <PanelHeading
+              eyebrow="Canais"
+              title="Como as pessoas tentam falar"
+              description="Ações agregadas do site. Um clique indica intenção de contato, não confirma atendimento."
+            />
+            <div className="mt-6 space-y-5">
+              {channels.map((channel) => {
+                const Icon = channel.icon;
+                return (
+                  <div key={channel.label}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-amber-300">
+                          <Icon className="h-4 w-4" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-foreground">{channel.label}</p>
+                          <p className="truncate text-[11px] text-muted-foreground">{channel.description}</p>
+                        </div>
+                      </div>
+                      <p className="text-xl font-bold text-foreground">{formatNumber(channel.value)}</p>
+                    </div>
+                    <div className="mt-2.5 h-2 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className={cn('h-full rounded-full transition-[width] duration-500', channel.color)}
+                        style={{ width: `${Math.max(channel.value ? 8 : 0, (channel.value / largestChannel) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-2xl border-border/70 shadow-sm">
+          <CardContent className="p-4 sm:p-6">
+            <PanelHeading
+              eyebrow="Formulário"
+              title="Do início ao envio"
+              description="Resumo da eficiência do formulário, sem mostrar nomes, telefones ou campos preenchidos."
+            />
+            <div className="mt-6 grid grid-cols-3 gap-3">
+              {[
+                { label: 'Iniciados', value: forms?.starts ?? 0 },
+                { label: 'Enviados', value: forms?.submits ?? 0 },
+                { label: 'Abandonos', value: forms?.abandons ?? 0 },
+              ].map((item) => (
+                <div key={item.label} className="rounded-xl border bg-muted/30 p-4 text-center">
+                  <p className="text-2xl font-bold text-foreground">{formatNumber(item.value)}</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">{item.label}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-5 rounded-2xl bg-slate-950 p-5 text-white">
+              <div className="flex items-end justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-300">Taxa de conclusão</p>
+                  <p className="mt-2 text-3xl font-bold">{formatPercent(forms?.completionRate)}</p>
+                </div>
+                <p className="max-w-[220px] text-right text-xs leading-relaxed text-slate-400">
+                  Percentual de pessoas que começaram e conseguiram enviar o formulário.
+                </p>
+              </div>
+              <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
+                <div
+                  className="h-full rounded-full bg-amber-300"
+                  style={{ width: `${Math.min(100, Math.max(0, forms?.completionRate ?? 0))}%` }}
+                />
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -1215,6 +1511,7 @@ export default function MarketingGrowth() {
   const [selectedUserId, setSelectedUserId] = useState('');
 
   useEffect(() => {
+    if (!hasPrivateAccess) return;
     if (!selectableUsers.length) {
       setSelectedUserId('');
       return;
@@ -1222,20 +1519,21 @@ export default function MarketingGrowth() {
     if (selectedUserId && selectableUsers.some((user) => user.id === selectedUserId)) return;
     const retifica = selectableUsers.find((user) => user.email?.trim().toLowerCase() === RETIFICA_PREMIUM_EMAIL);
     setSelectedUserId(retifica?.id ?? selectableUsers[0]?.id ?? '');
-  }, [selectableUsers, selectedUserId]);
+  }, [hasPrivateAccess, selectableUsers, selectedUserId]);
 
-  const queryEnabled = hasPrivateAccess && Boolean(selectedUserId);
+  const targetUserId = hasPrivateAccess ? selectedUserId : null;
+  const queryEnabled = hasPrivateAccess ? Boolean(selectedUserId) : true;
   const queryKey = useMemo(
-    () => getMarketingResumoQueryKey(periodDays, selectedUserId),
-    [periodDays, selectedUserId],
+    () => getMarketingResumoQueryKey(periodDays, targetUserId),
+    [periodDays, targetUserId],
   );
   const cachedResumo = useMemo(
-    () => (queryEnabled ? readCachedMarketingResumo(periodDays, selectedUserId) : null),
-    [periodDays, queryEnabled, selectedUserId],
+    () => (queryEnabled ? readCachedMarketingResumo(periodDays, targetUserId) : null),
+    [periodDays, queryEnabled, targetUserId],
   );
   const query = useQuery({
     queryKey,
-    queryFn: () => getMarketingResumo(periodDays, selectedUserId),
+    queryFn: () => getMarketingResumo(periodDays, targetUserId),
     enabled: queryEnabled,
     staleTime: MARKETING_RESUMO_CACHE_TTL_MS,
     gcTime: 60 * 60_000,
@@ -1247,25 +1545,16 @@ export default function MarketingGrowth() {
     initialDataUpdatedAt: cachedResumo?.savedAt,
     placeholderData: (previous) => (
       previous?.periodDays === periodDays
-      && previous.context?.targetUserId === selectedUserId
+      && (
+        hasPrivateAccess
+          ? previous.context?.targetUserId === selectedUserId
+          : previous.context?.accessLevel === 'basic'
+      )
         ? previous
         : undefined
     ),
     retry: 1,
   });
-
-  if (!hasPrivateAccess) {
-    return (
-      <div className="flex min-h-[70vh] items-center justify-center p-6">
-        <SectionErrorState
-          icon={LockKeyhole}
-          title="Painel privado do desenvolvedor"
-          description="Crescimento, contatos, atribuição e comissões são visíveis somente para a conta Mega Master autorizada."
-          className="min-h-[300px] w-full max-w-xl"
-        />
-      </div>
-    );
-  }
 
   const applyCustomPeriod = () => {
     const normalized = normalizeCustomPeriod(customDays);
@@ -1282,10 +1571,17 @@ export default function MarketingGrowth() {
             <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
               <div className="max-w-3xl">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge className="gap-1.5 border-amber-300/20 bg-amber-300/10 text-amber-200 hover:bg-amber-300/10">
-                    <LockKeyhole className="h-3.5 w-3.5" />
-                    Privado do Mega Master
-                  </Badge>
+                  {hasPrivateAccess ? (
+                    <Badge className="gap-1.5 border-amber-300/20 bg-amber-300/10 text-amber-200 hover:bg-amber-300/10">
+                      <LockKeyhole className="h-3.5 w-3.5" />
+                      Análise completa · Mega Master
+                    </Badge>
+                  ) : (
+                    <Badge className="gap-1.5 border-sky-300/20 bg-sky-300/10 text-sky-200 hover:bg-sky-300/10">
+                      <Building2 className="h-3.5 w-3.5" />
+                      Visão da Retífica
+                    </Badge>
+                  )}
                   <Badge className="gap-1.5 border-teal-300/20 bg-teal-300/10 text-teal-200 hover:bg-teal-300/10">
                     <span className="relative flex h-2 w-2">
                       <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-teal-300 opacity-75" />
@@ -1294,23 +1590,34 @@ export default function MarketingGrowth() {
                     Atualização automática · 10 min
                   </Badge>
                 </div>
-                <p className="mt-6 text-[10px] font-bold uppercase tracking-[0.25em] text-amber-300">Sala de controle da aquisição</p>
+                <p className="mt-6 text-[10px] font-bold uppercase tracking-[0.25em] text-amber-300">
+                  {hasPrivateAccess ? 'Sala de controle da aquisição' : 'Acompanhamento do crescimento'}
+                </p>
                 <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">Crescimento</h1>
                 <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-400 sm:text-base">
-                  Impressão, visita, contato, cliente, O.S. e comissão no mesmo painel — com orgânico e mídia paga sempre separados.
+                  {hasPrivateAccess
+                    ? 'Impressão, visita, contato, cliente, O.S. e comissão no mesmo painel — com orgânico e mídia paga sempre separados.'
+                    : 'Acompanhe como o site aparece no Google, recebe visitas e transforma interesse em contatos.'}
                 </p>
               </div>
 
               <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_auto] xl:w-auto">
-                <Select value={selectedUserId} onValueChange={setSelectedUserId} disabled={isLoadingUsers || !selectableUsers.length}>
-                  <SelectTrigger className="h-11 border-white/15 bg-white/5 text-white hover:bg-white/10 sm:w-[280px]">
-                    <Users className="mr-2 h-4 w-4 text-amber-300" />
-                    <SelectValue placeholder="Selecionar empresa" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {selectableUsers.map((user) => <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                {hasPrivateAccess ? (
+                  <Select value={selectedUserId} onValueChange={setSelectedUserId} disabled={isLoadingUsers || !selectableUsers.length}>
+                    <SelectTrigger className="h-11 border-white/15 bg-white/5 text-white hover:bg-white/10 sm:w-[280px]">
+                      <Users className="mr-2 h-4 w-4 text-amber-300" />
+                      <SelectValue placeholder="Selecionar empresa" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {selectableUsers.map((user) => <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="flex h-11 items-center rounded-xl border border-white/15 bg-white/5 px-4 text-sm text-slate-200 sm:min-w-[280px]">
+                    <Building2 className="mr-2 h-4 w-4 text-amber-300" />
+                    <span className="truncate">{query.data?.context?.targetName ?? realUser?.name ?? 'Retífica Premium'}</span>
+                  </div>
+                )}
                 <Button
                   variant="outline"
                   className="h-11 border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white"
@@ -1368,7 +1675,7 @@ export default function MarketingGrowth() {
           </div>
         </header>
 
-        {query.data ? <IntegrationStrip integrations={query.data.integrations} /> : null}
+        {hasPrivateAccess && query.data ? <IntegrationStrip integrations={query.data.integrations} /> : null}
 
         {query.error ? (
           <SectionErrorState
@@ -1380,40 +1687,59 @@ export default function MarketingGrowth() {
 
         {!query.error && query.isLoading ? <LoadingDashboard /> : null}
 
-        {!query.error && !query.isLoading && !selectableUsers.length ? (
+        {hasPrivateAccess && !query.error && !query.isLoading && !selectableUsers.length ? (
           <SectionEmptyState
             icon={Users}
             title="Nenhuma empresa com Crescimento habilitado"
-            description="Habilite o módulo para a empresa que será analisada. O acesso ao painel continuará exclusivo do Mega Master."
+            description="Habilite o módulo Crescimento para a empresa que será analisada."
             className="min-h-[280px]"
           />
         ) : null}
 
         {query.data && !query.error ? (
-          <Tabs defaultValue="visao" className="space-y-5">
-            <div className="overflow-x-auto pb-1">
-              <TabsList className="inline-grid h-11 min-w-[790px] grid-cols-6 rounded-xl bg-muted/80 p-1">
-                <TabsTrigger value="visao">Visão geral</TabsTrigger>
-                <TabsTrigger value="seo">SEO</TabsTrigger>
-                <TabsTrigger value="comportamento">Comportamento</TabsTrigger>
-                <TabsTrigger value="contatos">Contatos</TabsTrigger>
-                <TabsTrigger value="resultado">Resultado</TabsTrigger>
-                <TabsTrigger value="qualidade">Qualidade</TabsTrigger>
-              </TabsList>
-            </div>
-            <TabsContent value="visao"><OverviewTab resumo={query.data} /></TabsContent>
-            <TabsContent value="seo"><SeoTab resumo={query.data} /></TabsContent>
-            <TabsContent value="comportamento"><BehaviorTab resumo={query.data} /></TabsContent>
-            <TabsContent value="contatos"><ContactsTab resumo={query.data} onLinked={() => void query.refetch()} /></TabsContent>
-            <TabsContent value="resultado"><ResultsTab resumo={query.data} /></TabsContent>
-            <TabsContent value="qualidade"><QualityTab resumo={query.data} /></TabsContent>
-          </Tabs>
+          hasPrivateAccess ? (
+            <Tabs defaultValue="visao" className="space-y-5">
+              <div className="overflow-x-auto pb-1">
+                <TabsList className="inline-grid h-11 min-w-[790px] grid-cols-6 rounded-xl bg-muted/80 p-1">
+                  <TabsTrigger value="visao">Visão geral</TabsTrigger>
+                  <TabsTrigger value="seo">SEO</TabsTrigger>
+                  <TabsTrigger value="comportamento">Comportamento</TabsTrigger>
+                  <TabsTrigger value="contatos">Contatos</TabsTrigger>
+                  <TabsTrigger value="resultado">Resultado</TabsTrigger>
+                  <TabsTrigger value="qualidade">Qualidade</TabsTrigger>
+                </TabsList>
+              </div>
+              <TabsContent value="visao"><OverviewTab resumo={query.data} /></TabsContent>
+              <TabsContent value="seo"><SeoTab resumo={query.data} /></TabsContent>
+              <TabsContent value="comportamento"><BehaviorTab resumo={query.data} /></TabsContent>
+              <TabsContent value="contatos"><ContactsTab resumo={query.data} onLinked={() => void query.refetch()} /></TabsContent>
+              <TabsContent value="resultado"><ResultsTab resumo={query.data} /></TabsContent>
+              <TabsContent value="qualidade"><QualityTab resumo={query.data} /></TabsContent>
+            </Tabs>
+          ) : (
+            <Tabs defaultValue="resumo" className="space-y-5">
+              <div className="overflow-x-auto pb-1">
+                <TabsList className="inline-grid h-11 min-w-[560px] grid-cols-4 rounded-xl bg-muted/80 p-1">
+                  <TabsTrigger value="resumo">Resumo</TabsTrigger>
+                  <TabsTrigger value="google">Google</TabsTrigger>
+                  <TabsTrigger value="site">Site</TabsTrigger>
+                  <TabsTrigger value="contatos">Contatos</TabsTrigger>
+                </TabsList>
+              </div>
+              <TabsContent value="resumo"><BasicOverviewTab resumo={query.data} /></TabsContent>
+              <TabsContent value="google"><SeoTab resumo={query.data} /></TabsContent>
+              <TabsContent value="site"><BehaviorTab resumo={query.data} /></TabsContent>
+              <TabsContent value="contatos"><BasicContactsTab resumo={query.data} /></TabsContent>
+            </Tabs>
+          )
         ) : null}
 
         <footer className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-card/70 px-4 py-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <span className="inline-flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-emerald-600" />
-            Dados de Crescimento protegidos no backend e visíveis apenas ao Mega Master.
+            {hasPrivateAccess
+              ? 'Visão completa protegida: contatos, atribuição e comissões só aparecem para o Mega Master.'
+              : 'Visão resumida: nenhum nome, telefone, cliente ou valor de comissão é enviado para esta conta.'}
           </span>
           <span className="inline-flex items-center gap-2">
             <ExternalLink className="h-3.5 w-3.5" />

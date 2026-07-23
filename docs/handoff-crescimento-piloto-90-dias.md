@@ -1,4 +1,4 @@
-# Transferencia - Crescimento Privado E Piloto De 90 Dias
+# Transferencia - Crescimento Em Dois Niveis E Piloto De 90 Dias
 
 Use este documento como prompt/contexto para continuar o trabalho sem redescobrir contratos ou colocar o
 Retiflow operacional em risco.
@@ -9,7 +9,8 @@ Manter uma trilha auditavel:
 
 `impressao -> clique -> contato -> cliente atribuido -> O.S. aprovada -> servicos -> comissao de 20%`
 
-O painel e privado do Mega Master configurado em `SUPER_ADMIN_EMAILS`. Nao exponha leads, origens ou
+A empresa acompanha indicadores agregados de crescimento. A analise completa pertence ao Mega Master
+configurado em `SUPER_ADMIN_EMAILS`. Nunca exponha PII, eventos individuais, atribuicoes, clientes ou
 comissoes a usuarios operacionais.
 
 ## Arquivos principais
@@ -49,9 +50,14 @@ comissoes a usuarios operacionais.
 
 ## Seguranca
 
-- Menu: `canUserAccessModule` recusa `marketing` para nao Mega Master em auth real.
-- Rota: `/crescimento` usa `megaMasterOnly`.
-- Backend: valida o JWT, o e-mail em `SUPER_ADMIN_EMAILS`, o tenant alvo ativo e o modulo habilitado.
+- Menu/rota: a empresa entra em `/crescimento` somente quando seu modulo `marketing` esta habilitado.
+- Backend: valida o JWT e resolve contas comuns exclusivamente por `Usuarios.auth_id`; a empresa nao
+  escolhe outro tenant.
+- Contrato `accessLevel=basic`: somente totais e series agregadas de Google, site e contatos; nao retorna
+  e-mail do tenant, PII, codigos, eventos individuais, atribuicoes, clientes, snapshots, qualidade
+  operacional detalhada ou comissoes.
+- Contrato `accessLevel=full`: liberado apenas para o e-mail presente em `SUPER_ADMIN_EMAILS`, permite
+  selecionar a empresa e executar o vinculo privado de contato com cliente.
 - Banco: tabelas de marketing revogadas de `authenticated`; atribuicoes/comissoes usam RLS com politica
   explicita de negacao. Apenas Edge Functions com service role acessam.
 - Eventos do site usam chave aleatoria no ambiente do Amplify; o Supabase guarda apenas SHA-256.

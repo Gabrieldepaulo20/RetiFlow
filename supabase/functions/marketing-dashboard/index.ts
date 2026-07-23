@@ -665,6 +665,20 @@ async function getTargetUser(
   return normalizeInternalUser(data as RawInternalUserProfile | null);
 }
 
+async function getTargetUserByAuthId(
+  serviceClient: ServiceClient,
+  authUserId: string,
+) {
+  const { data, error } = await serviceClient
+    .schema('RetificaPremium')
+    .from('Usuarios')
+    .select('id_usuarios, nome, email, acesso, status, modulos:Modulos(admin, marketing)')
+    .eq('auth_id', authUserId)
+    .maybeSingle();
+  if (error) throw new Error(`Não foi possível carregar o perfil autenticado: ${error.message}`);
+  return normalizeInternalUser(data as RawInternalUserProfile | null);
+}
+
 async function getMarketingConfig(
   serviceClient: ServiceClient,
   targetUserId: string,
@@ -840,6 +854,48 @@ async function loadPrivateMarketingData(
     commissions: (commissionsResult.data ?? []) as unknown as JsonRecord[],
     snapshots: (snapshotsResult.data ?? []) as unknown as JsonRecord[],
     clients: (clientsResult.data ?? []) as unknown as JsonRecord[],
+  };
+}
+
+async function loadBasicMarketingData(
+  serviceClient: ServiceClient,
+  targetUserId: string,
+  previousStartIso: string,
+) {
+  const [eventsResult, leadsResult] = await Promise.all([
+    serviceClient
+      .schema('RetificaPremium')
+      .from('Marketing_Site_Eventos')
+      .select([
+        'event_type',
+        'occurred_at',
+        'page_path',
+        'page_title',
+        'source',
+        'medium',
+      ].join(','))
+      .eq('fk_criado_por', targetUserId)
+      .gte('occurred_at', previousStartIso)
+      .order('occurred_at', { ascending: true }),
+    serviceClient
+      .schema('RetificaPremium')
+      .from('Marketing_Leads')
+      .select('occurred_at, source, medium, page_path')
+      .eq('fk_criado_por', targetUserId)
+      .gte('occurred_at', previousStartIso)
+      .order('occurred_at', { ascending: false }),
+  ]);
+
+  const failed = [eventsResult.error, leadsResult.error].find(Boolean);
+  if (failed) throw new Error(`Não foi possível carregar os indicadores de Crescimento: ${failed.message}`);
+
+  return {
+    events: (eventsResult.data ?? []) as unknown as JsonRecord[],
+    leads: (leadsResult.data ?? []) as unknown as JsonRecord[],
+    attributions: [] as JsonRecord[],
+    commissions: [] as JsonRecord[],
+    snapshots: [] as JsonRecord[],
+    clients: [] as JsonRecord[],
   };
 }
 
@@ -1113,24 +1169,37 @@ Deno.serve(async (request) => {
   if (userError || !userData.user) return jsonResponse({ error: 'Usuário autenticado obrigatório.' }, 401, request);
 
   const requesterEmail = normalizeEmail(userData.user.email ?? '');
-  if (!requesterEmail || !getSuperAdminEmails().has(requesterEmail)) {
-    return jsonResponse({ error: 'Crescimento é um painel privado do Mega Master.' }, 403, request);
-  }
-
+  const hasPrivateAccess = Boolean(requesterEmail && getSuperAdminEmails().has(requesterEmail));
   const serviceClient = createServiceClient(supabaseUrl, serviceRoleKey);
 
   try {
     const body = await request.json().catch(() => ({})) as JsonRecord;
     const periodDays = parsePeriod(body.p_periodo_dias);
-    const targetUserId = asString(body.p_target_user_id, 80);
-    if (!targetUserId) return jsonResponse({ error: 'Selecione a empresa que será analisada.' }, 400, request);
-
-    const targetUser = await getTargetUser(serviceClient, targetUserId);
-    if (!targetUser || targetUser.status === false || targetUser.modulos?.marketing !== true) {
+    const requestedTargetUserId = asString(body.p_target_user_id, 80);
+    const targetUser = hasPrivateAccess
+      ? requestedTargetUserId
+        ? await getTargetUser(serviceClient, requestedTargetUserId)
+        : null
+      : await getTargetUserByAuthId(serviceClient, userData.user.id);
+    if (!targetUser) {
+      return jsonResponse({
+        error: hasPrivateAccess
+          ? 'Selecione a empresa que será analisada.'
+          : 'Perfil da empresa não encontrado.',
+      }, hasPrivateAccess ? 400 : 403, request);
+    }
+    if (!hasPrivateAccess && requestedTargetUserId && requestedTargetUserId !== targetUser.id_usuarios) {
+      return jsonResponse({ error: 'A empresa autenticada não pode consultar dados de outra conta.' }, 403, request);
+    }
+    if (targetUser.status === false || targetUser.modulos?.marketing !== true) {
       return jsonResponse({ error: 'Empresa sem o módulo Crescimento habilitado.' }, 403, request);
     }
+    const targetUserId = targetUser.id_usuarios;
 
     if (asString(body.action, 40) === 'link_client') {
+      if (!hasPrivateAccess) {
+        return jsonResponse({ error: 'Vínculo de contatos é privado do Mega Master.' }, 403, request);
+      }
       const { data: actor, error: actorError } = await serviceClient
         .schema('RetificaPremium')
         .from('Usuarios')
@@ -1148,7 +1217,9 @@ Deno.serve(async (request) => {
     const [config, storedIntegrations, privateData] = await Promise.all([
       getMarketingConfig(serviceClient, targetUserId),
       getMarketingIntegrations(serviceClient, targetUserId),
-      loadPrivateMarketingData(serviceClient, targetUserId, previousStartIso),
+      hasPrivateAccess
+        ? loadPrivateMarketingData(serviceClient, targetUserId, previousStartIso)
+        : loadBasicMarketingData(serviceClient, targetUserId, previousStartIso),
     ]);
     const internal = aggregateInternalData(periodDays, privateData.events, privateData.leads);
     const business = aggregateBusinessData(periodDays, privateData.attributions, privateData.commissions);
@@ -1314,6 +1385,80 @@ Deno.serve(async (request) => {
       generatedAt: new Date().toISOString(),
     };
 
+    if (!hasPrivateAccess) {
+      return jsonResponse({
+        status: 200,
+        mensagem: 'Resumo de Crescimento carregado.',
+        dados: {
+          periodDays,
+          context: {
+            targetUserId: targetUser.id_usuarios,
+            targetName: targetUser.nome,
+            privateToMegaMaster: false,
+            accessLevel: 'basic',
+          },
+          config: {
+            moduloHabilitado: config.moduloHabilitado,
+            ga4Status: integrations.find((item) => item.provider === 'ga4')?.status ?? config.ga4Status,
+            searchConsoleStatus: integrations.find((item) => item.provider === 'search_console')?.status
+              ?? config.searchConsoleStatus,
+            updatedAt: config.updatedAt,
+          },
+          integrations: integrations.map((item) => ({
+            provider: item.provider,
+            status: item.status,
+            lastSyncAt: item.lastSyncAt,
+            freshness: item.freshness,
+          })),
+          site: {
+            current: siteCurrent,
+            previous: sitePrevious,
+            pages: ga4?.pages ?? internal.pages,
+            sources: ga4?.sources ?? internal.sources,
+            daily: ga4?.daily ?? internal.daily,
+          },
+          forms: {
+            current: {
+              views: siteCurrent.formViews,
+              starts: siteCurrent.formStarts,
+              abandons: siteCurrent.formAbandons,
+              submitAttempts: siteCurrent.formSubmitAttempts,
+              validationErrors: siteCurrent.formValidationErrors,
+              submitErrors: siteCurrent.formSubmitErrors,
+              submits: siteCurrent.formSubmits,
+              completionRate: percentage(siteCurrent.formSubmits, siteCurrent.formStarts),
+              abandonmentRate: percentage(siteCurrent.formAbandons, siteCurrent.formStarts),
+            },
+            previous: {
+              views: sitePrevious.formViews,
+              starts: sitePrevious.formStarts,
+              abandons: sitePrevious.formAbandons,
+              submits: sitePrevious.formSubmits,
+            },
+            abandonment: [],
+          },
+          searchConsole,
+          campaigns: {
+            current: {
+              spend: 0,
+              impressions: 0,
+              clicks: 0,
+              leads: 0,
+              cpl: 0,
+            },
+            items: [],
+            daily: [],
+            financialAvailable: false,
+          },
+          quality: {
+            lastEventAt: quality.lastEventAt,
+            refreshIntervalMinutes: quality.refreshIntervalMinutes,
+            generatedAt: quality.generatedAt,
+          },
+        },
+      }, 200, request);
+    }
+
     return jsonResponse({
       status: 200,
       mensagem: 'Painel privado de Crescimento carregado.',
@@ -1324,6 +1469,7 @@ Deno.serve(async (request) => {
           targetName: targetUser.nome,
           targetEmail: targetUser.email,
           privateToMegaMaster: true,
+          accessLevel: 'full',
         },
         config: {
           ...config,

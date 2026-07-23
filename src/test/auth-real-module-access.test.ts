@@ -60,7 +60,7 @@ describe('real auth module access', () => {
     expect(canUserAccessModule(megaMaster, 'clients')).toBe(true);
   });
 
-  it('keeps Growth private even when another user has the marketing module enabled', async () => {
+  it('allows the basic Growth view only when the company has the marketing module enabled', async () => {
     const { canUserAccessModule } = await loadRealAuthRedirectModule();
     const nonMegaAdmin: SystemUser = {
       ...makeMegaMaster({ marketing: true }),
@@ -68,9 +68,11 @@ describe('real auth module access', () => {
       email: 'admin@retifica.com',
     };
     const financeUser = makeClient({ marketing: true });
+    const financeUserWithoutGrowth = makeClient({ marketing: false });
 
-    expect(canUserAccessModule(nonMegaAdmin, 'marketing')).toBe(false);
-    expect(canUserAccessModule(financeUser, 'marketing')).toBe(false);
+    expect(canUserAccessModule(nonMegaAdmin, 'marketing')).toBe(true);
+    expect(canUserAccessModule(financeUser, 'marketing')).toBe(true);
+    expect(canUserAccessModule(financeUserWithoutGrowth, 'marketing')).toBe(false);
   });
 
   it('lets Mega Master open operational modules during support even if target profile is restricted', async () => {

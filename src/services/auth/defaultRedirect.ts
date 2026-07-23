@@ -38,10 +38,6 @@ interface DefaultRedirectOptions {
 export function canUserAccessModule(user: SystemUser | null, moduleKey: AppModuleKey) {
   if (!user) return false;
 
-  if (IS_REAL_AUTH && moduleKey === 'marketing' && !isSuperAdmin(user)) {
-    return false;
-  }
-
   if (user.role === 'ADMIN') {
     if (IS_REAL_AUTH && isSuperAdmin(user)) {
       // Mega Master nunca perde o painel Admin, mas módulos operacionais

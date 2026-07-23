@@ -4,18 +4,22 @@ Atualizado em: 2026-07-23
 
 ---
 
-## Crescimento Privado - Piloto De Aquisicao E Comissao - 2026-07-23
+## Crescimento Em Dois Niveis - Empresa E Mega Master - 2026-07-23
 
-- Regra de acesso fechada pelo usuario: dados de Crescimento, contatos, atribuicao e comissoes pertencem
-  ao Mega Master/desenvolvedor. O modulo fica oculto para outras contas, a rota exige `megaMasterOnly`,
-  a Edge Function valida `SUPER_ADMIN_EMAILS` e as tabelas privadas nao concedem privilegio ao papel
-  `authenticated`.
+- Regra de acesso refinada pelo usuario:
+  - a empresa com o modulo Crescimento habilitado ve somente indicadores agregados de impressoes,
+    visitas, navegacao, WhatsApp, telefone e formulario;
+  - o Mega Master/desenvolvedor ve a analise completa, incluindo eventos, contatos identificados,
+    atribuicao, clientes, O.S., qualidade dos dados e comissoes;
+  - a separacao acontece na Edge Function. Contas comuns nao recebem PII, codigos de lead, eventos
+    individuais, atribuicoes, clientes, snapshots ou comissoes;
+  - tabelas privadas continuam sem privilegio direto para `authenticated`.
 - Frontend:
   - novo painel em `/crescimento`, com visual azul-marinho/dourado, filtros rapidos de
     7/10/15/20/30/40/60/90 dias, periodo livre de 1 a 365 dias e atualizacao automatica a cada 10 minutos;
-  - abas de visao executiva, SEO, comportamento, contatos, resultado e qualidade;
-  - fila privada de contatos permite vincular pelo codigo um clique de WhatsApp/telefone ou formulario
-    a um cliente ja cadastrado.
+  - visao da empresa: Resumo, Google, Site e Contatos, sempre com dados agregados;
+  - visao Mega Master: Visao geral, SEO, Comportamento, Contatos, Resultado e Qualidade;
+  - somente a visao Mega Master possui fila de contatos, vinculo por codigo, valores e comissoes.
 - Backend:
   - migrations `20260723220000`, `20260723225500` e `20260723232000`;
   - eventos v2 persistem UTMs/click IDs, abandono e erros sem guardar texto digitado antes do envio;
@@ -36,7 +40,8 @@ Atualizado em: 2026-07-23
 - Validacao de producao:
   - migration ensaiada com `BEGIN/ROLLBACK` antes da aplicacao;
   - RLS/privilegios confirmaram que `authenticated` nao le leads nem comissoes;
-  - conta comum recebeu 403 da Edge Function privada;
+  - conta comum recebe apenas o contrato `accessLevel=basic`, sem dados privados, e nao pode consultar
+    outra empresa nem executar vinculo de contato;
   - evento real do site chegou ao Supabase;
   - dois cliques tecnicos de WhatsApp na mesma sessao produziram um evento, um alerta e
     `duplicate_count=1`; registros de teste foram removidos depois da conferencia;

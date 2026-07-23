@@ -51,7 +51,7 @@ const navItems = [
 ] as const;
 
 export default function AppLayout() {
-  const { user, operationalUser, isAdmin, isSupportImpersonating, endSupportImpersonation, logout, canAccessModule } = useAuth();
+  const { user, realUser, operationalUser, isAdmin, isSupportImpersonating, endSupportImpersonation, logout, canAccessModule } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -191,9 +191,12 @@ export default function AppLayout() {
   };
 
   const canWarmMarketing = Boolean(user && canAccessModule('marketing'));
-  const { data: marketingWarmupUsers = [] } = useSystemUsersQuery({ enabled: canWarmMarketing && isAdmin });
+  const hasPrivateMarketingAccess = isSuperAdmin(realUser);
+  const { data: marketingWarmupUsers = [] } = useSystemUsersQuery({
+    enabled: canWarmMarketing && isAdmin && hasPrivateMarketingAccess,
+  });
   const marketingWarmupTargetUserId = useMemo(() => {
-    if (!canWarmMarketing || !isAdmin) return null;
+    if (!canWarmMarketing || !isAdmin || !hasPrivateMarketingAccess) return null;
     if (isSupportImpersonating && operationalUser?.moduleAccess?.marketing === true) {
       return operationalUser.id;
     }
@@ -203,14 +206,15 @@ export default function AppLayout() {
       && candidate.role !== 'ADMIN'
       && candidate.moduleAccess?.marketing === true
     ))?.id ?? null;
-  }, [canWarmMarketing, isAdmin, isSupportImpersonating, marketingWarmupUsers, operationalUser]);
-  const canWarmMarketingData = canWarmMarketing && (!isAdmin || Boolean(marketingWarmupTargetUserId));
+  }, [canWarmMarketing, hasPrivateMarketingAccess, isAdmin, isSupportImpersonating, marketingWarmupUsers, operationalUser]);
+  const canWarmMarketingData = canWarmMarketing
+    && (!hasPrivateMarketingAccess || Boolean(marketingWarmupTargetUserId));
 
   const warmMarketingGrowth = useCallback(() => {
     void preloadRouteModule('/crescimento');
     if (!canWarmMarketingData) return;
 
-    const targetUserId = isAdmin ? marketingWarmupTargetUserId : null;
+    const targetUserId = hasPrivateMarketingAccess ? marketingWarmupTargetUserId : null;
     void queryClient.prefetchQuery({
       queryKey: getMarketingResumoQueryKey(DEFAULT_MARKETING_RESUMO_PERIOD_DAYS, targetUserId),
       queryFn: () => getMarketingResumo(DEFAULT_MARKETING_RESUMO_PERIOD_DAYS, targetUserId),
@@ -219,7 +223,7 @@ export default function AppLayout() {
     }).catch(() => {
       // O prefetch nao pode atrapalhar a navegacao; a tela mostra erro se o usuario abrir o modulo.
     });
-  }, [canWarmMarketingData, isAdmin, marketingWarmupTargetUserId, queryClient]);
+  }, [canWarmMarketingData, hasPrivateMarketingAccess, marketingWarmupTargetUserId, queryClient]);
 
   const warmRoute = useCallback((path: string) => {
     void preloadRouteModule(path);
