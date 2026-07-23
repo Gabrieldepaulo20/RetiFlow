@@ -1,4 +1,12 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import {
+  addMarketingDays,
+  getMarketingDateKey,
+  getMarketingDateRange,
+  toMarketingDayAfterEndIso,
+  toMarketingDayStartIso,
+} from '../_shared/marketing-date.ts';
+import { resolveMarketingActionMetricsSource } from '../_shared/marketing-sources.ts';
 
 type JsonRecord = Record<string, unknown>;
 function createServiceClient(supabaseUrl: string, serviceRoleKey: string) {
@@ -87,6 +95,7 @@ interface CacheEntry<T> {
 interface Ga4Summary {
   current: {
     activeUsers: number;
+    newUsers: number;
     sessions: number;
     pageViews: number;
     events: number;
@@ -104,6 +113,7 @@ interface Ga4Summary {
   daily: MarketingDailyMetric[];
   pages: MarketingPageMetric[];
   sources: MarketingSourceMetric[];
+  devices: Array<{ device: string; users: number; sessions: number }>;
   eventCounts: Array<{ event: string; count: number }>;
   syncedAt: string;
 }
@@ -118,7 +128,8 @@ interface SearchConsoleSummary {
 }
 
 const GOOGLE_ACCESS_TOKEN_CACHE_TTL_MS = 50 * 60_000;
-const GOOGLE_SUMMARY_CACHE_TTL_MS = 10 * 60_000;
+const GA4_SUMMARY_CACHE_TTL_MS = 10 * 60_000;
+const SEARCH_CONSOLE_SUMMARY_CACHE_TTL_MS = 60 * 60_000;
 const googleAccessTokenCache = new Map<string, CacheEntry<string>>();
 const ga4SummaryCache = new Map<string, CacheEntry<Ga4Summary>>();
 const searchConsoleCache = new Map<string, CacheEntry<SearchConsoleSummary>>();
@@ -133,6 +144,7 @@ const localDevOrigins = new Set([
 const baseCorsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Expose-Headers': 'x-request-id, server-timing',
   Vary: 'Origin',
 };
 
@@ -160,7 +172,11 @@ function getCorsHeaders(request: Request) {
 function jsonResponse(body: unknown, status: number, request: Request) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...getCorsHeaders(request), 'Content-Type': 'application/json' },
+    headers: {
+      ...getCorsHeaders(request),
+      'Content-Type': 'application/json',
+      'Cache-Control': 'private, no-store',
+    },
   });
 }
 
@@ -177,6 +193,12 @@ function asString(value: unknown, max = 500) {
 function toNumber(value: unknown) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function numberOrDefault(value: unknown, fallback: number) {
+  if (value === null || value === undefined || value === '') return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function round(value: number, decimals = 2) {
@@ -204,38 +226,6 @@ function parsePeriod(value: unknown) {
   return Math.max(1, Math.min(Math.trunc(parsed), 365));
 }
 
-function formatDate(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
-
-function addDays(date: Date, days: number) {
-  const next = new Date(date);
-  next.setUTCDate(next.getUTCDate() + days);
-  return next;
-}
-
-function getDateRange(periodDays: number) {
-  const today = new Date();
-  const end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-  const start = addDays(end, -(periodDays - 1));
-  const previousEnd = addDays(start, -1);
-  const previousStart = addDays(previousEnd, -(periodDays - 1));
-  return {
-    startDate: formatDate(start),
-    endDate: formatDate(end),
-    previousStartDate: formatDate(previousStart),
-    previousEndDate: formatDate(previousEnd),
-  };
-}
-
-function toIsoStartOfDay(value: string) {
-  return `${value}T00:00:00.000Z`;
-}
-
-function toIsoEndOfDay(value: string) {
-  return `${value}T23:59:59.999Z`;
-}
-
 function fromGaDate(value: string) {
   if (!/^\d{8}$/.test(value)) return value;
   return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
@@ -251,7 +241,7 @@ function getCachedValue<T>(cache: Map<string, CacheEntry<T>>, key: string) {
   return cached.value;
 }
 
-function setCachedValue<T>(cache: Map<string, CacheEntry<T>>, key: string, value: T, ttlMs = GOOGLE_SUMMARY_CACHE_TTL_MS) {
+function setCachedValue<T>(cache: Map<string, CacheEntry<T>>, key: string, value: T, ttlMs: number) {
   cache.set(key, { value, expiresAt: Date.now() + ttlMs });
 }
 
@@ -384,6 +374,7 @@ function buildGa4Totals(report: GoogleRunReportResponse, events: Map<string, num
     engagementRate: round(metricValue(report, 0, 4) * 100),
     averageSessionDuration: round(metricValue(report, 0, 5)),
     engagedSessions: metricValue(report, 0, 6),
+    newUsers: metricValue(report, 0, 7),
     whatsappClicks: getNamedEventCount(events, ['whatsapp_click']),
     phoneClicks: getNamedEventCount(events, ['phone_click', 'click_phone', 'telefone_click']),
     formViews: getNamedEventCount(events, ['form_view']),
@@ -397,11 +388,8 @@ async function fetchGa4Summary(
   propertyId: string,
   serviceAccount: GoogleServiceAccount,
   periodDays: number,
-  internalDaily: MarketingDailyMetric[],
-  conversionsByPath: Map<string, number>,
-  leadsBySource: Map<string, number>,
 ) {
-  const range = getDateRange(periodDays);
+  const range = getMarketingDateRange(periodDays);
   const cacheKey = [
     serviceAccount.client_email,
     propertyId,
@@ -421,8 +409,18 @@ async function fetchGa4Summary(
     { name: 'engagementRate' },
     { name: 'averageSessionDuration' },
     { name: 'engagedSessions' },
+    { name: 'newUsers' },
   ];
-  const [currentReport, previousReport, dailyReport, pagesReport, sourcesReport, currentEventsReport, previousEventsReport] = await Promise.all([
+  const [
+    currentReport,
+    previousReport,
+    dailyReport,
+    pagesReport,
+    sourcesReport,
+    devicesReport,
+    currentEventsReport,
+    previousEventsReport,
+  ] = await Promise.all([
     runGa4Report(accessToken, propertyId, {
       dateRanges: [{ startDate: range.startDate, endDate: range.endDate }],
       metrics: totalsMetrics,
@@ -453,6 +451,13 @@ async function fetchGa4Summary(
     }),
     runGa4Report(accessToken, propertyId, {
       dateRanges: [{ startDate: range.startDate, endDate: range.endDate }],
+      dimensions: [{ name: 'deviceCategory' }],
+      metrics: [{ name: 'activeUsers' }, { name: 'sessions' }],
+      orderBys: [{ metric: { metricName: 'activeUsers' }, desc: true }],
+      limit: '10',
+    }),
+    runGa4Report(accessToken, propertyId, {
+      dateRanges: [{ startDate: range.startDate, endDate: range.endDate }],
       dimensions: [{ name: 'eventName' }],
       metrics: [{ name: 'eventCount' }],
       orderBys: [{ metric: { metricName: 'eventCount' }, desc: true }],
@@ -469,7 +474,6 @@ async function fetchGa4Summary(
 
   const currentEvents = eventCountMap(currentEventsReport);
   const previousEvents = eventCountMap(previousEventsReport);
-  const internalByDate = new Map(internalDaily.map((item) => [item.date, item]));
   const ga4ByDate = new Map<string, { visits: number; sessions: number; pageViews: number }>();
   for (const row of dailyReport.rows ?? []) {
     const date = fromGaDate(row.dimensionValues?.[0]?.value ?? '');
@@ -481,16 +485,15 @@ async function fetchGa4Summary(
   }
 
   const daily = Array.from({ length: periodDays }, (_, index) => {
-    const date = formatDate(addDays(new Date(`${range.startDate}T00:00:00.000Z`), index));
+    const date = addMarketingDays(range.startDate, index);
     const ga4 = ga4ByDate.get(date);
-    const internal = internalByDate.get(date);
     return {
       date,
       visits: ga4?.visits ?? 0,
       sessions: ga4?.sessions ?? 0,
       pageViews: ga4?.pageViews ?? 0,
-      actions: internal?.actions ?? 0,
-      leads: internal?.leads ?? 0,
+      actions: 0,
+      leads: 0,
     };
   });
 
@@ -500,7 +503,7 @@ async function fetchGa4Summary(
       path,
       title: row.dimensionValues?.[1]?.value || null,
       views: toNumber(row.metricValues?.[0]?.value),
-      conversions: conversionsByPath.get(path) ?? 0,
+      conversions: 0,
     };
   });
 
@@ -510,24 +513,57 @@ async function fetchGa4Summary(
       source,
       medium: row.dimensionValues?.[1]?.value || 'sem meio',
       visits: toNumber(row.metricValues?.[0]?.value),
-      leads: leadsBySource.get(source) ?? 0,
+      leads: 0,
     };
   });
 
   const syncedAt = new Date().toISOString();
+  const devices = (devicesReport.rows ?? []).map((row) => ({
+    device: row.dimensionValues?.[0]?.value || 'Não informado',
+    users: toNumber(row.metricValues?.[0]?.value),
+    sessions: toNumber(row.metricValues?.[1]?.value),
+  }));
   const summary: Ga4Summary = {
     current: buildGa4Totals(currentReport, currentEvents),
     previous: buildGa4Totals(previousReport, previousEvents),
     daily,
     pages,
     sources,
+    devices,
     eventCounts: Array.from(currentEvents.entries())
       .map(([event, count]) => ({ event, count }))
       .sort((a, b) => b.count - a.count),
     syncedAt,
   };
-  setCachedValue(ga4SummaryCache, cacheKey, summary);
+  setCachedValue(ga4SummaryCache, cacheKey, summary, GA4_SUMMARY_CACHE_TTL_MS);
   return summary;
+}
+
+function mergeGa4WithInternalData(
+  ga4: Ga4Summary,
+  internalDaily: MarketingDailyMetric[],
+  conversionsByPath: Map<string, number>,
+  leadsBySource: Map<string, number>,
+  includeInternalActions: boolean,
+): Ga4Summary {
+  const internalByDate = new Map(internalDaily.map((item) => [item.date, item]));
+
+  return {
+    ...ga4,
+    daily: ga4.daily.map((item) => ({
+      ...item,
+      actions: includeInternalActions ? (internalByDate.get(item.date)?.actions ?? 0) : 0,
+      leads: internalByDate.get(item.date)?.leads ?? 0,
+    })),
+    pages: ga4.pages.map((item) => ({
+      ...item,
+      conversions: conversionsByPath.get(item.path) ?? 0,
+    })),
+    sources: ga4.sources.map((item) => ({
+      ...item,
+      leads: leadsBySource.get(`${item.source}\u0000${item.medium}`) ?? 0,
+    })),
+  };
 }
 
 async function runSearchConsoleQuery(
@@ -577,7 +613,7 @@ async function fetchSearchConsoleSummary(
   serviceAccount: GoogleServiceAccount,
   periodDays: number,
 ) {
-  const range = getDateRange(periodDays);
+  const range = getMarketingDateRange(periodDays);
   const cacheKey = [
     serviceAccount.client_email,
     siteUrl,
@@ -641,7 +677,7 @@ async function fetchSearchConsoleSummary(
     })),
     syncedAt: new Date().toISOString(),
   };
-  setCachedValue(searchConsoleCache, cacheKey, summary);
+  setCachedValue(searchConsoleCache, cacheKey, summary, SEARCH_CONSOLE_SUMMARY_CACHE_TTL_MS);
   return summary;
 }
 
@@ -718,12 +754,12 @@ async function getMarketingConfig(
     searchConsoleStatus: asString(config.search_console_status, 40) ?? 'not_connected',
     pilotStartDate: asString(config.pilot_start_date, 30),
     pilotEndDate: asString(config.pilot_end_date, 30),
-    commissionRate: toNumber(config.commission_rate) || 0.2,
-    dedupeWindowMinutes: toNumber(config.dedupe_window_minutes) || 30,
-    adsMonthlyBudget: toNumber(config.ads_monthly_budget) || 1000,
-    organicGoalMin: toNumber(config.organic_goal_min) || 0.25,
-    organicGoalMax: toNumber(config.organic_goal_max) || 0.6,
-    qualifiedCallSeconds: toNumber(config.qualified_call_seconds) || 60,
+    commissionRate: numberOrDefault(config.commission_rate, 0.2),
+    dedupeWindowMinutes: numberOrDefault(config.dedupe_window_minutes, 30),
+    adsMonthlyBudget: numberOrDefault(config.ads_monthly_budget, 1000),
+    organicGoalMin: numberOrDefault(config.organic_goal_min, 0.25),
+    organicGoalMax: numberOrDefault(config.organic_goal_max, 0.6),
+    qualifiedCallSeconds: numberOrDefault(config.qualified_call_seconds, 60),
     updatedAt: asString(config.updated_at, 80),
   };
 }
@@ -748,16 +784,52 @@ async function getMarketingIntegrations(
   })) as MarketingIntegrationSummary[];
 }
 
+async function loadTimeBoundRows(
+  serviceClient: ServiceClient,
+  options: {
+    table: string;
+    select: string;
+    targetUserId: string;
+    timestampColumn: string;
+    idColumn: string;
+    startIso: string;
+    endExclusiveIso: string;
+    ascending: boolean;
+    errorLabel: string;
+  },
+) {
+  const pageSize = 1_000;
+  const rows: JsonRecord[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await serviceClient
+      .schema('RetificaPremium')
+      .from(options.table)
+      .select(options.select)
+      .eq('fk_criado_por', options.targetUserId)
+      .gte(options.timestampColumn, options.startIso)
+      .lt(options.timestampColumn, options.endExclusiveIso)
+      .order(options.timestampColumn, { ascending: options.ascending })
+      .order(options.idColumn, { ascending: options.ascending })
+      .range(from, from + pageSize - 1);
+
+    if (error) throw new Error(`${options.errorLabel}: ${error.message}`);
+    const page = (data ?? []) as unknown as JsonRecord[];
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
+  }
+}
+
 async function loadPrivateMarketingData(
   serviceClient: ServiceClient,
   targetUserId: string,
   previousStartIso: string,
+  currentEndExclusiveIso: string,
 ) {
-  const [eventsResult, leadsResult, attributionsResult, commissionsResult, snapshotsResult, clientsResult] = await Promise.all([
-    serviceClient
-      .schema('RetificaPremium')
-      .from('Marketing_Site_Eventos')
-      .select([
+  const [events, leads, attributions, commissions, snapshotsResult, clientsResult] = await Promise.all([
+    loadTimeBoundRows(serviceClient, {
+      table: 'Marketing_Site_Eventos',
+      select: [
         'id_marketing_site_eventos',
         'external_event_id',
         'lead_code',
@@ -780,14 +852,18 @@ async function loadPrivateMarketingData(
         'duplicate_count',
         'deduplicated',
         'alert_status',
-      ].join(','))
-      .eq('fk_criado_por', targetUserId)
-      .gte('occurred_at', previousStartIso)
-      .order('occurred_at', { ascending: true }),
-    serviceClient
-      .schema('RetificaPremium')
-      .from('Marketing_Leads')
-      .select([
+      ].join(','),
+      targetUserId,
+      timestampColumn: 'occurred_at',
+      idColumn: 'id_marketing_site_eventos',
+      startIso: previousStartIso,
+      endExclusiveIso: currentEndExclusiveIso,
+      ascending: true,
+      errorLabel: 'Não foi possível carregar os eventos de Crescimento',
+    }),
+    loadTimeBoundRows(serviceClient, {
+      table: 'Marketing_Leads',
+      select: [
         'id_marketing_leads',
         'lead_code',
         'occurred_at',
@@ -804,24 +880,37 @@ async function loadPrivateMarketingData(
         'fk_clientes',
         'identified_at',
         'identification_method',
-      ].join(','))
-      .eq('fk_criado_por', targetUserId)
-      .gte('occurred_at', previousStartIso)
-      .order('occurred_at', { ascending: false }),
-    serviceClient
-      .schema('RetificaPremium')
-      .from('Marketing_Client_Attributions')
-      .select('id_marketing_client_attributions, fk_clientes, fk_marketing_leads, lead_code, channel, source, medium, campaign, attribution_method, attributed_at')
-      .eq('fk_criado_por', targetUserId)
-      .gte('attributed_at', previousStartIso)
-      .order('attributed_at', { ascending: false }),
-    serviceClient
-      .schema('RetificaPremium')
-      .from('Marketing_Commission_Snapshots')
-      .select('id_marketing_commission_snapshots, fk_clientes, fk_notas_servico, os_numero, services_snapshot, products_excluded_snapshot, commission_rate_snapshot, commission_amount_snapshot, source_snapshot, campaign_snapshot, approved_at')
-      .eq('fk_criado_por', targetUserId)
-      .gte('approved_at', previousStartIso)
-      .order('approved_at', { ascending: false }),
+      ].join(','),
+      targetUserId,
+      timestampColumn: 'occurred_at',
+      idColumn: 'id_marketing_leads',
+      startIso: previousStartIso,
+      endExclusiveIso: currentEndExclusiveIso,
+      ascending: false,
+      errorLabel: 'Não foi possível carregar os contatos de Crescimento',
+    }),
+    loadTimeBoundRows(serviceClient, {
+      table: 'Marketing_Client_Attributions',
+      select: 'id_marketing_client_attributions, fk_clientes, fk_marketing_leads, lead_code, channel, source, medium, campaign, attribution_method, attributed_at',
+      targetUserId,
+      timestampColumn: 'attributed_at',
+      idColumn: 'id_marketing_client_attributions',
+      startIso: previousStartIso,
+      endExclusiveIso: currentEndExclusiveIso,
+      ascending: false,
+      errorLabel: 'Não foi possível carregar as atribuições de Crescimento',
+    }),
+    loadTimeBoundRows(serviceClient, {
+      table: 'Marketing_Commission_Snapshots',
+      select: 'id_marketing_commission_snapshots, fk_clientes, fk_notas_servico, os_numero, services_snapshot, products_excluded_snapshot, commission_rate_snapshot, commission_amount_snapshot, source_snapshot, campaign_snapshot, approved_at',
+      targetUserId,
+      timestampColumn: 'approved_at',
+      idColumn: 'id_marketing_commission_snapshots',
+      startIso: previousStartIso,
+      endExclusiveIso: currentEndExclusiveIso,
+      ascending: false,
+      errorLabel: 'Não foi possível carregar as comissões de Crescimento',
+    }),
     serviceClient
       .schema('RetificaPremium')
       .from('Marketing_Snapshots')
@@ -837,21 +926,14 @@ async function loadPrivateMarketingData(
       .limit(1000),
   ]);
 
-  const failed = [
-    eventsResult.error,
-    leadsResult.error,
-    attributionsResult.error,
-    commissionsResult.error,
-    snapshotsResult.error,
-    clientsResult.error,
-  ].find(Boolean);
+  const failed = [snapshotsResult.error, clientsResult.error].find(Boolean);
   if (failed) throw new Error(`Não foi possível carregar os dados privados de Crescimento: ${failed.message}`);
 
   return {
-    events: (eventsResult.data ?? []) as unknown as JsonRecord[],
-    leads: (leadsResult.data ?? []) as unknown as JsonRecord[],
-    attributions: (attributionsResult.data ?? []) as unknown as JsonRecord[],
-    commissions: (commissionsResult.data ?? []) as unknown as JsonRecord[],
+    events,
+    leads,
+    attributions,
+    commissions,
     snapshots: (snapshotsResult.data ?? []) as unknown as JsonRecord[],
     clients: (clientsResult.data ?? []) as unknown as JsonRecord[],
   };
@@ -861,37 +943,44 @@ async function loadBasicMarketingData(
   serviceClient: ServiceClient,
   targetUserId: string,
   previousStartIso: string,
+  currentEndExclusiveIso: string,
 ) {
-  const [eventsResult, leadsResult] = await Promise.all([
-    serviceClient
-      .schema('RetificaPremium')
-      .from('Marketing_Site_Eventos')
-      .select([
+  const [events, leads] = await Promise.all([
+    loadTimeBoundRows(serviceClient, {
+      table: 'Marketing_Site_Eventos',
+      select: [
+        'id_marketing_site_eventos',
         'event_type',
         'occurred_at',
         'page_path',
         'page_title',
         'source',
         'medium',
-      ].join(','))
-      .eq('fk_criado_por', targetUserId)
-      .gte('occurred_at', previousStartIso)
-      .order('occurred_at', { ascending: true }),
-    serviceClient
-      .schema('RetificaPremium')
-      .from('Marketing_Leads')
-      .select('occurred_at, source, medium, page_path')
-      .eq('fk_criado_por', targetUserId)
-      .gte('occurred_at', previousStartIso)
-      .order('occurred_at', { ascending: false }),
+      ].join(','),
+      targetUserId,
+      timestampColumn: 'occurred_at',
+      idColumn: 'id_marketing_site_eventos',
+      startIso: previousStartIso,
+      endExclusiveIso: currentEndExclusiveIso,
+      ascending: true,
+      errorLabel: 'Não foi possível carregar os eventos de Crescimento',
+    }),
+    loadTimeBoundRows(serviceClient, {
+      table: 'Marketing_Leads',
+      select: 'id_marketing_leads, occurred_at, source, medium, page_path',
+      targetUserId,
+      timestampColumn: 'occurred_at',
+      idColumn: 'id_marketing_leads',
+      startIso: previousStartIso,
+      endExclusiveIso: currentEndExclusiveIso,
+      ascending: false,
+      errorLabel: 'Não foi possível carregar os contatos de Crescimento',
+    }),
   ]);
 
-  const failed = [eventsResult.error, leadsResult.error].find(Boolean);
-  if (failed) throw new Error(`Não foi possível carregar os indicadores de Crescimento: ${failed.message}`);
-
   return {
-    events: (eventsResult.data ?? []) as unknown as JsonRecord[],
-    leads: (leadsResult.data ?? []) as unknown as JsonRecord[],
+    events,
+    leads,
     attributions: [] as JsonRecord[],
     commissions: [] as JsonRecord[],
     snapshots: [] as JsonRecord[],
@@ -899,15 +988,14 @@ async function loadBasicMarketingData(
   };
 }
 
-function inRange(value: unknown, startIso: string, endIso?: string) {
+function inRange(value: unknown, startIso: string, endExclusiveIso: string) {
   const timestamp = String(value ?? '');
-  return timestamp >= startIso && (!endIso || timestamp <= endIso);
+  return timestamp >= startIso && timestamp < endExclusiveIso;
 }
 
 function buildEmptyDaily(periodDays: number, startDate: string): MarketingDailyMetric[] {
-  const start = new Date(`${startDate}T00:00:00.000Z`);
   return Array.from({ length: periodDays }, (_, index) => ({
-    date: formatDate(addDays(start, index)),
+    date: addMarketingDays(startDate, index),
     visits: 0,
     sessions: 0,
     pageViews: 0,
@@ -921,14 +1009,14 @@ function aggregateInternalData(
   events: JsonRecord[],
   leads: JsonRecord[],
 ) {
-  const range = getDateRange(periodDays);
-  const startIso = toIsoStartOfDay(range.startDate);
-  const previousStartIso = toIsoStartOfDay(range.previousStartDate);
-  const previousEndIso = toIsoEndOfDay(range.previousEndDate);
-  const currentEvents = events.filter((event) => inRange(event.occurred_at, startIso));
-  const previousEvents = events.filter((event) => inRange(event.occurred_at, previousStartIso, previousEndIso));
-  const currentLeads = leads.filter((lead) => inRange(lead.occurred_at, startIso));
-  const previousLeads = leads.filter((lead) => inRange(lead.occurred_at, previousStartIso, previousEndIso));
+  const range = getMarketingDateRange(periodDays);
+  const startIso = toMarketingDayStartIso(range.startDate);
+  const previousStartIso = toMarketingDayStartIso(range.previousStartDate);
+  const currentEndExclusiveIso = toMarketingDayAfterEndIso(range.endDate);
+  const currentEvents = events.filter((event) => inRange(event.occurred_at, startIso, currentEndExclusiveIso));
+  const previousEvents = events.filter((event) => inRange(event.occurred_at, previousStartIso, startIso));
+  const currentLeads = leads.filter((lead) => inRange(lead.occurred_at, startIso, currentEndExclusiveIso));
+  const previousLeads = leads.filter((lead) => inRange(lead.occurred_at, previousStartIso, startIso));
 
   const countEvent = (items: JsonRecord[], type: string) => items.filter((item) => item.event_type === type).length;
   const pageMap = new Map<string, MarketingPageMetric>();
@@ -961,18 +1049,18 @@ function aggregateInternalData(
 
   currentLeads.forEach((lead) => {
     const source = String(lead.source || 'direto');
-    leadsBySource.set(source, (leadsBySource.get(source) ?? 0) + 1);
-    const existingKey = Array.from(sourceMap.keys()).find((key) => key.startsWith(`${source}\u0000`))
-      ?? `${source}\u0000sem meio`;
-    const metric = sourceMap.get(existingKey) ?? { source, medium: 'sem meio', visits: 0, leads: 0 };
+    const medium = String(lead.medium || 'sem meio');
+    const sourceKey = `${source}\u0000${medium}`;
+    leadsBySource.set(sourceKey, (leadsBySource.get(sourceKey) ?? 0) + 1);
+    const metric = sourceMap.get(sourceKey) ?? { source, medium, visits: 0, leads: 0 };
     metric.leads += 1;
-    sourceMap.set(existingKey, metric);
+    sourceMap.set(sourceKey, metric);
   });
 
   const daily = buildEmptyDaily(periodDays, range.startDate);
   const dailyByDate = new Map(daily.map((item) => [item.date, item]));
   currentEvents.forEach((event) => {
-    const item = dailyByDate.get(String(event.occurred_at ?? '').slice(0, 10));
+    const item = dailyByDate.get(getMarketingDateKey(String(event.occurred_at ?? '')));
     if (!item) return;
     if (event.event_type === 'page_view') {
       item.visits += 1;
@@ -981,7 +1069,7 @@ function aggregateInternalData(
     if (['whatsapp_click', 'phone_click', 'form_submit'].includes(String(event.event_type))) item.actions += 1;
   });
   currentLeads.forEach((lead) => {
-    const item = dailyByDate.get(String(lead.occurred_at ?? '').slice(0, 10));
+    const item = dailyByDate.get(getMarketingDateKey(String(lead.occurred_at ?? '')));
     if (item) item.leads += 1;
   });
 
@@ -1035,14 +1123,14 @@ function aggregateBusinessData(
   attributions: JsonRecord[],
   commissions: JsonRecord[],
 ) {
-  const range = getDateRange(periodDays);
-  const startIso = toIsoStartOfDay(range.startDate);
-  const previousStartIso = toIsoStartOfDay(range.previousStartDate);
-  const previousEndIso = toIsoEndOfDay(range.previousEndDate);
-  const currentAttributions = attributions.filter((item) => inRange(item.attributed_at, startIso));
-  const previousAttributions = attributions.filter((item) => inRange(item.attributed_at, previousStartIso, previousEndIso));
-  const currentCommissions = commissions.filter((item) => inRange(item.approved_at, startIso));
-  const previousCommissions = commissions.filter((item) => inRange(item.approved_at, previousStartIso, previousEndIso));
+  const range = getMarketingDateRange(periodDays);
+  const startIso = toMarketingDayStartIso(range.startDate);
+  const previousStartIso = toMarketingDayStartIso(range.previousStartDate);
+  const currentEndExclusiveIso = toMarketingDayAfterEndIso(range.endDate);
+  const currentAttributions = attributions.filter((item) => inRange(item.attributed_at, startIso, currentEndExclusiveIso));
+  const previousAttributions = attributions.filter((item) => inRange(item.attributed_at, previousStartIso, startIso));
+  const currentCommissions = commissions.filter((item) => inRange(item.approved_at, startIso, currentEndExclusiveIso));
+  const previousCommissions = commissions.filter((item) => inRange(item.approved_at, previousStartIso, startIso));
 
   const totals = (attributionItems: JsonRecord[], commissionItems: JsonRecord[]) => ({
     identifiedClients: attributionItems.length,
@@ -1150,7 +1238,7 @@ async function linkLeadToClient(
   return jsonResponse({ status: 200, mensagem: 'Cliente vinculado à origem da internet.' }, 200, request);
 }
 
-Deno.serve(async (request) => {
+async function handleRequest(request: Request) {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: getCorsHeaders(request) });
   if (request.method !== 'POST') return jsonResponse({ error: 'Método não permitido.' }, 405, request);
 
@@ -1169,18 +1257,29 @@ Deno.serve(async (request) => {
   if (userError || !userData.user) return jsonResponse({ error: 'Usuário autenticado obrigatório.' }, 401, request);
 
   const requesterEmail = normalizeEmail(userData.user.email ?? '');
-  const hasPrivateAccess = Boolean(requesterEmail && getSuperAdminEmails().has(requesterEmail));
+  const requesterIsAllowlisted = Boolean(requesterEmail && getSuperAdminEmails().has(requesterEmail));
   const serviceClient = createServiceClient(supabaseUrl, serviceRoleKey);
 
   try {
     const body = await request.json().catch(() => ({})) as JsonRecord;
     const periodDays = parsePeriod(body.p_periodo_dias);
     const requestedTargetUserId = asString(body.p_target_user_id, 80);
+    const requesterProfile = await getTargetUserByAuthId(serviceClient, userData.user.id);
+    const requesterIsActiveAdmin = Boolean(
+      requesterProfile
+      && requesterProfile.status !== false
+      && requesterProfile.acesso.trim().toLowerCase() === 'administrador'
+      && requesterProfile.modulos?.admin === true,
+    );
+    if (requesterIsAllowlisted && !requesterIsActiveAdmin) {
+      return jsonResponse({ error: 'Perfil Mega Master inativo ou sem permissão administrativa.' }, 403, request);
+    }
+    const hasPrivateAccess = requesterIsAllowlisted && requesterIsActiveAdmin;
     const targetUser = hasPrivateAccess
       ? requestedTargetUserId
         ? await getTargetUser(serviceClient, requestedTargetUserId)
         : null
-      : await getTargetUserByAuthId(serviceClient, userData.user.id);
+      : requesterProfile;
     if (!targetUser) {
       return jsonResponse({
         error: hasPrivateAccess
@@ -1200,29 +1299,29 @@ Deno.serve(async (request) => {
       if (!hasPrivateAccess) {
         return jsonResponse({ error: 'Vínculo de contatos é privado do Mega Master.' }, 403, request);
       }
-      const { data: actor, error: actorError } = await serviceClient
-        .schema('RetificaPremium')
-        .from('Usuarios')
-        .select('id_usuarios')
-        .eq('auth_id', userData.user.id)
-        .maybeSingle();
-      if (actorError || !actor?.id_usuarios) {
+      if (!requesterProfile?.id_usuarios) {
         return jsonResponse({ error: 'Perfil Mega Master não encontrado.' }, 403, request);
       }
-      return await linkLeadToClient(request, serviceClient, targetUserId, actor.id_usuarios, body);
+      return await linkLeadToClient(request, serviceClient, targetUserId, requesterProfile.id_usuarios, body);
     }
 
-    const range = getDateRange(periodDays);
-    const previousStartIso = toIsoStartOfDay(range.previousStartDate);
+    const range = getMarketingDateRange(periodDays);
+    const previousStartIso = toMarketingDayStartIso(range.previousStartDate);
+    const currentEndExclusiveIso = toMarketingDayAfterEndIso(range.endDate);
     const [config, storedIntegrations, privateData] = await Promise.all([
       getMarketingConfig(serviceClient, targetUserId),
       getMarketingIntegrations(serviceClient, targetUserId),
       hasPrivateAccess
-        ? loadPrivateMarketingData(serviceClient, targetUserId, previousStartIso)
-        : loadBasicMarketingData(serviceClient, targetUserId, previousStartIso),
+        ? loadPrivateMarketingData(serviceClient, targetUserId, previousStartIso, currentEndExclusiveIso)
+        : loadBasicMarketingData(serviceClient, targetUserId, previousStartIso, currentEndExclusiveIso),
     ]);
     const internal = aggregateInternalData(periodDays, privateData.events, privateData.leads);
     const business = aggregateBusinessData(periodDays, privateData.attributions, privateData.commissions);
+    const internalActionsCanCoverComparison = Boolean(
+      config.hasSiteKey
+      && config.pilotStartDate
+      && config.pilotStartDate <= range.previousStartDate,
+    );
 
     let integrations = storedIntegrations;
     let ga4: Ga4Summary | null = null;
@@ -1232,13 +1331,17 @@ Deno.serve(async (request) => {
 
     if (config.ga4PropertyId && serviceAccount) {
       try {
-        ga4 = await fetchGa4Summary(
+        const cachedGa4 = await fetchGa4Summary(
           config.ga4PropertyId,
           serviceAccount,
           periodDays,
+        );
+        ga4 = mergeGa4WithInternalData(
+          cachedGa4,
           internal.daily,
           internal.conversionsByPath,
           internal.leadsBySource,
+          internalActionsCanCoverComparison,
         );
         integrations = mergeIntegration(integrations, {
           provider: 'ga4',
@@ -1246,7 +1349,7 @@ Deno.serve(async (request) => {
           accountName: `GA4 ${config.ga4PropertyId}`,
           lastSyncAt: ga4.syncedAt,
           lastError: null,
-          freshness: 'Dados intradiários do Google',
+          freshness: 'Dados intradiários · cache de até 10 min',
         });
       } catch (error) {
         console.error('GA4 dashboard sync failed', error instanceof Error ? error.message : 'unknown');
@@ -1283,7 +1386,7 @@ Deno.serve(async (request) => {
           accountName: config.searchConsoleSiteUrl,
           lastSyncAt: searchConsole.syncedAt,
           lastError: null,
-          freshness: 'Search Console pode ter 2–3 dias de defasagem',
+          freshness: 'Defasagem de 2–3 dias · cache de até 60 min',
         });
       } catch (error) {
         console.error('Search Console sync failed', error instanceof Error ? error.message : 'unknown');
@@ -1313,7 +1416,7 @@ Deno.serve(async (request) => {
       accountName: 'Eventos próprios do site',
       lastSyncAt: internal.currentEvents.at(-1)?.occurred_at as string | undefined ?? null,
       lastError: config.hasSiteKey ? null : 'A chave segura do site ainda não foi configurada.',
-      freshness: config.hasSiteKey ? 'Atualização em até 10 minutos' : 'Configuração pendente',
+      freshness: config.hasSiteKey ? 'Atualização em até 5 minutos' : 'Configuração pendente',
     });
     if (!integrations.some((item) => item.provider === 'google_ads')) {
       integrations.push({
@@ -1328,23 +1431,38 @@ Deno.serve(async (request) => {
 
     const gaCurrent = ga4?.current;
     const gaPrevious = ga4?.previous;
+    // Só compara ações próprias quando o piloto cobre integralmente o período
+    // atual e o anterior. A existência da chave, sozinha, não prova cobertura
+    // histórica nem instrumentação de WhatsApp/formulário.
+    const actionMetricsDecision = resolveMarketingActionMetricsSource({
+      hasSiteKey: config.hasSiteKey,
+      pilotStartDate: config.pilotStartDate,
+      comparisonStartDate: range.previousStartDate,
+      hasGa4: Boolean(ga4),
+    });
+    const useFirstPartyActions = actionMetricsDecision.useFirstPartyActions;
     const siteCurrent = {
       visits: gaCurrent?.activeUsers ?? internal.current.visits,
+      newUsers: gaCurrent?.newUsers ?? 0,
       sessions: gaCurrent?.sessions ?? 0,
       pageViews: gaCurrent?.pageViews ?? internal.current.visits,
-      whatsappClicks: Math.max(internal.current.whatsappClicks, gaCurrent?.whatsappClicks ?? 0),
-      phoneClicks: Math.max(internal.current.phoneClicks, gaCurrent?.phoneClicks ?? 0),
-      formViews: Math.max(internal.current.formViews, gaCurrent?.formViews ?? 0),
-      formStarts: Math.max(internal.current.formStarts, gaCurrent?.formStarts ?? 0),
+      whatsappClicks: useFirstPartyActions ? internal.current.whatsappClicks : (gaCurrent?.whatsappClicks ?? 0),
+      phoneClicks: useFirstPartyActions ? internal.current.phoneClicks : (gaCurrent?.phoneClicks ?? 0),
+      formViews: useFirstPartyActions ? internal.current.formViews : (gaCurrent?.formViews ?? 0),
+      formStarts: useFirstPartyActions ? internal.current.formStarts : (gaCurrent?.formStarts ?? 0),
       formAbandons: internal.current.formAbandons,
       formSubmitAttempts: internal.current.formSubmitAttempts,
       formValidationErrors: internal.current.formValidationErrors,
       formSubmitErrors: internal.current.formSubmitErrors,
-      formSubmits: Math.max(internal.current.formSubmits, gaCurrent?.formSubmits ?? 0, gaCurrent?.generateLeads ?? 0),
+      formSubmits: useFirstPartyActions
+        ? internal.current.formSubmits
+        : Math.max(gaCurrent?.formSubmits ?? 0, gaCurrent?.generateLeads ?? 0),
       totalEvents: gaCurrent?.events ?? internal.current.totalEvents,
-      actionEvents: (gaCurrent?.whatsappClicks ?? internal.current.whatsappClicks)
-        + (gaCurrent?.phoneClicks ?? internal.current.phoneClicks)
-        + Math.max(internal.current.formSubmits, gaCurrent?.generateLeads ?? 0),
+      actionEvents: useFirstPartyActions
+        ? internal.current.whatsappClicks + internal.current.phoneClicks + internal.current.formSubmits
+        : (gaCurrent?.whatsappClicks ?? 0)
+          + (gaCurrent?.phoneClicks ?? 0)
+          + Math.max(gaCurrent?.formSubmits ?? 0, gaCurrent?.generateLeads ?? 0),
       engagementRate: gaCurrent?.engagementRate ?? 0,
       averageSessionDuration: gaCurrent?.averageSessionDuration ?? 0,
       engagedSessions: gaCurrent?.engagedSessions ?? 0,
@@ -1353,21 +1471,26 @@ Deno.serve(async (request) => {
     };
     const sitePrevious = {
       visits: gaPrevious?.activeUsers ?? internal.previous.visits,
+      newUsers: gaPrevious?.newUsers ?? 0,
       sessions: gaPrevious?.sessions ?? 0,
       pageViews: gaPrevious?.pageViews ?? internal.previous.visits,
-      whatsappClicks: Math.max(internal.previous.whatsappClicks, gaPrevious?.whatsappClicks ?? 0),
-      phoneClicks: Math.max(internal.previous.phoneClicks, gaPrevious?.phoneClicks ?? 0),
-      formViews: Math.max(internal.previous.formViews, gaPrevious?.formViews ?? 0),
-      formStarts: Math.max(internal.previous.formStarts, gaPrevious?.formStarts ?? 0),
+      whatsappClicks: useFirstPartyActions ? internal.previous.whatsappClicks : (gaPrevious?.whatsappClicks ?? 0),
+      phoneClicks: useFirstPartyActions ? internal.previous.phoneClicks : (gaPrevious?.phoneClicks ?? 0),
+      formViews: useFirstPartyActions ? internal.previous.formViews : (gaPrevious?.formViews ?? 0),
+      formStarts: useFirstPartyActions ? internal.previous.formStarts : (gaPrevious?.formStarts ?? 0),
       formAbandons: internal.previous.formAbandons,
       formSubmitAttempts: internal.previous.formSubmitAttempts,
       formValidationErrors: internal.previous.formValidationErrors,
       formSubmitErrors: internal.previous.formSubmitErrors,
-      formSubmits: Math.max(internal.previous.formSubmits, gaPrevious?.formSubmits ?? 0, gaPrevious?.generateLeads ?? 0),
+      formSubmits: useFirstPartyActions
+        ? internal.previous.formSubmits
+        : Math.max(gaPrevious?.formSubmits ?? 0, gaPrevious?.generateLeads ?? 0),
       totalEvents: gaPrevious?.events ?? internal.previous.totalEvents,
-      actionEvents: (gaPrevious?.whatsappClicks ?? internal.previous.whatsappClicks)
-        + (gaPrevious?.phoneClicks ?? internal.previous.phoneClicks)
-        + Math.max(internal.previous.formSubmits, gaPrevious?.generateLeads ?? 0),
+      actionEvents: useFirstPartyActions
+        ? internal.previous.whatsappClicks + internal.previous.phoneClicks + internal.previous.formSubmits
+        : (gaPrevious?.whatsappClicks ?? 0)
+          + (gaPrevious?.phoneClicks ?? 0)
+          + Math.max(gaPrevious?.formSubmits ?? 0, gaPrevious?.generateLeads ?? 0),
       engagementRate: gaPrevious?.engagementRate ?? 0,
       averageSessionDuration: gaPrevious?.averageSessionDuration ?? 0,
       engagedSessions: gaPrevious?.engagedSessions ?? 0,
@@ -1381,7 +1504,9 @@ Deno.serve(async (request) => {
       duplicatedClicks: internal.currentEvents.reduce((sum, event) => sum + toNumber(event.duplicate_count), 0),
       unlinkedLeads: unlinkedLeads.length,
       eventsWithoutSource: internal.currentEvents.filter((event) => !event.source || event.source === 'direto').length,
-      refreshIntervalMinutes: 10,
+      actionMetricsSource: actionMetricsDecision.source,
+      actionMetricsLabel: actionMetricsDecision.label,
+      refreshIntervalMinutes: 5,
       generatedAt: new Date().toISOString(),
     };
 
@@ -1415,6 +1540,7 @@ Deno.serve(async (request) => {
             previous: sitePrevious,
             pages: ga4?.pages ?? internal.pages,
             sources: ga4?.sources ?? internal.sources,
+            devices: ga4?.devices ?? [],
             daily: ga4?.daily ?? internal.daily,
           },
           forms: {
@@ -1452,6 +1578,8 @@ Deno.serve(async (request) => {
           },
           quality: {
             lastEventAt: quality.lastEventAt,
+            actionMetricsSource: quality.actionMetricsSource,
+            actionMetricsLabel: quality.actionMetricsLabel,
             refreshIntervalMinutes: quality.refreshIntervalMinutes,
             generatedAt: quality.generatedAt,
           },
@@ -1495,6 +1623,7 @@ Deno.serve(async (request) => {
           previous: sitePrevious,
           pages: ga4?.pages ?? internal.pages,
           sources: ga4?.sources ?? internal.sources,
+          devices: ga4?.devices ?? [],
           daily: ga4?.daily ?? internal.daily,
           eventCounts: ga4?.eventCounts ?? [],
           recentEvents: [...internal.currentEvents].reverse().slice(0, 50),
@@ -1543,7 +1672,23 @@ Deno.serve(async (request) => {
   } catch (error) {
     console.error('marketing-dashboard failed', error instanceof Error ? error.message : 'unknown');
     return jsonResponse({
-      error: error instanceof Error ? error.message : 'Falha ao carregar Crescimento.',
+      error: 'Não foi possível carregar o painel de Crescimento agora.',
     }, 500, request);
   }
+}
+
+Deno.serve(async (request) => {
+  const startedAt = performance.now();
+  const requestId = crypto.randomUUID();
+  const response = await handleRequest(request);
+  const durationMs = Math.round(performance.now() - startedAt);
+  response.headers.set('X-Request-ID', requestId);
+  response.headers.set('Server-Timing', `app;dur=${durationMs}`);
+  console.log(JSON.stringify({
+    event: 'marketing_dashboard_request',
+    requestId,
+    status: response.status,
+    durationMs,
+  }));
+  return response;
 });

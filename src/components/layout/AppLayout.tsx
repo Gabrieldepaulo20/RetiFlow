@@ -27,7 +27,7 @@ import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/s
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
-import { preloadRouteModule, preloadRouteModules } from '@/routes/routeModules';
+import { preloadRouteModule } from '@/routes/routeModules';
 import { getMarketingResumo, getMarketingResumoQueryKey, DEFAULT_MARKETING_RESUMO_PERIOD_DAYS } from '@/api/supabase/marketing';
 import { MARKETING_RESUMO_CACHE_TTL_MS } from '@/api/supabase/marketingCache';
 import { useSystemUsersQuery } from '@/hooks/useSystemUsersQuery';
@@ -216,14 +216,14 @@ export default function AppLayout() {
 
     const targetUserId = hasPrivateMarketingAccess ? marketingWarmupTargetUserId : null;
     void queryClient.prefetchQuery({
-      queryKey: getMarketingResumoQueryKey(DEFAULT_MARKETING_RESUMO_PERIOD_DAYS, targetUserId),
-      queryFn: () => getMarketingResumo(DEFAULT_MARKETING_RESUMO_PERIOD_DAYS, targetUserId),
+      queryKey: getMarketingResumoQueryKey(DEFAULT_MARKETING_RESUMO_PERIOD_DAYS, targetUserId, realUser!.id),
+      queryFn: () => getMarketingResumo(DEFAULT_MARKETING_RESUMO_PERIOD_DAYS, targetUserId, realUser!.id),
       staleTime: MARKETING_RESUMO_CACHE_TTL_MS,
       gcTime: 60 * 60 * 1000,
     }).catch(() => {
       // O prefetch nao pode atrapalhar a navegacao; a tela mostra erro se o usuario abrir o modulo.
     });
-  }, [canWarmMarketingData, hasPrivateMarketingAccess, marketingWarmupTargetUserId, queryClient]);
+  }, [canWarmMarketingData, hasPrivateMarketingAccess, marketingWarmupTargetUserId, queryClient, realUser]);
 
   const warmRoute = useCallback((path: string) => {
     void preloadRouteModule(path);
@@ -357,55 +357,6 @@ export default function AppLayout() {
       </div>
     </div>
   );
-
-  const visibleNavPaths = useMemo(
-    () =>
-      navItems
-        .filter((item) => user && canAccessModule(item.moduleKey))
-        .map((item) => item.path),
-    [canAccessModule, user],
-  );
-
-  useEffect(() => {
-    if (visibleNavPaths.length === 0) {
-      return;
-    }
-    void preloadRouteModules(visibleNavPaths);
-  }, [visibleNavPaths]);
-
-  useEffect(() => {
-    if (!canWarmMarketingData) return undefined;
-    if (location.pathname.startsWith('/crescimento')) return undefined;
-    if (typeof window === 'undefined' || typeof document === 'undefined') return undefined;
-
-    let cancelled = false;
-    let timeoutId: number | null = null;
-    let idleId: number | null = null;
-    const browserWindow = window as Window & {
-      requestIdleCallback?: (
-        callback: IdleRequestCallback,
-        options?: IdleRequestOptions,
-      ) => number;
-      cancelIdleCallback?: (handle: number) => void;
-    };
-
-    const runWarmup = () => {
-      if (cancelled || document.visibilityState === 'hidden') return;
-      warmMarketingGrowth();
-    };
-
-    if (browserWindow.requestIdleCallback) {
-      idleId = browserWindow.requestIdleCallback(runWarmup, { timeout: 3500 });
-    } else {
-      timeoutId = window.setTimeout(runWarmup, 1200);
-    }
-
-    return () => {
-      cancelled = true;
-      if (idleId !== null) browserWindow.cancelIdleCallback?.(idleId);
-      if (timeoutId !== null) window.clearTimeout(timeoutId);
-    };
-  }, [canWarmMarketingData, location.pathname, warmMarketingGrowth]);
 
   if (!user) return <Navigate to="/login" replace />;
 

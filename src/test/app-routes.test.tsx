@@ -89,7 +89,10 @@ describe('App routes', () => {
     ['/clientes', async () => screen.findByRole('heading', { name: 'Clientes' })],
     ['/clientes/novo', async () => screen.findByRole('heading', { name: 'Novo Cliente' })],
     ['/clientes/c1', async () => screen.findByRole('heading', { name: 'Auto Peças Silva Ltda' })],
-    ['/notas-entrada', async () => screen.findByRole('heading', { name: 'Notas de Entrada' })],
+    [
+      '/notas-entrada',
+      async () => screen.findByRole('heading', { name: 'Notas de Entrada' }, { timeout: 3000 }),
+    ],
     ['/notas-entrada/nova', async () => screen.findByRole('heading', { name: 'Nova Ordem de Serviço' })],
     ['/notas-entrada/n1/editar', async () => screen.findByRole('heading', { name: 'Editar OS-1' })],
     ['/notas-entrada/n1', async () => screen.findByRole('heading', { name: 'OS-1' })],

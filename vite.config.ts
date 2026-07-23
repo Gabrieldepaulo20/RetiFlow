@@ -23,6 +23,7 @@ export default defineConfig(() => ({
         manualChunks: {
           "react-vendor": ["react", "react-dom", "react-router-dom"],
           "query-vendor": ["@tanstack/react-query"],
+          "utils-vendor": ["class-variance-authority", "clsx", "tailwind-merge"],
           "ui-vendor": [
             "@radix-ui/react-dialog",
             "@radix-ui/react-dropdown-menu",

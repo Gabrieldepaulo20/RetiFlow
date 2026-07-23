@@ -23,6 +23,8 @@ import { callAdminUsersFunction } from '@/api/supabase/admin-users';
 import { touchUserPresence } from '@/api/supabase/presence';
 import { isMfaChallengeRequired, getMfaAssuranceLevel } from '@/services/auth/mfa';
 import { markSessionExpiredByInactivity, SESSION_INACTIVITY_TIMEOUT_MS } from '@/services/auth/inactivitySession';
+import { clearAllCachedMarketingResumo } from '@/api/supabase/marketingCache';
+import { queryClient } from '@/lib/queryClient';
 
 const AUTH_SESSION_STORAGE_KEY = 'auth.session';
 export const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
@@ -117,9 +119,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const sessionRef = useRef<AuthSession | null>(session);
   const pendingMfaSessionRef = useRef<{ session: AuthSession; portal: LoginPortal } | null>(null);
   const lastSuccessfulProfileFetchAt = useRef<number>(0);
+  const previousAuthenticatedUserId = useRef<string | null>(session?.user.id ?? null);
   const PROFILE_CACHE_TTL_MS = 30_000;
 
   const authMode: AuthMode = IS_REAL_AUTH ? 'real' : 'development';
+
+  useEffect(() => {
+    const currentUserId = session?.user.id ?? null;
+    if (previousAuthenticatedUserId.current === currentUserId) return;
+
+    queryClient.clear();
+    clearAllCachedMarketingResumo();
+    previousAuthenticatedUserId.current = currentUserId;
+  }, [session?.user.id]);
 
   useEffect(() => {
     sessionRef.current = session;

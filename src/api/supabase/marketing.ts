@@ -37,6 +37,7 @@ export interface MarketingIntegrationSummary {
 
 export interface MarketingSiteTotals {
   visits: number;
+  newUsers?: number;
   sessions?: number;
   pageViews?: number;
   whatsappClicks: number;
@@ -78,6 +79,12 @@ export interface MarketingDailyMetric {
   pageViews?: number;
   actions: number;
   leads: number;
+}
+
+export interface MarketingDeviceMetric {
+  device: string;
+  users: number;
+  sessions: number;
 }
 
 export interface MarketingEventItem {
@@ -161,6 +168,7 @@ export interface MarketingResumo {
     previous: Omit<MarketingSiteTotals, 'conversionRate'>;
     pages: MarketingPageMetric[];
     sources: MarketingSourceMetric[];
+    devices?: MarketingDeviceMetric[];
     daily: MarketingDailyMetric[];
     eventCounts?: Array<{ event: string; count: number }>;
     recentEvents?: MarketingEventItem[];
@@ -244,6 +252,8 @@ export interface MarketingResumo {
     duplicatedClicks?: number;
     unlinkedLeads?: number;
     eventsWithoutSource?: number;
+    actionMetricsSource?: 'internal' | 'ga4' | 'internal_partial';
+    actionMetricsLabel?: string;
     refreshIntervalMinutes: number;
     generatedAt: string;
   };
@@ -252,9 +262,13 @@ export interface MarketingResumo {
 const inFlightResumoRequests = new Map<string, Promise<MarketingResumo>>();
 export const DEFAULT_MARKETING_RESUMO_PERIOD_DAYS = 30;
 
-export function getMarketingResumoQueryKey(periodDays = DEFAULT_MARKETING_RESUMO_PERIOD_DAYS, targetUserId?: string | null) {
+export function getMarketingResumoQueryKey(
+  periodDays = DEFAULT_MARKETING_RESUMO_PERIOD_DAYS,
+  targetUserId: string | null | undefined,
+  requesterUserId: string,
+) {
   const safePeriod = Number.isFinite(periodDays) ? Math.trunc(periodDays) : DEFAULT_MARKETING_RESUMO_PERIOD_DAYS;
-  return ['marketing-growth', safePeriod, targetUserId?.trim() || 'self'] as const;
+  return ['marketing-growth', requesterUserId.trim(), safePeriod, targetUserId?.trim() || 'self'] as const;
 }
 
 async function getAccessToken() {
@@ -290,7 +304,11 @@ async function getMarketingFunctionErrorMessage(error: unknown, fallback: string
   return getFunctionErrorMessage(error, fallback);
 }
 
-async function fetchMarketingResumo(periodDays = 30, targetUserId?: string | null) {
+async function fetchMarketingResumo(
+  periodDays: number,
+  targetUserId: string | null | undefined,
+  requesterUserId: string,
+) {
   const accessToken = await getAccessToken();
   const { data, error } = await supabase.functions.invoke<{ dados?: MarketingResumo; error?: string; mensagem?: string }>('marketing-dashboard', {
     body: {
@@ -304,16 +322,20 @@ async function fetchMarketingResumo(periodDays = 30, targetUserId?: string | nul
     throw new Error(data?.error ?? data?.mensagem ?? await getMarketingFunctionErrorMessage(error, 'Não foi possível carregar o módulo Crescimento.'));
   }
 
-  writeCachedMarketingResumo(periodDays, targetUserId, data.dados);
+  writeCachedMarketingResumo(periodDays, targetUserId, requesterUserId, data.dados);
   return data.dados;
 }
 
-export async function getMarketingResumo(periodDays = 30, targetUserId?: string | null) {
-  const cacheKey = getMarketingResumoCacheKey(periodDays, targetUserId);
+export async function getMarketingResumo(
+  periodDays: number,
+  targetUserId: string | null | undefined,
+  requesterUserId: string,
+) {
+  const cacheKey = getMarketingResumoCacheKey(periodDays, targetUserId, requesterUserId);
   const existingRequest = inFlightResumoRequests.get(cacheKey);
   if (existingRequest) return existingRequest;
 
-  const request = fetchMarketingResumo(periodDays, targetUserId)
+  const request = fetchMarketingResumo(periodDays, targetUserId, requesterUserId)
     .finally(() => {
       inFlightResumoRequests.delete(cacheKey);
     });

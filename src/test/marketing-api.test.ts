@@ -17,9 +17,14 @@ vi.mock('@/lib/supabase', () => ({
   },
 }));
 
-function buildResumo(periodDays = 30) {
+function buildResumo(periodDays = 30, targetUserId = 'cliente-1') {
   return {
     periodDays,
+    context: {
+      accessLevel: 'basic' as const,
+      privateToMegaMaster: false,
+      targetUserId,
+    },
     config: {
       moduloHabilitado: true,
       ga4Status: 'connected',
@@ -82,8 +87,8 @@ describe('marketing growth API', () => {
       resolveInvoke = resolve;
     }));
 
-    const first = getMarketingResumo(30, 'cliente-1');
-    const second = getMarketingResumo(30, 'cliente-1');
+    const first = getMarketingResumo(30, 'cliente-1', 'usuario-a');
+    const second = getMarketingResumo(30, 'cliente-1', 'usuario-a');
 
     resolveInvoke({ data: { dados: buildResumo(30) }, error: null });
 
@@ -101,19 +106,25 @@ describe('marketing growth API', () => {
   });
 
   it('stores a successful summary in the session cache', async () => {
-    invoke.mockResolvedValue({ data: { dados: buildResumo(7) }, error: null });
+    invoke.mockResolvedValue({ data: { dados: buildResumo(7, 'usuario-a') }, error: null });
 
-    await getMarketingResumo(7, null);
+    await getMarketingResumo(7, null, 'usuario-a');
 
-    const raw = window.sessionStorage.getItem(getMarketingResumoCacheKey(7, null));
+    const raw = window.sessionStorage.getItem(getMarketingResumoCacheKey(7, null, 'usuario-a'));
     expect(raw).toContain('"periodDays":7');
     expect(raw).toContain('"visits":10');
   });
 
   it('builds the same React Query key used by warmup and page reads', () => {
-    expect(getMarketingResumoQueryKey(30, ' cliente-1 ')).toEqual(['marketing-growth', 30, 'cliente-1']);
-    expect(getMarketingResumoQueryKey(Number.NaN, '')).toEqual([
+    expect(getMarketingResumoQueryKey(30, ' cliente-1 ', 'usuario-a')).toEqual([
       'marketing-growth',
+      'usuario-a',
+      30,
+      'cliente-1',
+    ]);
+    expect(getMarketingResumoQueryKey(Number.NaN, '', 'usuario-a')).toEqual([
+      'marketing-growth',
+      'usuario-a',
       DEFAULT_MARKETING_RESUMO_PERIOD_DAYS,
       'self',
     ]);

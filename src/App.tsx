@@ -1,5 +1,5 @@
 import { lazy, ReactNode, Suspense } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Toaster } from '@/components/ui/toaster';
 import { Toaster as Sonner } from '@/components/ui/sonner';
@@ -11,6 +11,7 @@ import AppLayout from '@/components/layout/AppLayout';
 import AdminLayout from '@/components/layout/AdminLayout';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
+import { queryClient } from '@/lib/queryClient';
 import {
   loadAccessDeniedPage,
   loadAdminDashboardPage,
@@ -56,20 +57,6 @@ const AdminDashboard = lazy(loadAdminDashboardPage);
 const AdminUsers = lazy(loadAdminUsersPage);
 const AccessDenied = lazy(loadAccessDeniedPage);
 const NotFound = lazy(loadNotFoundPage);
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      // Evita refetch redundante a cada mount/troca de tela/foco de janela —
-      // reduz a sensação de "carregando/validando toda hora". Telas que precisam
-      // de dados sempre frescos podem sobrescrever staleTime localmente.
-      staleTime: 30_000,
-      gcTime: 5 * 60_000,
-      refetchOnWindowFocus: false,
-      retry: 1,
-    },
-  },
-});
 
 function PageFallback() {
   return (

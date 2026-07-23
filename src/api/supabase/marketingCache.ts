@@ -1,8 +1,10 @@
 import type { MarketingResumo } from './marketing';
 
-export const MARKETING_RESUMO_CACHE_TTL_MS = 10 * 60_000;
+export const MARKETING_RESUMO_CACHE_TTL_MS = 5 * 60_000;
+export const MARKETING_RESUMO_REFRESH_INTERVAL_MS = 5 * 60_000;
 
-const STORAGE_KEY_PREFIX = 'retiflow:marketing-growth:v3:';
+const STORAGE_KEY_PREFIX = 'retiflow:marketing-growth:v4:';
+const STORAGE_KEY_FAMILY_PREFIX = 'retiflow:marketing-growth:';
 
 interface MarketingResumoCacheEntry {
   savedAt: number;
@@ -29,9 +31,29 @@ function normalizeTargetUserId(targetUserId?: string | null) {
   return normalized ? normalized : 'self';
 }
 
-export function getMarketingResumoCacheKey(periodDays: number, targetUserId?: string | null) {
+function normalizeRequesterUserId(requesterUserId: string) {
+  const normalized = requesterUserId.trim();
+  if (!normalized) throw new Error('Usuário solicitante é obrigatório para o cache de Crescimento.');
+  return normalized;
+}
+
+function matchesCacheScope(
+  data: MarketingResumo,
+  targetUserId: string | null | undefined,
+  requesterUserId: string,
+) {
+  const expectedTargetUserId = targetUserId?.trim() || requesterUserId.trim();
+  return data.context?.accessLevel === 'basic'
+    && data.context.targetUserId === expectedTargetUserId;
+}
+
+export function getMarketingResumoCacheKey(
+  periodDays: number,
+  targetUserId: string | null | undefined,
+  requesterUserId: string,
+) {
   const safePeriod = Number.isFinite(periodDays) ? Math.trunc(periodDays) : 30;
-  return `${STORAGE_KEY_PREFIX}${normalizeTargetUserId(targetUserId)}:${safePeriod}`;
+  return `${STORAGE_KEY_PREFIX}${normalizeRequesterUserId(requesterUserId)}:${normalizeTargetUserId(targetUserId)}:${safePeriod}`;
 }
 
 function isCacheEntry(value: unknown): value is MarketingResumoCacheEntry {
@@ -44,19 +66,24 @@ function isCacheEntry(value: unknown): value is MarketingResumoCacheEntry {
 
 export function readCachedMarketingResumo(
   periodDays: number,
-  targetUserId?: string | null,
+  targetUserId: string | null | undefined,
+  requesterUserId: string,
   now = Date.now(),
 ): CachedMarketingResumo | null {
   const storage = getStorage();
   if (!storage) return null;
 
-  const key = getMarketingResumoCacheKey(periodDays, targetUserId);
+  const key = getMarketingResumoCacheKey(periodDays, targetUserId, requesterUserId);
   const raw = storage.getItem(key);
   if (!raw) return null;
 
   try {
     const parsed = JSON.parse(raw) as unknown;
-    if (!isCacheEntry(parsed) || now - parsed.savedAt > MARKETING_RESUMO_CACHE_TTL_MS) {
+    if (
+      !isCacheEntry(parsed)
+      || !matchesCacheScope(parsed.data, targetUserId, requesterUserId)
+      || now - parsed.savedAt > MARKETING_RESUMO_CACHE_TTL_MS
+    ) {
       storage.removeItem(key);
       return null;
     }
@@ -75,13 +102,18 @@ export function readCachedMarketingResumo(
 export function writeCachedMarketingResumo(
   periodDays: number,
   targetUserId: string | null | undefined,
+  requesterUserId: string,
   data: MarketingResumo,
   savedAt = Date.now(),
 ) {
   const storage = getStorage();
   if (!storage) return;
 
-  const key = getMarketingResumoCacheKey(periodDays, targetUserId);
+  const key = getMarketingResumoCacheKey(periodDays, targetUserId, requesterUserId);
+  if (!matchesCacheScope(data, targetUserId, requesterUserId)) {
+    storage.removeItem(key);
+    return;
+  }
   const entry: MarketingResumoCacheEntry = { savedAt, data };
 
   try {
@@ -91,6 +123,22 @@ export function writeCachedMarketingResumo(
   }
 }
 
-export function clearCachedMarketingResumo(periodDays: number, targetUserId?: string | null) {
-  getStorage()?.removeItem(getMarketingResumoCacheKey(periodDays, targetUserId));
+export function clearCachedMarketingResumo(
+  periodDays: number,
+  targetUserId: string | null | undefined,
+  requesterUserId: string,
+) {
+  getStorage()?.removeItem(getMarketingResumoCacheKey(periodDays, targetUserId, requesterUserId));
+}
+
+export function clearAllCachedMarketingResumo() {
+  const storage = getStorage();
+  if (!storage) return;
+
+  const keysToRemove: string[] = [];
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (key?.startsWith(STORAGE_KEY_FAMILY_PREFIX)) keysToRemove.push(key);
+  }
+  keysToRemove.forEach((key) => storage.removeItem(key));
 }

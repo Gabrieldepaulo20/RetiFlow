@@ -2,6 +2,7 @@ import { Component, ReactNode } from 'react';
 import { Button } from './button';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { isChunkLoadError, recoverFromChunkLoadError } from '@/lib/chunkRecovery';
+import { logError } from '@/lib/monitoring';
 
 interface Props {
   children: ReactNode;
@@ -39,9 +40,8 @@ export class ErrorBoundary extends Component<Props, State> {
     // Falha de chunk antigo (deploy novo): recarrega a página em vez de mostrar erro.
     // Cobre o caso em que o React.lazy lança no render (não dispara vite:preloadError).
     if (recoverFromChunkLoadError(error)) return;
-    // Em produção, enviar para Sentry ou similar:
-    // Sentry.captureException(error, { extra: info })
-    console.error('[ErrorBoundary]', error, info.componentStack);
+    logError(error, 'ErrorBoundary');
+    if (import.meta.env.DEV) console.error('[ErrorBoundary stack]', info.componentStack);
   }
 
   handleReset = () => {

@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { normalizeMarketingOccurredAt } from '../_shared/marketing-date.ts';
 
 const localDevOrigins = new Set([
   'http://localhost:5173',
@@ -10,6 +11,7 @@ const localDevOrigins = new Set([
 const baseCorsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-site-key, x-retiflow-site-key',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Expose-Headers': 'x-request-id, server-timing',
   Vary: 'Origin',
 };
 
@@ -110,7 +112,11 @@ function getCorsHeaders(request: Request) {
 function jsonResponse(body: unknown, status: number, request: Request) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...getCorsHeaders(request), 'Content-Type': 'application/json' },
+    headers: {
+      ...getCorsHeaders(request),
+      'Content-Type': 'application/json',
+      'Cache-Control': 'private, no-store',
+    },
   });
 }
 
@@ -123,14 +129,29 @@ function asString(value: unknown, max = 500) {
 
 function asObject(value: unknown): JsonRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  return Object.fromEntries(
-    Object.entries(value as JsonRecord)
-      .slice(0, 30)
-      .map(([key, item]) => [
-        key.slice(0, 80),
-        typeof item === 'string' ? item.slice(0, 500) : item,
-      ]),
-  );
+  const sanitized: JsonRecord = {};
+  Object.entries(value as JsonRecord)
+    .slice(0, 30)
+    .forEach(([key, item]) => {
+      const safeKey = key.slice(0, 80);
+      if (typeof item === 'string') sanitized[safeKey] = item.slice(0, 500);
+      else if (typeof item === 'number' && Number.isFinite(item)) sanitized[safeKey] = item;
+      else if (typeof item === 'boolean' || item === null) sanitized[safeKey] = item;
+    });
+  return sanitized;
+}
+
+function sanitizeUrl(value: unknown, max = 800) {
+  const raw = asString(value, max);
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw, 'https://retiflow.invalid');
+    return parsed.origin === 'https://retiflow.invalid'
+      ? parsed.pathname.slice(0, max)
+      : `${parsed.origin}${parsed.pathname}`.slice(0, max);
+  } catch {
+    return raw.split(/[?#]/, 1)[0].slice(0, max);
+  }
 }
 
 function asNonNegativeInteger(value: unknown) {
@@ -154,15 +175,6 @@ async function sha256Hex(value: string) {
   const data = new TextEncoder().encode(value);
   const hash = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(hash)).map((byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
-function parseOccurredAt(value: unknown) {
-  const raw = asString(value, 80);
-  if (!raw) return new Date().toISOString();
-  const date = new Date(raw);
-  if (Number.isNaN(date.getTime())) return new Date().toISOString();
-  const driftMs = Math.abs(Date.now() - date.getTime());
-  return driftMs > 1000 * 60 * 60 * 24 * 7 ? new Date().toISOString() : date.toISOString();
 }
 
 async function getMarketingConfig(
@@ -229,7 +241,7 @@ async function findExistingExternalEvent(
   const { data, error } = await serviceClient
     .schema('RetificaPremium')
     .from('Marketing_Site_Eventos')
-    .select('id_marketing_site_eventos, external_event_id, lead_code, alert_status, duplicate_count')
+    .select('id_marketing_site_eventos, external_event_id, lead_code, event_type, alert_status, duplicate_count')
     .eq('fk_criado_por', ownerId)
     .eq('external_event_id', externalEventId)
     .maybeSingle();
@@ -282,8 +294,9 @@ async function ensureLeadForEvent(input: {
   const isContactIntent = input.eventType === 'whatsapp_click' || input.eventType === 'phone_click';
   if (!isContactIntent && input.eventType !== 'form_submit' && input.eventType !== 'lead_created') return null;
 
-  const leadEmail = normalizeEmail(input.body.lead?.email);
-  const leadPhone = normalizePhone(input.body.lead?.phone);
+  const canPersistPii = input.eventType === 'form_submit' || input.eventType === 'lead_created';
+  const leadEmail = canPersistPii ? normalizeEmail(input.body.lead?.email) : null;
+  const leadPhone = canPersistPii ? normalizePhone(input.body.lead?.phone) : null;
   if (!isContactIntent && !leadEmail && !leadPhone) return null;
 
   const { data: existingLead, error: existingLeadError } = await input.serviceClient
@@ -302,7 +315,7 @@ async function ensureLeadForEvent(input: {
     occurred_at: input.occurredAt,
     lead_code: input.leadCode,
     channel: asString(input.body.channel, 80) ?? 'site_form',
-    nome: asString(input.body.lead?.name, 180),
+    nome: canPersistPii ? asString(input.body.lead?.name, 180) : null,
     email: leadEmail,
     telefone: leadPhone,
     source: input.source,
@@ -352,9 +365,13 @@ async function ensureLeadForEvent(input: {
   throw new Error('Evento registrado, mas o contato não pôde ser salvo.');
 }
 
-Deno.serve(async (request) => {
+async function handleRequest(request: Request) {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: getCorsHeaders(request) });
   if (request.method !== 'POST') return jsonResponse({ ok: false, error: 'Método não permitido.' }, 405, request);
+  const contentLength = Number(request.headers.get('content-length') ?? 0);
+  if (Number.isFinite(contentLength) && contentLength > 64 * 1024) {
+    return jsonResponse({ ok: false, error: 'Payload excede o limite permitido.' }, 413, request);
+  }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
@@ -395,7 +412,7 @@ Deno.serve(async (request) => {
     }
 
     const metadata = asObject(body.metadata);
-    const occurredAt = parseOccurredAt(body.occurredAt);
+    const occurredAt = normalizeMarketingOccurredAt(body.occurredAt);
     const source = asString(body.source, 120) ?? 'direto';
     const medium = asString(body.medium, 120);
     const campaign = asString(body.campaign, 180);
@@ -407,6 +424,9 @@ Deno.serve(async (request) => {
       externalEventId,
     );
     if (existingExternalEvent) {
+      if (existingExternalEvent.event_type !== eventType) {
+        return jsonResponse({ ok: false, error: 'eventId já utilizado por outro tipo de evento.' }, 409, request);
+      }
       const storedLeadId = await ensureLeadForEvent({
         serviceClient,
         config,
@@ -429,6 +449,8 @@ Deno.serve(async (request) => {
         leadId: storedLeadId,
         leadCode: existingExternalEvent.lead_code,
         deduplicated: true,
+        // Sem outbox idempotente não é seguro reenviar: o alerta pode ter sido
+        // entregue e apenas a confirmação de status ter falhado.
         shouldAlert: false,
         alertStatus: existingExternalEvent.alert_status,
       }, 200, request);
@@ -440,7 +462,7 @@ Deno.serve(async (request) => {
       const recentClick = await findRecentWhatsAppClick(serviceClient, config, sessionId, anonymousId);
       if (recentClick) {
         const nextDuplicateCount = Number(recentClick.duplicate_count ?? 0) + 1;
-        await serviceClient
+        const { error: duplicateUpdateError } = await serviceClient
           .schema('RetificaPremium')
           .from('Marketing_Site_Eventos')
           .update({
@@ -449,6 +471,9 @@ Deno.serve(async (request) => {
             alert_status: recentClick.alert_status === 'sent' ? 'already_sent' : recentClick.alert_status,
           })
           .eq('id_marketing_site_eventos', recentClick.id_marketing_site_eventos);
+        if (duplicateUpdateError) {
+          return jsonResponse({ ok: false, error: 'Não foi possível consolidar o clique duplicado.' }, 500, request);
+        }
 
         return jsonResponse({
           ok: true,
@@ -474,9 +499,9 @@ Deno.serve(async (request) => {
       session_id: sessionId,
       anonymous_id: anonymousId,
       page_path: pagePath,
-      page_location: asString(body.pageLocation, 1200),
+      page_location: sanitizeUrl(body.pageLocation, 1200),
       page_title: asString(body.pageTitle, 300),
-      referrer: asString(body.referrer, 1000),
+      referrer: sanitizeUrl(body.referrer, 1000),
       source,
       medium,
       campaign,
@@ -537,4 +562,20 @@ Deno.serve(async (request) => {
     console.error('marketing-events failed', error instanceof Error ? error.message : 'unknown');
     return jsonResponse({ ok: false, error: 'Falha ao registrar o evento.' }, 500, request);
   }
+}
+
+Deno.serve(async (request) => {
+  const startedAt = performance.now();
+  const requestId = crypto.randomUUID();
+  const response = await handleRequest(request);
+  const durationMs = Math.round(performance.now() - startedAt);
+  response.headers.set('X-Request-ID', requestId);
+  response.headers.set('Server-Timing', `app;dur=${durationMs}`);
+  console.log(JSON.stringify({
+    event: 'marketing_events_request',
+    requestId,
+    status: response.status,
+    durationMs,
+  }));
+  return response;
 });

@@ -3,11 +3,12 @@ import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
+  Legend,
   Line,
   ResponsiveContainer,
   Tooltip as RechartsTooltip,
@@ -57,6 +58,7 @@ import {
 } from '@/api/supabase/marketing';
 import {
   MARKETING_RESUMO_CACHE_TTL_MS,
+  MARKETING_RESUMO_REFRESH_INTERVAL_MS,
   readCachedMarketingResumo,
 } from '@/api/supabase/marketingCache';
 import { useAuth } from '@/contexts/AuthContext';
@@ -71,8 +73,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SectionEmptyState, SectionErrorState } from '@/components/ui/section-state';
 import { cn } from '@/lib/utils';
+import { evaluateMarketingHealth } from '@/services/domain/marketingHealth';
 
-const REFRESH_INTERVAL_MS = 10 * 60_000;
 const RETIFICA_PREMIUM_EMAIL = 'retificapremium5@gmail.com';
 const periodOptions = [7, 10, 15, 20, 30, 40, 60, 90];
 
@@ -136,7 +138,17 @@ function formatCurrency(value: number | null | undefined) {
 }
 
 function formatPercent(value: number | null | undefined) {
-  return `${Number(value ?? 0).toFixed(1)}%`;
+  return `${new Intl.NumberFormat('pt-BR', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(Number(value ?? 0))}%`;
+}
+
+function formatDecimal(value: number | null | undefined) {
+  return new Intl.NumberFormat('pt-BR', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(Number(value ?? 0));
 }
 
 function percentage(numerator: number, denominator: number) {
@@ -184,7 +196,7 @@ function getDelta(current: number, previous: number) {
   if (!previous) return { label: 'novo no período', positive: true, muted: false };
   const value = ((current - previous) / previous) * 100;
   return {
-    label: `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`,
+    label: `${value >= 0 ? '+' : ''}${formatDecimal(value)}%`,
     positive: value >= 0,
     muted: false,
   };
@@ -220,15 +232,13 @@ function Metric({
     <Card className="group overflow-hidden rounded-2xl border-border/70 bg-card shadow-[0_10px_35px_-28px_rgba(15,23,42,0.6)] transition-transform duration-200 hover:-translate-y-0.5">
       <CardContent className="p-4 sm:p-5">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground sm:text-xs">{label}</p>
-            <p className="mt-2 truncate text-2xl font-bold tracking-tight text-foreground sm:text-3xl">{value}</p>
-            <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{detail}</p>
-          </div>
+          <p className="min-w-0 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground sm:text-xs">{label}</p>
           <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl shadow-sm', accents[accent])}>
             <Icon className="h-5 w-5" />
           </div>
         </div>
+        <p className="mt-3 break-words text-xl font-bold leading-tight tracking-tight text-foreground sm:text-3xl">{value}</p>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{detail}</p>
         {delta ? (
           <div className={cn(
             'mt-4 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold',
@@ -265,7 +275,7 @@ function PanelHeading({
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        {eyebrow ? <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-600">{eyebrow}</p> : null}
+        {eyebrow ? <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-700">{eyebrow}</p> : null}
         <h2 className="mt-1 text-lg font-bold tracking-tight text-foreground sm:text-xl">{title}</h2>
         {description ? <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">{description}</p> : null}
       </div>
@@ -313,28 +323,111 @@ function IntegrationStrip({ integrations }: { integrations: MarketingIntegration
   ));
 
   return (
-    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
       {displayed.map((integration) => {
         const status = statusStyle[integration.status] ?? statusStyle.not_connected;
         const StatusIcon = status.icon;
         return (
           <div key={integration.provider} className="rounded-2xl border border-border/70 bg-card px-3.5 py-3 shadow-sm">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-foreground">{providerLabels[integration.provider] ?? integration.provider}</p>
-                <p className="mt-1 truncate text-[11px] text-muted-foreground">
-                  {integration.freshness ?? (integration.lastSyncAt ? formatDateTime(integration.lastSyncAt) : 'Sem sincronização')}
-                </p>
-              </div>
+            <div className="flex items-start justify-between gap-2">
+              <p className="min-w-0 text-sm font-semibold text-foreground">{providerLabels[integration.provider] ?? integration.provider}</p>
               <Badge variant="outline" className={cn('shrink-0 gap-1 text-[10px]', status.className)}>
-                <StatusIcon className={cn('h-3 w-3', integration.status === 'syncing' && 'animate-spin')} />
+                <StatusIcon className={cn('h-3 w-3', integration.status === 'syncing' && 'motion-safe:animate-spin')} />
                 {status.label}
               </Badge>
             </div>
+            <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+              {integration.freshness ?? (integration.lastSyncAt ? formatDateTime(integration.lastSyncAt) : 'Sem sincronização')}
+            </p>
+            <p className="mt-1 text-[10px] leading-snug text-muted-foreground/80">
+              {integration.lastSyncAt ? `Última leitura: ${formatDateTime(integration.lastSyncAt)}` : 'Ainda sem leitura confirmada'}
+            </p>
           </div>
         );
       })}
     </div>
+  );
+}
+
+function GrowthDecisionPulse({ resumo }: { resumo: MarketingResumo }) {
+  const health = evaluateMarketingHealth(resumo);
+  const presentation = {
+    critical: {
+      icon: AlertTriangle,
+      labelClass: 'border-rose-200 bg-rose-50 text-rose-700',
+      railClass: 'border-l-rose-500',
+      iconClass: 'bg-rose-600 text-white',
+    },
+    attention: {
+      icon: AlertTriangle,
+      labelClass: 'border-amber-200 bg-amber-50 text-amber-800',
+      railClass: 'border-l-amber-500',
+      iconClass: 'bg-amber-400 text-slate-950',
+    },
+    healthy: {
+      icon: CheckCircle2,
+      labelClass: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+      railClass: 'border-l-emerald-500',
+      iconClass: 'bg-emerald-600 text-white',
+    },
+    insufficient: {
+      icon: Clock3,
+      labelClass: 'border-slate-200 bg-slate-50 text-slate-700',
+      railClass: 'border-l-slate-400',
+      iconClass: 'bg-slate-700 text-white',
+    },
+  }[health.status];
+  const StatusIcon = presentation.icon;
+
+  return (
+    <section
+      aria-labelledby="growth-decision-title"
+      aria-live="polite"
+      className={cn(
+        'rounded-2xl border border-l-4 bg-card p-4 shadow-[0_12px_40px_-32px_rgba(15,23,42,0.7)] sm:p-5',
+        presentation.railClass,
+      )}
+    >
+      <div className="grid gap-4 xl:grid-cols-[minmax(280px,0.72fr)_minmax(0,1.28fr)] xl:items-center">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl', presentation.iconClass)}>
+            <StatusIcon className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-700">Pulso de decisão</p>
+              <Badge variant="outline" className={cn('text-[10px]', presentation.labelClass)}>
+                {health.label}
+              </Badge>
+            </div>
+            <h2 id="growth-decision-title" className="mt-1 text-lg font-bold tracking-tight text-foreground">
+              Há sinais que exigem atenção?
+            </h2>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{health.summary}</p>
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              Eventos internos: ciclo de {resumo.quality?.refreshIntervalMinutes ?? 5} min · Ações principais: {resumo.quality?.actionMetricsLabel ?? 'fonte informada no painel'}.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid min-w-0 gap-2 sm:grid-cols-3">
+          {health.signals.slice(0, 3).map((item) => (
+            <div key={item.id} className="min-w-0 rounded-xl border bg-background px-3 py-2.5">
+              <p className={cn(
+                'text-xs font-bold',
+                item.severity === 'critical' && 'text-rose-700',
+                item.severity === 'warning' && 'text-amber-800',
+                item.severity === 'positive' && 'text-emerald-700',
+                item.severity === 'info' && 'text-slate-700',
+              )}>
+                {item.title}
+              </p>
+              <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">{item.description}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -351,7 +444,7 @@ function AcquisitionRail({ resumo }: { resumo: MarketingResumo }) {
     { label: 'Pessoas no site', value: funnel.visits, icon: Users },
     { label: 'WhatsApp', value: funnel.whatsappClicks, icon: MessageCircle },
     { label: 'Formulários iniciados', value: funnel.formStarts, icon: FileWarning },
-    { label: 'Contatos enviados', value: funnel.formSubmits, icon: MailCheck },
+    { label: 'Formulários enviados', value: funnel.formSubmits, icon: MailCheck },
     { label: 'Clientes identificados', value: funnel.identifiedClients, icon: UserCheck },
     { label: 'O.S. aprovadas', value: funnel.approvedOrders, icon: FileCheck2 },
   ];
@@ -361,29 +454,25 @@ function AcquisitionRail({ resumo }: { resumo: MarketingResumo }) {
       <CardContent className="p-5 sm:p-7">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-300">Trilho da aquisição</p>
-            <h2 className="mt-1 text-xl font-bold tracking-tight">Da visita até a O.S. aprovada</h2>
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-300">Marcos da aquisição</p>
+            <h2 className="mt-1 text-xl font-bold tracking-tight">Volumes que conectam site e oficina</h2>
           </div>
-          <p className="text-xs text-slate-400">Clique no WhatsApp mede intenção, não garante mensagem enviada.</p>
+          <p className="max-w-xl text-xs text-slate-400">
+            Leitura por marco do período, não uma coorte sequencial. WhatsApp mede clique, não mensagem enviada.
+          </p>
         </div>
         <div className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-2xl bg-white/10 md:grid-cols-3 xl:grid-cols-6">
-          {steps.map((step, index) => {
+          {steps.map((step) => {
             const Icon = step.icon;
-            const next = steps[index + 1];
-            const conversion = next && step.value ? percentage(next.value, step.value) : null;
             return (
               <div key={step.label} className="relative bg-slate-950 p-4 sm:p-5">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center">
                   <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-amber-300">
                     <Icon className="h-4 w-4" />
                   </span>
-                  <span className="text-[10px] font-semibold text-slate-500">0{index + 1}</span>
                 </div>
                 <p className="mt-5 text-2xl font-bold">{formatNumber(step.value)}</p>
                 <p className="mt-1 text-xs leading-relaxed text-slate-400">{step.label}</p>
-                {conversion !== null ? (
-                  <p className="mt-3 text-[10px] font-semibold text-teal-300">{formatPercent(conversion)} avança</p>
-                ) : null}
               </div>
             );
           })}
@@ -409,21 +498,22 @@ function BasicAcquisitionRail({ resumo }: { resumo: MarketingResumo }) {
       <CardContent className="p-0">
         <div className="flex flex-col gap-2 border-b border-white/10 px-5 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-6">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-300">Caminho até o contato</p>
-            <h2 className="mt-1 text-xl font-bold tracking-tight">Como as pessoas avançam no site</h2>
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-300">Sinais até o contato</p>
+            <h2 className="mt-1 text-xl font-bold tracking-tight">Como o interesse aparece no site</h2>
           </div>
-          <p className="text-xs text-slate-400">Os números mostram ações no site, sem identificar pessoas.</p>
+          <p className="max-w-xl text-xs text-slate-400">
+            São volumes paralelos do período, sem identificar pessoas e sem assumir uma conversão sequencial.
+          </p>
         </div>
         <div className="grid grid-cols-2 gap-px bg-white/10 md:grid-cols-3 xl:grid-cols-6">
-          {steps.map((step, index) => {
+          {steps.map((step) => {
             const Icon = step.icon;
             return (
               <div key={step.label} className="bg-slate-950 p-4 sm:p-5">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center">
                   <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-amber-300">
                     <Icon className="h-4 w-4" />
                   </span>
-                  <span className="text-[10px] font-semibold text-slate-500">{String(index + 1).padStart(2, '0')}</span>
                 </div>
                 <p className="mt-5 text-2xl font-bold">{formatNumber(step.value)}</p>
                 <p className="mt-1 text-xs leading-relaxed text-slate-400">{step.label}</p>
@@ -443,6 +533,7 @@ function BasicOverviewTab({ resumo }: { resumo: MarketingResumo }) {
   const totalContacts = current.whatsappClicks + (current.phoneClicks ?? 0) + current.formSubmits;
   const previousContacts = previous.whatsappClicks + (previous.phoneClicks ?? 0) + previous.formSubmits;
   const pagesPerSession = current.sessions ? (current.pageViews ?? 0) / current.sessions : 0;
+  const showInternalDailyActions = resumo.quality?.actionMetricsSource !== 'ga4';
 
   return (
     <div className="space-y-5">
@@ -491,11 +582,19 @@ function BasicOverviewTab({ resumo }: { resumo: MarketingResumo }) {
             <PanelHeading
               eyebrow="Evolução diária"
               title="Movimento do site"
-              description="Compare pessoas, páginas vistas e ações de contato ao longo do período."
+              description={showInternalDailyActions
+                ? 'Compare pessoas, páginas vistas e ações internas ao longo do período.'
+                : 'Pessoas e páginas vêm do GA4; ações ficam nos cards até o histórico interno cobrir os dois períodos.'}
             />
-            <div className="mt-5 h-[290px]">
+            <div
+              className="mt-5 h-[290px]"
+              role="img"
+              aria-label={showInternalDailyActions
+                ? 'Evolução diária de pessoas, páginas e ações internas'
+                : 'Evolução diária de pessoas e páginas'}
+            >
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={resumo.site.daily}>
+                <ComposedChart data={resumo.site.daily}>
                   <defs>
                     <linearGradient id="basicGrowthVisits" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#0f766e" stopOpacity={0.35} />
@@ -506,10 +605,13 @@ function BasicOverviewTab({ resumo }: { resumo: MarketingResumo }) {
                   <XAxis dataKey="date" tickFormatter={(value: string) => formatShortDate(value, resumo.periodDays)} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} minTickGap={24} />
                   <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={28} />
                   <RechartsTooltip content={<ChartTooltip />} />
+                  <Legend />
                   <Area type="monotone" dataKey="visits" name="Pessoas" stroke="#0f766e" strokeWidth={2.5} fill="url(#basicGrowthVisits)" />
                   <Line type="monotone" dataKey="pageViews" name="Páginas" stroke="#0f172a" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="actions" name="Contatos" stroke="#d97706" strokeWidth={2.5} dot={false} />
-                </AreaChart>
+                  {showInternalDailyActions ? (
+                    <Line type="monotone" dataKey="actions" name="Ações internas" stroke="#d97706" strokeWidth={2.5} dot={false} />
+                  ) : null}
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
           </CardContent>
@@ -574,6 +676,7 @@ function OverviewTab({ resumo }: { resumo: MarketingResumo }) {
   const previous = resumo.site.previous;
   const business = resumo.business?.current ?? resumo.executive?.business;
   const previousBusiness = resumo.business?.previous ?? resumo.executive?.previousBusiness;
+  const showInternalDailyActions = resumo.quality?.actionMetricsSource !== 'ga4';
 
   return (
     <div className="space-y-5">
@@ -624,11 +727,13 @@ function OverviewTab({ resumo }: { resumo: MarketingResumo }) {
             <PanelHeading
               eyebrow="Pulso diário"
               title="Crescimento do site"
-              description="Pessoas, páginas vistas e ações importantes no período selecionado."
+              description={showInternalDailyActions
+                ? 'Pessoas, páginas vistas e ações internas no período selecionado.'
+                : 'Pessoas e páginas do GA4; ações ficam nos cards até o histórico interno cobrir os dois períodos.'}
             />
-            <div className="mt-5 h-[290px]">
+            <div className="mt-5 h-[290px]" role="img" aria-label="Evolução diária de pessoas, páginas, ações e contatos">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={resumo.site.daily}>
+                <ComposedChart data={resumo.site.daily}>
                   <defs>
                     <linearGradient id="growthVisits" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#0f766e" stopOpacity={0.35} />
@@ -646,11 +751,14 @@ function OverviewTab({ resumo }: { resumo: MarketingResumo }) {
                   />
                   <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={28} />
                   <RechartsTooltip content={<ChartTooltip />} />
+                  <Legend />
                   <Area type="monotone" dataKey="visits" name="Pessoas" stroke="#0f766e" strokeWidth={2.5} fill="url(#growthVisits)" />
                   <Line type="monotone" dataKey="pageViews" name="Páginas" stroke="#0f172a" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="actions" name="Ações" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                  {showInternalDailyActions ? (
+                    <Line type="monotone" dataKey="actions" name="Ações internas" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                  ) : null}
                   <Line type="monotone" dataKey="leads" name="Contatos" stroke="#7c3aed" strokeWidth={2} dot={false} />
-                </AreaChart>
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
           </CardContent>
@@ -725,7 +833,7 @@ function SearchMetric({
     ? formatNumber(current)
     : kind === 'percent'
       ? formatPercent(current)
-      : current.toFixed(1);
+      : formatDecimal(current);
   return (
     <Metric
       label={label}
@@ -786,9 +894,9 @@ function SeoTab({ resumo }: { resumo: MarketingResumo }) {
             description="O Search Console pode entregar dados com dois ou três dias de atraso; o horário de sincronização continua visível."
             action={<Badge variant="outline">{formatDateTime(search.syncedAt)}</Badge>}
           />
-          <div className="mt-5 h-[310px]">
+          <div className="mt-5 h-[310px]" role="img" aria-label="Evolução de impressões e cliques orgânicos">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={search.daily}>
+              <ComposedChart data={search.daily}>
                 <defs>
                   <linearGradient id="searchImpressions" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#0f172a" stopOpacity={0.28} />
@@ -800,9 +908,10 @@ function SeoTab({ resumo }: { resumo: MarketingResumo }) {
                 <YAxis yAxisId="impressions" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={36} />
                 <YAxis yAxisId="clicks" orientation="right" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={28} />
                 <RechartsTooltip content={<ChartTooltip />} />
+                <Legend />
                 <Area yAxisId="impressions" type="monotone" dataKey="impressions" name="Impressões" stroke="#0f172a" strokeWidth={2.5} fill="url(#searchImpressions)" />
                 <Line yAxisId="clicks" type="monotone" dataKey="clicks" name="Cliques" stroke="#d97706" strokeWidth={2.5} dot={false} />
-              </AreaChart>
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
         </CardContent>
@@ -833,10 +942,10 @@ function SearchTable({
   rows: Array<MarketingSearchTotals & { label: string }>;
 }) {
   return (
-    <Card className="rounded-2xl border-border/70 shadow-sm">
+    <Card className="min-w-0 rounded-2xl border-border/70 shadow-sm">
       <CardContent className="p-4 sm:p-5">
         <h3 className="text-base font-bold text-foreground">{title}</h3>
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-4 w-full max-w-full overflow-x-auto" role="region" aria-label={title} tabIndex={0}>
           <table className="w-full min-w-[520px] text-left text-xs">
             <thead className="border-b text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
               <tr>
@@ -854,7 +963,7 @@ function SearchTable({
                   <td className="py-3 text-right text-muted-foreground">{formatNumber(row.impressions)}</td>
                   <td className="py-3 text-right font-semibold text-foreground">{formatNumber(row.clicks)}</td>
                   <td className="py-3 text-right text-muted-foreground">{formatPercent(row.ctr)}</td>
-                  <td className="py-3 text-right text-muted-foreground">{row.position.toFixed(1)}</td>
+                  <td className="py-3 text-right text-muted-foreground">{formatDecimal(row.position)}</td>
                 </tr>
               ))}
             </tbody>
@@ -868,11 +977,22 @@ function SearchTable({
 function BehaviorTab({ resumo }: { resumo: MarketingResumo }) {
   const current = resumo.site.current;
   const previous = resumo.site.previous;
+  const bounceRate = Math.max(0, 100 - (current.engagementRate ?? 0));
+  const recurringUsers = Math.max(0, current.visits - (current.newUsers ?? 0));
+  const devices = resumo.site.devices ?? [];
+  const largestDeviceAudience = Math.max(1, ...devices.map((item) => item.users));
+  const deviceLabels: Record<string, string> = {
+    desktop: 'Computador',
+    mobile: 'Celular',
+    tablet: 'Tablet',
+  };
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
         <Metric label="Taxa de engajamento" value={formatPercent(current.engagementRate)} detail="Pessoas que realmente interagiram" icon={Activity} current={current.engagementRate} previous={previous.engagementRate} accent="teal" />
+        <Metric label="Taxa de rejeição" value={formatPercent(bounceRate)} detail="Complemento da taxa de engajamento do GA4" icon={ArrowDownRight} accent="rose" />
+        <Metric label="Novos usuários" value={formatNumber(current.newUsers)} detail={`${formatNumber(recurringUsers)} recorrentes estimados`} icon={Users} current={current.newUsers} previous={previous.newUsers} accent="navy" />
         <Metric label="Tempo médio" value={formatDuration(current.averageSessionDuration)} detail="Duração média por sessão" icon={Clock3} current={current.averageSessionDuration} previous={previous.averageSessionDuration} accent="gold" />
         <Metric label="Sessões engajadas" value={formatNumber(current.engagedSessions)} detail={`de ${formatNumber(current.sessions)} sessões`} icon={Gauge} current={current.engagedSessions} previous={previous.engagedSessions} accent="navy" />
         <Metric label="Páginas vistas" value={formatNumber(current.pageViews)} detail={`${formatNumber(current.visits)} pessoas no site`} icon={Eye} current={current.pageViews} previous={previous.pageViews} accent="violet" />
@@ -885,7 +1005,7 @@ function BehaviorTab({ resumo }: { resumo: MarketingResumo }) {
             <div className="mt-5 space-y-2">
               {resumo.site.pages.slice(0, 10).map((page, index) => (
                 <div key={page.path} className="grid grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border bg-background p-3">
-                  <span className="text-center text-xs font-bold text-amber-600">{String(index + 1).padStart(2, '0')}</span>
+                  <span className="text-center text-xs font-bold text-amber-700">{String(index + 1).padStart(2, '0')}</span>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-foreground">{page.path}</p>
                     <p className="truncate text-[11px] text-muted-foreground">{page.title ?? 'Sem título informado'}</p>
@@ -925,6 +1045,44 @@ function BehaviorTab({ resumo }: { resumo: MarketingResumo }) {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="rounded-2xl border-border/70 shadow-sm">
+        <CardContent className="p-4 sm:p-6">
+          <PanelHeading
+            eyebrow="Dispositivos"
+            title="Onde a experiência precisa funcionar melhor"
+            description="Usuários ativos e sessões reportados pelo GA4, separados por categoria de dispositivo."
+          />
+          {devices.length ? (
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              {devices.map((item) => (
+                <div key={item.device} className="rounded-xl border bg-background p-4">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <p className="text-sm font-semibold text-foreground">{deviceLabels[item.device] ?? item.device}</p>
+                    <p className="text-lg font-bold text-foreground">{formatNumber(item.users)}</p>
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">{formatNumber(item.sessions)} sessões</p>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-teal-600"
+                      style={{ width: `${(item.users / largestDeviceAudience) * 100}%` }}
+                      role="progressbar"
+                      aria-label={`${deviceLabels[item.device] ?? item.device}: ${formatNumber(item.users)} usuários`}
+                      aria-valuemin={0}
+                      aria-valuemax={largestDeviceAudience}
+                      aria-valuenow={item.users}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-5">
+              <SectionEmptyState title="Dispositivos ainda não disponíveis" description="O detalhamento aparecerá após a próxima sincronização do GA4." />
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -1100,8 +1258,8 @@ function ContactsTab({ resumo, onLinked }: { resumo: MarketingResumo; onLinked: 
         <Metric label="Taxa de conclusão" value={formatPercent(forms?.completionRate)} detail={`${formatNumber(forms?.abandons)} abandonos detectados`} icon={MailCheck} accent="violet" />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-        <Card className="rounded-2xl border-border/70 shadow-sm">
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+        <Card className="min-w-0 rounded-2xl border-border/70 shadow-sm">
           <CardContent className="p-4 sm:p-6">
             <PanelHeading eyebrow="Diagnóstico" title="Onde o formulário perde pessoas" description="Nenhum conteúdo digitado é guardado antes do envio; apenas campo, tempo e erro." />
             <div className="mt-5">
@@ -1133,8 +1291,8 @@ function ContactsTab({ resumo, onLinked }: { resumo: MarketingResumo; onLinked: 
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border-border/70 shadow-sm">
-          <CardContent className="p-4 sm:p-6">
+        <Card className="min-w-0 rounded-2xl border-border/70 shadow-sm">
+          <CardContent className="min-w-0 p-4 sm:p-6">
             <PanelHeading
               eyebrow="Caixa de entrada"
               title="Contatos identificados"
@@ -1146,9 +1304,14 @@ function ContactsTab({ resumo, onLinked }: { resumo: MarketingResumo; onLinked: 
                 </div>
               )}
             />
-            <div className="mt-5 max-h-[430px] overflow-auto rounded-xl border">
+            <div
+              className="mt-5 w-full max-w-full overflow-auto rounded-xl border"
+              role="region"
+              aria-label="Contatos identificados"
+              tabIndex={0}
+            >
               {linkFeedback ? (
-                <div className="border-b bg-muted/40 px-3 py-2 text-xs text-muted-foreground">{linkFeedback}</div>
+                <div aria-live="polite" className="border-b bg-muted/40 px-3 py-2 text-xs text-muted-foreground">{linkFeedback}</div>
               ) : null}
               <table className="w-full min-w-[980px] text-left text-xs">
                 <thead className="sticky top-0 z-10 border-b bg-muted/95 text-[10px] uppercase tracking-[0.12em] text-muted-foreground backdrop-blur">
@@ -1211,6 +1374,22 @@ function LeadRow({
         <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">{lead.lead_code ?? 'Sem código'}</p>
       </td>
       <td className="px-3 py-3">
+        <p className="font-semibold text-foreground">{lead.nome ?? 'Contato sem nome'}</p>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">{lead.telefone ?? lead.email ?? 'Sem telefone/e-mail'}</p>
+      </td>
+      <td className="px-3 py-3">
+        <p className="font-medium text-foreground">{lead.source ?? 'direto'}</p>
+        <p className="text-[11px] text-muted-foreground">{lead.campaign ?? lead.medium ?? 'sem campanha'}</p>
+      </td>
+      <td className="px-3 py-3 text-muted-foreground">{lead.channel ?? 'site'}</td>
+      <td className="px-3 py-3">
+        <Badge variant="outline" className={lead.fk_clientes
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+          : 'border-amber-200 bg-amber-50 text-amber-700'}>
+          {lead.fk_clientes ? 'Cliente vinculado' : 'Aguardando vínculo'}
+        </Badge>
+      </td>
+      <td className="px-3 py-3">
         {lead.fk_clientes ? (
           <span className="text-[11px] text-muted-foreground">Origem confirmada</span>
         ) : (
@@ -1228,27 +1407,11 @@ function LeadRow({
               </SelectContent>
             </Select>
             <Button type="button" size="sm" className="h-8" disabled={!selectedClientId || isLinking} onClick={onLink}>
-              {isLinking ? <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <UserCheck className="mr-1.5 h-3.5 w-3.5" />}
+              {isLinking ? <RefreshCw className="mr-1.5 h-3.5 w-3.5 motion-safe:animate-spin" /> : <UserCheck className="mr-1.5 h-3.5 w-3.5" />}
               Vincular
             </Button>
           </div>
         )}
-      </td>
-      <td className="px-3 py-3">
-        <p className="font-semibold text-foreground">{lead.nome ?? 'Contato sem nome'}</p>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">{lead.telefone ?? lead.email ?? 'Sem telefone/e-mail'}</p>
-      </td>
-      <td className="px-3 py-3">
-        <p className="font-medium text-foreground">{lead.source ?? 'direto'}</p>
-        <p className="text-[11px] text-muted-foreground">{lead.campaign ?? lead.medium ?? 'sem campanha'}</p>
-      </td>
-      <td className="px-3 py-3 text-muted-foreground">{lead.channel ?? 'site'}</td>
-      <td className="px-3 py-3">
-        <Badge variant="outline" className={lead.fk_clientes
-          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-          : 'border-amber-200 bg-amber-50 text-amber-700'}>
-          {lead.fk_clientes ? 'Cliente vinculado' : 'Aguardando vínculo'}
-        </Badge>
       </td>
     </tr>
   );
@@ -1269,11 +1432,11 @@ function ResultsTab({ resumo }: { resumo: MarketingResumo }) {
         <Metric label="Comissão gerada" value={formatCurrency(business?.commission)} detail="Mantida no snapshot original" icon={BadgeDollarSign} current={business?.commission} previous={previous?.commission} accent="gold" />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
-        <Card className="rounded-2xl border-border/70 shadow-sm">
-          <CardContent className="p-4 sm:p-6">
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
+        <Card className="min-w-0 rounded-2xl border-border/70 shadow-sm">
+          <CardContent className="min-w-0 p-4 sm:p-6">
             <PanelHeading eyebrow="Auditoria financeira" title="O.S. que geraram comissão" description="Base congelada na primeira aprovação: somente serviços, com peças e produtos excluídos." />
-            <div className="mt-5 overflow-x-auto rounded-xl border">
+            <div className="mt-5 w-full max-w-full overflow-x-auto rounded-xl border" role="region" aria-label="Ordens de serviço que geraram comissão" tabIndex={0}>
               <table className="w-full min-w-[720px] text-left text-xs">
                 <thead className="border-b bg-muted/70 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
                   <tr>
@@ -1353,7 +1516,11 @@ function QualityTab({ resumo }: { resumo: MarketingResumo }) {
 
       <Card className="rounded-2xl border-border/70 shadow-sm">
         <CardContent className="p-4 sm:p-6">
-          <PanelHeading eyebrow="Saúde das fontes" title="Integrações e defasagem real" description="O painel consulta novamente a cada 10 minutos, mas respeita o momento em que cada fonte libera os dados." />
+          <PanelHeading
+            eyebrow="Saúde das fontes"
+            title="Integrações e defasagem real"
+            description="Eventos internos são consultados a cada 5 minutos; GA4 e Search Console mantêm caches e atrasos próprios para proteger quotas e evitar falsa precisão."
+          />
           <div className="mt-5 grid gap-3 md:grid-cols-2">
             {resumo.integrations.map((integration) => (
               <IntegrationDetail key={integration.provider} integration={integration} />
@@ -1363,8 +1530,8 @@ function QualityTab({ resumo }: { resumo: MarketingResumo }) {
       </Card>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.65fr)]">
-        <Card className="rounded-2xl border-border/70 shadow-sm">
-          <CardContent className="p-4 sm:p-6">
+        <Card className="min-w-0 rounded-2xl border-border/70 shadow-sm">
+          <CardContent className="min-w-0 p-4 sm:p-6">
             <PanelHeading
               eyebrow="Auditoria dos eventos"
               title="O que aconteceu no site"
@@ -1381,7 +1548,7 @@ function QualityTab({ resumo }: { resumo: MarketingResumo }) {
                 </Select>
               )}
             />
-            <div className="mt-5 max-h-[480px] overflow-auto rounded-xl border">
+            <div className="mt-5 w-full max-w-full overflow-auto rounded-xl border" role="region" aria-label="Auditoria dos eventos do site" tabIndex={0}>
               <table className="w-full min-w-[820px] text-left text-xs">
                 <thead className="sticky top-0 z-10 border-b bg-muted/95 text-[10px] uppercase tracking-[0.12em] text-muted-foreground backdrop-blur">
                   <tr>
@@ -1438,7 +1605,7 @@ function IntegrationDetail({ integration }: { integration: MarketingIntegrationS
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-amber-300">
-            <Icon className={cn('h-4 w-4', integration.status === 'syncing' && 'animate-spin')} />
+            <Icon className={cn('h-4 w-4', integration.status === 'syncing' && 'motion-safe:animate-spin')} />
           </span>
           <div className="min-w-0">
             <p className="font-semibold text-foreground">{providerLabels[integration.provider] ?? integration.provider}</p>
@@ -1496,7 +1663,7 @@ function normalizeCustomPeriod(value: string) {
 }
 
 export default function MarketingGrowth() {
-  const { realUser, isAdmin } = useAuth();
+  const { realUser, operationalUser, isSupportImpersonating, isAdmin } = useAuth();
   const hasPrivateAccess = isSuperAdmin(realUser);
   const { data: systemUsers = [], isLoading: isLoadingUsers } = useSystemUsersQuery({
     enabled: hasPrivateAccess && isAdmin,
@@ -1516,43 +1683,44 @@ export default function MarketingGrowth() {
       setSelectedUserId('');
       return;
     }
+    if (
+      isSupportImpersonating
+      && operationalUser?.moduleAccess?.marketing === true
+      && selectableUsers.some((user) => user.id === operationalUser.id)
+    ) {
+      setSelectedUserId(operationalUser.id);
+      return;
+    }
     if (selectedUserId && selectableUsers.some((user) => user.id === selectedUserId)) return;
     const retifica = selectableUsers.find((user) => user.email?.trim().toLowerCase() === RETIFICA_PREMIUM_EMAIL);
     setSelectedUserId(retifica?.id ?? selectableUsers[0]?.id ?? '');
-  }, [hasPrivateAccess, selectableUsers, selectedUserId]);
+  }, [hasPrivateAccess, isSupportImpersonating, operationalUser, selectableUsers, selectedUserId]);
 
   const targetUserId = hasPrivateAccess ? selectedUserId : null;
   const queryEnabled = hasPrivateAccess ? Boolean(selectedUserId) : true;
+  const requesterUserId = realUser?.id ?? '';
   const queryKey = useMemo(
-    () => getMarketingResumoQueryKey(periodDays, targetUserId),
-    [periodDays, targetUserId],
+    () => getMarketingResumoQueryKey(periodDays, targetUserId, requesterUserId),
+    [periodDays, requesterUserId, targetUserId],
   );
   const cachedResumo = useMemo(
-    () => (queryEnabled ? readCachedMarketingResumo(periodDays, targetUserId) : null),
-    [periodDays, queryEnabled, targetUserId],
+    () => (queryEnabled && requesterUserId
+      ? readCachedMarketingResumo(periodDays, targetUserId, requesterUserId)
+      : null),
+    [periodDays, queryEnabled, requesterUserId, targetUserId],
   );
   const query = useQuery({
     queryKey,
-    queryFn: () => getMarketingResumo(periodDays, targetUserId),
-    enabled: queryEnabled,
+    queryFn: () => getMarketingResumo(periodDays, targetUserId, requesterUserId),
+    enabled: queryEnabled && Boolean(requesterUserId),
     staleTime: MARKETING_RESUMO_CACHE_TTL_MS,
     gcTime: 60 * 60_000,
-    refetchInterval: REFRESH_INTERVAL_MS,
+    refetchInterval: MARKETING_RESUMO_REFRESH_INTERVAL_MS,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
     initialData: cachedResumo?.data,
     initialDataUpdatedAt: cachedResumo?.savedAt,
-    placeholderData: (previous) => (
-      previous?.periodDays === periodDays
-      && (
-        hasPrivateAccess
-          ? previous.context?.targetUserId === selectedUserId
-          : previous.context?.accessLevel === 'basic'
-      )
-        ? previous
-        : undefined
-    ),
     retry: 1,
   });
 
@@ -1584,10 +1752,10 @@ export default function MarketingGrowth() {
                   )}
                   <Badge className="gap-1.5 border-teal-300/20 bg-teal-300/10 text-teal-200 hover:bg-teal-300/10">
                     <span className="relative flex h-2 w-2">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-teal-300 opacity-75" />
+                      <span className="absolute inline-flex h-full w-full rounded-full bg-teal-300 opacity-75 motion-safe:animate-ping" />
                       <span className="relative inline-flex h-2 w-2 rounded-full bg-teal-300" />
                     </span>
-                    Atualização automática · 10 min
+                    Eventos internos · 5 min
                   </Badge>
                 </div>
                 <p className="mt-6 text-[10px] font-bold uppercase tracking-[0.25em] text-amber-300">
@@ -1596,7 +1764,7 @@ export default function MarketingGrowth() {
                 <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">Crescimento</h1>
                 <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-400 sm:text-base">
                   {hasPrivateAccess
-                    ? 'Impressão, visita, contato, cliente, O.S. e comissão no mesmo painel — com orgânico e mídia paga sempre separados.'
+                    ? 'Impressão, visita, contato, cliente, O.S. e comissão no mesmo painel — com origem e disponibilidade de cada fonte explícitas.'
                     : 'Acompanhe como o site aparece no Google, recebe visitas e transforma interesse em contatos.'}
                 </p>
               </div>
@@ -1624,8 +1792,8 @@ export default function MarketingGrowth() {
                   onClick={() => void query.refetch()}
                   disabled={!queryEnabled || query.isFetching}
                 >
-                  <RefreshCw className={cn('mr-2 h-4 w-4', query.isFetching && 'animate-spin')} />
-                  Atualizar
+                  <RefreshCw className={cn('mr-2 h-4 w-4', query.isFetching && 'motion-safe:animate-spin')} />
+                  {query.isFetching ? 'Atualizando' : 'Atualizar'}
                 </Button>
               </div>
             </div>
@@ -1648,6 +1816,7 @@ export default function MarketingGrowth() {
                       'h-8 rounded-full px-3 text-xs text-slate-400 hover:bg-white/10 hover:text-white',
                       periodDays === days && 'bg-amber-300 text-slate-950 hover:bg-amber-300 hover:text-slate-950',
                     )}
+                    aria-pressed={periodDays === days}
                   >
                     {days} dias
                   </Button>
@@ -1675,9 +1844,11 @@ export default function MarketingGrowth() {
           </div>
         </header>
 
+        {query.data ? <GrowthDecisionPulse resumo={query.data} /> : null}
+
         {hasPrivateAccess && query.data ? <IntegrationStrip integrations={query.data.integrations} /> : null}
 
-        {query.error ? (
+        {query.error && !query.data ? (
           <SectionErrorState
             title="Não foi possível carregar o painel"
             description={query.error instanceof Error ? query.error.message : 'Tente novamente em instantes.'}
@@ -1685,9 +1856,21 @@ export default function MarketingGrowth() {
           />
         ) : null}
 
-        {!query.error && query.isLoading ? <LoadingDashboard /> : null}
+        {query.error && query.data ? (
+          <div role="alert" className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
+            <span className="inline-flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              Não foi possível atualizar agora. Os dados válidos de {formatDateTime(query.data.quality?.generatedAt)} continuam visíveis.
+            </span>
+            <Button type="button" size="sm" variant="outline" onClick={() => void query.refetch()} disabled={query.isFetching}>
+              Tentar novamente
+            </Button>
+          </div>
+        ) : null}
 
-        {hasPrivateAccess && !query.error && !query.isLoading && !selectableUsers.length ? (
+        {!query.data && query.isLoading ? <LoadingDashboard /> : null}
+
+        {hasPrivateAccess && !query.error && !query.isLoading && !isLoadingUsers && !selectableUsers.length ? (
           <SectionEmptyState
             icon={Users}
             title="Nenhuma empresa com Crescimento habilitado"
@@ -1696,11 +1879,11 @@ export default function MarketingGrowth() {
           />
         ) : null}
 
-        {query.data && !query.error ? (
+        {query.data ? (
           hasPrivateAccess ? (
             <Tabs defaultValue="visao" className="space-y-5">
-              <div className="overflow-x-auto pb-1">
-                <TabsList className="inline-grid h-11 min-w-[790px] grid-cols-6 rounded-xl bg-muted/80 p-1">
+              <div className="pb-1">
+                <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-muted/80 p-1 sm:grid-cols-3 xl:grid-cols-6">
                   <TabsTrigger value="visao">Visão geral</TabsTrigger>
                   <TabsTrigger value="seo">SEO</TabsTrigger>
                   <TabsTrigger value="comportamento">Comportamento</TabsTrigger>
@@ -1718,8 +1901,8 @@ export default function MarketingGrowth() {
             </Tabs>
           ) : (
             <Tabs defaultValue="resumo" className="space-y-5">
-              <div className="overflow-x-auto pb-1">
-                <TabsList className="inline-grid h-11 min-w-[560px] grid-cols-4 rounded-xl bg-muted/80 p-1">
+              <div className="pb-1">
+                <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-muted/80 p-1 sm:grid-cols-4">
                   <TabsTrigger value="resumo">Resumo</TabsTrigger>
                   <TabsTrigger value="google">Google</TabsTrigger>
                   <TabsTrigger value="site">Site</TabsTrigger>
@@ -1743,7 +1926,7 @@ export default function MarketingGrowth() {
           </span>
           <span className="inline-flex items-center gap-2">
             <ExternalLink className="h-3.5 w-3.5" />
-            Fonte mais recente: {formatDateTime(query.data?.quality?.generatedAt)}
+            Resposta gerada: {formatDateTime(query.data?.quality?.generatedAt)}
           </span>
         </footer>
       </div>

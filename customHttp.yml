@@ -7,6 +7,9 @@ customHeaders:
       # Impede que o browser adivinhe o tipo MIME (MIME sniffing)
       - key: X-Content-Type-Options
         value: nosniff
+      # O Retiflow é uma aplicação autenticada; o site público vive em outro domínio.
+      - key: X-Robots-Tag
+        value: noindex, nofollow, noarchive
       # Força HTTPS por 2 anos, inclui subdomínios
       - key: Strict-Transport-Security
         value: max-age=63072000; includeSubDomains; preload

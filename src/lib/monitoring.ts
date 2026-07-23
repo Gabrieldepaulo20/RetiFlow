@@ -18,6 +18,11 @@ export function initMonitoring(): void {
   const monitorId   = import.meta.env.VITE_CW_APP_MONITOR_ID;
   const identityPool= import.meta.env.VITE_CW_IDENTITY_POOL_ID;
   const region      = import.meta.env.VITE_AWS_REGION ?? 'sa-east-1';
+  const configuredSampleRate = Number(import.meta.env.VITE_CW_SESSION_SAMPLE_RATE ?? 0.1);
+  const sessionSampleRate = Number.isFinite(configuredSampleRate)
+    ? Math.min(1, Math.max(0, configuredSampleRate))
+    : 0.1;
+  const appVersion = import.meta.env.VITE_APP_VERSION ?? 'unknown';
 
   if (!monitorId || !identityPool) return;
 
@@ -26,15 +31,15 @@ export function initMonitoring(): void {
   void import('aws-rum-web')
     .then(({ AwsRum }) => {
       const config: AwsRumConfig = {
-        sessionSampleRate: 1,
+        sessionSampleRate,
         identityPoolId: identityPool,
         endpoint: `https://dataplane.rum.${region}.amazonaws.com`,
         telemetries: ['performance', 'errors', 'http'],
-        allowCookies: true,
+        allowCookies: false,
         enableXRay: false,
       };
 
-      rumClient = new AwsRum(monitorId, '1.0.0', region, config);
+      rumClient = new AwsRum(monitorId, appVersion, region, config);
     })
     .catch(() => {
       // Falha silenciosa — monitoramento nunca deve travar o app
