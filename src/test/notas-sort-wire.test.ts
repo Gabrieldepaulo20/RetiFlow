@@ -34,6 +34,15 @@ describe('getNotasServico — contrato wire de ordenação', () => {
     });
   });
 
+  it("traduz o campo de domínio 'registration' para 'cadastro'", async () => {
+    await getNotasServico({ p_ordem_campo: 'registration', p_ordem_direcao: 'desc' });
+
+    expect(mocks.callRPC).toHaveBeenCalledWith('get_notas_servico', {
+      p_ordem_campo: 'cadastro',
+      p_ordem_direcao: 'desc',
+    });
+  });
+
   it('não injeta p_ordem_campo quando o chamador não pede ordenação', async () => {
     await getNotasServico({ p_limite: 10 });
 

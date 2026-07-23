@@ -203,6 +203,25 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
     expect(filteredHistorical.dados).toEqual(expect.arrayContaining([
       expect.objectContaining({ id_notas_servico: noteId }),
     ]));
+    const createdRow = (filteredHistorical.dados as Array<{
+      id_notas_servico: string;
+      registered_at: string;
+    }>).find((item) => item.id_notas_servico === noteId);
+    expect(createdRow?.registered_at).toBeTruthy();
+    const registeredAt = createdRow!.registered_at;
+
+    const latestRegistrations = await callRpc(client, 'get_notas_servico', {
+      p_limite: 1,
+      p_ordem_campo: 'cadastro',
+      p_ordem_direcao: 'desc',
+    });
+    expect(latestRegistrations.status).toBe(200);
+    expect(latestRegistrations.dados).toEqual([
+      expect.objectContaining({
+        id_notas_servico: noteId,
+        registered_at: registeredAt,
+      }),
+    ]);
 
     const filteredFuture = await callRpc(client, 'get_notas_servico', {
       p_busca: normalizedOsNumber,
@@ -268,6 +287,20 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
     expect(flexibleDatesDetails.status).toBe(200);
     expect(String((flexibleDatesDetails.cabecalho as { data_criacao: string }).data_criacao).slice(0, 10)).toBe(dayFromEntry(-30));
     expect(String((flexibleDatesDetails.cabecalho as { prazo: string }).prazo).slice(0, 10)).toBe(dayFromEntry(60));
+
+    const afterDateEdit = await callRpc(client, 'get_notas_servico', {
+      p_busca: normalizedOsNumber,
+      p_limite: 1,
+      p_ordem_campo: 'cadastro',
+      p_ordem_direcao: 'desc',
+    });
+    expect(afterDateEdit.status).toBe(200);
+    expect(afterDateEdit.dados).toEqual([
+      expect.objectContaining({
+        id_notas_servico: noteId,
+        registered_at: registeredAt,
+      }),
+    ]);
 
     const updated = await callRpc(client, 'update_nota_servico', {
       p_payload: {

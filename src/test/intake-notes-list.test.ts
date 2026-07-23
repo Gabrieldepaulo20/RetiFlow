@@ -62,23 +62,25 @@ describe('intake notes list sorting', () => {
       .toEqual(['newer', 'middle', 'older']);
   });
 
-  it('keeps the latest service order number first by default without reacting to edits', () => {
+  it('keeps the latest registration first by default without reacting to edits', () => {
     const notes = [
       note({
         id: 'today-edited',
         number: 'OS-700',
+        registeredAt: '2026-07-22T12:00:00.000Z',
         createdAt: '2026-07-22T12:00:00.000Z',
-        updatedAt: '2026-07-22T18:00:00.000Z',
+        updatedAt: '2026-07-23T18:00:00.000Z',
       }),
       note({
         id: 'backdated-created-last',
-        number: 'OS-701',
+        number: 'OS-5791',
+        registeredAt: '2026-07-23T15:00:00.000Z',
         createdAt: '2026-06-10T12:00:00.000Z',
         updatedAt: '2026-07-22T15:00:00.000Z',
       }),
     ];
 
-    expect(DEFAULT_INTAKE_NOTE_SORT_FIELD).toBe('os');
+    expect(DEFAULT_INTAKE_NOTE_SORT_FIELD).toBe('registration');
     expect(DEFAULT_INTAKE_NOTE_SORT_DIRECTION).toBe('desc');
     expect(notes.sort((a, b) => compareIntakeNotes(
       a,
@@ -89,6 +91,7 @@ describe('intake notes list sorting', () => {
   });
 
   it('describes selected ordering in user-facing language', () => {
+    expect(getIntakeNoteSortLabel('registration', 'desc')).toBe('Cadastro mais recente');
     expect(getIntakeNoteSortLabel('date', 'desc')).toBe('Data mais recente');
     expect(getIntakeNoteSortLabel('os', 'asc')).toBe('O.S. menor primeiro');
   });

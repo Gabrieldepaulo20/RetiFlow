@@ -18,6 +18,7 @@ export interface NotaServico {
   total: number;
   total_servicos: number;
   total_produtos: number;
+  registered_at?: string;
   created_at: string;
   updated_at: string;
   pdf_url: string | null;
@@ -78,11 +79,11 @@ export interface NovaNotaPayload {
 }
 
 /**
- * Contrato wire do SQL: `p_ordem_campo` aceita apenas 'data' | 'os'
- * (migration 20260620124500 — valor desconhecido cai no fallback 'data').
- * O domínio usa 'date' | 'os'; a tradução acontece aqui, no boundary.
+ * Contrato wire do SQL: `p_ordem_campo` aceita 'cadastro' | 'data' | 'os'.
+ * O domínio usa 'registration' | 'date' | 'os'; a tradução acontece aqui.
  */
-function toWireOrdemCampo(field: IntakeNoteSortField): 'data' | 'os' {
+function toWireOrdemCampo(field: IntakeNoteSortField): 'cadastro' | 'data' | 'os' {
+  if (field === 'registration') return 'cadastro';
   return field === 'date' ? 'data' : field;
 }
 
@@ -338,6 +339,7 @@ export function supabaseToIntakeNote(row: NotaServico): IntakeNote {
     id:               row.id_notas_servico,
     number:           row.os,
     clientId:         row.cliente.id,
+    registeredAt:     row.registered_at ?? row.created_at,
     createdAt:        row.created_at,
     updatedAt:        row.updated_at,
     deadline:         row.prazo || undefined,

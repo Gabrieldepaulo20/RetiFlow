@@ -1,20 +1,37 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-07-22
+Atualizado em: 2026-07-23
 
 ---
 
-## Notas De Entrada - Ordenacao Estavel E Salvamento Sem Trocar Dados - 2026-07-22
+## Notas De Entrada - Ordem Real De Cadastro E Salvamento Estavel - 2026-07-23
 
-- Pedido corrigido: desfazer a ordenacao ampla por `Atividade`/`updatedAt` e a reordenacao do Kanban.
-  O objetivo era somente deixar as O.S. recem-criadas no inicio da pagina de Notas de Entrada.
-- Ordenacao da lista:
-  - o padrao agora e `Numero da O.S. / maior primeiro`, usando a ordenacao paginada que a RPC ja
-    suporta;
-  - uma O.S. retroativa com o proximo numero fica no topo mesmo depois de recarregar a pagina;
-  - editar, mover, receber ou atualizar uma O.S. nao muda sua posicao por `updatedAt`;
-  - `Data` continua disponivel como ordenacao alternativa;
-  - o Kanban voltou a preservar sua ordem anterior e nao participa desse ajuste.
+- Caso real que fechou a regra: a `OS-5791` foi cadastrada em `23/07/2026`, com data de entrada
+  retroativa em `18/06/2026`, e nao apareceu no topo.
+- Causa raiz:
+  - `created_at` representa a data operacional de entrada escolhida pela retifica, portanto pode ser
+    retroativo;
+  - `updated_at` muda ao editar, mover, receber ou gerar PDF e por isso tambem nao representa a ordem
+    de criacao;
+  - ordenar apenas pelo numero nao e confiavel porque o legado possui faixas numericas maiores e fora
+    de sequencia.
+- Regra definitiva:
+  - nova coluna tecnica e imutavel `registered_at` guarda o momento real do cadastro;
+  - o padrao da lista agora e `Cadastro mais recente`;
+  - `Data de entrada` e `Numero da O.S.` continuam como ordenacoes opcionais;
+  - criar uma O.S. retroativa a coloca no topo; editar/salvar uma O.S. nao muda sua posicao;
+  - depois da criacao, a tela volta para a pagina 1 e invalida a consulta paginada;
+  - o Kanban preserva sua ordem propria e nao usa `registered_at`.
+- Backend:
+  - migration `20260723143000_order_service_orders_by_registration.sql` adiciona/backfill
+    `registered_at`, indice por tenant e suporte a `p_ordem_campo='cadastro'` nas RPCs normal e de
+    suporte;
+  - o backfill inicial acionou o trigger legado de `updated_at`; isso foi detectado antes do deploy
+    do frontend e corrigido por `20260723150000_repair_note_updated_at_after_registration_backfill.sql`;
+  - o arquivo da migration principal agora suspende somente esse trigger durante o backfill, para
+    preservar os timestamps em novas instalacoes;
+  - leitura final no banco confirmou `OS-5791` com `registered_at=23/07/2026`, `created_at=18/06/2026`
+    e posicao 1 no tenant.
 - Bugs de salvamento encontrados no reteste:
   - ao editar `OS-0`, o campo bloqueado podia mostrar o proximo contador (`OS-2`), embora o backend
     ainda atualizasse a nota correta; o formulario agora sempre exibe o numero da propria O.S.;
@@ -24,17 +41,16 @@ Atualizado em: 2026-07-22
     podia exibir o dia anterior; criacao e edicao agora normalizam a data operacional para meio-dia;
   - no layout compacto, clicar em `Editar nota` tambem abria os detalhes por baixo; a propagacao do
     menu foi isolada e somente a acao escolhida abre.
-- Sem migration, alteracao de RPC, banco, RLS, Storage, Auth ou Edge Function.
 - Validacao:
-  - navegador local criou `OS-0` em `22/07/2026` e depois `OS-1` em `10/06/2026`; `OS-1` ficou no
-    topo inclusive apos recarregar a pagina;
-  - edicao da `OS-0` exibiu numero `0`, salvou mantendo a data `22/07/2026` e permaneceu abaixo da
-    `OS-1`; menu abriu somente a edicao; console com 0 erros e 0 warnings;
+  - migration principal e reparo passaram em transacao de ensaio com rollback antes da aplicacao;
+  - teste de integracao criou O.S. retroativa, confirmou que ela era o cadastro mais recente, editou
+    a data de entrada e comprovou que `registered_at` permaneceu inalterado;
   - `npm run typecheck`: passou;
   - `npm run lint`: passou com 8 warnings antigos de Fast Refresh;
-  - `npm test -- --run`: passou, 63 arquivos e 493 testes;
+  - `npm test -- --run`: passou, 63 arquivos e 494 testes;
   - `npm run build`: passou com os avisos conhecidos de Browserslist/chunks;
-  - integracao real nao foi executada porque o resultado final nao altera contrato Supabase/backend.
+  - `npm run test:integration`: passou, 17 arquivos e 59 testes;
+  - reteste focal de integracao depois das migrations: `notas.test.ts`, 5/5 testes.
 
 ---
 

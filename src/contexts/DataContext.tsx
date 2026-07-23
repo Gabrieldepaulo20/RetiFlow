@@ -721,6 +721,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ...noteWithoutGeneratedFields,
         id: result.id_nota,
         number: resolvedNumber,
+        registeredAt: now,
         createdAt,
         updatedAt: now,
       };
@@ -737,6 +738,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ...noteWithoutGeneratedFields,
       id: uid(),
       number: resolvedNumber,
+      registeredAt: now,
       createdAt,
       updatedAt: now,
     };

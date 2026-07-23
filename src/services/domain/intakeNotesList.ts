@@ -1,10 +1,10 @@
 import type { IntakeNote, NoteStatus } from '@/types';
 import { BILLABLE_STATUSES } from '@/types';
 
-export type IntakeNoteSortField = 'date' | 'os';
+export type IntakeNoteSortField = 'registration' | 'date' | 'os';
 export type IntakeNoteSortDirection = 'asc' | 'desc';
 
-export const DEFAULT_INTAKE_NOTE_SORT_FIELD: IntakeNoteSortField = 'os';
+export const DEFAULT_INTAKE_NOTE_SORT_FIELD: IntakeNoteSortField = 'registration';
 export const DEFAULT_INTAKE_NOTE_SORT_DIRECTION: IntakeNoteSortDirection = 'desc';
 
 export const ACTIVE_INTAKE_NOTE_STATUSES = new Set<NoteStatus>([
@@ -68,6 +68,10 @@ function capitalize(value: string) {
 }
 
 export function getIntakeNoteSortLabel(field: IntakeNoteSortField, direction: IntakeNoteSortDirection) {
+  if (field === 'registration') {
+    return direction === 'asc' ? 'Cadastro mais antigo' : 'Cadastro mais recente';
+  }
+
   if (field === 'os') {
     return direction === 'asc' ? 'O.S. menor primeiro' : 'O.S. maior primeiro';
   }
@@ -109,7 +113,12 @@ export function compareIntakeNotes(
 ) {
   const multiplier = direction === 'asc' ? 1 : -1;
 
-  if (field === 'os') {
+  if (field === 'registration') {
+    const aRegisteredAt = a.registeredAt ?? a.createdAt;
+    const bRegisteredAt = b.registeredAt ?? b.createdAt;
+    const byRegistration = new Date(aRegisteredAt).getTime() - new Date(bRegisteredAt).getTime();
+    if (byRegistration !== 0) return byRegistration * multiplier;
+  } else if (field === 'os') {
     const byOs = osCollator.compare(a.number, b.number);
     if (byOs !== 0) return byOs * multiplier;
   } else {

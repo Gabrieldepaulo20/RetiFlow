@@ -763,9 +763,10 @@ export default function IntakeNotes() {
                   <div className="space-y-3 px-4 py-3 sm:px-5">
                     <section className="rounded-2xl border border-border/70 bg-muted/20 p-2.5">
                       <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">Ordenar por</p>
-                      <div className="mt-2 grid grid-cols-2 gap-2">
+                      <div className="mt-2 grid grid-cols-3 gap-2">
                         {([
-                          ['date', 'Data'],
+                          ['registration', 'Cadastro'],
+                          ['date', 'Data de entrada'],
                           ['os', 'Número da O.S.'],
                         ] as const).map(([value, label]) => (
                           <button
@@ -786,7 +787,7 @@ export default function IntakeNotes() {
                       <div className="mt-2 grid grid-cols-2 gap-2">
                         {([
                           ['desc', draftSortField === 'os' ? 'Maior primeiro' : 'Mais recente'],
-                          ['asc', draftSortField === 'os' ? 'Menor primeiro' : 'Mais antiga'],
+                          ['asc', draftSortField === 'os' ? 'Menor primeiro' : 'Mais antigo'],
                         ] as const).map(([value, label]) => (
                           <button
                             key={value}

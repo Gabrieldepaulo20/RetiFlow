@@ -102,6 +102,8 @@ export interface IntakeNote {
   id: string;
   number: string;
   clientId: string;
+  /** Momento técnico do cadastro; não muda quando a O.S. é editada. */
+  registeredAt?: string;
   createdAt: string;
   createdByUserId: string;
   status: NoteStatus;
