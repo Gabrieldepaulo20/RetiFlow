@@ -23,6 +23,7 @@ import {
   BadgeDollarSign,
   Building2,
   CheckCircle2,
+  CircleHelp,
   Clock3,
   ExternalLink,
   Eye,
@@ -71,12 +72,48 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { SectionEmptyState, SectionErrorState } from '@/components/ui/section-state';
 import { cn } from '@/lib/utils';
 import { evaluateMarketingHealth } from '@/services/domain/marketingHealth';
 
 const RETIFICA_PREMIUM_EMAIL = 'retificapremium5@gmail.com';
 const periodOptions = [7, 10, 15, 20, 30, 40, 60, 90];
+
+const googleAdsHelp = {
+  spend: 'Total cobrado pelo Google Ads no período selecionado. Pode existir atraso de processamento na fonte oficial.',
+  impressions: 'Quantidade de vezes que os anúncios foram exibidos. A mesma pessoa pode gerar mais de uma impressão.',
+  clicks: 'Quantidade de cliques cobrados ou registrados pelo Google Ads nos anúncios.',
+  ctr: 'Taxa de cliques: cliques divididos por impressões. Ajuda a avaliar se anúncio e palavra-chave despertam interesse.',
+  averageCpc: 'Custo médio por clique: investimento dividido pela quantidade de cliques.',
+  conversions: 'Ações principais configuradas no Google Ads, como formulário, WhatsApp, ligação ou cliente cadastrado.',
+  conversionRate: 'Percentual de cliques que gerou uma conversão principal.',
+  cpa: 'Custo por aquisição/conversão: investimento dividido pelas conversões principais.',
+  conversionValue: 'Soma dos valores configurados nas ações de conversão. Não representa faturamento real se a ação usar um valor simbólico.',
+  valuePerConversion: 'Valor médio configurado por conversão. Só representa receita quando a ação recebe um valor financeiro real.',
+  roas: 'Valor das conversões dividido pelo investimento. Só deve orientar retorno financeiro quando os valores das conversões representarem receita real.',
+  searchImpressionShare: 'Percentual das impressões recebidas entre todas as impressões em que os anúncios estavam qualificados para aparecer na Pesquisa.',
+  searchBudgetLostImpressionShare: 'Percentual de oportunidades de impressão perdido porque o orçamento foi insuficiente.',
+  searchRankLostImpressionShare: 'Percentual de oportunidades perdido por classificação do anúncio, influenciada por lance, qualidade e relevância.',
+  searchTopImpressionShare: 'Percentual das impressões exibidas acima dos resultados orgânicos da Pesquisa.',
+  searchAbsoluteTopImpressionShare: 'Percentual das impressões exibidas na primeira posição absoluta da página de resultados.',
+  invalidClicks: 'Cliques que o Google classificou como inválidos e filtrou, como atividade automatizada ou repetição indevida.',
+  dailyBudget: 'Limite médio diário definido para a campanha. O gasto de um dia pode variar, respeitando a cobrança média do período.',
+  optimizationScore: 'Estimativa do Google, de 0% a 100%, sobre o quanto a campanha segue as recomendações automáticas da plataforma.',
+  qualityScore: 'Nota de 1 a 10 para relevância da palavra-chave, do anúncio e da página de destino. Não é uma métrica financeira.',
+  matchType: 'Regra que define o quanto a pesquisa da pessoa precisa se aproximar da palavra-chave configurada.',
+  searchTerm: 'Texto que a pessoa realmente digitou no Google antes de o anúncio ser acionado.',
+  landingPage: 'Primeira página do site aberta depois do clique no anúncio.',
+  allConversions: 'Inclui conversões principais e secundárias. Pode ser maior que a coluna Conversões.',
+  conversionStatus: 'Situação da ação no Google Ads. ENABLED significa que ela está habilitada para receber dados.',
+  paidVisitor: 'Pessoa identificada quando possível; caso contrário, uma sessão anônima preservada até existir contato ou cadastro.',
+  paidVisitorEvents: 'Quantidade de páginas e eventos rastreados nessa visita. Ações mostram interações de maior intenção.',
+  paidVisitorStatus: 'Mostra se a sessão apenas visitou, demonstrou interesse ou já foi vinculada a um cliente cadastrado.',
+  offlineTotal: 'Clientes cadastrados que foram atribuídos a um clique de anúncio e entraram no fluxo de envio ao Google.',
+  offlineUploaded: 'Conversões de cliente já aceitas pelo serviço de envio do Google.',
+  offlinePending: 'Conversões aguardando processamento ou sendo processadas neste momento.',
+  offlineRetry: 'Conversões temporariamente rejeitadas que serão enviadas novamente de forma automática.',
+} as const;
 
 const eventLabels: Record<string, string> = {
   page_view: 'Página acessada',
@@ -202,10 +239,42 @@ function getDelta(current: number, previous: number) {
   };
 }
 
+function HelpTip({
+  label,
+  description,
+  className,
+}: {
+  label: string;
+  description: string;
+  className?: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Entender ${label}`}
+          className={cn(
+            'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            className,
+          )}
+        >
+          <CircleHelp className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-[300px] p-3 text-left leading-relaxed">
+        <p className="font-semibold text-popover-foreground">{label}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 function Metric({
   label,
   value,
   detail,
+  help,
   icon: Icon,
   current,
   previous,
@@ -214,6 +283,7 @@ function Metric({
   label: string;
   value: string;
   detail: string;
+  help?: string;
   icon: typeof Eye;
   current?: number;
   previous?: number;
@@ -232,7 +302,10 @@ function Metric({
     <Card className="group overflow-hidden rounded-2xl border-border/70 bg-card shadow-[0_10px_35px_-28px_rgba(15,23,42,0.6)] transition-transform duration-200 hover:-translate-y-0.5">
       <CardContent className="p-4 sm:p-5">
         <div className="flex items-start justify-between gap-3">
-          <p className="min-w-0 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground sm:text-xs">{label}</p>
+          <div className="flex min-w-0 items-start gap-1">
+            <p className="min-w-0 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground sm:text-xs">{label}</p>
+            {help ? <HelpTip label={label} description={help} /> : null}
+          </div>
           <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl shadow-sm', accents[accent])}>
             <Icon className="h-5 w-5" />
           </div>
@@ -281,6 +354,25 @@ function PanelHeading({
       </div>
       {action}
     </div>
+  );
+}
+
+function AdsTableHead({
+  label,
+  help,
+  align = 'left',
+}: {
+  label: string;
+  help?: string;
+  align?: 'left' | 'right';
+}) {
+  return (
+    <th className={cn('px-3 py-3 font-semibold', align === 'right' && 'text-right')}>
+      <span className={cn('inline-flex items-center gap-1', align === 'right' && 'justify-end')}>
+        {label}
+        {help ? <HelpTip label={label} description={help} /> : null}
+      </span>
+    </th>
   );
 }
 
@@ -1417,99 +1509,97 @@ function LeadRow({
   );
 }
 
-function ResultsTab({ resumo }: { resumo: MarketingResumo }) {
+export function ResultsTab({ resumo }: { resumo: MarketingResumo }) {
   const business = resumo.business?.current;
   const previous = resumo.business?.previous;
   const commissions = resumo.business?.commissions ?? [];
-  const ads = resumo.campaigns;
 
   return (
     <div className="space-y-5">
+      <div className="rounded-2xl border border-amber-200/70 bg-amber-50/70 px-4 py-3 text-sm text-amber-950">
+        <p className="font-semibold">Esta aba mostra somente o resultado comercial atribuído.</p>
+        <p className="mt-1 text-xs leading-relaxed text-amber-900/75">
+          Investimento, cliques, CTR, CPC e demais indicadores de mídia paga ficam exclusivamente na aba Google Ads.
+        </p>
+      </div>
+
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <Metric label="Clientes identificados" value={formatNumber(business?.identifiedClients)} detail="Com origem comprovada na internet" icon={UserCheck} current={business?.identifiedClients} previous={previous?.identifiedClients} accent="violet" />
-        <Metric label="O.S. aprovadas" value={formatNumber(business?.approvedOrders)} detail="Snapshots financeiros congelados" icon={FileCheck2} current={business?.approvedOrders} previous={previous?.approvedOrders} accent="navy" />
-        <Metric label="Serviços aprovados" value={formatCurrency(business?.approvedServices)} detail={`${formatCurrency(business?.excludedProducts)} em peças excluídas`} icon={Wrench} current={business?.approvedServices} previous={previous?.approvedServices} accent="teal" />
-        <Metric label="Comissão gerada" value={formatCurrency(business?.commission)} detail="Mantida no snapshot original" icon={BadgeDollarSign} current={business?.commission} previous={previous?.commission} accent="gold" />
+        <Metric
+          label="Clientes identificados"
+          value={formatNumber(business?.identifiedClients)}
+          detail="Com origem comprovada na internet"
+          help="Clientes cadastrados no Retiflow que foram vinculados a uma origem digital por telefone, e-mail ou código do contato."
+          icon={UserCheck}
+          current={business?.identifiedClients}
+          previous={previous?.identifiedClients}
+          accent="violet"
+        />
+        <Metric
+          label="O.S. aprovadas"
+          value={formatNumber(business?.approvedOrders)}
+          detail="Snapshots financeiros congelados"
+          help="Ordens de serviço de clientes atribuídos que chegaram pela primeira vez ao status Aprovado no período."
+          icon={FileCheck2}
+          current={business?.approvedOrders}
+          previous={previous?.approvedOrders}
+          accent="navy"
+        />
+        <Metric
+          label="Serviços aprovados"
+          value={formatCurrency(business?.approvedServices)}
+          detail={`${formatCurrency(business?.excludedProducts)} em peças excluídas`}
+          help="Valor dos serviços das O.S. atribuídas e aprovadas. Peças e produtos ficam fora da base de comissão."
+          icon={Wrench}
+          current={business?.approvedServices}
+          previous={previous?.approvedServices}
+          accent="teal"
+        />
+        <Metric
+          label="Comissão gerada"
+          value={formatCurrency(business?.commission)}
+          detail="Mantida no snapshot original"
+          help="Comissão congelada na primeira aprovação da O.S., calculada somente sobre serviços e sem misturar custo do Google Ads."
+          icon={BadgeDollarSign}
+          current={business?.commission}
+          previous={previous?.commission}
+          accent="gold"
+        />
       </div>
 
-      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
-        <Card className="min-w-0 rounded-2xl border-border/70 shadow-sm">
-          <CardContent className="min-w-0 p-4 sm:p-6">
-            <PanelHeading eyebrow="Auditoria financeira" title="O.S. que geraram comissão" description="Base congelada na primeira aprovação: somente serviços, com peças e produtos excluídos." />
-            <div className="mt-5 w-full max-w-full overflow-x-auto rounded-xl border" role="region" aria-label="Ordens de serviço que geraram comissão" tabIndex={0}>
-              <table className="w-full min-w-[720px] text-left text-xs">
-                <thead className="border-b bg-muted/70 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-3 font-semibold">Aprovação</th>
-                    <th className="px-3 py-3 font-semibold">O.S.</th>
-                    <th className="px-3 py-3 text-right font-semibold">Serviços</th>
-                    <th className="px-3 py-3 text-right font-semibold">Peças fora</th>
-                    <th className="px-3 py-3 text-right font-semibold">Taxa</th>
-                    <th className="px-3 py-3 text-right font-semibold">Comissão</th>
+      <Card className="min-w-0 rounded-2xl border-border/70 shadow-sm">
+        <CardContent className="min-w-0 p-4 sm:p-6">
+          <PanelHeading eyebrow="Auditoria financeira" title="O.S. que geraram comissão" description="Base congelada na primeira aprovação: somente serviços, com peças e produtos excluídos." />
+          <div className="mt-5 w-full max-w-full overflow-x-auto rounded-xl border" role="region" aria-label="Ordens de serviço que geraram comissão" tabIndex={0}>
+            <table className="w-full min-w-[720px] text-left text-xs">
+              <thead className="border-b bg-muted/70 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-3 font-semibold">Aprovação</th>
+                  <th className="px-3 py-3 font-semibold">O.S.</th>
+                  <th className="px-3 py-3 text-right font-semibold">Serviços</th>
+                  <th className="px-3 py-3 text-right font-semibold">Peças fora</th>
+                  <th className="px-3 py-3 text-right font-semibold">Taxa</th>
+                  <th className="px-3 py-3 text-right font-semibold">Comissão</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {commissions.map((item, index) => (
+                  <tr key={String(item.id_marketing_commission_snapshots ?? index)}>
+                    <td className="px-3 py-3 text-muted-foreground">{formatDateTime(String(item.approved_at ?? ''))}</td>
+                    <td className="px-3 py-3 font-semibold text-foreground">{String(item.os_numero ?? 'Sem número')}</td>
+                    <td className="px-3 py-3 text-right font-medium text-foreground">{formatCurrency(Number(item.services_snapshot ?? 0))}</td>
+                    <td className="px-3 py-3 text-right text-muted-foreground">{formatCurrency(Number(item.products_excluded_snapshot ?? 0))}</td>
+                    <td className="px-3 py-3 text-right text-muted-foreground">{formatPercent(Number(item.commission_rate_snapshot ?? 0) * 100)}</td>
+                    <td className="px-3 py-3 text-right font-bold text-amber-700">{formatCurrency(Number(item.commission_amount_snapshot ?? 0))}</td>
                   </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {commissions.map((item, index) => (
-                    <tr key={String(item.id_marketing_commission_snapshots ?? index)}>
-                      <td className="px-3 py-3 text-muted-foreground">{formatDateTime(String(item.approved_at ?? ''))}</td>
-                      <td className="px-3 py-3 font-semibold text-foreground">{String(item.os_numero ?? 'Sem número')}</td>
-                      <td className="px-3 py-3 text-right font-medium text-foreground">{formatCurrency(Number(item.services_snapshot ?? 0))}</td>
-                      <td className="px-3 py-3 text-right text-muted-foreground">{formatCurrency(Number(item.products_excluded_snapshot ?? 0))}</td>
-                      <td className="px-3 py-3 text-right text-muted-foreground">{formatPercent(Number(item.commission_rate_snapshot ?? 0) * 100)}</td>
-                      <td className="px-3 py-3 text-right font-bold text-amber-700">{formatCurrency(Number(item.commission_amount_snapshot ?? 0))}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {commissions.length === 0 ? (
-                <div className="p-8 text-center text-sm text-muted-foreground">Nenhuma O.S. atribuída chegou a “Aprovado” neste período.</div>
-              ) : null}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-2xl border-border/70 bg-slate-950 text-white shadow-sm">
-          <CardContent className="p-5 sm:p-6">
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300">Mídia paga</p>
-            <h3 className="mt-1 text-xl font-bold">Google Ads</h3>
-            <p className="mt-2 text-sm leading-relaxed text-slate-400">{ads.statusMessage ?? 'Aguardando integração segura.'}</p>
-            <div className="mt-6 grid grid-cols-2 gap-2">
-              {[
-                ['Investimento', ads.financialAvailable ? formatCurrency(ads.current.spend) : 'Pendente'],
-                ['Impressões', ads.financialAvailable ? formatNumber(ads.current.impressions) : 'Pendente'],
-                ['Cliques', ads.financialAvailable ? formatNumber(ads.current.clicks) : 'Pendente'],
-                ['CTR', ads.financialAvailable ? formatPercent(ads.current.ctr) : 'Pendente'],
-                ['CPC médio', ads.financialAvailable ? formatCurrency(ads.current.averageCpc) : 'Pendente'],
-                ['Conversões', ads.financialAvailable ? formatDecimal(ads.current.conversions) : 'Pendente'],
-                ['Taxa de conversão', ads.financialAvailable ? formatPercent(ads.current.conversionRate) : 'Pendente'],
-                ['Custo por conversão', ads.financialAvailable ? formatCurrency(ads.current.cpl) : 'Pendente'],
-                ['Valor de conversão', ads.financialAvailable ? formatCurrency(ads.current.conversionValue) : 'Pendente'],
-                ['ROAS', ads.financialAvailable ? `${formatDecimal(ads.current.roas)}x` : 'Pendente'],
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                  <p className="text-[10px] uppercase tracking-wider text-slate-500">{label}</p>
-                  <p className="mt-2 text-base font-bold text-white">{value}</p>
-                </div>
-              ))}
-            </div>
-            {ads.financialAvailable ? (
-              <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-slate-300">
-                <p>
-                  Parcela de impressões na busca: <strong className="text-white">{formatPercent(ads.current.searchImpressionShare)}</strong>
-                </p>
-                <p className="mt-1 text-slate-400">
-                  Perdida por orçamento: {formatPercent(ads.current.searchBudgetLostImpressionShare)}
-                  {' · '}por posição: {formatPercent(ads.current.searchRankLostImpressionShare)}
-                </p>
-              </div>
+                ))}
+              </tbody>
+            </table>
+            {commissions.length === 0 ? (
+              <div className="p-8 text-center text-sm text-muted-foreground">Nenhuma O.S. atribuída chegou a “Aprovado” neste período.</div>
             ) : null}
-            <div className="mt-5 flex items-start gap-2 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-xs leading-relaxed text-amber-100">
-              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
-              Dados pagos não são misturados com impressões orgânicas do Search Console.
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -1533,7 +1623,7 @@ const googleAdsDayLabels: Record<string, string> = {
   SUNDAY: 'Domingo',
 };
 
-function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
+export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
   const ads = resumo.campaigns;
   const current = ads.current;
   const offline = ads.offlineConversions;
@@ -1558,20 +1648,71 @@ function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <Metric label="Investimento" value={formatCurrency(current.spend)} detail="Custo oficial no período" icon={BadgeDollarSign} current={current.spend} previous={ads.previous?.spend} accent="navy" />
-        <Metric label="Impressões" value={formatNumber(current.impressions)} detail="Exibições dos anúncios" icon={Eye} current={current.impressions} previous={ads.previous?.impressions} accent="violet" />
-        <Metric label="Cliques" value={formatNumber(current.clicks)} detail={`${formatPercent(current.ctr)} de CTR`} icon={MousePointerClick} current={current.clicks} previous={ads.previous?.clicks} accent="teal" />
-        <Metric label="CPC médio" value={formatCurrency(current.averageCpc)} detail="Custo médio por clique" icon={Gauge} accent="gold" />
-        <Metric label="Conversões primárias" value={formatDecimal(current.conversions)} detail={`${formatPercent(current.conversionRate)} dos cliques`} icon={Target} current={current.conversions} previous={ads.previous?.conversions} accent="violet" />
-        <Metric label="Custo por conversão" value={formatCurrency(current.cpl)} detail="CPA das ações primárias" icon={BadgeDollarSign} accent="rose" />
-        <Metric label="Valor de conversão" value={formatCurrency(current.conversionValue)} detail={`${formatCurrency(current.valuePerConversion)} por conversão`} icon={Sparkles} accent="teal" />
-        <Metric label="ROAS" value={`${formatDecimal(current.roas)}x`} detail="Valor de conversão ÷ investimento" icon={ArrowUpRight} accent="gold" />
-        <Metric label="Parcela de impressões" value={formatPercent(current.searchImpressionShare)} detail="Cobertura possível na Pesquisa" icon={Gauge} accent="navy" />
-        <Metric label="Perdida por orçamento" value={formatPercent(current.searchBudgetLostImpressionShare)} detail="Oportunidade limitada pelo orçamento" icon={AlertTriangle} accent="rose" />
-        <Metric label="Perdida por posição" value={formatPercent(current.searchRankLostImpressionShare)} detail="Impacto de lance e qualidade" icon={Search} accent="violet" />
-        <Metric label="Topo absoluto" value={formatPercent(current.searchAbsoluteTopImpressionShare)} detail={`${formatPercent(current.searchTopImpressionShare)} no topo da página`} icon={ArrowUpRight} accent="teal" />
+      <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 text-white shadow-sm">
+        <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+          <div className="flex items-start gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-400 text-slate-950">
+              <Target className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300">Escopo da aba</p>
+              <h2 className="mt-1 text-xl font-bold">Somente desempenho dos anúncios</h2>
+              <p className="mt-1 max-w-3xl text-sm leading-relaxed text-slate-400">
+                Aqui entram investimento, alcance, eficiência e conversões do Google Ads. O.S., serviços e comissão ficam somente em Resultado.
+              </p>
+            </div>
+          </div>
+          <Badge variant="outline" className="w-fit border-emerald-300/30 bg-emerald-300/10 text-emerald-200">
+            Dados oficiais · até 10 min de cache
+          </Badge>
+        </div>
       </div>
+
+      <section aria-label="Alcance e custo dos anúncios" className="space-y-3">
+        <PanelHeading
+          eyebrow="Alcance e custo"
+          title="Quanto investimos e quantas pessoas reagiram?"
+          description="Os cinco indicadores básicos para acompanhar a entrega e o interesse nos anúncios."
+        />
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+          <Metric label="Investimento" value={formatCurrency(current.spend)} detail="Custo oficial no período" help={googleAdsHelp.spend} icon={BadgeDollarSign} current={current.spend} previous={ads.previous?.spend} accent="navy" />
+          <Metric label="Impressões" value={formatNumber(current.impressions)} detail="Exibições dos anúncios" help={googleAdsHelp.impressions} icon={Eye} current={current.impressions} previous={ads.previous?.impressions} accent="violet" />
+          <Metric label="Cliques" value={formatNumber(current.clicks)} detail="Interações com os anúncios" help={googleAdsHelp.clicks} icon={MousePointerClick} current={current.clicks} previous={ads.previous?.clicks} accent="teal" />
+          <Metric label="CTR" value={formatPercent(current.ctr)} detail="Cliques ÷ impressões" help={googleAdsHelp.ctr} icon={Target} accent="violet" />
+          <Metric label="CPC médio" value={formatCurrency(current.averageCpc)} detail="Custo médio por clique" help={googleAdsHelp.averageCpc} icon={Gauge} accent="gold" />
+        </div>
+      </section>
+
+      <section aria-label="Conversão e eficiência dos anúncios" className="space-y-3">
+        <PanelHeading
+          eyebrow="Conversão e eficiência"
+          title="Os cliques estão virando resultado?"
+          description="Conversão aqui é uma ação configurada no Google Ads; não é comissão nem faturamento da O.S."
+        />
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+          <Metric label="Conversões primárias" value={formatDecimal(current.conversions)} detail="Ações usadas na otimização" help={googleAdsHelp.conversions} icon={Target} current={current.conversions} previous={ads.previous?.conversions} accent="violet" />
+          <Metric label="Taxa de conversão" value={formatPercent(current.conversionRate)} detail="Conversões ÷ cliques" help={googleAdsHelp.conversionRate} icon={ArrowUpRight} accent="teal" />
+          <Metric label="CPA" value={formatCurrency(current.cpl)} detail="Custo por conversão principal" help={googleAdsHelp.cpa} icon={BadgeDollarSign} accent="rose" />
+          <Metric label="Valor das conversões" value={formatCurrency(current.conversionValue)} detail={`${formatCurrency(current.valuePerConversion)} por conversão`} help={`${googleAdsHelp.conversionValue} ${googleAdsHelp.valuePerConversion}`} icon={Sparkles} accent="teal" />
+          <Metric label="ROAS configurado" value={`${formatDecimal(current.roas)}x`} detail="Valor configurado ÷ investimento" help={googleAdsHelp.roas} icon={ArrowUpRight} accent="gold" />
+        </div>
+      </section>
+
+      <section aria-label="Cobertura e qualidade dos anúncios" className="space-y-3">
+        <PanelHeading
+          eyebrow="Cobertura e qualidade"
+          title="Onde estamos perdendo oportunidades?"
+          description="Esses indicadores ajudam a decidir se o gargalo está no orçamento, na posição ou na qualidade do tráfego."
+        />
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-3 2xl:grid-cols-6">
+          <Metric label="Parcela de impressões" value={formatPercent(current.searchImpressionShare)} detail="Cobertura possível na Pesquisa" help={googleAdsHelp.searchImpressionShare} icon={Gauge} accent="navy" />
+          <Metric label="Perdida por orçamento" value={formatPercent(current.searchBudgetLostImpressionShare)} detail="Limitação de verba" help={googleAdsHelp.searchBudgetLostImpressionShare} icon={AlertTriangle} accent="rose" />
+          <Metric label="Perdida por classificação" value={formatPercent(current.searchRankLostImpressionShare)} detail="Lance, qualidade e relevância" help={googleAdsHelp.searchRankLostImpressionShare} icon={Search} accent="violet" />
+          <Metric label="Topo da página" value={formatPercent(current.searchTopImpressionShare)} detail="Acima dos resultados orgânicos" help={googleAdsHelp.searchTopImpressionShare} icon={ArrowUpRight} accent="teal" />
+          <Metric label="Primeira posição" value={formatPercent(current.searchAbsoluteTopImpressionShare)} detail="Topo absoluto da pesquisa" help={googleAdsHelp.searchAbsoluteTopImpressionShare} icon={Target} accent="gold" />
+          <Metric label="Cliques inválidos" value={formatNumber(current.invalidClicks)} detail={`${formatPercent(current.invalidClickRate)} dos cliques filtrados`} help={googleAdsHelp.invalidClicks} icon={ShieldCheck} accent="navy" />
+        </div>
+      </section>
 
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.7fr)]">
         <Card className="min-w-0 rounded-2xl border-border/70 shadow-sm">
@@ -1614,14 +1755,17 @@ function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
             </p>
             <div className="mt-5 grid grid-cols-2 gap-2">
               {[
-                ['Total', offline?.total ?? 0],
-                ['Enviadas', offline?.uploaded ?? 0],
-                ['Na fila', (offline?.pending ?? 0) + (offline?.processing ?? 0)],
-                ['Nova tentativa', offline?.retry ?? 0],
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                  <p className="text-[10px] uppercase tracking-wider text-slate-500">{label}</p>
-                  <p className="mt-2 text-xl font-bold text-white">{formatNumber(Number(value))}</p>
+                { label: 'Total', value: offline?.total ?? 0, help: googleAdsHelp.offlineTotal },
+                { label: 'Enviadas', value: offline?.uploaded ?? 0, help: googleAdsHelp.offlineUploaded },
+                { label: 'Na fila', value: (offline?.pending ?? 0) + (offline?.processing ?? 0), help: googleAdsHelp.offlinePending },
+                { label: 'Nova tentativa', value: offline?.retry ?? 0, help: googleAdsHelp.offlineRetry },
+              ].map((item) => (
+                <div key={item.label} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                  <div className="flex items-start gap-1">
+                    <p className="text-[10px] uppercase tracking-wider text-slate-500">{item.label}</p>
+                    <HelpTip label={item.label} description={item.help} className="text-slate-500 hover:bg-white/10 hover:text-white focus-visible:ring-amber-300 focus-visible:ring-offset-slate-950" />
+                  </div>
+                  <p className="mt-2 text-xl font-bold text-white">{formatNumber(Number(item.value))}</p>
                 </div>
               ))}
             </div>
@@ -1653,12 +1797,12 @@ function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
             <table className="w-full min-w-[980px] text-left text-xs">
               <thead className="border-b bg-muted/70 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
                 <tr>
-                  <th className="px-3 py-3 font-semibold">Última visita</th>
-                  <th className="px-3 py-3 font-semibold">Pessoa / sessão</th>
-                  <th className="px-3 py-3 font-semibold">Campanha</th>
-                  <th className="px-3 py-3 font-semibold">Entrada</th>
-                  <th className="px-3 py-3 text-right font-semibold">Eventos</th>
-                  <th className="px-3 py-3 font-semibold">Situação</th>
+                  <AdsTableHead label="Última visita" />
+                  <AdsTableHead label="Pessoa / sessão" help={googleAdsHelp.paidVisitor} />
+                  <AdsTableHead label="Campanha" />
+                  <AdsTableHead label="Entrada" help={googleAdsHelp.landingPage} />
+                  <AdsTableHead label="Eventos" help={googleAdsHelp.paidVisitorEvents} align="right" />
+                  <AdsTableHead label="Situação" help={googleAdsHelp.paidVisitorStatus} />
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -1719,11 +1863,15 @@ function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                 <table className="w-full min-w-[980px] text-left text-xs">
                   <thead className="border-b bg-muted/70 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
                     <tr>
-                      <th className="px-3 py-3">Campanha</th><th className="px-3 py-3">Status</th>
-                      <th className="px-3 py-3 text-right">Orçamento/dia</th><th className="px-3 py-3 text-right">Otimização</th>
-                      <th className="px-3 py-3 text-right">Custo</th><th className="px-3 py-3 text-right">Cliques</th>
-                      <th className="px-3 py-3 text-right">CTR</th><th className="px-3 py-3 text-right">Conversões</th>
-                      <th className="px-3 py-3 text-right">CPA</th>
+                      <AdsTableHead label="Campanha" />
+                      <AdsTableHead label="Status" />
+                      <AdsTableHead label="Orçamento/dia" help={googleAdsHelp.dailyBudget} align="right" />
+                      <AdsTableHead label="Otimização" help={googleAdsHelp.optimizationScore} align="right" />
+                      <AdsTableHead label="Custo" help={googleAdsHelp.spend} align="right" />
+                      <AdsTableHead label="Cliques" help={googleAdsHelp.clicks} align="right" />
+                      <AdsTableHead label="CTR" help={googleAdsHelp.ctr} align="right" />
+                      <AdsTableHead label="Conversões" help={googleAdsHelp.conversions} align="right" />
+                      <AdsTableHead label="CPA" help={googleAdsHelp.cpa} align="right" />
                     </tr>
                   </thead>
                   <tbody className="divide-y">
@@ -1755,8 +1903,22 @@ function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
               {devices.map((item) => (
                 <div key={item.device} className="rounded-xl border bg-card p-4">
                   <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{googleAdsDeviceLabels[item.device] ?? item.device}</p>
-                  <p className="mt-3 text-2xl font-bold">{formatNumber(item.clicks)} cliques</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{formatCurrency(item.spend)} · {formatDecimal(item.conversions)} conversões · CPA {formatCurrency(item.cpl)}</p>
+                  <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                    {[
+                      { label: 'Cliques', value: formatNumber(item.clicks), help: googleAdsHelp.clicks },
+                      { label: 'Investimento', value: formatCurrency(item.spend), help: googleAdsHelp.spend },
+                      { label: 'Conversões', value: formatDecimal(item.conversions), help: googleAdsHelp.conversions },
+                      { label: 'CPA', value: formatCurrency(item.cpl), help: googleAdsHelp.cpa },
+                    ].map((metric) => (
+                      <div key={metric.label}>
+                        <dt className="flex items-center gap-1 text-muted-foreground">
+                          {metric.label}
+                          <HelpTip label={metric.label} description={metric.help} />
+                        </dt>
+                        <dd className="mt-1 font-bold text-foreground">{metric.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
                 </div>
               ))}
               {devices.length === 0 ? <p className="text-sm text-muted-foreground">Sem dados por dispositivo.</p> : null}
@@ -1769,10 +1931,15 @@ function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
             <PanelHeading eyebrow="Intenção comprada" title="Palavras-chave" description="Use o índice de qualidade, CTR e CPA para ajustar lances e anúncios." />
             <div className="mt-5 overflow-auto rounded-xl border">
               <table className="w-full min-w-[900px] text-left text-xs"><thead className="border-b bg-muted/70"><tr>
-                <th className="px-3 py-3">Palavra-chave</th><th className="px-3 py-3">Grupo</th><th className="px-3 py-3">Correspondência</th>
-                <th className="px-3 py-3 text-right">Qualidade</th><th className="px-3 py-3 text-right">Impressões</th>
-                <th className="px-3 py-3 text-right">Cliques</th><th className="px-3 py-3 text-right">Custo</th>
-                <th className="px-3 py-3 text-right">Conversões</th><th className="px-3 py-3 text-right">CPA</th>
+                <AdsTableHead label="Palavra-chave" />
+                <AdsTableHead label="Grupo" />
+                <AdsTableHead label="Correspondência" help={googleAdsHelp.matchType} />
+                <AdsTableHead label="Qualidade" help={googleAdsHelp.qualityScore} align="right" />
+                <AdsTableHead label="Impressões" help={googleAdsHelp.impressions} align="right" />
+                <AdsTableHead label="Cliques" help={googleAdsHelp.clicks} align="right" />
+                <AdsTableHead label="Custo" help={googleAdsHelp.spend} align="right" />
+                <AdsTableHead label="Conversões" help={googleAdsHelp.conversions} align="right" />
+                <AdsTableHead label="CPA" help={googleAdsHelp.cpa} align="right" />
               </tr></thead><tbody className="divide-y">
                 {keywords.map((item) => <tr key={`${item.campaignId}-${item.adGroupId}-${item.criterionId}`}>
                   <td className="px-3 py-3"><p className="font-semibold">{item.keyword}</p><p className="text-[11px] text-muted-foreground">{item.campaign}</p></td>
@@ -1791,7 +1958,14 @@ function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           <Card className="rounded-2xl border-border/70 shadow-sm"><CardContent className="p-4 sm:p-6">
             <PanelHeading eyebrow="Demanda real" title="Termos pesquisados" description="Mostra o que a pessoa digitou antes de clicar; essencial para negativas e novas palavras." />
             <div className="mt-5 overflow-auto rounded-xl border"><table className="w-full min-w-[850px] text-left text-xs">
-              <thead className="border-b bg-muted/70"><tr><th className="px-3 py-3">Pesquisa</th><th className="px-3 py-3">Palavra acionada</th><th className="px-3 py-3">Campanha / grupo</th><th className="px-3 py-3 text-right">Cliques</th><th className="px-3 py-3 text-right">Custo</th><th className="px-3 py-3 text-right">Conversões</th></tr></thead>
+              <thead className="border-b bg-muted/70"><tr>
+                <AdsTableHead label="Pesquisa" help={googleAdsHelp.searchTerm} />
+                <AdsTableHead label="Palavra acionada" help="Palavra-chave configurada que fez o anúncio participar dessa pesquisa." />
+                <AdsTableHead label="Campanha / grupo" />
+                <AdsTableHead label="Cliques" help={googleAdsHelp.clicks} align="right" />
+                <AdsTableHead label="Custo" help={googleAdsHelp.spend} align="right" />
+                <AdsTableHead label="Conversões" help={googleAdsHelp.conversions} align="right" />
+              </tr></thead>
               <tbody className="divide-y">{searchTerms.map((item, index) => <tr key={`${item.searchTerm}-${index}`}>
                 <td className="px-3 py-3 font-semibold">{item.searchTerm}</td><td className="px-3 py-3">{item.keyword || '—'}</td>
                 <td className="px-3 py-3"><p>{item.campaign}</p><p className="text-[11px] text-muted-foreground">{item.adGroup}</p></td>
@@ -1805,7 +1979,14 @@ function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           <Card className="rounded-2xl border-border/70 shadow-sm"><CardContent className="p-4 sm:p-6">
             <PanelHeading eyebrow="Experiência pós-clique" title="Páginas de destino" />
             <div className="mt-5 overflow-auto rounded-xl border"><table className="w-full min-w-[760px] text-left text-xs">
-              <thead className="border-b bg-muted/70"><tr><th className="px-3 py-3">URL</th><th className="px-3 py-3 text-right">Cliques</th><th className="px-3 py-3 text-right">Custo</th><th className="px-3 py-3 text-right">Conversões</th><th className="px-3 py-3 text-right">Taxa</th><th className="px-3 py-3 text-right">CPA</th></tr></thead>
+              <thead className="border-b bg-muted/70"><tr>
+                <AdsTableHead label="URL" help={googleAdsHelp.landingPage} />
+                <AdsTableHead label="Cliques" help={googleAdsHelp.clicks} align="right" />
+                <AdsTableHead label="Custo" help={googleAdsHelp.spend} align="right" />
+                <AdsTableHead label="Conversões" help={googleAdsHelp.conversions} align="right" />
+                <AdsTableHead label="Taxa" help={googleAdsHelp.conversionRate} align="right" />
+                <AdsTableHead label="CPA" help={googleAdsHelp.cpa} align="right" />
+              </tr></thead>
               <tbody className="divide-y">{landingPages.map((item) => <tr key={item.url}>
                 <td className="max-w-[430px] truncate px-3 py-3 font-medium" title={item.url}>{item.url}</td><td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td>
                 <td className="px-3 py-3 text-right">{formatCurrency(item.spend)}</td><td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td>
@@ -1819,7 +2000,15 @@ function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           <Card className="rounded-2xl border-border/70 shadow-sm"><CardContent className="p-4 sm:p-6">
             <PanelHeading eyebrow="Agenda" title="Desempenho por dia e hora" description="Ajuda a concentrar o orçamento nos horários que trazem conversões." />
             <div className="mt-5 overflow-auto rounded-xl border"><table className="w-full min-w-[700px] text-left text-xs">
-              <thead className="border-b bg-muted/70"><tr><th className="px-3 py-3">Dia</th><th className="px-3 py-3">Hora</th><th className="px-3 py-3 text-right">Impressões</th><th className="px-3 py-3 text-right">Cliques</th><th className="px-3 py-3 text-right">Custo</th><th className="px-3 py-3 text-right">Conversões</th><th className="px-3 py-3 text-right">CPA</th></tr></thead>
+              <thead className="border-b bg-muted/70"><tr>
+                <AdsTableHead label="Dia" />
+                <AdsTableHead label="Hora" />
+                <AdsTableHead label="Impressões" help={googleAdsHelp.impressions} align="right" />
+                <AdsTableHead label="Cliques" help={googleAdsHelp.clicks} align="right" />
+                <AdsTableHead label="Custo" help={googleAdsHelp.spend} align="right" />
+                <AdsTableHead label="Conversões" help={googleAdsHelp.conversions} align="right" />
+                <AdsTableHead label="CPA" help={googleAdsHelp.cpa} align="right" />
+              </tr></thead>
               <tbody className="divide-y">{schedule.map((item, index) => <tr key={`${item.dayOfWeek}-${item.hour}-${index}`}>
                 <td className="px-3 py-3 font-semibold">{googleAdsDayLabels[item.dayOfWeek] ?? item.dayOfWeek}</td><td className="px-3 py-3">{String(item.hour).padStart(2, '0')}:00</td>
                 <td className="px-3 py-3 text-right">{formatNumber(item.impressions)}</td><td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td>
@@ -1833,7 +2022,15 @@ function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           <Card className="rounded-2xl border-border/70 shadow-sm"><CardContent className="p-4 sm:p-6">
             <PanelHeading eyebrow="Mensuração" title="Ações de conversão do Google Ads" description="Compare contatos do site, ligações, WhatsApp e cliente cadastrado no Retiflow." />
             <div className="mt-5 overflow-auto rounded-xl border"><table className="w-full min-w-[760px] text-left text-xs">
-              <thead className="border-b bg-muted/70"><tr><th className="px-3 py-3">Ação</th><th className="px-3 py-3">Categoria</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Conversões</th><th className="px-3 py-3 text-right">Todas</th><th className="px-3 py-3 text-right">Valor</th><th className="px-3 py-3 text-right">CPA</th></tr></thead>
+              <thead className="border-b bg-muted/70"><tr>
+                <AdsTableHead label="Ação" help="Nome da ação de conversão configurada dentro do Google Ads." />
+                <AdsTableHead label="Categoria" help="Tipo de objetivo informado ao Google, como contato, ligação ou lead qualificado." />
+                <AdsTableHead label="Status" help={googleAdsHelp.conversionStatus} />
+                <AdsTableHead label="Conversões" help={googleAdsHelp.conversions} align="right" />
+                <AdsTableHead label="Todas" help={googleAdsHelp.allConversions} align="right" />
+                <AdsTableHead label="Valor" help={googleAdsHelp.conversionValue} align="right" />
+                <AdsTableHead label="CPA" help={googleAdsHelp.cpa} align="right" />
+              </tr></thead>
               <tbody className="divide-y">{conversionActions.map((item) => <tr key={item.id}>
                 <td className="px-3 py-3 font-semibold">{item.name}</td><td className="px-3 py-3">{item.category}</td><td className="px-3 py-3">{item.status}</td>
                 <td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td><td className="px-3 py-3 text-right">{formatDecimal(item.allConversions)}</td>
