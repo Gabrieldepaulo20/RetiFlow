@@ -1837,7 +1837,7 @@ function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
               <tbody className="divide-y">{conversionActions.map((item) => <tr key={item.id}>
                 <td className="px-3 py-3 font-semibold">{item.name}</td><td className="px-3 py-3">{item.category}</td><td className="px-3 py-3">{item.status}</td>
                 <td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td><td className="px-3 py-3 text-right">{formatDecimal(item.allConversions)}</td>
-                <td className="px-3 py-3 text-right">{formatCurrency(item.conversionValue)}</td><td className="px-3 py-3 text-right">{formatCurrency(item.costPerConversion)}</td>
+                <td className="px-3 py-3 text-right">{formatCurrency(item.conversionValue)}</td><td className="px-3 py-3 text-right">{item.costPerConversion > 0 ? formatCurrency(item.costPerConversion) : '—'}</td>
               </tr>)}</tbody>
             </table>{conversionActions.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">Nenhuma ação de conversão registrou dados no período.</div> : null}</div>
           </CardContent></Card>
