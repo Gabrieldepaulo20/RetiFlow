@@ -82,7 +82,7 @@ O lint possui oito warnings antigos de Fast Refresh. Nao os confundir com erro d
 - Banco e Edge Functions do backend ja aplicados/publicados.
 - Site de producao ja envia eventos ao Supabase.
 - Search Console ja autorizou a conta tecnica leitora usada no GA4.
-- Frontend do Retiflow ainda depende de commit/push e deploy do Amplify.
+- Frontend do Retiflow publicado na `main` e validado em producao no painel Mega Master.
 - Google Ads oficial teve OAuth e leitura real validados para `561-450-6150`; a conta ainda nao possui
   campanhas, entao os KPIs ficam zerados ate o inicio da veiculacao.
 - Planilha e Looker Studio devem permanecer ate o painel publicado ser validado pela conta Mega Master.
