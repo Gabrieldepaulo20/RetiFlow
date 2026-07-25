@@ -1,6 +1,21 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-07-23
+Atualizado em: 2026-07-24
+
+---
+
+## Google Ads Oficial No Painel Crescimento - 2026-07-24
+
+- Conta oficial confirmada pelo usuario: `561-450-6150` (`Retífica Premium`), administrada pela conta
+  de gerente `612-801-5882` do irmao que trabalha na empresa.
+- OAuth e leitura da API Google Ads validados sem expor credenciais:
+  - conta ativa, nao teste, moeda BRL e fuso `America/Sao_Paulo`;
+  - a conta ainda nao possui campanhas, portanto os KPIs ficam zerados ate a primeira veiculacao.
+- A Edge Function `marketing-dashboard` consulta dados oficiais com cache de ate 10 minutos e entrega:
+  investimento, impressoes, cliques, CTR, CPC medio, conversoes, taxa/custo por conversao e parcela de
+  impressoes perdida por orcamento ou posicao.
+- Credenciais ficam somente nos secrets do Supabase. A conta e vinculada exclusivamente ao tenant da
+  Retifica Premium; outras empresas nao recebem seus dados.
 
 ---
 
@@ -35,8 +50,7 @@ Atualizado em: 2026-07-23
   - conta tecnica de leitura foi adicionada como usuario Total da propriedade
     `sc-domain:premiumretifica.com.br` no Search Console;
   - GA4 usa a propriedade `523704972`;
-  - Google Ads oficial `313-260-4995` continua pendente de acesso; a conta antiga nao deve ser apresentada
-    como a oficial.
+  - referencia substituida em 24/07/2026 pela conta oficial confirmada `561-450-6150`.
 - Validacao de producao:
   - migration ensaiada com `BEGIN/ROLLBACK` antes da aplicacao;
   - RLS/privilegios confirmaram que `authenticated` nao le leads nem comissoes;
@@ -831,8 +845,7 @@ Atualizado em: 2026-07-23
   - o trilho de integracoes do modulo Crescimento passou a exibir apenas Google Analytics e Google Ads;
   - Meta Ads e Microsoft Clarity foram removidos da visualizacao da Retifica Premium por nao fazerem parte do
     escopo atual;
-  - Google Ads permanece como pendente/aguardando autorizacao real; nao marcar como conectado sem developer
-    token/customer id/autorizacao OAuth especifica do Google Ads.
+  - pendencia encerrada em 24/07/2026 com OAuth e leitura da conta oficial `561-450-6150`.
 
 ---
 

@@ -127,12 +127,68 @@ interface SearchConsoleSummary {
   syncedAt: string;
 }
 
+interface GoogleAdsCredentials {
+  developerToken: string;
+  clientId: string;
+  clientSecret: string;
+  refreshToken: string;
+  loginCustomerId: string;
+  customerId: string;
+  apiVersion: string;
+}
+
+interface GoogleAdsApiResult {
+  campaign?: {
+    id?: string;
+    name?: string;
+    status?: string;
+    advertisingChannelType?: string;
+  };
+  metrics?: JsonRecord;
+  segments?: { date?: string };
+}
+
+interface GoogleAdsTotals {
+  spend: number;
+  impressions: number;
+  clicks: number;
+  leads: number;
+  conversions: number;
+  cpl: number;
+  ctr: number;
+  averageCpc: number;
+  conversionRate: number;
+  conversionValue: number;
+  roas: number;
+  searchImpressionShare: number;
+  searchBudgetLostImpressionShare: number;
+  searchRankLostImpressionShare: number;
+}
+
+interface GoogleAdsSummary {
+  current: GoogleAdsTotals;
+  previous: GoogleAdsTotals;
+  items: Array<GoogleAdsTotals & {
+    id: string;
+    name: string;
+    status: string;
+    channelType: string;
+  }>;
+  daily: Array<GoogleAdsTotals & { date: string }>;
+  syncedAt: string;
+  accountId: string;
+}
+
 const GOOGLE_ACCESS_TOKEN_CACHE_TTL_MS = 50 * 60_000;
 const GA4_SUMMARY_CACHE_TTL_MS = 10 * 60_000;
 const SEARCH_CONSOLE_SUMMARY_CACHE_TTL_MS = 60 * 60_000;
+const GOOGLE_ADS_SUMMARY_CACHE_TTL_MS = 10 * 60_000;
+const RETIFICA_PREMIUM_MARKETING_EMAIL = 'retificapremium5@gmail.com';
 const googleAccessTokenCache = new Map<string, CacheEntry<string>>();
+const googleAdsAccessTokenCache = new Map<string, CacheEntry<string>>();
 const ga4SummaryCache = new Map<string, CacheEntry<Ga4Summary>>();
 const searchConsoleCache = new Map<string, CacheEntry<SearchConsoleSummary>>();
+const googleAdsSummaryCache = new Map<string, CacheEntry<GoogleAdsSummary>>();
 
 const localDevOrigins = new Set([
   'http://localhost:5173',
@@ -678,6 +734,269 @@ async function fetchSearchConsoleSummary(
     syncedAt: new Date().toISOString(),
   };
   setCachedValue(searchConsoleCache, cacheKey, summary, SEARCH_CONSOLE_SUMMARY_CACHE_TTL_MS);
+  return summary;
+}
+
+function normalizeGoogleAdsCustomerId(value: string) {
+  return value.replace(/\D/g, '');
+}
+
+function formatGoogleAdsCustomerId(value: string) {
+  const normalized = normalizeGoogleAdsCustomerId(value);
+  return normalized.replace(/^(\d{3})(\d{3})(\d{4})$/, '$1-$2-$3');
+}
+
+function getGoogleAdsCredentials(): GoogleAdsCredentials | null {
+  const values = {
+    developerToken: Deno.env.get('GOOGLE_ADS_DEVELOPER_TOKEN')?.trim() ?? '',
+    clientId: Deno.env.get('GOOGLE_ADS_CLIENT_ID')?.trim() ?? '',
+    clientSecret: Deno.env.get('GOOGLE_ADS_CLIENT_SECRET')?.trim() ?? '',
+    refreshToken: Deno.env.get('GOOGLE_ADS_REFRESH_TOKEN')?.trim() ?? '',
+    loginCustomerId: normalizeGoogleAdsCustomerId(Deno.env.get('GOOGLE_ADS_LOGIN_CUSTOMER_ID') ?? ''),
+    customerId: normalizeGoogleAdsCustomerId(Deno.env.get('GOOGLE_ADS_CUSTOMER_ID') ?? ''),
+    apiVersion: Deno.env.get('GOOGLE_ADS_API_VERSION')?.trim() || 'v24',
+  };
+  const required = [
+    values.developerToken,
+    values.clientId,
+    values.clientSecret,
+    values.refreshToken,
+    values.loginCustomerId,
+    values.customerId,
+  ];
+  if (required.every((value) => !value)) return null;
+  if (required.some((value) => !value)) throw new Error('Credencial Google Ads incompleta.');
+  if (!/^\d{10}$/.test(values.loginCustomerId) || !/^\d{10}$/.test(values.customerId)) {
+    throw new Error('Identificador de conta Google Ads inválido.');
+  }
+  if (!/^v\d+$/.test(values.apiVersion)) throw new Error('Versão da API Google Ads inválida.');
+  return values;
+}
+
+async function getGoogleAdsAccessToken(credentials: GoogleAdsCredentials) {
+  const cached = getCachedValue(googleAdsAccessTokenCache, credentials.clientId);
+  if (cached) return cached;
+
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: credentials.clientId,
+      client_secret: credentials.clientSecret,
+      refresh_token: credentials.refreshToken,
+    }),
+  });
+  const payload = await response.json().catch(() => ({})) as {
+    access_token?: string;
+    error_description?: string;
+    error?: string;
+  };
+  if (!response.ok || !payload.access_token) {
+    throw new Error(payload.error_description ?? payload.error ?? 'Falha ao autenticar no Google Ads.');
+  }
+  setCachedValue(
+    googleAdsAccessTokenCache,
+    credentials.clientId,
+    payload.access_token,
+    GOOGLE_ACCESS_TOKEN_CACHE_TTL_MS,
+  );
+  return payload.access_token;
+}
+
+function getGoogleAdsErrorMessage(payload: unknown) {
+  if (!isRecord(payload) || !isRecord(payload.error)) return null;
+  return asString(payload.error.message, 500);
+}
+
+async function runGoogleAdsQuery(
+  credentials: GoogleAdsCredentials,
+  accessToken: string,
+  query: string,
+) {
+  const response = await fetch(
+    `https://googleads.googleapis.com/${credentials.apiVersion}/customers/${credentials.customerId}/googleAds:searchStream`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'developer-token': credentials.developerToken,
+        'login-customer-id': credentials.loginCustomerId,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query }),
+    },
+  );
+  const payload = await response.json().catch(() => ({})) as unknown;
+  if (!response.ok) throw new Error(getGoogleAdsErrorMessage(payload) ?? 'Falha ao consultar o Google Ads.');
+
+  const chunks = Array.isArray(payload) ? payload : [payload];
+  return chunks.flatMap((chunk) => {
+    if (!isRecord(chunk) || !Array.isArray(chunk.results)) return [];
+    return chunk.results.filter(isRecord) as GoogleAdsApiResult[];
+  });
+}
+
+function googleAdsShareValue(value: unknown) {
+  const ratio = toNumber(value);
+  return ratio > 0 ? ratio * 100 : 0;
+}
+
+function aggregateGoogleAdsRows(rows: GoogleAdsApiResult[]): GoogleAdsTotals {
+  const totals = rows.reduce((current, row) => {
+    const metrics = row.metrics ?? {};
+    const impressions = toNumber(metrics.impressions);
+    const searchImpressionShare = googleAdsShareValue(metrics.searchImpressionShare);
+    const searchBudgetLost = googleAdsShareValue(metrics.searchBudgetLostImpressionShare);
+    const searchRankLost = googleAdsShareValue(metrics.searchRankLostImpressionShare);
+    const hasSearchImpressionShare = metrics.searchImpressionShare !== undefined;
+    const hasSearchBudgetLost = metrics.searchBudgetLostImpressionShare !== undefined;
+    const hasSearchRankLost = metrics.searchRankLostImpressionShare !== undefined;
+    return {
+      spend: current.spend + (toNumber(metrics.costMicros) / 1_000_000),
+      impressions: current.impressions + impressions,
+      clicks: current.clicks + toNumber(metrics.clicks),
+      conversions: current.conversions + toNumber(metrics.conversions),
+      conversionValue: current.conversionValue + toNumber(metrics.conversionsValue),
+      shareWeighted: current.shareWeighted + (searchImpressionShare * impressions),
+      budgetLostWeighted: current.budgetLostWeighted + (searchBudgetLost * impressions),
+      rankLostWeighted: current.rankLostWeighted + (searchRankLost * impressions),
+      shareWeight: current.shareWeight + (hasSearchImpressionShare ? impressions : 0),
+      budgetLostWeight: current.budgetLostWeight + (hasSearchBudgetLost ? impressions : 0),
+      rankLostWeight: current.rankLostWeight + (hasSearchRankLost ? impressions : 0),
+    };
+  }, {
+    spend: 0,
+    impressions: 0,
+    clicks: 0,
+    conversions: 0,
+    conversionValue: 0,
+    shareWeighted: 0,
+    budgetLostWeighted: 0,
+    rankLostWeighted: 0,
+    shareWeight: 0,
+    budgetLostWeight: 0,
+    rankLostWeight: 0,
+  });
+  const spend = round(totals.spend);
+  const conversions = round(totals.conversions, 2);
+  const conversionValue = round(totals.conversionValue);
+  return {
+    spend,
+    impressions: totals.impressions,
+    clicks: totals.clicks,
+    leads: conversions,
+    conversions,
+    cpl: conversions ? round(totals.spend / conversions) : 0,
+    ctr: percentage(totals.clicks, totals.impressions),
+    averageCpc: totals.clicks ? round(totals.spend / totals.clicks) : 0,
+    conversionRate: percentage(conversions, totals.clicks),
+    conversionValue,
+    roas: totals.spend ? round(totals.conversionValue / totals.spend, 2) : 0,
+    searchImpressionShare: totals.shareWeight ? round(totals.shareWeighted / totals.shareWeight) : 0,
+    searchBudgetLostImpressionShare: totals.budgetLostWeight
+      ? round(totals.budgetLostWeighted / totals.budgetLostWeight)
+      : 0,
+    searchRankLostImpressionShare: totals.rankLostWeight
+      ? round(totals.rankLostWeighted / totals.rankLostWeight)
+      : 0,
+  };
+}
+
+function googleAdsCampaignQuery(startDate: string, endDate: string) {
+  return `
+    SELECT
+      campaign.id,
+      campaign.name,
+      campaign.status,
+      campaign.advertising_channel_type,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.cost_micros,
+      metrics.conversions,
+      metrics.conversions_value,
+      metrics.ctr,
+      metrics.average_cpc,
+      metrics.cost_per_conversion,
+      metrics.conversions_from_interactions_rate,
+      metrics.search_impression_share,
+      metrics.search_budget_lost_impression_share,
+      metrics.search_rank_lost_impression_share
+    FROM campaign
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND campaign.status != 'REMOVED'
+    ORDER BY metrics.cost_micros DESC
+  `;
+}
+
+function googleAdsDailyQuery(startDate: string, endDate: string) {
+  return `
+    SELECT
+      segments.date,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.cost_micros,
+      metrics.conversions,
+      metrics.conversions_value,
+      metrics.search_impression_share,
+      metrics.search_budget_lost_impression_share,
+      metrics.search_rank_lost_impression_share
+    FROM campaign
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND campaign.status != 'REMOVED'
+    ORDER BY segments.date
+  `;
+}
+
+async function fetchGoogleAdsSummary(
+  credentials: GoogleAdsCredentials,
+  periodDays: number,
+) {
+  const range = getMarketingDateRange(periodDays);
+  const cacheKey = [
+    credentials.customerId,
+    periodDays,
+    range.startDate,
+    range.endDate,
+  ].join(':');
+  const cached = getCachedValue(googleAdsSummaryCache, cacheKey);
+  if (cached) return cached;
+
+  const accessToken = await getGoogleAdsAccessToken(credentials);
+  const [currentRows, previousRows, dailyRows] = await Promise.all([
+    runGoogleAdsQuery(credentials, accessToken, googleAdsCampaignQuery(range.startDate, range.endDate)),
+    runGoogleAdsQuery(
+      credentials,
+      accessToken,
+      googleAdsCampaignQuery(range.previousStartDate, range.previousEndDate),
+    ),
+    runGoogleAdsQuery(credentials, accessToken, googleAdsDailyQuery(range.startDate, range.endDate)),
+  ]);
+  const dailyByDate = new Map<string, GoogleAdsApiResult[]>();
+  dailyRows.forEach((row) => {
+    const date = row.segments?.date ?? '';
+    if (!date) return;
+    dailyByDate.set(date, [...(dailyByDate.get(date) ?? []), row]);
+  });
+  const daily: GoogleAdsSummary['daily'] = [];
+  for (let date = range.startDate; date <= range.endDate; date = addMarketingDays(date, 1)) {
+    daily.push({ date, ...aggregateGoogleAdsRows(dailyByDate.get(date) ?? []) });
+  }
+  const summary: GoogleAdsSummary = {
+    current: aggregateGoogleAdsRows(currentRows),
+    previous: aggregateGoogleAdsRows(previousRows),
+    items: currentRows.map((row) => ({
+      id: row.campaign?.id ?? '',
+      name: row.campaign?.name ?? 'Campanha sem nome',
+      status: row.campaign?.status ?? 'UNKNOWN',
+      channelType: row.campaign?.advertisingChannelType ?? 'UNKNOWN',
+      ...aggregateGoogleAdsRows([row]),
+    })),
+    daily,
+    syncedAt: new Date().toISOString(),
+    accountId: credentials.customerId,
+  };
+  setCachedValue(googleAdsSummaryCache, cacheKey, summary, GOOGLE_ADS_SUMMARY_CACHE_TTL_MS);
   return summary;
 }
 
@@ -1326,6 +1645,7 @@ async function handleRequest(request: Request) {
     let integrations = storedIntegrations;
     let ga4: Ga4Summary | null = null;
     let searchConsole: SearchConsoleSummary | null = null;
+    let googleAds: GoogleAdsSummary | null = null;
     const googleCredentialRaw = Deno.env.get('GA4_SERVICE_ACCOUNT_JSON') ?? '';
     const serviceAccount = googleCredentialRaw ? parseServiceAccount(googleCredentialRaw) : null;
 
@@ -1418,14 +1738,50 @@ async function handleRequest(request: Request) {
       lastError: config.hasSiteKey ? null : 'A chave segura do site ainda não foi configurada.',
       freshness: config.hasSiteKey ? 'Atualização em até 5 minutos' : 'Configuração pendente',
     });
-    if (!integrations.some((item) => item.provider === 'google_ads')) {
-      integrations.push({
+
+    const googleAdsBelongsToTarget = normalizeEmail(targetUser.email) === RETIFICA_PREMIUM_MARKETING_EMAIL;
+    if (googleAdsBelongsToTarget) {
+      try {
+        const googleAdsCredentials = getGoogleAdsCredentials();
+        if (!googleAdsCredentials) {
+          integrations = mergeIntegration(integrations, {
+            provider: 'google_ads',
+            status: 'not_connected',
+            accountName: null,
+            lastSyncAt: null,
+            lastError: 'Credencial Google Ads ainda não configurada.',
+            freshness: 'Configuração pendente',
+          });
+        } else {
+          googleAds = await fetchGoogleAdsSummary(googleAdsCredentials, periodDays);
+          integrations = mergeIntegration(integrations, {
+            provider: 'google_ads',
+            status: 'connected',
+            accountName: `Retífica Premium · ${formatGoogleAdsCustomerId(googleAds.accountId)}`,
+            lastSyncAt: googleAds.syncedAt,
+            lastError: null,
+            freshness: 'Dados oficiais · cache de até 10 min',
+          });
+        }
+      } catch (error) {
+        console.error('Google Ads dashboard sync failed', error instanceof Error ? error.message : 'unknown');
+        integrations = mergeIntegration(integrations, {
+          provider: 'google_ads',
+          status: 'needs_attention',
+          accountName: 'Retífica Premium',
+          lastSyncAt: null,
+          lastError: 'Não foi possível sincronizar o Google Ads agora.',
+          freshness: 'Aguardando Google Ads',
+        });
+      }
+    } else {
+      integrations = mergeIntegration(integrations, {
         provider: 'google_ads',
         status: 'not_connected',
-        accountName: 'Conta oficial 313-260-4995',
+        accountName: null,
         lastSyncAt: null,
-        lastError: 'Aguardando acesso autorizado à conta oficial.',
-        freshness: 'Pendente',
+        lastError: 'Google Ads não configurado para esta empresa.',
+        freshness: 'Configuração pendente',
       });
     }
 
@@ -1509,6 +1865,12 @@ async function handleRequest(request: Request) {
       refreshIntervalMinutes: 5,
       generatedAt: new Date().toISOString(),
     };
+    const emptyGoogleAdsTotals = aggregateGoogleAdsRows([]);
+    const googleAdsStatusMessage = googleAds
+      ? googleAds.items.length > 0
+        ? 'Dados oficiais do Google Ads sincronizados.'
+        : 'Conta conectada. Nenhuma campanha ou veiculação no período.'
+      : 'Google Ads aguardando uma conexão válida.';
 
     if (!hasPrivateAccess) {
       return jsonResponse({
@@ -1565,16 +1927,12 @@ async function handleRequest(request: Request) {
           },
           searchConsole,
           campaigns: {
-            current: {
-              spend: 0,
-              impressions: 0,
-              clicks: 0,
-              leads: 0,
-              cpl: 0,
-            },
+            current: googleAds?.current ?? emptyGoogleAdsTotals,
+            previous: googleAds?.previous ?? emptyGoogleAdsTotals,
             items: [],
-            daily: [],
-            financialAvailable: false,
+            daily: googleAds?.daily ?? [],
+            financialAvailable: Boolean(googleAds),
+            statusMessage: googleAdsStatusMessage,
           },
           quality: {
             lastEventAt: quality.lastEventAt,
@@ -1658,12 +2016,12 @@ async function handleRequest(request: Request) {
         business,
         searchConsole,
         campaigns: {
-          current: { spend: 0, impressions: 0, clicks: 0, leads: 0, cpl: 0 },
-          previous: { spend: 0, impressions: 0, clicks: 0, leads: 0, cpl: 0 },
-          items: [],
-          daily: [],
-          financialAvailable: false,
-          statusMessage: 'Google Ads aguardando acesso à conta oficial 313-260-4995.',
+          current: googleAds?.current ?? emptyGoogleAdsTotals,
+          previous: googleAds?.previous ?? emptyGoogleAdsTotals,
+          items: googleAds?.items ?? [],
+          daily: googleAds?.daily ?? [],
+          financialAvailable: Boolean(googleAds),
+          statusMessage: googleAdsStatusMessage,
         },
         snapshots: privateData.snapshots,
         quality,

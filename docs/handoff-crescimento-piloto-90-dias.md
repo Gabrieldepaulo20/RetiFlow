@@ -35,7 +35,7 @@ comissoes a usuarios operacionais.
 - Periodo aceito: 1 a 365 dias, com comparacao ao periodo anterior de mesmo tamanho.
 - Dominio/propriedade correta: `premiumretifica.com.br` /
   `sc-domain:premiumretifica.com.br`.
-- Google Ads oficial: `313-260-4995`. Nao usar a conta antiga como fonte oficial.
+- Google Ads oficial: `561-450-6150` (`Retífica Premium`), administrado pelo gerente `612-801-5882`.
 - Clique de WhatsApp e telefone cria `Marketing_Leads.status='intencao'`.
 - Formulario enviado cria lead com nome/telefone/e-mail; nada digitado fica persistido antes do envio.
 - Deduplicacao do WhatsApp: mesma sessao/anonymous id durante 30 minutos incrementa `duplicate_count`,
@@ -77,13 +77,14 @@ npm run test:integration
 
 O lint possui oito warnings antigos de Fast Refresh. Nao os confundir com erro deste modulo.
 
-## Estado externo em 23/07/2026
+## Estado externo em 24/07/2026
 
 - Banco e Edge Functions do backend ja aplicados/publicados.
 - Site de producao ja envia eventos ao Supabase.
 - Search Console ja autorizou a conta tecnica leitora usada no GA4.
 - Frontend do Retiflow ainda depende de commit/push e deploy do Amplify.
-- Google Ads oficial ainda depende de acesso real a conta `313-260-4995`.
+- Google Ads oficial teve OAuth e leitura real validados para `561-450-6150`; a conta ainda nao possui
+  campanhas, entao os KPIs ficam zerados ate o inicio da veiculacao.
 - Planilha e Looker Studio devem permanecer ate o painel publicado ser validado pela conta Mega Master.
 
 ## Proximo aceite

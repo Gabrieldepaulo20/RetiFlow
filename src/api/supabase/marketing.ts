@@ -152,6 +152,34 @@ export interface MarketingSearchTotals {
   position: number;
 }
 
+export interface MarketingAdsTotals {
+  spend: number;
+  impressions?: number;
+  clicks: number;
+  leads: number;
+  conversions?: number;
+  cpl: number;
+  ctr?: number;
+  averageCpc?: number;
+  conversionRate?: number;
+  conversionValue?: number;
+  roas?: number;
+  searchImpressionShare?: number;
+  searchBudgetLostImpressionShare?: number;
+  searchRankLostImpressionShare?: number;
+}
+
+export interface MarketingAdsCampaignMetric extends MarketingAdsTotals {
+  id: string;
+  name: string;
+  status: string;
+  channelType: string;
+}
+
+export interface MarketingAdsDailyMetric extends MarketingAdsTotals {
+  date: string;
+}
+
 export interface MarketingResumo {
   periodDays: number;
   context?: {
@@ -227,15 +255,10 @@ export interface MarketingResumo {
     syncedAt: string;
   } | null;
   campaigns: {
-    current: {
-      spend: number;
-      impressions?: number;
-      clicks: number;
-      leads: number;
-      cpl: number;
-    };
-    items: unknown[];
-    daily: unknown[];
+    current: MarketingAdsTotals;
+    previous?: MarketingAdsTotals;
+    items: MarketingAdsCampaignMetric[];
+    daily: MarketingAdsDailyMetric[];
     financialAvailable: boolean;
     statusMessage?: string;
   };

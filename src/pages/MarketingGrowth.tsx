@@ -1478,7 +1478,13 @@ function ResultsTab({ resumo }: { resumo: MarketingResumo }) {
                 ['Investimento', ads.financialAvailable ? formatCurrency(ads.current.spend) : 'Pendente'],
                 ['Impressões', ads.financialAvailable ? formatNumber(ads.current.impressions) : 'Pendente'],
                 ['Cliques', ads.financialAvailable ? formatNumber(ads.current.clicks) : 'Pendente'],
-                ['Custo por contato', ads.financialAvailable ? formatCurrency(ads.current.cpl) : 'Pendente'],
+                ['CTR', ads.financialAvailable ? formatPercent(ads.current.ctr) : 'Pendente'],
+                ['CPC médio', ads.financialAvailable ? formatCurrency(ads.current.averageCpc) : 'Pendente'],
+                ['Conversões', ads.financialAvailable ? formatDecimal(ads.current.conversions) : 'Pendente'],
+                ['Taxa de conversão', ads.financialAvailable ? formatPercent(ads.current.conversionRate) : 'Pendente'],
+                ['Custo por conversão', ads.financialAvailable ? formatCurrency(ads.current.cpl) : 'Pendente'],
+                ['Valor de conversão', ads.financialAvailable ? formatCurrency(ads.current.conversionValue) : 'Pendente'],
+                ['ROAS', ads.financialAvailable ? `${formatDecimal(ads.current.roas)}x` : 'Pendente'],
               ].map(([label, value]) => (
                 <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-3">
                   <p className="text-[10px] uppercase tracking-wider text-slate-500">{label}</p>
@@ -1486,6 +1492,17 @@ function ResultsTab({ resumo }: { resumo: MarketingResumo }) {
                 </div>
               ))}
             </div>
+            {ads.financialAvailable ? (
+              <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-slate-300">
+                <p>
+                  Parcela de impressões na busca: <strong className="text-white">{formatPercent(ads.current.searchImpressionShare)}</strong>
+                </p>
+                <p className="mt-1 text-slate-400">
+                  Perdida por orçamento: {formatPercent(ads.current.searchBudgetLostImpressionShare)}
+                  {' · '}por posição: {formatPercent(ads.current.searchRankLostImpressionShare)}
+                </p>
+              </div>
+            ) : null}
             <div className="mt-5 flex items-start gap-2 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-xs leading-relaxed text-amber-100">
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
               Dados pagos não são misturados com impressões orgânicas do Search Console.
