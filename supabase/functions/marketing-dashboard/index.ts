@@ -143,24 +143,53 @@ interface GoogleAdsApiResult {
     name?: string;
     status?: string;
     advertisingChannelType?: string;
+    optimizationScore?: number | string;
   };
+  campaignBudget?: { amountMicros?: number | string };
+  adGroup?: { id?: string; name?: string; status?: string };
+  adGroupCriterion?: {
+    criterionId?: string;
+    status?: string;
+    keyword?: { text?: string; matchType?: string };
+    qualityInfo?: { qualityScore?: number | string };
+  };
+  searchTermView?: { searchTerm?: string; status?: string };
+  landingPageView?: { unexpandedFinalUrl?: string };
+  conversionAction?: { id?: string; name?: string; category?: string; status?: string };
   metrics?: JsonRecord;
-  segments?: { date?: string };
+  segments?: {
+    date?: string;
+    device?: string;
+    dayOfWeek?: string;
+    hour?: number | string;
+    keyword?: { info?: { text?: string; matchType?: string } };
+    conversionAction?: string;
+    conversionActionName?: string;
+    conversionActionCategory?: string;
+  };
 }
 
 interface GoogleAdsTotals {
   spend: number;
   impressions: number;
   clicks: number;
+  interactions: number;
   leads: number;
   conversions: number;
+  allConversions: number;
   cpl: number;
   ctr: number;
   averageCpc: number;
   conversionRate: number;
   conversionValue: number;
+  allConversionValue: number;
+  valuePerConversion: number;
   roas: number;
+  invalidClicks: number;
+  invalidClickRate: number;
   searchImpressionShare: number;
+  searchTopImpressionShare: number;
+  searchAbsoluteTopImpressionShare: number;
   searchBudgetLostImpressionShare: number;
   searchRankLostImpressionShare: number;
 }
@@ -173,8 +202,41 @@ interface GoogleAdsSummary {
     name: string;
     status: string;
     channelType: string;
+    dailyBudget: number;
+    optimizationScore: number;
   }>;
   daily: Array<GoogleAdsTotals & { date: string }>;
+  devices: Array<GoogleAdsTotals & { device: string }>;
+  keywords: Array<GoogleAdsTotals & {
+    campaignId: string;
+    campaign: string;
+    adGroupId: string;
+    adGroup: string;
+    criterionId: string;
+    keyword: string;
+    matchType: string;
+    status: string;
+    qualityScore: number;
+  }>;
+  searchTerms: Array<GoogleAdsTotals & {
+    campaign: string;
+    adGroup: string;
+    searchTerm: string;
+    status: string;
+    keyword: string;
+  }>;
+  landingPages: Array<GoogleAdsTotals & { url: string }>;
+  schedule: Array<GoogleAdsTotals & { dayOfWeek: string; hour: number }>;
+  conversionActions: Array<{
+    id: string;
+    name: string;
+    category: string;
+    status: string;
+    conversions: number;
+    allConversions: number;
+    conversionValue: number;
+    costPerConversion: number;
+  }>;
   syncedAt: string;
   accountId: string;
 }
@@ -847,21 +909,33 @@ function aggregateGoogleAdsRows(rows: GoogleAdsApiResult[]): GoogleAdsTotals {
     const metrics = row.metrics ?? {};
     const impressions = toNumber(metrics.impressions);
     const searchImpressionShare = googleAdsShareValue(metrics.searchImpressionShare);
+    const searchTopShare = googleAdsShareValue(metrics.searchTopImpressionShare);
+    const searchAbsoluteTopShare = googleAdsShareValue(metrics.searchAbsoluteTopImpressionShare);
     const searchBudgetLost = googleAdsShareValue(metrics.searchBudgetLostImpressionShare);
     const searchRankLost = googleAdsShareValue(metrics.searchRankLostImpressionShare);
     const hasSearchImpressionShare = metrics.searchImpressionShare !== undefined;
+    const hasSearchTopShare = metrics.searchTopImpressionShare !== undefined;
+    const hasSearchAbsoluteTopShare = metrics.searchAbsoluteTopImpressionShare !== undefined;
     const hasSearchBudgetLost = metrics.searchBudgetLostImpressionShare !== undefined;
     const hasSearchRankLost = metrics.searchRankLostImpressionShare !== undefined;
     return {
       spend: current.spend + (toNumber(metrics.costMicros) / 1_000_000),
       impressions: current.impressions + impressions,
       clicks: current.clicks + toNumber(metrics.clicks),
+      interactions: current.interactions + toNumber(metrics.interactions),
       conversions: current.conversions + toNumber(metrics.conversions),
+      allConversions: current.allConversions + toNumber(metrics.allConversions),
       conversionValue: current.conversionValue + toNumber(metrics.conversionsValue),
+      allConversionValue: current.allConversionValue + toNumber(metrics.allConversionsValue),
+      invalidClicks: current.invalidClicks + toNumber(metrics.invalidClicks),
       shareWeighted: current.shareWeighted + (searchImpressionShare * impressions),
+      topShareWeighted: current.topShareWeighted + (searchTopShare * impressions),
+      absoluteTopShareWeighted: current.absoluteTopShareWeighted + (searchAbsoluteTopShare * impressions),
       budgetLostWeighted: current.budgetLostWeighted + (searchBudgetLost * impressions),
       rankLostWeighted: current.rankLostWeighted + (searchRankLost * impressions),
       shareWeight: current.shareWeight + (hasSearchImpressionShare ? impressions : 0),
+      topShareWeight: current.topShareWeight + (hasSearchTopShare ? impressions : 0),
+      absoluteTopShareWeight: current.absoluteTopShareWeight + (hasSearchAbsoluteTopShare ? impressions : 0),
       budgetLostWeight: current.budgetLostWeight + (hasSearchBudgetLost ? impressions : 0),
       rankLostWeight: current.rankLostWeight + (hasSearchRankLost ? impressions : 0),
     };
@@ -869,31 +943,53 @@ function aggregateGoogleAdsRows(rows: GoogleAdsApiResult[]): GoogleAdsTotals {
     spend: 0,
     impressions: 0,
     clicks: 0,
+    interactions: 0,
     conversions: 0,
+    allConversions: 0,
     conversionValue: 0,
+    allConversionValue: 0,
+    invalidClicks: 0,
     shareWeighted: 0,
+    topShareWeighted: 0,
+    absoluteTopShareWeighted: 0,
     budgetLostWeighted: 0,
     rankLostWeighted: 0,
     shareWeight: 0,
+    topShareWeight: 0,
+    absoluteTopShareWeight: 0,
     budgetLostWeight: 0,
     rankLostWeight: 0,
   });
   const spend = round(totals.spend);
   const conversions = round(totals.conversions, 2);
+  const allConversions = round(totals.allConversions, 2);
   const conversionValue = round(totals.conversionValue);
+  const allConversionValue = round(totals.allConversionValue);
   return {
     spend,
     impressions: totals.impressions,
     clicks: totals.clicks,
+    interactions: totals.interactions,
     leads: conversions,
     conversions,
+    allConversions,
     cpl: conversions ? round(totals.spend / conversions) : 0,
     ctr: percentage(totals.clicks, totals.impressions),
     averageCpc: totals.clicks ? round(totals.spend / totals.clicks) : 0,
     conversionRate: percentage(conversions, totals.clicks),
     conversionValue,
+    allConversionValue,
+    valuePerConversion: conversions ? round(totals.conversionValue / conversions) : 0,
     roas: totals.spend ? round(totals.conversionValue / totals.spend, 2) : 0,
+    invalidClicks: totals.invalidClicks,
+    invalidClickRate: percentage(totals.invalidClicks, totals.clicks + totals.invalidClicks),
     searchImpressionShare: totals.shareWeight ? round(totals.shareWeighted / totals.shareWeight) : 0,
+    searchTopImpressionShare: totals.topShareWeight
+      ? round(totals.topShareWeighted / totals.topShareWeight)
+      : 0,
+    searchAbsoluteTopImpressionShare: totals.absoluteTopShareWeight
+      ? round(totals.absoluteTopShareWeighted / totals.absoluteTopShareWeight)
+      : 0,
     searchBudgetLostImpressionShare: totals.budgetLostWeight
       ? round(totals.budgetLostWeighted / totals.budgetLostWeight)
       : 0,
@@ -910,16 +1006,25 @@ function googleAdsCampaignQuery(startDate: string, endDate: string) {
       campaign.name,
       campaign.status,
       campaign.advertising_channel_type,
+      campaign.optimization_score,
+      campaign_budget.amount_micros,
       metrics.impressions,
       metrics.clicks,
+      metrics.interactions,
       metrics.cost_micros,
       metrics.conversions,
+      metrics.all_conversions,
       metrics.conversions_value,
+      metrics.all_conversions_value,
       metrics.ctr,
       metrics.average_cpc,
       metrics.cost_per_conversion,
       metrics.conversions_from_interactions_rate,
+      metrics.invalid_clicks,
+      metrics.invalid_click_rate,
       metrics.search_impression_share,
+      metrics.search_top_impression_share,
+      metrics.search_absolute_top_impression_share,
       metrics.search_budget_lost_impression_share,
       metrics.search_rank_lost_impression_share
     FROM campaign
@@ -935,16 +1040,168 @@ function googleAdsDailyQuery(startDate: string, endDate: string) {
       segments.date,
       metrics.impressions,
       metrics.clicks,
+      metrics.interactions,
       metrics.cost_micros,
       metrics.conversions,
+      metrics.all_conversions,
       metrics.conversions_value,
+      metrics.all_conversions_value,
+      metrics.invalid_clicks,
+      metrics.invalid_click_rate,
       metrics.search_impression_share,
+      metrics.search_top_impression_share,
+      metrics.search_absolute_top_impression_share,
       metrics.search_budget_lost_impression_share,
       metrics.search_rank_lost_impression_share
     FROM campaign
     WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
       AND campaign.status != 'REMOVED'
     ORDER BY segments.date
+  `;
+}
+
+function googleAdsDeviceQuery(startDate: string, endDate: string) {
+  return `
+    SELECT
+      segments.device,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.interactions,
+      metrics.cost_micros,
+      metrics.conversions,
+      metrics.all_conversions,
+      metrics.conversions_value,
+      metrics.all_conversions_value,
+      metrics.invalid_clicks
+    FROM campaign
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND campaign.status != 'REMOVED'
+    ORDER BY metrics.cost_micros DESC
+  `;
+}
+
+function googleAdsKeywordQuery(startDate: string, endDate: string) {
+  return `
+    SELECT
+      campaign.id,
+      campaign.name,
+      ad_group.id,
+      ad_group.name,
+      ad_group_criterion.criterion_id,
+      ad_group_criterion.status,
+      ad_group_criterion.keyword.text,
+      ad_group_criterion.keyword.match_type,
+      ad_group_criterion.quality_info.quality_score,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.interactions,
+      metrics.cost_micros,
+      metrics.conversions,
+      metrics.all_conversions,
+      metrics.conversions_value,
+      metrics.all_conversions_value
+    FROM keyword_view
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND campaign.status != 'REMOVED'
+      AND ad_group.status != 'REMOVED'
+      AND ad_group_criterion.status != 'REMOVED'
+    ORDER BY metrics.cost_micros DESC
+    LIMIT 100
+  `;
+}
+
+function googleAdsSearchTermQuery(startDate: string, endDate: string) {
+  return `
+    SELECT
+      campaign.name,
+      ad_group.name,
+      search_term_view.search_term,
+      search_term_view.status,
+      segments.keyword.info.text,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.interactions,
+      metrics.cost_micros,
+      metrics.conversions,
+      metrics.all_conversions,
+      metrics.conversions_value,
+      metrics.all_conversions_value
+    FROM search_term_view
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND campaign.status != 'REMOVED'
+      AND ad_group.status != 'REMOVED'
+    ORDER BY metrics.cost_micros DESC
+    LIMIT 100
+  `;
+}
+
+function googleAdsLandingPageQuery(startDate: string, endDate: string) {
+  return `
+    SELECT
+      landing_page_view.unexpanded_final_url,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.interactions,
+      metrics.cost_micros,
+      metrics.conversions,
+      metrics.all_conversions,
+      metrics.conversions_value,
+      metrics.all_conversions_value
+    FROM landing_page_view
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+    ORDER BY metrics.cost_micros DESC
+    LIMIT 50
+  `;
+}
+
+function googleAdsScheduleQuery(startDate: string, endDate: string) {
+  return `
+    SELECT
+      segments.day_of_week,
+      segments.hour,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.interactions,
+      metrics.cost_micros,
+      metrics.conversions,
+      metrics.all_conversions,
+      metrics.conversions_value,
+      metrics.all_conversions_value
+    FROM campaign
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND campaign.status != 'REMOVED'
+    ORDER BY segments.day_of_week, segments.hour
+  `;
+}
+
+function googleAdsConversionActionQuery() {
+  return `
+    SELECT
+      conversion_action.id,
+      conversion_action.name,
+      conversion_action.category,
+      conversion_action.status,
+      conversion_action.type,
+      conversion_action.primary_for_goal
+    FROM conversion_action
+    ORDER BY conversion_action.name
+    LIMIT 100
+  `;
+}
+
+function googleAdsConversionActionPerformanceQuery(startDate: string, endDate: string) {
+  return `
+    SELECT
+      segments.conversion_action,
+      segments.conversion_action_name,
+      segments.conversion_action_category,
+      metrics.conversions,
+      metrics.all_conversions,
+      metrics.conversions_value
+    FROM customer
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+    ORDER BY metrics.conversions DESC
+    LIMIT 100
   `;
 }
 
@@ -963,7 +1220,18 @@ async function fetchGoogleAdsSummary(
   if (cached) return cached;
 
   const accessToken = await getGoogleAdsAccessToken(credentials);
-  const [currentRows, previousRows, dailyRows] = await Promise.all([
+  const [
+    currentRows,
+    previousRows,
+    dailyRows,
+    deviceRows,
+    keywordRows,
+    searchTermRows,
+    landingPageRows,
+    scheduleRows,
+    conversionActionRows,
+    conversionActionPerformanceRows,
+  ] = await Promise.all([
     runGoogleAdsQuery(credentials, accessToken, googleAdsCampaignQuery(range.startDate, range.endDate)),
     runGoogleAdsQuery(
       credentials,
@@ -971,6 +1239,17 @@ async function fetchGoogleAdsSummary(
       googleAdsCampaignQuery(range.previousStartDate, range.previousEndDate),
     ),
     runGoogleAdsQuery(credentials, accessToken, googleAdsDailyQuery(range.startDate, range.endDate)),
+    runGoogleAdsQuery(credentials, accessToken, googleAdsDeviceQuery(range.startDate, range.endDate)),
+    runGoogleAdsQuery(credentials, accessToken, googleAdsKeywordQuery(range.startDate, range.endDate)),
+    runGoogleAdsQuery(credentials, accessToken, googleAdsSearchTermQuery(range.startDate, range.endDate)),
+    runGoogleAdsQuery(credentials, accessToken, googleAdsLandingPageQuery(range.startDate, range.endDate)),
+    runGoogleAdsQuery(credentials, accessToken, googleAdsScheduleQuery(range.startDate, range.endDate)),
+    runGoogleAdsQuery(credentials, accessToken, googleAdsConversionActionQuery()),
+    runGoogleAdsQuery(
+      credentials,
+      accessToken,
+      googleAdsConversionActionPerformanceQuery(range.startDate, range.endDate),
+    ),
   ]);
   const dailyByDate = new Map<string, GoogleAdsApiResult[]>();
   dailyRows.forEach((row) => {
@@ -990,9 +1269,60 @@ async function fetchGoogleAdsSummary(
       name: row.campaign?.name ?? 'Campanha sem nome',
       status: row.campaign?.status ?? 'UNKNOWN',
       channelType: row.campaign?.advertisingChannelType ?? 'UNKNOWN',
+      dailyBudget: round(toNumber(row.campaignBudget?.amountMicros) / 1_000_000),
+      optimizationScore: round(toNumber(row.campaign?.optimizationScore) * 100),
       ...aggregateGoogleAdsRows([row]),
     })),
     daily,
+    devices: deviceRows.map((row) => ({
+      device: row.segments?.device ?? 'UNKNOWN',
+      ...aggregateGoogleAdsRows([row]),
+    })),
+    keywords: keywordRows.map((row) => ({
+      campaignId: row.campaign?.id ?? '',
+      campaign: row.campaign?.name ?? 'Campanha sem nome',
+      adGroupId: row.adGroup?.id ?? '',
+      adGroup: row.adGroup?.name ?? 'Grupo sem nome',
+      criterionId: row.adGroupCriterion?.criterionId ?? '',
+      keyword: row.adGroupCriterion?.keyword?.text ?? '',
+      matchType: row.adGroupCriterion?.keyword?.matchType ?? 'UNKNOWN',
+      status: row.adGroupCriterion?.status ?? 'UNKNOWN',
+      qualityScore: toNumber(row.adGroupCriterion?.qualityInfo?.qualityScore),
+      ...aggregateGoogleAdsRows([row]),
+    })),
+    searchTerms: searchTermRows.map((row) => ({
+      campaign: row.campaign?.name ?? 'Campanha sem nome',
+      adGroup: row.adGroup?.name ?? 'Grupo sem nome',
+      searchTerm: row.searchTermView?.searchTerm ?? '',
+      status: row.searchTermView?.status ?? 'UNKNOWN',
+      keyword: row.segments?.keyword?.info?.text ?? '',
+      ...aggregateGoogleAdsRows([row]),
+    })),
+    landingPages: landingPageRows.map((row) => ({
+      url: row.landingPageView?.unexpandedFinalUrl ?? '',
+      ...aggregateGoogleAdsRows([row]),
+    })),
+    schedule: scheduleRows.map((row) => ({
+      dayOfWeek: row.segments?.dayOfWeek ?? 'UNKNOWN',
+      hour: toNumber(row.segments?.hour),
+      ...aggregateGoogleAdsRows([row]),
+    })),
+    conversionActions: conversionActionRows.map((row) => {
+      const id = row.conversionAction?.id ?? '';
+      const performance = conversionActionPerformanceRows.find((item) =>
+        String(item.segments?.conversionAction ?? '').endsWith(`/conversionActions/${id}`)
+      );
+      return {
+        id,
+        name: row.conversionAction?.name ?? 'Conversão sem nome',
+        category: row.conversionAction?.category ?? 'UNKNOWN',
+        status: row.conversionAction?.status ?? 'UNKNOWN',
+        conversions: round(toNumber(performance?.metrics?.conversions), 2),
+        allConversions: round(toNumber(performance?.metrics?.allConversions), 2),
+        conversionValue: round(toNumber(performance?.metrics?.conversionsValue)),
+        costPerConversion: 0,
+      };
+    }),
     syncedAt: new Date().toISOString(),
     accountId: credentials.customerId,
   };
@@ -1145,7 +1475,15 @@ async function loadPrivateMarketingData(
   previousStartIso: string,
   currentEndExclusiveIso: string,
 ) {
-  const [events, leads, attributions, commissions, snapshotsResult, clientsResult] = await Promise.all([
+  const [
+    events,
+    leads,
+    attributions,
+    commissions,
+    offlineConversions,
+    snapshotsResult,
+    clientsResult,
+  ] = await Promise.all([
     loadTimeBoundRows(serviceClient, {
       table: 'Marketing_Site_Eventos',
       select: [
@@ -1163,6 +1501,9 @@ async function loadPrivateMarketingData(
         'medium',
         'campaign',
         'term',
+        'gclid',
+        'gbraid',
+        'wbraid',
         'device_type',
         'last_field',
         'validation_reason',
@@ -1195,6 +1536,9 @@ async function loadPrivateMarketingData(
         'medium',
         'campaign',
         'term',
+        'gclid',
+        'gbraid',
+        'wbraid',
         'page_path',
         'fk_clientes',
         'identified_at',
@@ -1230,6 +1574,31 @@ async function loadPrivateMarketingData(
       ascending: false,
       errorLabel: 'Não foi possível carregar as comissões de Crescimento',
     }),
+    loadTimeBoundRows(serviceClient, {
+      table: 'Marketing_Offline_Conversions',
+      select: [
+        'id_marketing_offline_conversions',
+        'fk_clientes',
+        'conversion_kind',
+        'click_id_type',
+        'conversion_date_time',
+        'status',
+        'attempts',
+        'next_attempt_at',
+        'uploaded_at',
+        'google_error_code',
+        'google_error_message',
+        'created_at',
+        'updated_at',
+      ].join(','),
+      targetUserId,
+      timestampColumn: 'conversion_date_time',
+      idColumn: 'id_marketing_offline_conversions',
+      startIso: previousStartIso,
+      endExclusiveIso: currentEndExclusiveIso,
+      ascending: false,
+      errorLabel: 'Não foi possível carregar as conversões offline',
+    }),
     serviceClient
       .schema('RetificaPremium')
       .from('Marketing_Snapshots')
@@ -1253,6 +1622,7 @@ async function loadPrivateMarketingData(
     leads,
     attributions,
     commissions,
+    offlineConversions,
     snapshots: (snapshotsResult.data ?? []) as unknown as JsonRecord[],
     clients: (clientsResult.data ?? []) as unknown as JsonRecord[],
   };
@@ -1302,6 +1672,7 @@ async function loadBasicMarketingData(
     leads,
     attributions: [] as JsonRecord[],
     commissions: [] as JsonRecord[],
+    offlineConversions: [] as JsonRecord[],
     snapshots: [] as JsonRecord[],
     clients: [] as JsonRecord[],
   };
@@ -1464,6 +1835,120 @@ function aggregateBusinessData(
     previous: totals(previousAttributions, previousCommissions),
     attributions: currentAttributions.slice(0, 50),
     commissions: currentCommissions.slice(0, 50),
+  };
+}
+
+function getClickIdType(item: JsonRecord) {
+  if (asString(item.gclid, 220)) return 'gclid';
+  if (asString(item.gbraid, 220)) return 'gbraid';
+  if (asString(item.wbraid, 220)) return 'wbraid';
+  return null;
+}
+
+function withoutGoogleClickIds(item: JsonRecord) {
+  const { gclid: _gclid, gbraid: _gbraid, wbraid: _wbraid, ...safe } = item;
+  return {
+    ...safe,
+    google_click_id_type: getClickIdType(item),
+  };
+}
+
+function buildPaidVisitors(events: JsonRecord[], leads: JsonRecord[]) {
+  const leadByCode = new Map(
+    leads
+      .filter((lead) => asString(lead.lead_code, 40))
+      .map((lead) => [String(lead.lead_code), lead]),
+  );
+  const visitors = new Map<string, {
+    visitorId: string;
+    firstSeenAt: string;
+    lastSeenAt: string;
+    landingPage: string;
+    lastPage: string;
+    source: string;
+    medium: string;
+    campaign: string | null;
+    clickIdType: string | null;
+    eventCount: number;
+    actionCount: number;
+    leadCode: string | null;
+    leadName: string | null;
+    leadContact: string | null;
+    convertedClient: boolean;
+    clientId: string | null;
+  }>();
+
+  events
+    .filter((event) => {
+      const source = String(event.source ?? '').toLowerCase();
+      const medium = String(event.medium ?? '').toLowerCase();
+      return Boolean(getClickIdType(event)) || (source === 'google' && ['cpc', 'ppc', 'paid'].includes(medium));
+    })
+    .forEach((event) => {
+      const rawKey = asString(event.session_id, 160)
+        || asString(event.anonymous_id, 160)
+        || asString(event.lead_code, 40)
+        || String(event.id_marketing_site_eventos ?? '');
+      if (!rawKey) return;
+      const leadCode = asString(event.lead_code, 40);
+      const lead = leadCode ? leadByCode.get(leadCode) : undefined;
+      const occurredAt = String(event.occurred_at ?? '');
+      const existing = visitors.get(rawKey);
+      const isAction = ['whatsapp_click', 'phone_click', 'form_submit'].includes(String(event.event_type));
+      if (!existing) {
+        visitors.set(rawKey, {
+          visitorId: rawKey.slice(-12),
+          firstSeenAt: occurredAt,
+          lastSeenAt: occurredAt,
+          landingPage: String(event.page_path || '/'),
+          lastPage: String(event.page_path || '/'),
+          source: String(event.source || 'google'),
+          medium: String(event.medium || 'cpc'),
+          campaign: asString(event.campaign, 180) || null,
+          clickIdType: getClickIdType(event),
+          eventCount: 1,
+          actionCount: isAction ? 1 : 0,
+          leadCode: leadCode || null,
+          leadName: lead ? asString(lead.nome, 160) || null : null,
+          leadContact: lead
+            ? asString(lead.telefone, 120) || asString(lead.email, 180) || null
+            : null,
+          convertedClient: Boolean(lead?.fk_clientes),
+          clientId: lead?.fk_clientes ? String(lead.fk_clientes) : null,
+        });
+        return;
+      }
+
+      existing.lastSeenAt = occurredAt > existing.lastSeenAt ? occurredAt : existing.lastSeenAt;
+      existing.lastPage = String(event.page_path || existing.lastPage);
+      existing.eventCount += 1;
+      existing.actionCount += isAction ? 1 : 0;
+      existing.clickIdType = existing.clickIdType ?? getClickIdType(event);
+      existing.leadCode = existing.leadCode ?? leadCode ?? null;
+      if (lead) {
+        existing.leadName = asString(lead.nome, 160) || existing.leadName;
+        existing.leadContact = asString(lead.telefone, 120)
+          || asString(lead.email, 180)
+          || existing.leadContact;
+        existing.convertedClient = Boolean(lead.fk_clientes);
+        existing.clientId = lead.fk_clientes ? String(lead.fk_clientes) : existing.clientId;
+      }
+    });
+
+  return Array.from(visitors.values())
+    .sort((left, right) => right.lastSeenAt.localeCompare(left.lastSeenAt))
+    .slice(0, 200);
+}
+
+function aggregateOfflineConversions(items: JsonRecord[]) {
+  const counts = { total: items.length, pending: 0, processing: 0, uploaded: 0, retry: 0, failed: 0 };
+  items.forEach((item) => {
+    const status = String(item.status ?? '') as keyof typeof counts;
+    if (status in counts && status !== 'total') counts[status] += 1;
+  });
+  return {
+    ...counts,
+    items: items.slice(0, 100),
   };
 }
 
@@ -1636,6 +2121,10 @@ async function handleRequest(request: Request) {
     ]);
     const internal = aggregateInternalData(periodDays, privateData.events, privateData.leads);
     const business = aggregateBusinessData(periodDays, privateData.attributions, privateData.commissions);
+    const paidVisitors = hasPrivateAccess
+      ? buildPaidVisitors(internal.currentEvents, internal.currentLeads)
+      : [];
+    const offlineConversions = aggregateOfflineConversions(privateData.offlineConversions);
     const internalActionsCanCoverComparison = Boolean(
       config.hasSiteKey
       && config.pilotStartDate
@@ -1931,6 +2420,14 @@ async function handleRequest(request: Request) {
             previous: googleAds?.previous ?? emptyGoogleAdsTotals,
             items: [],
             daily: googleAds?.daily ?? [],
+            devices: [],
+            keywords: [],
+            searchTerms: [],
+            landingPages: [],
+            schedule: [],
+            conversionActions: [],
+            paidVisitors: [],
+            offlineConversions: null,
             financialAvailable: Boolean(googleAds),
             statusMessage: googleAdsStatusMessage,
           },
@@ -1984,7 +2481,7 @@ async function handleRequest(request: Request) {
           devices: ga4?.devices ?? [],
           daily: ga4?.daily ?? internal.daily,
           eventCounts: ga4?.eventCounts ?? [],
-          recentEvents: [...internal.currentEvents].reverse().slice(0, 50),
+          recentEvents: [...internal.currentEvents].reverse().slice(0, 50).map(withoutGoogleClickIds),
         },
         forms: {
           current: {
@@ -2007,8 +2504,8 @@ async function handleRequest(request: Request) {
           abandonment: internal.formAbandonment,
         },
         leads: {
-          items: internal.currentLeads.slice(0, 100),
-          unlinked: unlinkedLeads.slice(0, 100),
+          items: internal.currentLeads.slice(0, 100).map(withoutGoogleClickIds),
+          unlinked: unlinkedLeads.slice(0, 100).map(withoutGoogleClickIds),
           total: internal.currentLeads.length,
           unlinkedTotal: unlinkedLeads.length,
           availableClients: privateData.clients,
@@ -2020,6 +2517,14 @@ async function handleRequest(request: Request) {
           previous: googleAds?.previous ?? emptyGoogleAdsTotals,
           items: googleAds?.items ?? [],
           daily: googleAds?.daily ?? [],
+          devices: googleAds?.devices ?? [],
+          keywords: googleAds?.keywords ?? [],
+          searchTerms: googleAds?.searchTerms ?? [],
+          landingPages: googleAds?.landingPages ?? [],
+          schedule: googleAds?.schedule ?? [],
+          conversionActions: googleAds?.conversionActions ?? [],
+          paidVisitors,
+          offlineConversions,
           financialAvailable: Boolean(googleAds),
           statusMessage: googleAdsStatusMessage,
         },

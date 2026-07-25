@@ -110,6 +110,7 @@ export interface MarketingEventItem {
   duplicate_count?: number;
   deduplicated?: boolean;
   alert_status?: string;
+  google_click_id_type?: 'gclid' | 'gbraid' | 'wbraid' | null;
 }
 
 export interface MarketingLeadItem {
@@ -129,6 +130,7 @@ export interface MarketingLeadItem {
   fk_clientes?: string | null;
   identified_at?: string | null;
   identification_method?: string | null;
+  google_click_id_type?: 'gclid' | 'gbraid' | 'wbraid' | null;
 }
 
 export interface MarketingClientOption {
@@ -156,15 +158,23 @@ export interface MarketingAdsTotals {
   spend: number;
   impressions?: number;
   clicks: number;
+  interactions?: number;
   leads: number;
   conversions?: number;
+  allConversions?: number;
   cpl: number;
   ctr?: number;
   averageCpc?: number;
   conversionRate?: number;
   conversionValue?: number;
+  allConversionValue?: number;
+  valuePerConversion?: number;
   roas?: number;
+  invalidClicks?: number;
+  invalidClickRate?: number;
   searchImpressionShare?: number;
+  searchTopImpressionShare?: number;
+  searchAbsoluteTopImpressionShare?: number;
   searchBudgetLostImpressionShare?: number;
   searchRankLostImpressionShare?: number;
 }
@@ -174,10 +184,95 @@ export interface MarketingAdsCampaignMetric extends MarketingAdsTotals {
   name: string;
   status: string;
   channelType: string;
+  dailyBudget?: number;
+  optimizationScore?: number;
 }
 
 export interface MarketingAdsDailyMetric extends MarketingAdsTotals {
   date: string;
+}
+
+export interface MarketingAdsDeviceMetric extends MarketingAdsTotals {
+  device: string;
+}
+
+export interface MarketingAdsKeywordMetric extends MarketingAdsTotals {
+  campaignId: string;
+  campaign: string;
+  adGroupId: string;
+  adGroup: string;
+  criterionId: string;
+  keyword: string;
+  matchType: string;
+  status: string;
+  qualityScore: number;
+}
+
+export interface MarketingAdsSearchTermMetric extends MarketingAdsTotals {
+  campaign: string;
+  adGroup: string;
+  searchTerm: string;
+  status: string;
+  keyword: string;
+}
+
+export interface MarketingAdsLandingPageMetric extends MarketingAdsTotals {
+  url: string;
+}
+
+export interface MarketingAdsScheduleMetric extends MarketingAdsTotals {
+  dayOfWeek: string;
+  hour: number;
+}
+
+export interface MarketingAdsConversionActionMetric {
+  id: string;
+  name: string;
+  category: string;
+  status: string;
+  conversions: number;
+  allConversions: number;
+  conversionValue: number;
+  costPerConversion: number;
+}
+
+export interface MarketingPaidVisitor {
+  visitorId: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  landingPage: string;
+  lastPage: string;
+  source: string;
+  medium: string;
+  campaign: string | null;
+  clickIdType: string | null;
+  eventCount: number;
+  actionCount: number;
+  leadCode: string | null;
+  leadName: string | null;
+  leadContact: string | null;
+  convertedClient: boolean;
+  clientId: string | null;
+}
+
+export interface MarketingOfflineConversionSummary {
+  total: number;
+  pending: number;
+  processing: number;
+  uploaded: number;
+  retry: number;
+  failed: number;
+  items: Array<{
+    id_marketing_offline_conversions: string;
+    fk_clientes: string;
+    click_id_type: string;
+    conversion_date_time: string;
+    status: string;
+    attempts: number;
+    uploaded_at?: string | null;
+    google_error_code?: string | null;
+    google_error_message?: string | null;
+  }>;
 }
 
 export interface MarketingResumo {
@@ -259,6 +354,14 @@ export interface MarketingResumo {
     previous?: MarketingAdsTotals;
     items: MarketingAdsCampaignMetric[];
     daily: MarketingAdsDailyMetric[];
+    devices?: MarketingAdsDeviceMetric[];
+    keywords?: MarketingAdsKeywordMetric[];
+    searchTerms?: MarketingAdsSearchTermMetric[];
+    landingPages?: MarketingAdsLandingPageMetric[];
+    schedule?: MarketingAdsScheduleMetric[];
+    conversionActions?: MarketingAdsConversionActionMetric[];
+    paidVisitors?: MarketingPaidVisitor[];
+    offlineConversions?: MarketingOfflineConversionSummary | null;
     financialAvailable: boolean;
     statusMessage?: string;
   };

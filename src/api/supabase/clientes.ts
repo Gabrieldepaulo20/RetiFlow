@@ -28,6 +28,7 @@ export interface NovoClientePayload {
   status?: boolean;
   observacao?: string;
   nome_fantasia?: string;
+  marketing_lead_code?: string;
   endereco?: {
     cep: string; uf: string; estado: string; cidade: string;
     bairro: string; rua: string; numero: string;
@@ -64,6 +65,7 @@ export function clientToNovoClientePayload(client: Omit<Client, 'id' | 'createdA
     status:        client.isActive,
     observacao:    client.notes || undefined,
     nome_fantasia: client.tradeName || undefined,
+    marketing_lead_code: client.marketingLeadCode || undefined,
   };
 
   if (client.cep || client.address || client.city) {
@@ -102,13 +104,29 @@ export async function getClienteDetalhes(idCliente: string) {
 }
 
 export async function novoCliente(payload: NovoClientePayload) {
-  const env = await callRPC('novo_cliente', { p_payload: payload });
-  return env.id_cliente as string;
+  const { marketing_lead_code: marketingLeadCode, ...clientPayload } = payload;
+  const env = await callRPC('novo_cliente', { p_payload: clientPayload });
+  const clientId = env.id_cliente as string;
+  if (marketingLeadCode) {
+    await callRPC('attribute_marketing_client_by_code', {
+      p_client_id: clientId,
+      p_lead_code: marketingLeadCode,
+    });
+  }
+  return clientId;
 }
 
 export async function salvarClienteCompleto(payload: NovoClientePayload & { id_clientes?: string }) {
-  const env = await callRPC('salvar_cliente_completo', { p_payload: payload });
-  return env.id_cliente as string;
+  const { marketing_lead_code: marketingLeadCode, ...clientPayload } = payload;
+  const env = await callRPC('salvar_cliente_completo', { p_payload: clientPayload });
+  const clientId = env.id_cliente as string;
+  if (marketingLeadCode) {
+    await callRPC('attribute_marketing_client_by_code', {
+      p_client_id: clientId,
+      p_lead_code: marketingLeadCode,
+    });
+  }
+  return clientId;
 }
 
 export async function updateCliente(

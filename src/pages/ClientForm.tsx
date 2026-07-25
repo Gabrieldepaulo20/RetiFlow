@@ -48,6 +48,7 @@ const INITIAL_FORM: Omit<Client, 'id' | 'createdAt'> = {
   state: '',
   notes: '',
   isActive: true,
+  marketingLeadCode: '',
 };
 
 function SectionCard({
@@ -252,6 +253,14 @@ export default function ClientForm() {
     }
     if (payload.docType === 'CNPJ' && !validarCNPJ(rawDoc)) {
       toast({ title: 'CNPJ inválido', description: 'Verifique os dígitos do CNPJ informado.', variant: 'destructive' });
+      return;
+    }
+    if (payload.marketingLeadCode && !/^RP-\d{8}-[A-Z0-9]{8}$/.test(payload.marketingLeadCode)) {
+      toast({
+        title: 'Código do contato inválido',
+        description: 'Use o código completo recebido no WhatsApp, no formato RP-AAAAMMDD-XXXXXXXX.',
+        variant: 'destructive',
+      });
       return;
     }
 
@@ -482,6 +491,19 @@ export default function ClientForm() {
               title="Observacoes"
               description="Anotacoes curtas e objetivas para atendimento, faturamento ou logistica."
             >
+              <FieldBlock label="Código do contato do site" meta="Opcional · WhatsApp">
+                <Input
+                  value={form.marketingLeadCode || ''}
+                  onChange={(event) => setField('marketingLeadCode', event.target.value.toUpperCase())}
+                  placeholder="RP-AAAAMMDD-XXXXXXXX"
+                  maxLength={20}
+                  autoComplete="off"
+                />
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Cole o código que veio na mensagem do WhatsApp. Formulários com telefone ou e-mail
+                  são reconhecidos automaticamente.
+                </p>
+              </FieldBlock>
               <FieldBlock label="Observacoes" meta={`${form.notes.length}/${CUSTOMER_FIELD_LIMITS.notes}`}>
                 <Textarea
                   value={form.notes}

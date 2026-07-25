@@ -1514,6 +1514,339 @@ function ResultsTab({ resumo }: { resumo: MarketingResumo }) {
   );
 }
 
+const googleAdsDeviceLabels: Record<string, string> = {
+  MOBILE: 'Celular',
+  DESKTOP: 'Computador',
+  TABLET: 'Tablet',
+  CONNECTED_TV: 'TV conectada',
+  OTHER: 'Outro',
+  UNKNOWN: 'Não informado',
+};
+
+const googleAdsDayLabels: Record<string, string> = {
+  MONDAY: 'Segunda',
+  TUESDAY: 'Terça',
+  WEDNESDAY: 'Quarta',
+  THURSDAY: 'Quinta',
+  FRIDAY: 'Sexta',
+  SATURDAY: 'Sábado',
+  SUNDAY: 'Domingo',
+};
+
+function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
+  const ads = resumo.campaigns;
+  const current = ads.current;
+  const offline = ads.offlineConversions;
+  const devices = ads.devices ?? [];
+  const keywords = ads.keywords ?? [];
+  const searchTerms = ads.searchTerms ?? [];
+  const landingPages = ads.landingPages ?? [];
+  const schedule = ads.schedule ?? [];
+  const conversionActions = ads.conversionActions ?? [];
+  const paidVisitors = ads.paidVisitors ?? [];
+
+  if (!ads.financialAvailable) {
+    return (
+      <SectionEmptyState
+        icon={Target}
+        title="Google Ads ainda sem dados disponíveis"
+        description={ads.statusMessage ?? 'A integração oficial está aguardando uma conta válida.'}
+        className="min-h-[320px]"
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <Metric label="Investimento" value={formatCurrency(current.spend)} detail="Custo oficial no período" icon={BadgeDollarSign} current={current.spend} previous={ads.previous?.spend} accent="navy" />
+        <Metric label="Impressões" value={formatNumber(current.impressions)} detail="Exibições dos anúncios" icon={Eye} current={current.impressions} previous={ads.previous?.impressions} accent="violet" />
+        <Metric label="Cliques" value={formatNumber(current.clicks)} detail={`${formatPercent(current.ctr)} de CTR`} icon={MousePointerClick} current={current.clicks} previous={ads.previous?.clicks} accent="teal" />
+        <Metric label="CPC médio" value={formatCurrency(current.averageCpc)} detail="Custo médio por clique" icon={Gauge} accent="gold" />
+        <Metric label="Conversões primárias" value={formatDecimal(current.conversions)} detail={`${formatPercent(current.conversionRate)} dos cliques`} icon={Target} current={current.conversions} previous={ads.previous?.conversions} accent="violet" />
+        <Metric label="Custo por conversão" value={formatCurrency(current.cpl)} detail="CPA das ações primárias" icon={BadgeDollarSign} accent="rose" />
+        <Metric label="Valor de conversão" value={formatCurrency(current.conversionValue)} detail={`${formatCurrency(current.valuePerConversion)} por conversão`} icon={Sparkles} accent="teal" />
+        <Metric label="ROAS" value={`${formatDecimal(current.roas)}x`} detail="Valor de conversão ÷ investimento" icon={ArrowUpRight} accent="gold" />
+        <Metric label="Parcela de impressões" value={formatPercent(current.searchImpressionShare)} detail="Cobertura possível na Pesquisa" icon={Gauge} accent="navy" />
+        <Metric label="Perdida por orçamento" value={formatPercent(current.searchBudgetLostImpressionShare)} detail="Oportunidade limitada pelo orçamento" icon={AlertTriangle} accent="rose" />
+        <Metric label="Perdida por posição" value={formatPercent(current.searchRankLostImpressionShare)} detail="Impacto de lance e qualidade" icon={Search} accent="violet" />
+        <Metric label="Topo absoluto" value={formatPercent(current.searchAbsoluteTopImpressionShare)} detail={`${formatPercent(current.searchTopImpressionShare)} no topo da página`} icon={ArrowUpRight} accent="teal" />
+      </div>
+
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.7fr)]">
+        <Card className="min-w-0 rounded-2xl border-border/70 shadow-sm">
+          <CardContent className="min-w-0 p-4 sm:p-6">
+            <PanelHeading
+              eyebrow="Evolução diária"
+              title="Investimento, cliques e conversões"
+              description="Dados oficiais do Google Ads, com cache de até 10 minutos."
+            />
+            <div className="mt-5 h-[300px] min-w-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={ads.daily}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="date" tickFormatter={(value) => formatShortDate(String(value), resumo.periodDays)} tick={{ fontSize: 11 }} />
+                  <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
+                  <RechartsTooltip
+                    labelFormatter={(value) => formatShortDate(String(value), resumo.periodDays)}
+                    formatter={(value: number, name: string) => [
+                      name === 'Investimento' ? formatCurrency(value) : formatDecimal(value),
+                      name,
+                    ]}
+                  />
+                  <Legend />
+                  <Bar yAxisId="left" dataKey="spend" name="Investimento" fill="#0f766e" radius={[4, 4, 0, 0]} />
+                  <Line yAxisId="right" type="monotone" dataKey="clicks" name="Cliques" stroke="#7c3aed" strokeWidth={2} dot={false} />
+                  <Line yAxisId="right" type="monotone" dataKey="conversions" name="Conversões" stroke="#d97706" strokeWidth={2} dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-2xl border-border/70 bg-slate-950 text-white shadow-sm">
+          <CardContent className="p-5 sm:p-6">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300">Conversão de cliente</p>
+            <h3 className="mt-1 text-xl font-bold">Retiflow → Google Ads</h3>
+            <p className="mt-2 text-sm leading-relaxed text-slate-400">
+              Cada cliente atribuído a um clique do anúncio entra numa fila privada e idempotente.
+            </p>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              {[
+                ['Total', offline?.total ?? 0],
+                ['Enviadas', offline?.uploaded ?? 0],
+                ['Na fila', (offline?.pending ?? 0) + (offline?.processing ?? 0)],
+                ['Nova tentativa', offline?.retry ?? 0],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                  <p className="text-[10px] uppercase tracking-wider text-slate-500">{label}</p>
+                  <p className="mt-2 text-xl font-bold text-white">{formatNumber(Number(value))}</p>
+                </div>
+              ))}
+            </div>
+            <div className={cn(
+              'mt-3 rounded-xl border p-3 text-xs leading-relaxed',
+              offline?.failed
+                ? 'border-rose-300/30 bg-rose-300/10 text-rose-100'
+                : 'border-emerald-300/20 bg-emerald-300/10 text-emerald-100',
+            )}>
+              {offline?.failed
+                ? `${formatNumber(offline.failed)} envio(s) requerem revisão.`
+                : 'Nenhuma conversão com falha definitiva.'}
+            </div>
+            <p className="mt-4 text-xs leading-relaxed text-slate-400">
+              Telefone/e-mail fazem o vínculo automático. Conversas só pelo WhatsApp usam o código RP informado no cadastro.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="min-w-0 rounded-2xl border-border/70 shadow-sm">
+        <CardContent className="min-w-0 p-4 sm:p-6">
+          <PanelHeading
+            eyebrow="Jornada paga"
+            title="Pessoas que entraram por anúncio"
+            description="Sessões com GCLID/GBRAID/WBRAID ou origem Google CPC, sem expor o identificador bruto do clique."
+          />
+          <div className="mt-5 w-full max-w-full overflow-auto rounded-xl border" role="region" aria-label="Visitantes vindos de anúncios" tabIndex={0}>
+            <table className="w-full min-w-[980px] text-left text-xs">
+              <thead className="border-b bg-muted/70 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-3 font-semibold">Última visita</th>
+                  <th className="px-3 py-3 font-semibold">Pessoa / sessão</th>
+                  <th className="px-3 py-3 font-semibold">Campanha</th>
+                  <th className="px-3 py-3 font-semibold">Entrada</th>
+                  <th className="px-3 py-3 text-right font-semibold">Eventos</th>
+                  <th className="px-3 py-3 font-semibold">Situação</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {paidVisitors.map((visitor) => (
+                  <tr key={`${visitor.visitorId}-${visitor.firstSeenAt}`}>
+                    <td className="px-3 py-3 text-muted-foreground">{formatDateTime(visitor.lastSeenAt)}</td>
+                    <td className="px-3 py-3">
+                      <p className="font-semibold text-foreground">{visitor.leadName ?? `Sessão • ${visitor.visitorId}`}</p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">{visitor.leadContact ?? visitor.leadCode ?? visitor.clickIdType?.toUpperCase() ?? 'Google CPC'}</p>
+                    </td>
+                    <td className="px-3 py-3">
+                      <p className="font-medium text-foreground">{visitor.campaign ?? 'Campanha não informada'}</p>
+                      <p className="text-[11px] text-muted-foreground">{visitor.source} / {visitor.medium}</p>
+                    </td>
+                    <td className="max-w-[280px] truncate px-3 py-3 text-muted-foreground" title={visitor.landingPage}>{visitor.landingPage}</td>
+                    <td className="px-3 py-3 text-right">
+                      <p className="font-semibold text-foreground">{formatNumber(visitor.eventCount)}</p>
+                      <p className="text-[11px] text-muted-foreground">{formatNumber(visitor.actionCount)} ações</p>
+                    </td>
+                    <td className="px-3 py-3">
+                      <Badge variant="outline" className={visitor.convertedClient
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : visitor.actionCount
+                          ? 'border-amber-200 bg-amber-50 text-amber-700'
+                          : 'border-slate-200 bg-slate-50 text-slate-600'}>
+                        {visitor.convertedClient ? 'Cliente cadastrado' : visitor.actionCount ? 'Demonstrou interesse' : 'Somente visitou'}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {paidVisitors.length === 0 ? (
+              <div className="p-8 text-center text-sm text-muted-foreground">
+                Nenhuma visita paga registrada no período. A conta está pronta para começar a receber os acessos dos anúncios.
+              </div>
+            ) : null}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Tabs defaultValue="campanhas" className="space-y-4">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-muted/80 p-1 sm:grid-cols-4 xl:grid-cols-7">
+          <TabsTrigger value="campanhas">Campanhas</TabsTrigger>
+          <TabsTrigger value="dispositivos">Dispositivos</TabsTrigger>
+          <TabsTrigger value="palavras">Palavras-chave</TabsTrigger>
+          <TabsTrigger value="pesquisas">Pesquisas</TabsTrigger>
+          <TabsTrigger value="paginas">Páginas</TabsTrigger>
+          <TabsTrigger value="horarios">Horários</TabsTrigger>
+          <TabsTrigger value="conversoes">Conversões</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="campanhas">
+          <Card className="rounded-2xl border-border/70 shadow-sm">
+            <CardContent className="p-4 sm:p-6">
+              <PanelHeading eyebrow="Estrutura" title="Desempenho por campanha" />
+              <div className="mt-5 overflow-auto rounded-xl border">
+                <table className="w-full min-w-[980px] text-left text-xs">
+                  <thead className="border-b bg-muted/70 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-3">Campanha</th><th className="px-3 py-3">Status</th>
+                      <th className="px-3 py-3 text-right">Orçamento/dia</th><th className="px-3 py-3 text-right">Otimização</th>
+                      <th className="px-3 py-3 text-right">Custo</th><th className="px-3 py-3 text-right">Cliques</th>
+                      <th className="px-3 py-3 text-right">CTR</th><th className="px-3 py-3 text-right">Conversões</th>
+                      <th className="px-3 py-3 text-right">CPA</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {ads.items.map((item) => (
+                      <tr key={item.id}>
+                        <td className="px-3 py-3"><p className="font-semibold">{item.name}</p><p className="text-[11px] text-muted-foreground">{item.channelType}</p></td>
+                        <td className="px-3 py-3">{item.status}</td>
+                        <td className="px-3 py-3 text-right">{formatCurrency(item.dailyBudget)}</td>
+                        <td className="px-3 py-3 text-right">{formatPercent(item.optimizationScore)}</td>
+                        <td className="px-3 py-3 text-right">{formatCurrency(item.spend)}</td>
+                        <td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td>
+                        <td className="px-3 py-3 text-right">{formatPercent(item.ctr)}</td>
+                        <td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td>
+                        <td className="px-3 py-3 text-right font-semibold">{formatCurrency(item.cpl)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {ads.items.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">Nenhuma campanha veiculou neste período.</div> : null}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="dispositivos">
+          <Card className="rounded-2xl border-border/70 shadow-sm"><CardContent className="p-4 sm:p-6">
+            <PanelHeading eyebrow="Segmentação" title="Resultados por dispositivo" />
+            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {devices.map((item) => (
+                <div key={item.device} className="rounded-xl border bg-card p-4">
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{googleAdsDeviceLabels[item.device] ?? item.device}</p>
+                  <p className="mt-3 text-2xl font-bold">{formatNumber(item.clicks)} cliques</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{formatCurrency(item.spend)} · {formatDecimal(item.conversions)} conversões · CPA {formatCurrency(item.cpl)}</p>
+                </div>
+              ))}
+              {devices.length === 0 ? <p className="text-sm text-muted-foreground">Sem dados por dispositivo.</p> : null}
+            </div>
+          </CardContent></Card>
+        </TabsContent>
+
+        <TabsContent value="palavras">
+          <Card className="rounded-2xl border-border/70 shadow-sm"><CardContent className="p-4 sm:p-6">
+            <PanelHeading eyebrow="Intenção comprada" title="Palavras-chave" description="Use o índice de qualidade, CTR e CPA para ajustar lances e anúncios." />
+            <div className="mt-5 overflow-auto rounded-xl border">
+              <table className="w-full min-w-[900px] text-left text-xs"><thead className="border-b bg-muted/70"><tr>
+                <th className="px-3 py-3">Palavra-chave</th><th className="px-3 py-3">Grupo</th><th className="px-3 py-3">Correspondência</th>
+                <th className="px-3 py-3 text-right">Qualidade</th><th className="px-3 py-3 text-right">Impressões</th>
+                <th className="px-3 py-3 text-right">Cliques</th><th className="px-3 py-3 text-right">Custo</th>
+                <th className="px-3 py-3 text-right">Conversões</th><th className="px-3 py-3 text-right">CPA</th>
+              </tr></thead><tbody className="divide-y">
+                {keywords.map((item) => <tr key={`${item.campaignId}-${item.adGroupId}-${item.criterionId}`}>
+                  <td className="px-3 py-3"><p className="font-semibold">{item.keyword}</p><p className="text-[11px] text-muted-foreground">{item.campaign}</p></td>
+                  <td className="px-3 py-3">{item.adGroup}</td><td className="px-3 py-3">{item.matchType}</td>
+                  <td className="px-3 py-3 text-right">{item.qualityScore || '—'}</td><td className="px-3 py-3 text-right">{formatNumber(item.impressions)}</td>
+                  <td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td><td className="px-3 py-3 text-right">{formatCurrency(item.spend)}</td>
+                  <td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td><td className="px-3 py-3 text-right">{formatCurrency(item.cpl)}</td>
+                </tr>)}
+              </tbody></table>
+              {keywords.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">Sem palavras-chave no período.</div> : null}
+            </div>
+          </CardContent></Card>
+        </TabsContent>
+
+        <TabsContent value="pesquisas">
+          <Card className="rounded-2xl border-border/70 shadow-sm"><CardContent className="p-4 sm:p-6">
+            <PanelHeading eyebrow="Demanda real" title="Termos pesquisados" description="Mostra o que a pessoa digitou antes de clicar; essencial para negativas e novas palavras." />
+            <div className="mt-5 overflow-auto rounded-xl border"><table className="w-full min-w-[850px] text-left text-xs">
+              <thead className="border-b bg-muted/70"><tr><th className="px-3 py-3">Pesquisa</th><th className="px-3 py-3">Palavra acionada</th><th className="px-3 py-3">Campanha / grupo</th><th className="px-3 py-3 text-right">Cliques</th><th className="px-3 py-3 text-right">Custo</th><th className="px-3 py-3 text-right">Conversões</th></tr></thead>
+              <tbody className="divide-y">{searchTerms.map((item, index) => <tr key={`${item.searchTerm}-${index}`}>
+                <td className="px-3 py-3 font-semibold">{item.searchTerm}</td><td className="px-3 py-3">{item.keyword || '—'}</td>
+                <td className="px-3 py-3"><p>{item.campaign}</p><p className="text-[11px] text-muted-foreground">{item.adGroup}</p></td>
+                <td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td><td className="px-3 py-3 text-right">{formatCurrency(item.spend)}</td><td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td>
+              </tr>)}</tbody>
+            </table>{searchTerms.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">Sem termos pesquisados no período.</div> : null}</div>
+          </CardContent></Card>
+        </TabsContent>
+
+        <TabsContent value="paginas">
+          <Card className="rounded-2xl border-border/70 shadow-sm"><CardContent className="p-4 sm:p-6">
+            <PanelHeading eyebrow="Experiência pós-clique" title="Páginas de destino" />
+            <div className="mt-5 overflow-auto rounded-xl border"><table className="w-full min-w-[760px] text-left text-xs">
+              <thead className="border-b bg-muted/70"><tr><th className="px-3 py-3">URL</th><th className="px-3 py-3 text-right">Cliques</th><th className="px-3 py-3 text-right">Custo</th><th className="px-3 py-3 text-right">Conversões</th><th className="px-3 py-3 text-right">Taxa</th><th className="px-3 py-3 text-right">CPA</th></tr></thead>
+              <tbody className="divide-y">{landingPages.map((item) => <tr key={item.url}>
+                <td className="max-w-[430px] truncate px-3 py-3 font-medium" title={item.url}>{item.url}</td><td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td>
+                <td className="px-3 py-3 text-right">{formatCurrency(item.spend)}</td><td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td>
+                <td className="px-3 py-3 text-right">{formatPercent(item.conversionRate)}</td><td className="px-3 py-3 text-right">{formatCurrency(item.cpl)}</td>
+              </tr>)}</tbody>
+            </table>{landingPages.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">Sem páginas de destino no período.</div> : null}</div>
+          </CardContent></Card>
+        </TabsContent>
+
+        <TabsContent value="horarios">
+          <Card className="rounded-2xl border-border/70 shadow-sm"><CardContent className="p-4 sm:p-6">
+            <PanelHeading eyebrow="Agenda" title="Desempenho por dia e hora" description="Ajuda a concentrar o orçamento nos horários que trazem conversões." />
+            <div className="mt-5 overflow-auto rounded-xl border"><table className="w-full min-w-[700px] text-left text-xs">
+              <thead className="border-b bg-muted/70"><tr><th className="px-3 py-3">Dia</th><th className="px-3 py-3">Hora</th><th className="px-3 py-3 text-right">Impressões</th><th className="px-3 py-3 text-right">Cliques</th><th className="px-3 py-3 text-right">Custo</th><th className="px-3 py-3 text-right">Conversões</th><th className="px-3 py-3 text-right">CPA</th></tr></thead>
+              <tbody className="divide-y">{schedule.map((item, index) => <tr key={`${item.dayOfWeek}-${item.hour}-${index}`}>
+                <td className="px-3 py-3 font-semibold">{googleAdsDayLabels[item.dayOfWeek] ?? item.dayOfWeek}</td><td className="px-3 py-3">{String(item.hour).padStart(2, '0')}:00</td>
+                <td className="px-3 py-3 text-right">{formatNumber(item.impressions)}</td><td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td>
+                <td className="px-3 py-3 text-right">{formatCurrency(item.spend)}</td><td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td><td className="px-3 py-3 text-right">{formatCurrency(item.cpl)}</td>
+              </tr>)}</tbody>
+            </table>{schedule.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">Sem distribuição por horário no período.</div> : null}</div>
+          </CardContent></Card>
+        </TabsContent>
+
+        <TabsContent value="conversoes">
+          <Card className="rounded-2xl border-border/70 shadow-sm"><CardContent className="p-4 sm:p-6">
+            <PanelHeading eyebrow="Mensuração" title="Ações de conversão do Google Ads" description="Compare contatos do site, ligações, WhatsApp e cliente cadastrado no Retiflow." />
+            <div className="mt-5 overflow-auto rounded-xl border"><table className="w-full min-w-[760px] text-left text-xs">
+              <thead className="border-b bg-muted/70"><tr><th className="px-3 py-3">Ação</th><th className="px-3 py-3">Categoria</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Conversões</th><th className="px-3 py-3 text-right">Todas</th><th className="px-3 py-3 text-right">Valor</th><th className="px-3 py-3 text-right">CPA</th></tr></thead>
+              <tbody className="divide-y">{conversionActions.map((item) => <tr key={item.id}>
+                <td className="px-3 py-3 font-semibold">{item.name}</td><td className="px-3 py-3">{item.category}</td><td className="px-3 py-3">{item.status}</td>
+                <td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td><td className="px-3 py-3 text-right">{formatDecimal(item.allConversions)}</td>
+                <td className="px-3 py-3 text-right">{formatCurrency(item.conversionValue)}</td><td className="px-3 py-3 text-right">{formatCurrency(item.costPerConversion)}</td>
+              </tr>)}</tbody>
+            </table>{conversionActions.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">Nenhuma ação de conversão registrou dados no período.</div> : null}</div>
+          </CardContent></Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
 function QualityTab({ resumo }: { resumo: MarketingResumo }) {
   const quality = resumo.quality;
   const [eventFilter, setEventFilter] = useState('todos');
@@ -1900,9 +2233,10 @@ export default function MarketingGrowth() {
           hasPrivateAccess ? (
             <Tabs defaultValue="visao" className="space-y-5">
               <div className="pb-1">
-                <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-muted/80 p-1 sm:grid-cols-3 xl:grid-cols-6">
+                <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-muted/80 p-1 sm:grid-cols-4 xl:grid-cols-7">
                   <TabsTrigger value="visao">Visão geral</TabsTrigger>
                   <TabsTrigger value="seo">SEO</TabsTrigger>
+                  <TabsTrigger value="google-ads">Google Ads</TabsTrigger>
                   <TabsTrigger value="comportamento">Comportamento</TabsTrigger>
                   <TabsTrigger value="contatos">Contatos</TabsTrigger>
                   <TabsTrigger value="resultado">Resultado</TabsTrigger>
@@ -1911,6 +2245,7 @@ export default function MarketingGrowth() {
               </div>
               <TabsContent value="visao"><OverviewTab resumo={query.data} /></TabsContent>
               <TabsContent value="seo"><SeoTab resumo={query.data} /></TabsContent>
+              <TabsContent value="google-ads"><GoogleAdsTab resumo={query.data} /></TabsContent>
               <TabsContent value="comportamento"><BehaviorTab resumo={query.data} /></TabsContent>
               <TabsContent value="contatos"><ContactsTab resumo={query.data} onLinked={() => void query.refetch()} /></TabsContent>
               <TabsContent value="resultado"><ResultsTab resumo={query.data} /></TabsContent>

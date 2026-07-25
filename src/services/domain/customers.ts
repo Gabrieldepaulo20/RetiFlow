@@ -174,6 +174,7 @@ export function sanitizeClientInput(client: Omit<Client, 'id' | 'createdAt'>): O
     city: clamp(normalizeCityName(client.city), CUSTOMER_FIELD_LIMITS.city),
     state: clamp(client.state.trim().toUpperCase(), CUSTOMER_FIELD_LIMITS.state),
     notes: clamp(normalizeWhitespace(client.notes), CUSTOMER_FIELD_LIMITS.notes),
+    marketingLeadCode: (client.marketingLeadCode || '').trim().toUpperCase().slice(0, 20),
   };
 }
 

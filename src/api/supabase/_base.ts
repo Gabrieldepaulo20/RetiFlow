@@ -47,6 +47,7 @@ const SUPPORT_CONTEXT_RPC_MAP: Record<string, string> = {
   // Escritas — Clientes
   novo_cliente: 'salvar_cliente_completo_contexto_suporte',
   salvar_cliente_completo: 'salvar_cliente_completo_contexto_suporte',
+  attribute_marketing_client_by_code: 'attribute_marketing_client_by_code_contexto_suporte',
   update_cliente: 'update_cliente_contexto_suporte',
   inativar_cliente: 'inativar_cliente_contexto_suporte',
   reativar_cliente: 'reativar_cliente_contexto_suporte',

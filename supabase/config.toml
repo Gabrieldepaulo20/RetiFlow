@@ -39,6 +39,11 @@ verify_jwt = false
 [functions.marketing-events]
 verify_jwt = false
 
+[functions.marketing-offline-conversions]
+# O pg_cron nao possui JWT de usuario. A funcao valida um segredo interno do
+# Vault antes de tocar na fila privada e nas credenciais do Google Ads.
+verify_jwt = false
+
 [functions.gmail-oauth-callback]
 verify_jwt = false
 

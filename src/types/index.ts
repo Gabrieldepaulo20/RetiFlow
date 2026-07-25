@@ -93,6 +93,8 @@ export interface Customer {
   state: string;
   notes: string;
   isActive: boolean;
+  /** Código RP-... opcional recebido no WhatsApp para atribuição de marketing. */
+  marketingLeadCode?: string;
   createdAt: string;
 }
 

@@ -51,6 +51,7 @@ const INITIAL_FORM: Omit<Client, 'id' | 'createdAt'> = {
   state: '',
   notes: '',
   isActive: true,
+  marketingLeadCode: '',
 };
 
 // ── Micro-components ─────────────────────────────────────────────────────────
@@ -156,6 +157,7 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
           state: editingClient.state,
           notes: editingClient.notes,
           isActive: editingClient.isActive,
+          marketingLeadCode: '',
         }
       : INITIAL_FORM,
   );
@@ -303,6 +305,14 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
     }
     if (payload.docType === 'CNPJ' && !validarCNPJ(rawDoc)) {
       toast({ title: 'CNPJ inválido', description: 'Verifique os dígitos do CNPJ informado.', variant: 'destructive' });
+      return;
+    }
+    if (payload.marketingLeadCode && !/^RP-\d{8}-[A-Z0-9]{8}$/.test(payload.marketingLeadCode)) {
+      toast({
+        title: 'Código do contato inválido',
+        description: 'Use o código completo recebido no WhatsApp, no formato RP-AAAAMMDD-XXXXXXXX.',
+        variant: 'destructive',
+      });
       return;
     }
 
@@ -587,6 +597,26 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
           {/* ── OBSERVAÇÕES ── */}
           <div className="space-y-4 rounded-2xl border border-border/60 bg-card px-4 py-4 shadow-sm sm:px-5">
             <SectionLabel label="Observações" />
+
+            <Field
+              label="Código do contato do site"
+              hint="Opcional · WhatsApp"
+              htmlFor="client-marketing-lead-code"
+            >
+              <Input
+                id="client-marketing-lead-code"
+                value={form.marketingLeadCode || ''}
+                onChange={(event) => set('marketingLeadCode', event.target.value.toUpperCase())}
+                placeholder="RP-AAAAMMDD-XXXXXXXX"
+                maxLength={20}
+                autoComplete="off"
+                className={inputBase}
+              />
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                Cole o código que veio na mensagem do WhatsApp. Formulários com telefone ou e-mail
+                são reconhecidos automaticamente.
+              </p>
+            </Field>
 
             <Field
               label="Notas internas"
