@@ -128,10 +128,6 @@ export default function ProtectedRoute({ moduleKey, allowedRoles, redirectTo, me
     return <Navigate to={redirectTo ?? '/acesso-negado'} replace state={{ from: location.pathname, moduleKey }} />;
   }
 
-  if (authMode === 'real' && moduleKey === 'admin' && !isSuperAdmin(user)) {
-    return <Navigate to={redirectTo ?? '/acesso-negado'} replace state={{ from: location.pathname, moduleKey }} />;
-  }
-
   if (megaMasterOnly && !isSuperAdmin(realUser)) {
     return <Navigate to={redirectTo ?? '/acesso-negado'} replace state={{ from: location.pathname, moduleKey }} />;
   }

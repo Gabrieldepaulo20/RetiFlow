@@ -32,7 +32,7 @@ import { getMarketingResumo, getMarketingResumoQueryKey, DEFAULT_MARKETING_RESUM
 import { MARKETING_RESUMO_CACHE_TTL_MS } from '@/api/supabase/marketingCache';
 import { useSystemUsersQuery } from '@/hooks/useSystemUsersQuery';
 import { getInitials } from '@/lib/avatarInitials';
-import { isSuperAdmin } from '@/services/auth/superAdmin';
+import { hasFullMarketingAccess } from '@/services/auth/superAdmin';
 import { FinancialPrivacyToggle } from '@/components/privacy/FinancialPrivacyToggle';
 import {
   LayoutDashboard, Users, FileText, KanbanSquare, Calendar, Settings, Wallet,
@@ -76,7 +76,7 @@ export default function AppLayout() {
 
   const isActive = (path: string) => location.pathname.startsWith(path);
   const initials = getInitials(user?.name);
-  const canReturnToAdmin = isSuperAdmin(user);
+  const canReturnToAdmin = user?.role === 'ADMIN' && canAccessModule('admin');
   const isAdminOperationalPortal = canReturnToAdmin && !isSupportImpersonating;
 
   const supportUnreadCount = supportTickets.filter((ticket) => ticket.resposta && !ticket.lida_em).length;
@@ -192,7 +192,7 @@ export default function AppLayout() {
   };
 
   const canWarmMarketing = Boolean(user && canAccessModule('marketing'));
-  const hasPrivateMarketingAccess = isSuperAdmin(realUser);
+  const hasPrivateMarketingAccess = hasFullMarketingAccess(realUser);
   const { data: marketingWarmupUsers = [] } = useSystemUsersQuery({
     enabled: canWarmMarketing && isAdmin && hasPrivateMarketingAccess,
   });

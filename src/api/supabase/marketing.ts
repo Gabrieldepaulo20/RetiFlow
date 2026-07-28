@@ -282,6 +282,8 @@ export interface MarketingResumo {
     targetName?: string;
     targetEmail?: string;
     privateToMegaMaster?: boolean;
+    privateToAdministrators?: boolean;
+    canManageAttribution?: boolean;
     accessLevel?: 'basic' | 'full';
   };
   config: MarketingConfigSummary;

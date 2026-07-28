@@ -20,3 +20,20 @@ export function isSuperAdmin(user: Pick<SystemUser, 'email' | 'role' | 'isActive
   if (!user || user.role !== 'ADMIN' || !user.isActive) return false;
   return isConfiguredSuperAdminEmail(user.email);
 }
+
+export function isAdminMaster(
+  user: Pick<SystemUser, 'role' | 'isActive' | 'moduleAccess'> | null | undefined,
+) {
+  return Boolean(
+    user
+    && user.role === 'ADMIN'
+    && user.isActive
+    && user.moduleAccess?.admin === true,
+  );
+}
+
+export function hasFullMarketingAccess(
+  user: Pick<SystemUser, 'email' | 'role' | 'isActive' | 'moduleAccess'> | null | undefined,
+) {
+  return isSuperAdmin(user) || Boolean(isAdminMaster(user) && user?.moduleAccess?.marketing === true);
+}

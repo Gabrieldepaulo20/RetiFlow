@@ -2078,7 +2078,8 @@ async function handleRequest(request: Request) {
     if (requesterIsAllowlisted && !requesterIsActiveAdmin) {
       return jsonResponse({ error: 'Perfil Mega Master inativo ou sem permissão administrativa.' }, 403, request);
     }
-    const hasPrivateAccess = requesterIsAllowlisted && requesterIsActiveAdmin;
+    const hasPrivateAccess = requesterIsActiveAdmin && requesterProfile?.modulos?.marketing === true;
+    const canManageAttribution = requesterIsAllowlisted && requesterIsActiveAdmin;
     const targetUser = hasPrivateAccess
       ? requestedTargetUserId
         ? await getTargetUser(serviceClient, requestedTargetUserId)
@@ -2100,7 +2101,7 @@ async function handleRequest(request: Request) {
     const targetUserId = targetUser.id_usuarios;
 
     if (asString(body.action, 40) === 'link_client') {
-      if (!hasPrivateAccess) {
+      if (!canManageAttribution) {
         return jsonResponse({ error: 'Vínculo de contatos é privado do Mega Master.' }, 403, request);
       }
       if (!requesterProfile?.id_usuarios) {
@@ -2451,7 +2452,9 @@ async function handleRequest(request: Request) {
           targetUserId: targetUser.id_usuarios,
           targetName: targetUser.nome,
           targetEmail: targetUser.email,
-          privateToMegaMaster: true,
+          privateToMegaMaster: canManageAttribution,
+          privateToAdministrators: true,
+          canManageAttribution,
           accessLevel: 'full',
         },
         config: {

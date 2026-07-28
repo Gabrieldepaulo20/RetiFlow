@@ -65,7 +65,7 @@ import {
 } from '@/api/supabase/marketingCache';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSystemUsersQuery } from '@/hooks/useSystemUsersQuery';
-import { isSuperAdmin } from '@/services/auth/superAdmin';
+import { hasFullMarketingAccess, isSuperAdmin } from '@/services/auth/superAdmin';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -1314,7 +1314,15 @@ function BasicContactsTab({ resumo }: { resumo: MarketingResumo }) {
   );
 }
 
-function ContactsTab({ resumo, onLinked }: { resumo: MarketingResumo; onLinked: () => void }) {
+function ContactsTab({
+  resumo,
+  onLinked,
+  canManageAttribution,
+}: {
+  resumo: MarketingResumo;
+  onLinked: () => void;
+  canManageAttribution: boolean;
+}) {
   const forms = resumo.forms?.current;
   const [leadSearch, setLeadSearch] = useState('');
   const [selectedClients, setSelectedClients] = useState<Record<string, string>>({});
@@ -1404,7 +1412,7 @@ function ContactsTab({ resumo, onLinked }: { resumo: MarketingResumo; onLinked: 
             <PanelHeading
               eyebrow="Caixa de entrada"
               title="Contatos identificados"
-              description="Dados pessoais visíveis somente para o Mega Master."
+              description="Dados pessoais visíveis somente para administradores autorizados."
               action={(
                 <div className="relative w-full sm:w-[240px]">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -1429,7 +1437,7 @@ function ContactsTab({ resumo, onLinked }: { resumo: MarketingResumo; onLinked: 
                     <th className="px-3 py-3 font-semibold">Origem</th>
                     <th className="px-3 py-3 font-semibold">Canal</th>
                     <th className="px-3 py-3 font-semibold">Etapa</th>
-                    <th className="px-3 py-3 font-semibold">Vincular cliente</th>
+                    <th className="px-3 py-3 font-semibold">{canManageAttribution ? 'Vincular cliente' : 'Vínculo'}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -1445,6 +1453,7 @@ function ContactsTab({ resumo, onLinked }: { resumo: MarketingResumo; onLinked: 
                       }))}
                       onLink={() => void linkLead(lead)}
                       isLinking={linkingLeadId === lead.id_marketing_leads}
+                      canManageAttribution={canManageAttribution}
                     />
                   ))}
                 </tbody>
@@ -1467,6 +1476,7 @@ function LeadRow({
   onClientChange,
   onLink,
   isLinking,
+  canManageAttribution,
 }: {
   lead: MarketingLeadItem;
   clients: MarketingClientOption[];
@@ -1474,6 +1484,7 @@ function LeadRow({
   onClientChange: (clientId: string) => void;
   onLink: () => void;
   isLinking: boolean;
+  canManageAttribution: boolean;
 }) {
   return (
     <tr className="bg-card hover:bg-muted/30">
@@ -1500,6 +1511,8 @@ function LeadRow({
       <td className="px-3 py-3">
         {lead.fk_clientes ? (
           <span className="text-[11px] text-muted-foreground">Origem confirmada</span>
+        ) : !canManageAttribution ? (
+          <span className="text-[11px] text-muted-foreground">Aguardando vínculo</span>
         ) : (
           <div className="flex min-w-[330px] items-center gap-2">
             <Select value={selectedClientId} onValueChange={onClientChange}>
@@ -2240,7 +2253,8 @@ function normalizeCustomPeriod(value: string) {
 
 export default function MarketingGrowth() {
   const { realUser, operationalUser, isSupportImpersonating, isAdmin } = useAuth();
-  const hasPrivateAccess = isSuperAdmin(realUser);
+  const hasPrivateAccess = hasFullMarketingAccess(realUser);
+  const isCurrentUserMegaMaster = isSuperAdmin(realUser);
   const { data: systemUsers = [], isLoading: isLoadingUsers } = useSystemUsersQuery({
     enabled: hasPrivateAccess && isAdmin,
   });
@@ -2318,7 +2332,7 @@ export default function MarketingGrowth() {
                   {hasPrivateAccess ? (
                     <Badge className="gap-1.5 border-amber-300/20 bg-amber-300/10 text-amber-200 hover:bg-amber-300/10">
                       <LockKeyhole className="h-3.5 w-3.5" />
-                      Análise completa · Mega Master
+                      Análise completa · {isCurrentUserMegaMaster ? 'Mega Master' : 'Master'}
                     </Badge>
                   ) : (
                     <Badge className="gap-1.5 border-sky-300/20 bg-sky-300/10 text-sky-200 hover:bg-sky-300/10">
@@ -2473,7 +2487,13 @@ export default function MarketingGrowth() {
               <TabsContent value="seo"><SeoTab resumo={query.data} /></TabsContent>
               <TabsContent value="google-ads"><GoogleAdsTab resumo={query.data} /></TabsContent>
               <TabsContent value="comportamento"><BehaviorTab resumo={query.data} /></TabsContent>
-              <TabsContent value="contatos"><ContactsTab resumo={query.data} onLinked={() => void query.refetch()} /></TabsContent>
+              <TabsContent value="contatos">
+                <ContactsTab
+                  resumo={query.data}
+                  onLinked={() => void query.refetch()}
+                  canManageAttribution={query.data.context?.canManageAttribution === true}
+                />
+              </TabsContent>
               <TabsContent value="resultado"><ResultsTab resumo={query.data} /></TabsContent>
               <TabsContent value="qualidade"><QualityTab resumo={query.data} /></TabsContent>
             </Tabs>

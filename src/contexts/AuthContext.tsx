@@ -13,7 +13,7 @@ import {
 import { loadSystemUsers } from '@/services/auth/systemUsers';
 import { supabase } from '@/lib/supabase';
 import { dbUserToSystemUser } from '@/services/auth/supabaseUserMapping';
-import { canUserAccessModuleInContext, getDefaultRedirect } from '@/services/auth/defaultRedirect';
+import { canUserAccessModule, canUserAccessModuleInContext, getDefaultRedirect } from '@/services/auth/defaultRedirect';
 import { isSuperAdmin } from '@/services/auth/superAdmin';
 import {
   readStoredSupportSession,
@@ -393,11 +393,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
     }
 
-    if (IS_REAL_AUTH && portal === 'admin' && !isSuperAdmin(response.session.user)) {
+    if (IS_REAL_AUTH && portal === 'admin' && !canUserAccessModule(response.session.user, 'admin')) {
       return {
         success: false,
         redirect: '/admin/login',
-        error: 'Acesso administrativo restrito ao Mega Master autorizado.',
+        error: 'Esta conta não possui o módulo administrativo habilitado.',
       };
     }
 

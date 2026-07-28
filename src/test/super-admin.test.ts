@@ -1,8 +1,41 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { isConfiguredSuperAdminEmail, isSuperAdmin, getConfiguredSuperAdminEmails } from '@/services/auth/superAdmin';
+import {
+  getConfiguredSuperAdminEmails,
+  hasFullMarketingAccess,
+  isAdminMaster,
+  isConfiguredSuperAdminEmail,
+  isSuperAdmin,
+} from '@/services/auth/superAdmin';
 
 afterEach(() => {
   vi.unstubAllEnvs();
+});
+
+describe('Master administrative access', () => {
+  const master = {
+    email: 'master@retifica.com',
+    role: 'ADMIN' as const,
+    isActive: true,
+    moduleAccess: {
+      admin: true,
+      marketing: true,
+    },
+  };
+
+  it('recognizes an active Master with the Admin module', () => {
+    expect(isAdminMaster(master)).toBe(true);
+  });
+
+  it('allows a Master with Admin and Growth modules to load the full marketing dashboard', () => {
+    expect(hasFullMarketingAccess(master)).toBe(true);
+  });
+
+  it('keeps full marketing access closed when the Growth module is disabled', () => {
+    expect(hasFullMarketingAccess({
+      ...master,
+      moduleAccess: { ...master.moduleAccess, marketing: false },
+    })).toBe(false);
+  });
 });
 
 describe('super admin guard', () => {
