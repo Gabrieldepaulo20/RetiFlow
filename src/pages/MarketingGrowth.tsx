@@ -1962,6 +1962,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                 <AdsTableHead label="Qualidade" help={googleAdsHelp.qualityScore} align="right" />
                 <AdsTableHead label="Impressões" help={googleAdsHelp.impressions} align="right" />
                 <AdsTableHead label="Cliques" help={googleAdsHelp.clicks} align="right" />
+                <AdsTableHead label="CTR" help={googleAdsHelp.ctr} align="right" />
                 <AdsTableHead label="Custo" help={googleAdsHelp.spend} align="right" />
                 <AdsTableHead label="Conversões" help={googleAdsHelp.conversions} align="right" />
                 <AdsTableHead label="CPA" help={googleAdsHelp.cpa} align="right" />
@@ -1970,7 +1971,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                   <td className="px-3 py-3"><p className="font-semibold">{item.keyword}</p><p className="text-[11px] text-muted-foreground">{item.campaign}</p></td>
                   <td className="px-3 py-3">{item.adGroup}</td><td className="px-3 py-3">{item.matchType}</td>
                   <td className="px-3 py-3 text-right">{item.qualityScore || '—'}</td><td className="px-3 py-3 text-right">{formatNumber(item.impressions)}</td>
-                  <td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td><td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.spend)}</FinancialValue></td>
+                  <td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td><td className="px-3 py-3 text-right">{formatPercent(item.ctr)}</td><td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.spend)}</FinancialValue></td>
                   <td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td><td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.cpl)}</FinancialValue></td>
                 </tr>)}
               </tbody></table>
@@ -1987,14 +1988,18 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                 <AdsTableHead label="Pesquisa" help={googleAdsHelp.searchTerm} />
                 <AdsTableHead label="Palavra acionada" help="Palavra-chave configurada que fez o anúncio participar dessa pesquisa." />
                 <AdsTableHead label="Campanha / grupo" />
+                <AdsTableHead label="Impressões" help={googleAdsHelp.impressions} align="right" />
                 <AdsTableHead label="Cliques" help={googleAdsHelp.clicks} align="right" />
+                <AdsTableHead label="CTR" help={googleAdsHelp.ctr} align="right" />
                 <AdsTableHead label="Custo" help={googleAdsHelp.spend} align="right" />
                 <AdsTableHead label="Conversões" help={googleAdsHelp.conversions} align="right" />
+                <AdsTableHead label="CPA" help={googleAdsHelp.cpa} align="right" />
               </tr></thead>
               <tbody className="divide-y">{searchTerms.map((item, index) => <tr key={`${item.searchTerm}-${index}`}>
                 <td className="px-3 py-3 font-semibold">{item.searchTerm}</td><td className="px-3 py-3">{item.keyword || '—'}</td>
                 <td className="px-3 py-3"><p>{item.campaign}</p><p className="text-[11px] text-muted-foreground">{item.adGroup}</p></td>
-                <td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td><td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.spend)}</FinancialValue></td><td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td>
+                <td className="px-3 py-3 text-right">{formatNumber(item.impressions)}</td><td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td><td className="px-3 py-3 text-right">{formatPercent(item.ctr)}</td>
+                <td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.spend)}</FinancialValue></td><td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td><td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.cpl)}</FinancialValue></td>
               </tr>)}</tbody>
             </table>{searchTerms.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">Sem termos pesquisados no período.</div> : null}</div>
           </CardContent></Card>
@@ -2045,8 +2050,8 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
 
         <TabsContent value="conversoes">
           <Card className="rounded-2xl border-border/70 shadow-sm"><CardContent className="p-4 sm:p-6">
-            <PanelHeading eyebrow="Mensuração" title="Ações de conversão do Google Ads" description="Compare contatos do site, ligações, WhatsApp e cliente cadastrado no Retiflow." />
-            <div className="mt-5 overflow-auto rounded-xl border"><table className="w-full min-w-[760px] text-left text-xs">
+            <PanelHeading eyebrow="Mensuração" title="Ações de conversão do Google Ads" description="Compare contatos do site, ligações, WhatsApp e cliente cadastrado no Retiflow. O CPA confiável permanece no resumo, pois o custo não é rateado com segurança entre as ações." />
+            <div className="mt-5 overflow-auto rounded-xl border"><table className="w-full min-w-[680px] text-left text-xs">
               <thead className="border-b bg-muted/70"><tr>
                 <AdsTableHead label="Ação" help="Nome da ação de conversão configurada dentro do Google Ads." />
                 <AdsTableHead label="Categoria" help="Tipo de objetivo informado ao Google, como contato, ligação ou lead qualificado." />
@@ -2054,12 +2059,11 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                 <AdsTableHead label="Conversões" help={googleAdsHelp.conversions} align="right" />
                 <AdsTableHead label="Todas" help={googleAdsHelp.allConversions} align="right" />
                 <AdsTableHead label="Valor" help={googleAdsHelp.conversionValue} align="right" />
-                <AdsTableHead label="CPA" help={googleAdsHelp.cpa} align="right" />
               </tr></thead>
               <tbody className="divide-y">{conversionActions.map((item) => <tr key={item.id}>
                 <td className="px-3 py-3 font-semibold">{item.name}</td><td className="px-3 py-3">{item.category}</td><td className="px-3 py-3">{item.status}</td>
                 <td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td><td className="px-3 py-3 text-right">{formatDecimal(item.allConversions)}</td>
-                <td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.conversionValue)}</FinancialValue></td><td className="px-3 py-3 text-right">{item.costPerConversion > 0 ? <FinancialValue>{formatCurrency(item.costPerConversion)}</FinancialValue> : '—'}</td>
+                <td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.conversionValue)}</FinancialValue></td>
               </tr>)}</tbody>
             </table>{conversionActions.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">Nenhuma ação de conversão registrou dados no período.</div> : null}</div>
           </CardContent></Card>
