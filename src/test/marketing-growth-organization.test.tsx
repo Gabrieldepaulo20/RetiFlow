@@ -134,6 +134,7 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByRole('heading', { name: 'Quanto investimos e quantas pessoas reagiram?' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Os cliques estão virando resultado?' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Onde estamos perdendo oportunidades?' })).toBeInTheDocument();
+    expect(screen.getByText('Todas as conversões')).toBeInTheDocument();
     expect(screen.queryByText('Comissão gerada')).not.toBeInTheDocument();
     expect(screen.queryByText('O.S. aprovadas')).not.toBeInTheDocument();
 

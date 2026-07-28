@@ -31,6 +31,7 @@ import {
   FileWarning,
   Filter,
   Gauge,
+  ListChecks,
   LockKeyhole,
   MailCheck,
   MessageCircle,
@@ -1706,10 +1707,11 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
         <PanelHeading
           eyebrow="Conversão e eficiência"
           title="Os cliques estão virando resultado?"
-          description="Conversão aqui é uma ação configurada no Google Ads; não é comissão nem faturamento da O.S."
+          description="Conversão aqui é uma ação configurada no Google Ads; não é comissão nem faturamento da O.S. As primárias orientam a campanha e o total também inclui ações secundárias."
         />
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-3 2xl:grid-cols-6">
           <Metric label="Conversões primárias" value={formatDecimal(current.conversions)} detail="Ações usadas na otimização" help={googleAdsHelp.conversions} icon={Target} current={current.conversions} previous={ads.previous?.conversions} accent="violet" />
+          <Metric label="Todas as conversões" value={formatDecimal(current.allConversions)} detail="Primárias + secundárias" help={googleAdsHelp.allConversions} icon={ListChecks} current={current.allConversions} previous={ads.previous?.allConversions} accent="navy" />
           <Metric label="Taxa de conversão" value={formatPercent(current.conversionRate)} detail="Conversões ÷ cliques" help={googleAdsHelp.conversionRate} icon={ArrowUpRight} accent="teal" />
           <Metric label="CPA" value={formatCurrency(current.cpl)} detail="Custo por conversão principal" help={googleAdsHelp.cpa} icon={BadgeDollarSign} accent="rose" financial />
           <Metric label="Valor das conversões" value={formatCurrency(current.conversionValue)} detail={`${formatCurrency(current.valuePerConversion)} por conversão`} help={`${googleAdsHelp.conversionValue} ${googleAdsHelp.valuePerConversion}`} icon={Sparkles} accent="teal" financial financialDetail />
