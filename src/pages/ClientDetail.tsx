@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { STATUS_LABELS, STATUS_COLORS } from '@/types';
 import { ArrowLeft, Phone, Mail, MapPin } from 'lucide-react';
 import { buildCustomerAddressLabel } from '@/services/domain/customers';
+import { FinancialValue } from '@/components/privacy/FinancialValue';
 
 export default function ClientDetail() {
   const { id } = useParams();
@@ -61,7 +62,7 @@ export default function ClientDetail() {
                       </div>
                       <Badge className={STATUS_COLORS[n.status]}>{STATUS_LABELS[n.status]}</Badge>
                     </div>
-                    <p className="mt-3 text-right text-base font-semibold">R$ {n.totalAmount.toLocaleString('pt-BR')}</p>
+                    <p className="mt-3 text-right text-base font-semibold"><FinancialValue>R$ {n.totalAmount.toLocaleString('pt-BR')}</FinancialValue></p>
                   </button>
                 ))}
                 {clientNotes.length === 0 && <p className="text-center py-8 text-muted-foreground">Nenhuma nota encontrada.</p>}
@@ -75,7 +76,7 @@ export default function ClientDetail() {
                       <TableCell className="font-medium text-primary">{n.number}</TableCell>
                       <TableCell>{new Date(n.createdAt).toLocaleDateString('pt-BR')}</TableCell>
                       <TableCell><Badge className={STATUS_COLORS[n.status]}>{STATUS_LABELS[n.status]}</Badge></TableCell>
-                      <TableCell className="text-right font-semibold">R$ {n.totalAmount.toLocaleString('pt-BR')}</TableCell>
+                      <TableCell className="text-right font-semibold"><FinancialValue>R$ {n.totalAmount.toLocaleString('pt-BR')}</FinancialValue></TableCell>
                     </TableRow>
                   ))}
                   {clientNotes.length === 0 && <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Nenhuma nota encontrada.</TableCell></TableRow>}

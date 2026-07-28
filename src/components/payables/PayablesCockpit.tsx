@@ -8,6 +8,8 @@ import type { PayablesCashFlowSummary } from '@/services/domain/payablesCashFlow
 import type { PayableBriefing, PayableBriefingHighlightKind } from '@/services/domain/payablesBriefing';
 import type { AccountPayable } from '@/types';
 import { cn } from '@/lib/utils';
+import { FinancialValue } from '@/components/privacy/FinancialValue';
+import { useFinancialPrivacy } from '@/contexts/FinancialPrivacyContext';
 
 function fmtBRL(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -30,6 +32,7 @@ type Props = {
 };
 
 function RunwayBars({ summary, reduce }: { summary: PayablesCashFlowSummary; reduce: boolean }) {
+  const { financialValuesHidden } = useFinancialPrivacy();
   const overdue = { total: summary.overdueTotal, count: summary.overdueCount };
   const max = Math.max(
     overdue.total,
@@ -53,7 +56,7 @@ function RunwayBars({ summary, reduce }: { summary: PayablesCashFlowSummary; red
       total: overdue.total,
       count: overdue.count,
       tone: 'overdue',
-      title: `Atrasadas: ${fmtBRL(overdue.total)} em ${overdue.count} conta(s)`,
+      title: `Atrasadas: ${financialValuesHidden ? 'R$ ••••••' : fmtBRL(overdue.total)} em ${overdue.count} conta(s)`,
     });
   }
 
@@ -66,7 +69,7 @@ function RunwayBars({ summary, reduce }: { summary: PayablesCashFlowSummary; red
       count: day.count,
       tone: day.isToday ? 'today' : day.hasLabor ? 'labor' : 'default',
       title: day.total > 0
-        ? `${format(parseISO(day.dateISO), "dd/MM", { locale: ptBR })}: ${fmtBRL(day.total)} em ${day.count} conta(s)`
+        ? `${format(parseISO(day.dateISO), "dd/MM", { locale: ptBR })}: ${financialValuesHidden ? 'R$ ••••••' : fmtBRL(day.total)} em ${day.count} conta(s)`
         : `${format(parseISO(day.dateISO), 'dd/MM', { locale: ptBR })}: sem vencimentos`,
     });
   }
@@ -110,13 +113,14 @@ function RunwayBars({ summary, reduce }: { summary: PayablesCashFlowSummary; red
 }
 
 export function PayablesCockpit({ summary, briefing, briefingLoading, onOpenDetails, onRefreshBriefing, prefersReducedMotion }: Props) {
+  const { financialValuesHidden } = useFinancialPrivacy();
   const reduce = prefersReducedMotion ?? false;
   const isIa = briefing.source === 'ia';
   const hasOverdue = summary.overdueTotal > 0;
   const focusTotal = hasOverdue ? summary.overdueTotal : summary.nextSevenTotal;
   const focusLabel = hasOverdue ? 'Prioridade agora' : 'Saídas previstas · próximos 7 dias';
   const nextSevenCaption = summary.nextSevenTotal > 0
-    ? `${fmtBRL(summary.nextSevenTotal)} vencem nos próximos 7 dias`
+    ? `${financialValuesHidden ? 'R$ ••••••' : fmtBRL(summary.nextSevenTotal)} vencem nos próximos 7 dias`
     : 'nenhum vencimento nos próximos 7 dias';
   const focusCaption = hasOverdue
     ? `${summary.overdueCount} ${summary.overdueCount === 1 ? 'conta vencida' : 'contas vencidas'} · ${nextSevenCaption}`
@@ -149,12 +153,20 @@ export function PayablesCockpit({ summary, briefing, briefingLoading, onOpenDeta
             {focusLabel}
           </span>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="font-display text-lg font-bold text-slate-400">R$</span>
-            <AnimatedNumber
-              value={focusTotal}
-              format={(n) => n.toLocaleString('pt-BR')}
-              className="font-display text-4xl font-extrabold leading-none text-white tabular-nums sm:text-[2.7rem]"
-            />
+            {financialValuesHidden ? (
+              <span className="font-display text-4xl font-extrabold leading-none text-white tabular-nums sm:text-[2.7rem]" aria-label="Valor financeiro oculto">
+                R$ ••••••
+              </span>
+            ) : (
+              <>
+                <span className="font-display text-lg font-bold text-slate-400">R$</span>
+                <AnimatedNumber
+                  value={focusTotal}
+                  format={(n) => n.toLocaleString('pt-BR')}
+                  className="font-display text-4xl font-extrabold leading-none text-white tabular-nums sm:text-[2.7rem]"
+                />
+              </>
+            )}
           </div>
           <p className="mt-2 text-[13px] text-slate-400">
             {focusCaption}
@@ -173,7 +185,7 @@ export function PayablesCockpit({ summary, briefing, briefingLoading, onOpenDeta
                   className="group inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.045] px-2.5 py-1.5 text-left transition hover:border-cyan-300/40 hover:bg-cyan-300/10"
                 >
                   <span className="max-w-[130px] truncate text-xs font-medium text-slate-200">{payable.title}</span>
-                  <span className="text-xs font-bold tabular-nums text-cyan-200">{fmtBRL(calculatePayableRemainingBalance(payable))}</span>
+                  <span className="text-xs font-bold tabular-nums text-cyan-200"><FinancialValue>{fmtBRL(calculatePayableRemainingBalance(payable))}</FinancialValue></span>
                   <ArrowRight className="h-3 w-3 text-slate-500 transition group-hover:translate-x-0.5 group-hover:text-cyan-200" />
                 </button>
               ))}
@@ -206,10 +218,16 @@ export function PayablesCockpit({ summary, briefing, briefingLoading, onOpenDeta
             ) : null}
           </div>
 
-          <h3 className="mt-3 line-clamp-2 font-display text-base font-bold text-white">{briefing.headline}</h3>
-          <p className="mt-2 line-clamp-3 max-w-[48ch] text-[13.5px] leading-relaxed text-slate-300">{briefing.body}</p>
+          <h3 className="mt-3 line-clamp-2 font-display text-base font-bold text-white">
+            {financialValuesHidden ? 'Resumo financeiro oculto' : briefing.headline}
+          </h3>
+          <p className="mt-2 line-clamp-3 max-w-[48ch] text-[13.5px] leading-relaxed text-slate-300">
+            {financialValuesHidden
+              ? 'Use o controle com o olhinho no topo para revelar a análise e os valores.'
+              : briefing.body}
+          </p>
 
-          {briefing.highlights.length > 0 ? (
+          {!financialValuesHidden && briefing.highlights.length > 0 ? (
             <div className="mt-3 flex flex-wrap gap-1.5">
               {briefing.highlights.map((highlight, index) => (
                 <span

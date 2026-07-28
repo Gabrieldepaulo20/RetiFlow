@@ -76,6 +76,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { SectionEmptyState, SectionErrorState } from '@/components/ui/section-state';
 import { cn } from '@/lib/utils';
 import { evaluateMarketingHealth } from '@/services/domain/marketingHealth';
+import { FinancialValue } from '@/components/privacy/FinancialValue';
+import { useFinancialPrivacy } from '@/contexts/FinancialPrivacyContext';
 
 const RETIFICA_PREMIUM_EMAIL = 'retificapremium5@gmail.com';
 const periodOptions = [7, 10, 15, 20, 30, 40, 60, 90];
@@ -279,6 +281,8 @@ function Metric({
   current,
   previous,
   accent = 'navy',
+  financial = false,
+  financialDetail = false,
 }: {
   label: string;
   value: string;
@@ -288,6 +292,8 @@ function Metric({
   current?: number;
   previous?: number;
   accent?: 'navy' | 'gold' | 'teal' | 'violet' | 'rose';
+  financial?: boolean;
+  financialDetail?: boolean;
 }) {
   const delta = current === undefined || previous === undefined ? null : getDelta(current, previous);
   const accents = {
@@ -310,8 +316,12 @@ function Metric({
             <Icon className="h-5 w-5" />
           </div>
         </div>
-        <p className="mt-3 break-words text-xl font-bold leading-tight tracking-tight text-foreground sm:text-3xl">{value}</p>
-        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{detail}</p>
+        <p className="mt-3 break-words text-xl font-bold leading-tight tracking-tight text-foreground sm:text-3xl">
+          {financial ? <FinancialValue>{value}</FinancialValue> : value}
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          {financialDetail ? <FinancialValue>{detail}</FinancialValue> : detail}
+        </p>
         {delta ? (
           <div className={cn(
             'mt-4 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold',
@@ -810,6 +820,7 @@ function OverviewTab({ resumo }: { resumo: MarketingResumo }) {
           current={business?.commission}
           previous={previousBusiness?.commission}
           accent="gold"
+          financial
         />
       </div>
 
@@ -895,7 +906,11 @@ function OverviewTab({ resumo }: { resumo: MarketingResumo }) {
                     <div className="min-w-0">
                       <div className="flex items-baseline justify-between gap-3">
                         <p className="truncate text-xs font-semibold text-slate-600">{insight.title}</p>
-                        <p className="shrink-0 text-sm font-bold text-slate-950">{insight.value}</p>
+                        <p className="shrink-0 text-sm font-bold text-slate-950">
+                          {insight.title === 'Serviços aprovados'
+                            ? <FinancialValue>{insight.value}</FinancialValue>
+                            : insight.value}
+                        </p>
                       </div>
                       <p className="mt-0.5 truncate text-[11px] text-slate-500">{insight.detail}</p>
                     </div>
@@ -1553,6 +1568,8 @@ export function ResultsTab({ resumo }: { resumo: MarketingResumo }) {
           current={business?.approvedServices}
           previous={previous?.approvedServices}
           accent="teal"
+          financial
+          financialDetail
         />
         <Metric
           label="Comissão gerada"
@@ -1563,6 +1580,7 @@ export function ResultsTab({ resumo }: { resumo: MarketingResumo }) {
           current={business?.commission}
           previous={previous?.commission}
           accent="gold"
+          financial
         />
       </div>
 
@@ -1586,10 +1604,10 @@ export function ResultsTab({ resumo }: { resumo: MarketingResumo }) {
                   <tr key={String(item.id_marketing_commission_snapshots ?? index)}>
                     <td className="px-3 py-3 text-muted-foreground">{formatDateTime(String(item.approved_at ?? ''))}</td>
                     <td className="px-3 py-3 font-semibold text-foreground">{String(item.os_numero ?? 'Sem número')}</td>
-                    <td className="px-3 py-3 text-right font-medium text-foreground">{formatCurrency(Number(item.services_snapshot ?? 0))}</td>
-                    <td className="px-3 py-3 text-right text-muted-foreground">{formatCurrency(Number(item.products_excluded_snapshot ?? 0))}</td>
+                    <td className="px-3 py-3 text-right font-medium text-foreground"><FinancialValue>{formatCurrency(Number(item.services_snapshot ?? 0))}</FinancialValue></td>
+                    <td className="px-3 py-3 text-right text-muted-foreground"><FinancialValue>{formatCurrency(Number(item.products_excluded_snapshot ?? 0))}</FinancialValue></td>
                     <td className="px-3 py-3 text-right text-muted-foreground">{formatPercent(Number(item.commission_rate_snapshot ?? 0) * 100)}</td>
-                    <td className="px-3 py-3 text-right font-bold text-amber-700">{formatCurrency(Number(item.commission_amount_snapshot ?? 0))}</td>
+                    <td className="px-3 py-3 text-right font-bold text-amber-700"><FinancialValue>{formatCurrency(Number(item.commission_amount_snapshot ?? 0))}</FinancialValue></td>
                   </tr>
                 ))}
               </tbody>
@@ -1624,6 +1642,7 @@ const googleAdsDayLabels: Record<string, string> = {
 };
 
 export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
+  const { financialValuesHidden } = useFinancialPrivacy();
   const ads = resumo.campaigns;
   const current = ads.current;
   const offline = ads.offlineConversions;
@@ -1675,11 +1694,11 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           description="Os cinco indicadores básicos para acompanhar a entrega e o interesse nos anúncios."
         />
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
-          <Metric label="Investimento" value={formatCurrency(current.spend)} detail="Custo oficial no período" help={googleAdsHelp.spend} icon={BadgeDollarSign} current={current.spend} previous={ads.previous?.spend} accent="navy" />
+          <Metric label="Investimento" value={formatCurrency(current.spend)} detail="Custo oficial no período" help={googleAdsHelp.spend} icon={BadgeDollarSign} current={current.spend} previous={ads.previous?.spend} accent="navy" financial />
           <Metric label="Impressões" value={formatNumber(current.impressions)} detail="Exibições dos anúncios" help={googleAdsHelp.impressions} icon={Eye} current={current.impressions} previous={ads.previous?.impressions} accent="violet" />
           <Metric label="Cliques" value={formatNumber(current.clicks)} detail="Interações com os anúncios" help={googleAdsHelp.clicks} icon={MousePointerClick} current={current.clicks} previous={ads.previous?.clicks} accent="teal" />
           <Metric label="CTR" value={formatPercent(current.ctr)} detail="Cliques ÷ impressões" help={googleAdsHelp.ctr} icon={Target} accent="violet" />
-          <Metric label="CPC médio" value={formatCurrency(current.averageCpc)} detail="Custo médio por clique" help={googleAdsHelp.averageCpc} icon={Gauge} accent="gold" />
+          <Metric label="CPC médio" value={formatCurrency(current.averageCpc)} detail="Custo médio por clique" help={googleAdsHelp.averageCpc} icon={Gauge} accent="gold" financial />
         </div>
       </section>
 
@@ -1692,8 +1711,8 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
           <Metric label="Conversões primárias" value={formatDecimal(current.conversions)} detail="Ações usadas na otimização" help={googleAdsHelp.conversions} icon={Target} current={current.conversions} previous={ads.previous?.conversions} accent="violet" />
           <Metric label="Taxa de conversão" value={formatPercent(current.conversionRate)} detail="Conversões ÷ cliques" help={googleAdsHelp.conversionRate} icon={ArrowUpRight} accent="teal" />
-          <Metric label="CPA" value={formatCurrency(current.cpl)} detail="Custo por conversão principal" help={googleAdsHelp.cpa} icon={BadgeDollarSign} accent="rose" />
-          <Metric label="Valor das conversões" value={formatCurrency(current.conversionValue)} detail={`${formatCurrency(current.valuePerConversion)} por conversão`} help={`${googleAdsHelp.conversionValue} ${googleAdsHelp.valuePerConversion}`} icon={Sparkles} accent="teal" />
+          <Metric label="CPA" value={formatCurrency(current.cpl)} detail="Custo por conversão principal" help={googleAdsHelp.cpa} icon={BadgeDollarSign} accent="rose" financial />
+          <Metric label="Valor das conversões" value={formatCurrency(current.conversionValue)} detail={`${formatCurrency(current.valuePerConversion)} por conversão`} help={`${googleAdsHelp.conversionValue} ${googleAdsHelp.valuePerConversion}`} icon={Sparkles} accent="teal" financial financialDetail />
           <Metric label="ROAS configurado" value={`${formatDecimal(current.roas)}x`} detail="Valor configurado ÷ investimento" help={googleAdsHelp.roas} icon={ArrowUpRight} accent="gold" />
         </div>
       </section>
@@ -1727,12 +1746,14 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                 <ComposedChart data={ads.daily}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="date" tickFormatter={(value) => formatShortDate(String(value), resumo.periodDays)} tick={{ fontSize: 11 }} />
-                  <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+                  <YAxis yAxisId="left" tick={{ fontSize: 11 }} tickFormatter={(value) => financialValuesHidden ? '•••' : String(value)} />
                   <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
                   <RechartsTooltip
                     labelFormatter={(value) => formatShortDate(String(value), resumo.periodDays)}
                     formatter={(value: number, name: string) => [
-                      name === 'Investimento' ? formatCurrency(value) : formatDecimal(value),
+                      name === 'Investimento'
+                        ? (financialValuesHidden ? 'R$ ••••••' : formatCurrency(value))
+                        : formatDecimal(value),
                       name,
                     ]}
                   />
@@ -1879,13 +1900,13 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                       <tr key={item.id}>
                         <td className="px-3 py-3"><p className="font-semibold">{item.name}</p><p className="text-[11px] text-muted-foreground">{item.channelType}</p></td>
                         <td className="px-3 py-3">{item.status}</td>
-                        <td className="px-3 py-3 text-right">{formatCurrency(item.dailyBudget)}</td>
+                        <td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.dailyBudget)}</FinancialValue></td>
                         <td className="px-3 py-3 text-right">{formatPercent(item.optimizationScore)}</td>
-                        <td className="px-3 py-3 text-right">{formatCurrency(item.spend)}</td>
+                        <td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.spend)}</FinancialValue></td>
                         <td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td>
                         <td className="px-3 py-3 text-right">{formatPercent(item.ctr)}</td>
                         <td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td>
-                        <td className="px-3 py-3 text-right font-semibold">{formatCurrency(item.cpl)}</td>
+                        <td className="px-3 py-3 text-right font-semibold"><FinancialValue>{formatCurrency(item.cpl)}</FinancialValue></td>
                       </tr>
                     ))}
                   </tbody>
@@ -1906,16 +1927,18 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                   <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
                     {[
                       { label: 'Cliques', value: formatNumber(item.clicks), help: googleAdsHelp.clicks },
-                      { label: 'Investimento', value: formatCurrency(item.spend), help: googleAdsHelp.spend },
+                      { label: 'Investimento', value: formatCurrency(item.spend), help: googleAdsHelp.spend, financial: true },
                       { label: 'Conversões', value: formatDecimal(item.conversions), help: googleAdsHelp.conversions },
-                      { label: 'CPA', value: formatCurrency(item.cpl), help: googleAdsHelp.cpa },
+                      { label: 'CPA', value: formatCurrency(item.cpl), help: googleAdsHelp.cpa, financial: true },
                     ].map((metric) => (
                       <div key={metric.label}>
                         <dt className="flex items-center gap-1 text-muted-foreground">
                           {metric.label}
                           <HelpTip label={metric.label} description={metric.help} />
                         </dt>
-                        <dd className="mt-1 font-bold text-foreground">{metric.value}</dd>
+                        <dd className="mt-1 font-bold text-foreground">
+                          {metric.financial ? <FinancialValue>{metric.value}</FinancialValue> : metric.value}
+                        </dd>
                       </div>
                     ))}
                   </dl>
@@ -1945,8 +1968,8 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                   <td className="px-3 py-3"><p className="font-semibold">{item.keyword}</p><p className="text-[11px] text-muted-foreground">{item.campaign}</p></td>
                   <td className="px-3 py-3">{item.adGroup}</td><td className="px-3 py-3">{item.matchType}</td>
                   <td className="px-3 py-3 text-right">{item.qualityScore || '—'}</td><td className="px-3 py-3 text-right">{formatNumber(item.impressions)}</td>
-                  <td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td><td className="px-3 py-3 text-right">{formatCurrency(item.spend)}</td>
-                  <td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td><td className="px-3 py-3 text-right">{formatCurrency(item.cpl)}</td>
+                  <td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td><td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.spend)}</FinancialValue></td>
+                  <td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td><td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.cpl)}</FinancialValue></td>
                 </tr>)}
               </tbody></table>
               {keywords.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">Sem palavras-chave no período.</div> : null}
@@ -1969,7 +1992,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
               <tbody className="divide-y">{searchTerms.map((item, index) => <tr key={`${item.searchTerm}-${index}`}>
                 <td className="px-3 py-3 font-semibold">{item.searchTerm}</td><td className="px-3 py-3">{item.keyword || '—'}</td>
                 <td className="px-3 py-3"><p>{item.campaign}</p><p className="text-[11px] text-muted-foreground">{item.adGroup}</p></td>
-                <td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td><td className="px-3 py-3 text-right">{formatCurrency(item.spend)}</td><td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td>
+                <td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td><td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.spend)}</FinancialValue></td><td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td>
               </tr>)}</tbody>
             </table>{searchTerms.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">Sem termos pesquisados no período.</div> : null}</div>
           </CardContent></Card>
@@ -1989,8 +2012,8 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
               </tr></thead>
               <tbody className="divide-y">{landingPages.map((item) => <tr key={item.url}>
                 <td className="max-w-[430px] truncate px-3 py-3 font-medium" title={item.url}>{item.url}</td><td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td>
-                <td className="px-3 py-3 text-right">{formatCurrency(item.spend)}</td><td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td>
-                <td className="px-3 py-3 text-right">{formatPercent(item.conversionRate)}</td><td className="px-3 py-3 text-right">{formatCurrency(item.cpl)}</td>
+                <td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.spend)}</FinancialValue></td><td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td>
+                <td className="px-3 py-3 text-right">{formatPercent(item.conversionRate)}</td><td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.cpl)}</FinancialValue></td>
               </tr>)}</tbody>
             </table>{landingPages.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">Sem páginas de destino no período.</div> : null}</div>
           </CardContent></Card>
@@ -2012,7 +2035,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
               <tbody className="divide-y">{schedule.map((item, index) => <tr key={`${item.dayOfWeek}-${item.hour}-${index}`}>
                 <td className="px-3 py-3 font-semibold">{googleAdsDayLabels[item.dayOfWeek] ?? item.dayOfWeek}</td><td className="px-3 py-3">{String(item.hour).padStart(2, '0')}:00</td>
                 <td className="px-3 py-3 text-right">{formatNumber(item.impressions)}</td><td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td>
-                <td className="px-3 py-3 text-right">{formatCurrency(item.spend)}</td><td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td><td className="px-3 py-3 text-right">{formatCurrency(item.cpl)}</td>
+                <td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.spend)}</FinancialValue></td><td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td><td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.cpl)}</FinancialValue></td>
               </tr>)}</tbody>
             </table>{schedule.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">Sem distribuição por horário no período.</div> : null}</div>
           </CardContent></Card>
@@ -2034,7 +2057,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
               <tbody className="divide-y">{conversionActions.map((item) => <tr key={item.id}>
                 <td className="px-3 py-3 font-semibold">{item.name}</td><td className="px-3 py-3">{item.category}</td><td className="px-3 py-3">{item.status}</td>
                 <td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td><td className="px-3 py-3 text-right">{formatDecimal(item.allConversions)}</td>
-                <td className="px-3 py-3 text-right">{formatCurrency(item.conversionValue)}</td><td className="px-3 py-3 text-right">{item.costPerConversion > 0 ? formatCurrency(item.costPerConversion) : '—'}</td>
+                <td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.conversionValue)}</FinancialValue></td><td className="px-3 py-3 text-right">{item.costPerConversion > 0 ? <FinancialValue>{formatCurrency(item.costPerConversion)}</FinancialValue> : '—'}</td>
               </tr>)}</tbody>
             </table>{conversionActions.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">Nenhuma ação de conversão registrou dados no período.</div> : null}</div>
           </CardContent></Card>

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { MarketingResumo } from '@/api/supabase/marketing';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { GoogleAdsTab, ResultsTab } from '@/pages/MarketingGrowth';
+import { FinancialPrivacyProvider } from '@/contexts/FinancialPrivacyProvider';
 
 vi.mock('recharts', async () => {
   const actual = await vi.importActual<typeof import('recharts')>('recharts');
@@ -118,7 +119,11 @@ function buildResumo(): MarketingResumo {
 }
 
 function renderWithTooltips(node: ReactNode) {
-  return render(<TooltipProvider delayDuration={0}>{node}</TooltipProvider>);
+  return render(
+    <TooltipProvider delayDuration={0}>
+      <FinancialPrivacyProvider>{node}</FinancialPrivacyProvider>
+    </TooltipProvider>,
+  );
 }
 
 describe('organização do painel Crescimento', () => {

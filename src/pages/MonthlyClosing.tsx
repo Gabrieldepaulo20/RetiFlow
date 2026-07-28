@@ -67,6 +67,7 @@ import {
 import { PAYMENT_METHOD_LABELS, type IntakeNote, type NotePaymentStatus, type PaymentMethod } from '@/types';
 import { isBillableNoteStatus } from '@/services/domain/intakeNotes';
 import { readStoredSupportContext } from '@/services/auth/supportContext';
+import { FinancialValue } from '@/components/privacy/FinancialValue';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
@@ -1435,7 +1436,7 @@ export default function MonthlyClosing() {
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5">
                           {draftNotes.length} OS · Total atual:
-                          <span className="font-semibold text-foreground ml-1">R$ {toMoney(totals.totalComDesconto)}</span>
+                          <span className="font-semibold text-foreground ml-1"><FinancialValue>R$ {toMoney(totals.totalComDesconto)}</FinancialValue></span>
                         </p>
                         <p className="text-xs text-muted-foreground mt-1">
                           Salvo em {new Date(draft.updatedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
@@ -1482,15 +1483,15 @@ export default function MonthlyClosing() {
               </div>
               <div className="rounded-xl border bg-background p-3">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Faturado</p>
-                <p className="mt-0.5 text-lg font-bold">R$ {toMoney(resumoFechamentos.faturado)}</p>
+                <p className="mt-0.5 text-lg font-bold"><FinancialValue>R$ {toMoney(resumoFechamentos.faturado)}</FinancialValue></p>
               </div>
               <div className="rounded-xl border bg-background p-3">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Recebido</p>
-                <p className="mt-0.5 text-lg font-bold text-emerald-700">R$ {toMoney(resumoFechamentos.recebido)}</p>
+                <p className="mt-0.5 text-lg font-bold text-emerald-700"><FinancialValue>R$ {toMoney(resumoFechamentos.recebido)}</FinancialValue></p>
               </div>
               <div className="rounded-xl border bg-background p-3">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">A receber</p>
-                <p className="mt-0.5 text-lg font-bold text-amber-700">R$ {toMoney(resumoFechamentos.aReceber)}</p>
+                <p className="mt-0.5 text-lg font-bold text-amber-700"><FinancialValue>R$ {toMoney(resumoFechamentos.aReceber)}</FinancialValue></p>
               </div>
             </div>
 
@@ -1564,7 +1565,7 @@ export default function MonthlyClosing() {
                         <p className="text-xs text-muted-foreground mt-0.5">
                           {Array.isArray(f.dados_json?.notas) ? f.dados_json.notas.length : 0} OS · Total:
                           <span className="font-semibold text-foreground ml-1">
-                            R$ {f.valor_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            <FinancialValue>R$ {f.valor_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</FinancialValue>
                           </span>
                           {f.total_downloads > 0 && ` · ${f.total_downloads} download${f.total_downloads > 1 ? 's' : ''}`}
                         </p>
@@ -1581,7 +1582,7 @@ export default function MonthlyClosing() {
                               onClick={() => setDescontosAbertos((cur) => (cur === f.id_fechamentos ? null : f.id_fechamentos))}
                               className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
                             >
-                              Desconto total: R$ {toMoney(descontoTotal)}
+                              Desconto total: <FinancialValue>R$ {toMoney(descontoTotal)}</FinancialValue>
                               <span className="text-muted-foreground">· {descontosVisiveis ? 'ocultar' : `ver ${notasComDesconto.length} O.S.`}</span>
                             </button>
                             {descontosVisiveis && (
@@ -1592,9 +1593,9 @@ export default function MonthlyClosing() {
                                       {n.os}{n.desconto_nota > 0 ? ` · ${pctBR(n.desconto_nota)}` : ''}
                                     </span>
                                     <span className="shrink-0 tabular-nums">
-                                      <span className="text-muted-foreground line-through">R$ {toMoney(n.total_original)}</span>
+                                      <span className="text-muted-foreground line-through"><FinancialValue>R$ {toMoney(n.total_original)}</FinancialValue></span>
                                       {' → '}
-                                      <span className="font-semibold text-foreground">R$ {toMoney(n.total_com_desconto)}</span>
+                                      <span className="font-semibold text-foreground"><FinancialValue>R$ {toMoney(n.total_com_desconto)}</FinancialValue></span>
                                     </span>
                                   </div>
                                 ))}
@@ -1773,7 +1774,7 @@ export default function MonthlyClosing() {
                           )}
                           <div className="text-right">
                             <p className="text-[11px] text-muted-foreground">Total O.S.</p>
-                            <p className="font-bold text-primary text-sm">R$ {toMoney(totalComDesc)}</p>
+                            <p className="font-bold text-primary text-sm"><FinancialValue>R$ {toMoney(totalComDesc)}</FinancialValue></p>
                           </div>
                         </div>
                       </div>
@@ -1817,7 +1818,7 @@ export default function MonthlyClosing() {
                                   {editing ? (
                                     <Input type="number" min="0" step="0.01" value={item.preco_unitario} onChange={(e) => updatePreviewItem(nota.id, item.id, 'preco_unitario', e.target.value)} className="h-8 text-xs lg:text-right" />
                                   ) : (
-                                    <p className="lg:text-right">R$ {toMoney(item.preco_unitario)}</p>
+                                    <p className="lg:text-right"><FinancialValue>R$ {toMoney(item.preco_unitario)}</FinancialValue></p>
                                   )}
                                 </div>
                                 <div>
@@ -1843,12 +1844,12 @@ export default function MonthlyClosing() {
                                     <p className="lg:text-right">{canApplyItemDiscount && item.desconto_porcentagem > 0 ? `${item.desconto_porcentagem}%` : '-'}</p>
                                   )}
                                   {canApplyItemDiscount && descontoItem > 0 ? (
-                                    <p className="mt-1 text-[10px] font-medium text-emerald-700 lg:text-right">-R$ {toMoney(descontoItem)}</p>
+                                    <p className="mt-1 text-[10px] font-medium text-emerald-700 lg:text-right"><FinancialValue>-R$ {toMoney(descontoItem)}</FinancialValue></p>
                                   ) : null}
                                 </div>
                                 <div>
                                   <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Total item</p>
-                                  <p className="font-semibold lg:text-right">R$ {toMoney(item.subtotal)}</p>
+                                  <p className="font-semibold lg:text-right"><FinancialValue>R$ {toMoney(item.subtotal)}</FinancialValue></p>
                                 </div>
                               </div>
                             );
@@ -1861,9 +1862,9 @@ export default function MonthlyClosing() {
                             <span>%</span>
                           </div>
                           <div className="text-right text-xs">
-                            {descontoItens > 0 ? <p className="text-muted-foreground">Itens: -R$ {toMoney(descontoItens)}</p> : null}
-                            {descontoFinalOs > 0 ? <p className="text-muted-foreground">Final: -R$ {toMoney(descontoFinalOs)}</p> : null}
-                            <p className="font-bold">R$ {toMoney(totalComDesc)}</p>
+                            {descontoItens > 0 ? <p className="text-muted-foreground">Itens: <FinancialValue>-R$ {toMoney(descontoItens)}</FinancialValue></p> : null}
+                            {descontoFinalOs > 0 ? <p className="text-muted-foreground">Final: <FinancialValue>-R$ {toMoney(descontoFinalOs)}</FinancialValue></p> : null}
+                            <p className="font-bold"><FinancialValue>R$ {toMoney(totalComDesc)}</FinancialValue></p>
                           </div>
                         </div>
                       </CardContent>
@@ -1877,16 +1878,16 @@ export default function MonthlyClosing() {
                     <div className="rounded-2xl border bg-background p-4 shadow-sm">
                       <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Total a pagar no fechamento</p>
                       <p className="mt-2 text-sm text-muted-foreground">{includedNotesCount} de {safePreviewNotes.length} O.S. marcadas · {activeDraft?.periodLabel ?? '—'}</p>
-                      <p className="mt-1 text-3xl font-bold text-primary">R$ {toMoney(grandTotal)}</p>
+                      <p className="mt-1 text-3xl font-bold text-primary"><FinancialValue>R$ {toMoney(grandTotal)}</FinancialValue></p>
                       {grandTotalOriginal !== grandTotal && (
                         <div className="mt-2 space-y-0.5 text-xs">
-                          <p className="text-muted-foreground">Bruto: R$ {toMoney(grandTotalOriginal)}</p>
-                          <p className="font-medium text-emerald-700">Desconto total: -R$ {toMoney(grandTotalOriginal - grandTotal)}</p>
+                          <p className="text-muted-foreground">Bruto: <FinancialValue>R$ {toMoney(grandTotalOriginal)}</FinancialValue></p>
+                          <p className="font-medium text-emerald-700">Desconto total: <FinancialValue>-R$ {toMoney(grandTotalOriginal - grandTotal)}</FinancialValue></p>
                         </div>
                       )}
                       {receivedNotes.length > 0 && (
                         <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-                          Já recebido no período: <span className="font-semibold">R$ {toMoney(receivedTotal)}</span>
+                          Já recebido no período: <span className="font-semibold"><FinancialValue>R$ {toMoney(receivedTotal)}</FinancialValue></span>
                           {' '}({receivedNotes.length} O.S. — não somadas no total)
                         </div>
                       )}
@@ -1972,7 +1973,7 @@ export default function MonthlyClosing() {
           <DialogHeader>
             <DialogTitle>Marcar fechamento como pago</DialogTitle>
             <DialogDescription>
-              {payFechamento?.cliente?.nome ?? 'Cliente'} · {payFechamento?.periodo ?? ''} — R$ {(payFechamento?.valor_total ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.
+              {payFechamento?.cliente?.nome ?? 'Cliente'} · {payFechamento?.periodo ?? ''} — <FinancialValue>R$ {(payFechamento?.valor_total ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</FinancialValue>.
               As O.S. pendentes deste fechamento serão marcadas como pagas.
             </DialogDescription>
           </DialogHeader>
@@ -2009,7 +2010,7 @@ export default function MonthlyClosing() {
           <DialogHeader>
             <DialogTitle>Marcar O.S. como já paga</DialogTitle>
             <DialogDescription>
-              {payNota?.os ?? ''}{payNota?.veiculo ? ` · ${payNota.veiculo}` : ''} — R$ {toMoney(payNota?.total ?? 0)}.
+              {payNota?.os ?? ''}{payNota?.veiculo ? ` · ${payNota.veiculo}` : ''} — <FinancialValue>R$ {toMoney(payNota?.total ?? 0)}</FinancialValue>.
               Ela sai do total deste fechamento e passa a constar como já recebida no período.
             </DialogDescription>
           </DialogHeader>

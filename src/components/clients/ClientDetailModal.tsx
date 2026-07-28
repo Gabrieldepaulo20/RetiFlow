@@ -13,6 +13,7 @@ import {
   Hash, Calendar, TrendingUp, Clock,
 } from 'lucide-react';
 import { buildCustomerAddressLabel } from '@/services/domain/customers';
+import { FinancialValue } from '@/components/privacy/FinancialValue';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
@@ -165,7 +166,7 @@ export default function ClientDetailModal({ clientId, onClose, onEdit }: ClientD
                         )}
                         {totalRevenue > 0 && (
                           <span className="inline-flex items-center gap-1 text-[11px] bg-emerald-50 text-emerald-600 border border-emerald-200/70 rounded-full px-2 py-0.5 font-medium">
-                            <TrendingUp className="w-3 h-3" /> R$ {totalRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            <TrendingUp className="w-3 h-3" /> <FinancialValue>R$ {totalRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</FinancialValue>
                           </span>
                         )}
                       </div>
@@ -336,7 +337,7 @@ export default function ClientDetailModal({ clientId, onClose, onEdit }: ClientD
                             )}
                             {totalRevenue > 0 && (
                               <span className="ml-auto text-xs font-semibold text-emerald-600 tabular-nums">
-                                R$ {totalRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} faturado
+                                <FinancialValue>R$ {totalRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</FinancialValue> faturado
                               </span>
                             )}
                           </div>
@@ -365,7 +366,7 @@ export default function ClientDetailModal({ clientId, onClose, onEdit }: ClientD
                                   {STATUS_LABELS[note.status]}
                                 </Badge>
                                 <span className="text-sm font-semibold tabular-nums shrink-0">
-                                  R$ {note.totalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  <FinancialValue>R$ {note.totalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</FinancialValue>
                                 </span>
                                 <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/25 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                               </button>

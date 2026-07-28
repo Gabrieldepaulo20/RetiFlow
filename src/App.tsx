@@ -7,6 +7,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { LoadingScreen } from '@/components/ui/loading-screen';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { DataProvider } from '@/contexts/DataContext';
+import { FinancialPrivacyProvider } from '@/contexts/FinancialPrivacyProvider';
 import AppLayout from '@/components/layout/AppLayout';
 import AdminLayout from '@/components/layout/AdminLayout';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
@@ -79,14 +80,15 @@ const App = () => (
       <Sonner />
       <AuthProvider>
         <DataProvider>
-          <BrowserRouter
-            future={{
-              v7_startTransition: true,
-              v7_relativeSplatPath: true,
-            }}
-          >
-            <ErrorBoundary>
-              <Routes>
+          <FinancialPrivacyProvider>
+            <BrowserRouter
+              future={{
+                v7_startTransition: true,
+                v7_relativeSplatPath: true,
+              }}
+            >
+              <ErrorBoundary>
+                <Routes>
                 <Route path="/login" element={<SuspendedPage><Login /></SuspendedPage>} />
                 <Route path="/admin/login" element={<SuspendedPage><AdminLogin /></SuspendedPage>} />
                 <Route path="/definir-senha" element={<SuspendedPage><ResetPassword /></SuspendedPage>} />
@@ -154,9 +156,10 @@ const App = () => (
 
                 <Route path="/" element={<Navigate to="/login" replace />} />
                 <Route path="*" element={<SuspendedPage><NotFound /></SuspendedPage>} />
-              </Routes>
-            </ErrorBoundary>
-          </BrowserRouter>
+                </Routes>
+              </ErrorBoundary>
+            </BrowserRouter>
+          </FinancialPrivacyProvider>
         </DataProvider>
       </AuthProvider>
     </TooltipProvider>

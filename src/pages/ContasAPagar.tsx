@@ -43,6 +43,8 @@ import { detectPayableAnomalies, formatAnomalyBadge } from '@/services/domain/pa
 import { buildComputedBriefing, type PayableBriefing } from '@/services/domain/payablesBriefing';
 import { usePayablesBriefing } from '@/hooks/usePayablesBriefing';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
+import { FinancialValue } from '@/components/privacy/FinancialValue';
+import { useFinancialPrivacy } from '@/contexts/FinancialPrivacyContext';
 
 function fmtBRL(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -105,6 +107,7 @@ type PageView = 'contas' | 'sugestoes';
 export default function ContasAPagar() {
   const { payables, payableCategories, updatePayable, addPayable, addPayableHistoryEntry, emailSuggestions } = usePayablesData();
   const { user, isSupportImpersonating } = useAuth();
+  const { financialValuesHidden } = useFinancialPrivacy();
   // Sugestões em modo suporte: a leitura é escopada à empresa via
   // get_sugestoes_email_contexto_suporte e as ações usam RPCs de escrita
   // auditadas por contexto. Gmail/scan continuam ocultos no componente.
@@ -764,7 +767,7 @@ export default function ContasAPagar() {
                 {anomaly && anomaly.direction === 'acima' && !isPaid && !isCancelled ? (
                   <span
                     className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800"
-                    title={`Valor ${formatAnomalyBadge(anomaly)} — o normal para ${payable.supplierName ?? 'este favorecido'} é cerca de ${fmtBRL(anomaly.baseline)}.`}
+                    title={`Valor ${formatAnomalyBadge(anomaly)} — o normal para ${payable.supplierName ?? 'este favorecido'} é cerca de ${financialValuesHidden ? 'R$ ••••••' : fmtBRL(anomaly.baseline)}.`}
                   >
                     <TrendingUp className="h-3 w-3" />
                     {formatAnomalyBadge(anomaly)}
@@ -808,7 +811,7 @@ export default function ContasAPagar() {
               <div className="max-w-xs">
                 <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
                   <span>{series.paidCount}/{seriesTotal || series.items.length} pagas</span>
-                  <span className="font-medium text-foreground/80">{fmtBRL(series.remainingAmount)} aberto</span>
+                  <span className="font-medium text-foreground/80"><FinancialValue>{fmtBRL(series.remainingAmount)}</FinancialValue> aberto</span>
                 </div>
                 <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
                   <div
@@ -825,7 +828,7 @@ export default function ContasAPagar() {
 
           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
             <p className={cn('mr-auto text-base font-display font-bold tabular-nums tracking-tight lg:mr-2 lg:text-right', valueColor)}>
-              {fmtBRL(payable.finalAmount)}
+              <FinancialValue>{fmtBRL(payable.finalAmount)}</FinancialValue>
             </p>
             <Button
               variant="outline"
@@ -940,11 +943,20 @@ export default function ContasAPagar() {
                 <span className={cn('h-1.5 w-1.5 rounded-full', kpi.dot)} />
                 {kpi.label}
               </div>
-              <AnimatedNumber
-                value={kpi.amount}
-                format={fmtBRL}
-                className={cn('mt-1.5 block truncate font-display text-lg font-bold tabular-nums tracking-tight sm:text-xl', kpi.valueClass)}
-              />
+              {financialValuesHidden ? (
+                <span
+                  className={cn('mt-1.5 block truncate font-display text-lg font-bold tabular-nums tracking-tight sm:text-xl', kpi.valueClass)}
+                  aria-label="Valor financeiro oculto"
+                >
+                  R$ ••••••
+                </span>
+              ) : (
+                <AnimatedNumber
+                  value={kpi.amount}
+                  format={fmtBRL}
+                  className={cn('mt-1.5 block truncate font-display text-lg font-bold tabular-nums tracking-tight sm:text-xl', kpi.valueClass)}
+                />
+              )}
               <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{kpi.sub}</p>
             </motion.div>
           ))}
@@ -1014,7 +1026,7 @@ export default function ContasAPagar() {
                         <GroupIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
                         <span className="truncate text-sm font-semibold text-foreground">{group.label}</span>
                         <span className="shrink-0 rounded-full bg-background px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">{group.items.length}</span>
-                        <span className="ml-auto shrink-0 text-sm font-display font-bold tabular-nums text-foreground/80">{fmtBRL(group.subtotal)}</span>
+                        <span className="ml-auto shrink-0 text-sm font-display font-bold tabular-nums text-foreground/80"><FinancialValue>{fmtBRL(group.subtotal)}</FinancialValue></span>
                       </button>
                       {!collapsed ? (
                         <div className="space-y-2 p-2.5 sm:p-3">
@@ -1060,7 +1072,7 @@ export default function ContasAPagar() {
       <Dialog open={dialogMode === 'payment'} onOpenChange={(open) => !open && resetDialogs()}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>Registrar pagamento</DialogTitle><DialogDescription>Popup rápido para pagamento total ou parcial.</DialogDescription></DialogHeader>
-          {selectedPayable ? <div className="space-y-4"><div className="rounded-xl border border-border/60 bg-muted/20 p-4 text-sm"><p className="font-medium">{selectedPayable.title}</p><p className="mt-1 text-muted-foreground">Saldo em aberto: {fmtBRL(calculatePayableRemainingBalance(selectedPayable))}</p></div><div className="space-y-2"><Label>Valor pago</Label><Input value={paymentAmountInput} onChange={(event) => setPaymentAmountInput(normalizeDecimalInputDraft(event.target.value))} placeholder="0,00" /></div><div className="space-y-2"><Label>Forma de pagamento</Label><Select value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as PaymentMethod)}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Observações</Label><Textarea value={paymentNotes} onChange={(event) => setPaymentNotes(event.target.value)} onBlur={() => setPaymentNotes(normalizeWhitespace(paymentNotes))} rows={4} placeholder="Ex.: pagamento feito via PIX do caixa do dia" /></div></div> : null}
+          {selectedPayable ? <div className="space-y-4"><div className="rounded-xl border border-border/60 bg-muted/20 p-4 text-sm"><p className="font-medium">{selectedPayable.title}</p><p className="mt-1 text-muted-foreground">Saldo em aberto: <FinancialValue>{fmtBRL(calculatePayableRemainingBalance(selectedPayable))}</FinancialValue></p></div><div className="space-y-2"><Label>Valor pago</Label><Input value={paymentAmountInput} onChange={(event) => setPaymentAmountInput(normalizeDecimalInputDraft(event.target.value))} placeholder="0,00" /></div><div className="space-y-2"><Label>Forma de pagamento</Label><Select value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as PaymentMethod)}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Observações</Label><Textarea value={paymentNotes} onChange={(event) => setPaymentNotes(event.target.value)} onBlur={() => setPaymentNotes(normalizeWhitespace(paymentNotes))} rows={4} placeholder="Ex.: pagamento feito via PIX do caixa do dia" /></div></div> : null}
           <DialogFooter><Button variant="outline" onClick={resetDialogs}>Cancelar</Button><Button onClick={() => void handleSubmitPayment()}>Salvar pagamento</Button></DialogFooter>
         </DialogContent>
       </Dialog>

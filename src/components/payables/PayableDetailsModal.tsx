@@ -39,6 +39,7 @@ import {
 import { normalizeAttachmentDisplayName } from '@/services/domain/payableAttachments';
 import { normalizeCommonBusinessTermsPtBr, toTitleCasePtBr } from '@/services/domain/textNormalization';
 import { ArrowUpRight, CalendarRange, CheckCircle2, Circle, Clock, Layers3, Loader2, Paperclip, Pencil, PlusCircle } from 'lucide-react';
+import { FinancialValue } from '@/components/privacy/FinancialValue';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
@@ -347,8 +348,8 @@ export default function PayableDetailsModal({
       <div className="space-y-6">
         <div className="grid gap-3 md:grid-cols-4">
           <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Status</p><div className="mt-2"><Badge className={cn(PAYABLE_STATUS_COLORS[displayStatus])}>{PAYABLE_STATUS_LABELS[displayStatus]}</Badge></div></CardContent></Card>
-          <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Valor</p><p className="mt-2 text-lg font-semibold">{fmtBRL(payable.finalAmount)}</p></CardContent></Card>
-          <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Saldo atual</p><p className="mt-2 text-lg font-semibold">{fmtBRL(calculatePayableRemainingBalance(payable))}</p></CardContent></Card>
+          <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Valor</p><p className="mt-2 text-lg font-semibold"><FinancialValue>{fmtBRL(payable.finalAmount)}</FinancialValue></p></CardContent></Card>
+          <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Saldo atual</p><p className="mt-2 text-lg font-semibold"><FinancialValue>{fmtBRL(calculatePayableRemainingBalance(payable))}</FinancialValue></p></CardContent></Card>
           <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Competência</p><p className="mt-2 text-sm font-medium">{payable.competencyDate ? format(parseISO(payable.competencyDate), 'MM/yyyy') : '—'}</p></CardContent></Card>
         </div>
 

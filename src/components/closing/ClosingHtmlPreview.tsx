@@ -2,6 +2,8 @@ import type { FechamentoDadosJson } from '@/api/supabase/fechamentos';
 import type { ResolvedDocumentCustomization, TemplateVariableKey } from '@/services/domain/documentCustomization';
 import { getDocumentAccentColor, renderTemplateText, normalizeDocumentCompanyName } from '@/services/domain/documentCustomization';
 import { cn } from '@/lib/utils';
+import { FinancialValue } from '@/components/privacy/FinancialValue';
+import { useFinancialPrivacy } from '@/contexts/FinancialPrivacyContext';
 
 const MAX_ITEMS_PER_SECTION = 12;
 
@@ -27,6 +29,7 @@ interface Props {
 }
 
 export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSettings }: Props) {
+  const { financialValuesHidden } = useFinancialPrivacy();
   const effectiveAccent = getDocumentAccentColor(documentSettings, accentColor);
   const company = documentSettings?.company;
   const config = documentSettings?.resolvedConfig;
@@ -48,7 +51,7 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
     customer_name: clienteNome,
     closing_number: dados.periodo,
     current_date: generatedAt,
-    total_amount: `R$ ${brl(totalComDesconto)}`,
+    total_amount: financialValuesHidden ? 'R$ ••••••' : `R$ ${brl(totalComDesconto)}`,
   };
   const subtitle = renderTemplateText(config?.subtitle || 'Fechamento mensal de serviços', templateVariables);
 
@@ -79,8 +82,8 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
           </div>
           <div className="mt-5 grid gap-2 sm:grid-cols-3">
             <SummaryCard label="Ordens" value={`${notas.length} O.S.`} />
-            <SummaryCard label="Subtotal" value={`R$ ${brl(totalOriginal)}`} />
-            <SummaryCard label="Total" value={`R$ ${brl(totalComDesconto)}`} strong />
+            <SummaryCard label="Subtotal" value={`R$ ${brl(totalOriginal)}`} financial />
+            <SummaryCard label="Total" value={`R$ ${brl(totalComDesconto)}`} strong financial />
           </div>
         </div>
 
@@ -131,9 +134,9 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
                       >
                         <span className="min-w-0 pr-3 leading-snug">{item.descricao}</span>
                         <span className="text-center tabular-nums">{informational ? '' : item.quantidade}</span>
-                        <span className="text-right tabular-nums">{informational ? '' : `R$ ${brl(item.preco_unitario)}`}</span>
+                        <span className="text-right tabular-nums">{informational ? '' : <FinancialValue>{`R$ ${brl(item.preco_unitario)}`}</FinancialValue>}</span>
                         <span className="text-right tabular-nums">{informational ? '' : item.desconto_porcentagem > 0 ? pct(item.desconto_porcentagem) : '-'}</span>
-                        <span className="text-right font-semibold tabular-nums">{informational ? '' : `R$ ${brl(item.subtotal)}`}</span>
+                        <span className="text-right font-semibold tabular-nums">{informational ? '' : <FinancialValue>{`R$ ${brl(item.subtotal)}`}</FinancialValue>}</span>
                       </div>
                     );
                   })}
@@ -144,11 +147,11 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
                   <div className="flex flex-wrap items-center justify-end gap-x-5 gap-y-1 border-t border-slate-200 bg-slate-50 px-4 py-3 text-sm">
                     {hasDiscount && (
                       <>
-                        <p><span className="text-slate-500">Subtotal:</span> R$ {brl(nota.total_original)}</p>
+                        <p><span className="text-slate-500">Subtotal:</span> <FinancialValue>R$ {brl(nota.total_original)}</FinancialValue></p>
                         <p><span className="text-slate-500">Desconto:</span> {pct(nota.desconto_nota)}</p>
                       </>
                     )}
-                    <p className="font-bold" style={{ color: effectiveAccent }}>Total {nota.os}: R$ {brl(nota.total_com_desconto)}</p>
+                    <p className="font-bold" style={{ color: effectiveAccent }}>Total {nota.os}: <FinancialValue>R$ {brl(nota.total_com_desconto)}</FinancialValue></p>
                   </div>
                 ) : (
                   <p className="border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
@@ -169,13 +172,13 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
               {recebidas.map((r) => (
                 <div key={r.id} className="flex items-center justify-between gap-3 text-slate-600">
                   <span>O.S. {r.os}{r.veiculo ? ` · ${r.veiculo}` : ''}{r.pago_em ? ` · pago em ${new Date(r.pago_em).toLocaleDateString('pt-BR')}` : ''}</span>
-                  <span className="font-medium text-emerald-700">R$ {brl(r.total)}</span>
+                  <span className="font-medium text-emerald-700"><FinancialValue>R$ {brl(r.total)}</FinancialValue></span>
                 </div>
               ))}
             </div>
             <div className="mt-2 flex items-center justify-between border-t border-emerald-200 pt-2 font-semibold text-emerald-700">
               <span>Total já recebido</span>
-              <span>R$ {brl(dados.total_ja_recebido ?? 0)}</span>
+              <span><FinancialValue>R$ {brl(dados.total_ja_recebido ?? 0)}</FinancialValue></span>
             </div>
           </div>
         )}
@@ -184,12 +187,12 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
           <div className="text-sm text-slate-600">
             <p>{notas.length} {notas.length === 1 ? 'ordem' : 'ordens'} de serviço · {dados.periodo}</p>
             {totalOriginal !== totalComDesconto && (
-              <p className="mt-1">Subtotal: R$ {brl(totalOriginal)} · Descontos: R$ {brl(totalOriginal - totalComDesconto)}</p>
+              <p className="mt-1">Subtotal: <FinancialValue>R$ {brl(totalOriginal)}</FinancialValue> · Descontos: <FinancialValue>R$ {brl(totalOriginal - totalComDesconto)}</FinancialValue></p>
             )}
           </div>
           <div className="text-right">
             <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: effectiveAccent }}>Total a pagar</p>
-            <p className="text-2xl font-bold" style={{ color: effectiveAccent }}>R$ {brl(totalComDesconto)}</p>
+            <p className="text-2xl font-bold" style={{ color: effectiveAccent }}><FinancialValue>R$ {brl(totalComDesconto)}</FinancialValue></p>
           </div>
         </div>
       </div>
@@ -197,11 +200,13 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
   );
 }
 
-function SummaryCard({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+function SummaryCard({ label, value, strong = false, financial = false }: { label: string; value: string; strong?: boolean; financial?: boolean }) {
   return (
     <div className="rounded-xl bg-white/95 px-4 py-3 text-cyan-900">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-cyan-700/75">{label}</p>
-      <p className={cn('mt-1 font-bold tabular-nums', strong ? 'text-lg' : 'text-base')}>{value}</p>
+      <p className={cn('mt-1 font-bold tabular-nums', strong ? 'text-lg' : 'text-base')}>
+        {financial ? <FinancialValue>{value}</FinancialValue> : value}
+      </p>
     </div>
   );
 }

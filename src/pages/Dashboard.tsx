@@ -37,6 +37,8 @@ import {
 } from '@/services/domain/dashboardFinance';
 import { computeDRE, sumPayablesByClass } from '@/services/domain/dre';
 import { SectionEmptyState, SectionErrorState } from '@/components/ui/section-state';
+import { FinancialValue } from '@/components/privacy/FinancialValue';
+import { useFinancialPrivacy } from '@/contexts/FinancialPrivacyContext';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -131,7 +133,9 @@ function DRERow({ label, amount, deduction, subtotal, final }: {
             : subtotal ? 'text-xs font-semibold text-foreground'
               : 'text-xs text-foreground',
       )}>
-        {signed && negative ? '−' : ''}R$ {fmtBRLFull(Math.abs(amount))}
+        <FinancialValue>
+          {signed && negative ? '−' : ''}R$ {fmtBRLFull(Math.abs(amount))}
+        </FinancialValue>
       </span>
     </div>
   );
@@ -141,6 +145,7 @@ function DRERow({ label, amount, deduction, subtotal, final }: {
 
 export default function Dashboard() {
   const { notes, payables, payableCategories } = useData();
+  const { financialValuesHidden } = useFinancialPrivacy();
   const navigate = useNavigate();
   const [rangePreset, setRangePreset] = useState<DashboardRangePreset>('month');
   const [customStartDate, setCustomStartDate] = useState(() => format(startOfMonth(new Date()), 'yyyy-MM-dd'));
@@ -594,7 +599,7 @@ export default function Dashboard() {
                     Entradas previstas
                     <InlineInfo label="Valor potencial das O.S. lançadas no período, sem contar O.S. excluídas. É uma previsão: só vira faturamento quando a O.S. fica em um status faturável." />
                   </p>
-                  <p className={financialMetricValueClass}>R$ {fmtBRL(periodPotentialAmount)}</p>
+                  <p className={financialMetricValueClass}><FinancialValue>R$ {fmtBRL(periodPotentialAmount)}</FinancialValue></p>
                 </div>
                 <div className={cn(financialMetricIconClass, 'bg-sky-50 text-sky-700')}>
                   <FileText className="h-4 w-4" />
@@ -616,14 +621,14 @@ export default function Dashboard() {
                     Faturamento real
                     <InlineInfo label="Receita por competência: soma das O.S. faturáveis pela data de entrega/finalização (fato gerador). O.S. legadas, anteriores a 01/06/2026, usam o prazo, porque foram finalizadas em lote na migração. O pagamento posterior não muda o mês." />
                   </p>
-                  <p className={cn(financialMetricValueClass, 'text-emerald-700')}>R$ {fmtBRL(periodDeliveredAmount)}</p>
+                  <p className={cn(financialMetricValueClass, 'text-emerald-700')}><FinancialValue>R$ {fmtBRL(periodDeliveredAmount)}</FinancialValue></p>
                 </div>
                 <div className={cn(financialMetricIconClass, 'bg-emerald-50 text-emerald-700')}>
                   <CheckCircle2 className="h-4 w-4" />
                 </div>
               </div>
               <p className="mt-1.5 hidden text-[11px] leading-snug text-muted-foreground">
-                {periodDeliveredNotes.length} O.S. faturável{periodDeliveredNotes.length !== 1 ? 'eis' : ''} no período · total geral R$ {fmtBRL(totalRevenue)}
+                {periodDeliveredNotes.length} O.S. faturável{periodDeliveredNotes.length !== 1 ? 'eis' : ''} no período · total geral <FinancialValue>R$ {fmtBRL(totalRevenue)}</FinancialValue>
               </p>
             </button>
 
@@ -638,7 +643,7 @@ export default function Dashboard() {
                     Ticket médio
                     <InlineInfo label="Média das O.S. lançadas no período selecionado, considerando todas as notas do sistema exceto excluídas." />
                   </p>
-                  <p className={cn(financialMetricValueClass, 'text-violet-700')}>R$ {fmtBRL(periodAverageTicket)}</p>
+                  <p className={cn(financialMetricValueClass, 'text-violet-700')}><FinancialValue>R$ {fmtBRL(periodAverageTicket)}</FinancialValue></p>
                 </div>
                 <div className={cn(financialMetricIconClass, 'bg-violet-50 text-violet-700')}>
                   <Calculator className="h-4 w-4" />
@@ -660,14 +665,14 @@ export default function Dashboard() {
                     Contas lançadas
                     <InlineInfo label="Total das contas cadastradas no Contas a Pagar para o período, usando competência financeira ou vencimento." />
                   </p>
-                  <p className={cn(financialMetricValueClass, 'text-orange-700')}>R$ {fmtBRL(periodPayablesTotal)}</p>
+                  <p className={cn(financialMetricValueClass, 'text-orange-700')}><FinancialValue>R$ {fmtBRL(periodPayablesTotal)}</FinancialValue></p>
                 </div>
                 <div className={cn(financialMetricIconClass, 'bg-orange-50 text-orange-700')}>
                   <Receipt className="h-4 w-4" />
                 </div>
               </div>
               <p className="mt-1.5 hidden text-[11px] leading-snug text-muted-foreground">
-                {periodPayables.length} conta{periodPayables.length !== 1 ? 's' : ''} · pago R$ {fmtBRL(periodPayablesPaidPart)}
+                {periodPayables.length} conta{periodPayables.length !== 1 ? 's' : ''} · pago <FinancialValue>R$ {fmtBRL(periodPayablesPaidPart)}</FinancialValue>
               </p>
             </button>
 
@@ -682,7 +687,7 @@ export default function Dashboard() {
                     Contas pagas
                     <InlineInfo label={`Saída de caixa: soma das contas marcadas como pagas ou parciais, usando a data real do pagamento dentro do período e nunca antes de ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
                   </p>
-                  <p className={cn(financialMetricValueClass, 'text-red-600')}>R$ {fmtBRL(periodPaidExpenses)}</p>
+                  <p className={cn(financialMetricValueClass, 'text-red-600')}><FinancialValue>R$ {fmtBRL(periodPaidExpenses)}</FinancialValue></p>
                 </div>
                 <div className={cn(financialMetricIconClass, 'bg-red-50 text-red-600')}>
                   <Landmark className="h-4 w-4" />
@@ -704,7 +709,7 @@ export default function Dashboard() {
                     Falta pagar
                     <InlineInfo label="Saldo ainda aberto das contas lançadas no período. Contas parciais entram somente com o valor restante." />
                   </p>
-                  <p className={cn(financialMetricValueClass, 'text-amber-700')}>R$ {fmtBRL(periodPayablesRemaining)}</p>
+                  <p className={cn(financialMetricValueClass, 'text-amber-700')}><FinancialValue>R$ {fmtBRL(periodPayablesRemaining)}</FinancialValue></p>
                 </div>
                 <div className={cn(financialMetricIconClass, 'bg-amber-50 text-amber-700')}>
                   <Landmark className="h-4 w-4" />
@@ -728,7 +733,7 @@ export default function Dashboard() {
                     <InlineInfo label={`Cálculo: faturamento real (por entrega da O.S.) menos contas pagas no mesmo período. Contas pagas usam a data real de pagamento e a base a partir de ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
                   </p>
                   <p className={cn(financialMetricValueClass, periodProfit >= 0 ? 'text-primary' : 'text-red-700')}>
-                    R$ {fmtBRLFull(periodProfit)}
+                    <FinancialValue>R$ {fmtBRLFull(periodProfit)}</FinancialValue>
                   </p>
                 </div>
                 <div className={cn(financialMetricIconClass, periodProfit >= 0 ? 'bg-primary/10 text-primary' : 'bg-red-100 text-red-700')}>
@@ -758,11 +763,17 @@ export default function Dashboard() {
                     </defs>
                     <CartesianGrid vertical={false} strokeDasharray="4 8" stroke="hsl(var(--border))" />
                     <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} dy={8} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10 }} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} width={36} />
+                    <YAxis
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 10 }}
+                      tickFormatter={(value) => financialValuesHidden ? '•••' : `${Math.round(Number(value) / 1000)}k`}
+                      width={36}
+                    />
                     <RechartsTooltip
                       cursor={{ fill: 'hsl(var(--muted) / 0.35)' }}
                       formatter={(value: number, name: string) => [
-                        `R$ ${value.toLocaleString('pt-BR')}`,
+                        financialValuesHidden ? 'R$ ••••••' : `R$ ${value.toLocaleString('pt-BR')}`,
                         name === 'entrada' ? 'Faturamento' : name === 'saida' ? 'Contas pagas' : 'Lucro',
                       ]}
                       contentStyle={{
@@ -806,15 +817,15 @@ export default function Dashboard() {
           <div className="grid grid-cols-3 gap-2">
             <div className="rounded-xl bg-emerald-50/60 p-2.5 sm:p-3">
               <p className="text-[10px] font-medium uppercase tracking-wide text-emerald-700/70">Recebido</p>
-              <p className="mt-1 text-base font-display font-bold tabular-nums text-emerald-700 sm:text-xl">R$ {fmtBRLFull(periodReceived)}</p>
+              <p className="mt-1 text-base font-display font-bold tabular-nums text-emerald-700 sm:text-xl"><FinancialValue>R$ {fmtBRLFull(periodReceived)}</FinancialValue></p>
             </div>
             <div className="rounded-xl bg-red-50/60 p-2.5 sm:p-3">
               <p className="text-[10px] font-medium uppercase tracking-wide text-red-700/70">Pago</p>
-              <p className="mt-1 text-base font-display font-bold tabular-nums text-red-700 sm:text-xl">R$ {fmtBRLFull(periodPaidExpenses)}</p>
+              <p className="mt-1 text-base font-display font-bold tabular-nums text-red-700 sm:text-xl"><FinancialValue>R$ {fmtBRLFull(periodPaidExpenses)}</FinancialValue></p>
             </div>
             <div className={cn('rounded-xl p-2.5 sm:p-3', cashBalance >= 0 ? 'bg-primary/5' : 'bg-red-50/60')}>
               <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Saldo</p>
-              <p className={cn('mt-1 text-base font-display font-bold tabular-nums sm:text-xl', cashBalance >= 0 ? 'text-primary' : 'text-red-700')}>R$ {fmtBRLFull(cashBalance)}</p>
+              <p className={cn('mt-1 text-base font-display font-bold tabular-nums sm:text-xl', cashBalance >= 0 ? 'text-primary' : 'text-red-700')}><FinancialValue>R$ {fmtBRLFull(cashBalance)}</FinancialValue></p>
             </div>
           </div>
           <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -823,14 +834,14 @@ export default function Dashboard() {
                 <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
                 A receber <span className="text-[10px] opacity-60">(em aberto)</span>
               </span>
-              <span className="text-sm font-semibold tabular-nums text-foreground/80">R$ {fmtBRL(openReceivableAmount)}</span>
+              <span className="text-sm font-semibold tabular-nums text-foreground/80"><FinancialValue>R$ {fmtBRL(openReceivableAmount)}</FinancialValue></span>
             </div>
             <div className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Receipt className="h-3.5 w-3.5 text-red-500" />
                 A pagar <span className="text-[10px] opacity-60">(em aberto)</span>
               </span>
-              <span className="text-sm font-semibold tabular-nums text-foreground/80">R$ {fmtBRL(openPayableAmount)}</span>
+              <span className="text-sm font-semibold tabular-nums text-foreground/80"><FinancialValue>R$ {fmtBRL(openPayableAmount)}</FinancialValue></span>
             </div>
           </div>
         </CardContent>
@@ -873,7 +884,7 @@ export default function Dashboard() {
             <div className="mt-2 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>
-                R$ {fmtBRL(dre.naoClassificado)} em contas com categoria sem classe contábil — somadas como despesa.
+                <FinancialValue>R$ {fmtBRL(dre.naoClassificado)}</FinancialValue> em contas com categoria sem classe contábil — somadas como despesa.
                 Classifique as categorias (custo / despesa / imposto / financeiro) para o resultado ficar exato.
               </span>
             </div>
@@ -941,9 +952,9 @@ export default function Dashboard() {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+                  <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => financialValuesHidden ? '•••' : `${Math.round(v / 1000)}k`} />
                   <RechartsTooltip
-                    formatter={(v: number) => [`R$ ${v.toLocaleString('pt-BR')}`, 'Faturamento']}
+                    formatter={(v: number) => [financialValuesHidden ? 'R$ ••••••' : `R$ ${v.toLocaleString('pt-BR')}`, 'Faturamento']}
                     contentStyle={{ fontSize: 12 }}
                   />
                   <Area
@@ -981,7 +992,7 @@ export default function Dashboard() {
               <div>
                 <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Resultado de {currentYear}</p>
                 <p className={`text-xl font-display font-bold tracking-tight sm:text-2xl ${yearlyResult >= 0 ? 'text-success' : 'text-destructive'}`}>
-                  R$ {fmtBRLFull(Math.abs(yearlyResult))}
+                  <FinancialValue>R$ {fmtBRLFull(Math.abs(yearlyResult))}</FinancialValue>
                   <span className="ml-1.5 text-sm font-normal text-muted-foreground">{yearlyResult >= 0 ? 'de resultado positivo' : 'de resultado negativo'}</span>
                 </p>
               </div>
@@ -989,23 +1000,23 @@ export default function Dashboard() {
             <div className="flex flex-wrap gap-4 text-sm sm:gap-5">
               <div className="text-center">
                 <p className="text-xs text-muted-foreground">O.S. criadas no ano</p>
-                <p className="mt-1 font-semibold text-sky-700">R$ {fmtBRL(yearlyPotentialRevenue)}</p>
+                <p className="mt-1 font-semibold text-sky-700"><FinancialValue>R$ {fmtBRL(yearlyPotentialRevenue)}</FinancialValue></p>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">{yearlyCreatedNotes.length} O.S.</p>
               </div>
               <div className="text-center">
                 <p className="text-xs text-muted-foreground">Faturamento real</p>
-                <p className="mt-1 font-semibold text-success">R$ {fmtBRL(yearlyRevenue)}</p>
+                <p className="mt-1 font-semibold text-success"><FinancialValue>R$ {fmtBRL(yearlyRevenue)}</FinancialValue></p>
               </div>
               <div className="text-center">
                 <p className="text-xs text-muted-foreground">Saídas no ano</p>
-                <p className="mt-1 font-semibold text-destructive">R$ {fmtBRL(yearlyExpenses)}</p>
+                <p className="mt-1 font-semibold text-destructive"><FinancialValue>R$ {fmtBRL(yearlyExpenses)}</FinancialValue></p>
                 {yearlyExpensesPartial && (
                   <p className="mt-0.5 text-[11px] text-muted-foreground">desde {DASHBOARD_ACCOUNTING_START_LABEL}</p>
                 )}
               </div>
               <div className="text-center">
                 <p className="text-xs text-muted-foreground">Ticket médio</p>
-                <p className="mt-1 font-semibold">R$ {fmtBRL(yearlyAverageTicket)}</p>
+                <p className="mt-1 font-semibold"><FinancialValue>R$ {fmtBRL(yearlyAverageTicket)}</FinancialValue></p>
               </div>
             </div>
           </div>

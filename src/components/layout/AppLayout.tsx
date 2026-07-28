@@ -33,6 +33,7 @@ import { MARKETING_RESUMO_CACHE_TTL_MS } from '@/api/supabase/marketingCache';
 import { useSystemUsersQuery } from '@/hooks/useSystemUsersQuery';
 import { getInitials } from '@/lib/avatarInitials';
 import { isSuperAdmin } from '@/services/auth/superAdmin';
+import { FinancialPrivacyToggle } from '@/components/privacy/FinancialPrivacyToggle';
 import {
   LayoutDashboard, Users, FileText, KanbanSquare, Calendar, Settings, Wallet,
   Menu, Search, Bell, LogOut, ChevronLeft, ChevronRight, Wrench, ChevronDown, MessageSquarePlus,
@@ -418,6 +419,7 @@ export default function AppLayout() {
             ) : null}
           </div>
           <div className="ml-auto flex items-center gap-2">
+            <FinancialPrivacyToggle />
             {isSupportImpersonating ? (
               <Button
                 type="button"
