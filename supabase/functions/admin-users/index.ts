@@ -527,6 +527,47 @@ async function sendInviteEmail(params: {
   await sendSesEmail({ to: params.to, subject, text, html });
 }
 
+function isSesAuthorizationError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  return /SES retornou 403/i.test(error.message)
+    && /not authorized to perform [`'"]?ses:SendEmail|ProductionAccessNotGranted|sandbox/i.test(error.message);
+}
+
+async function sendInviteEmailWithFallback(params: {
+  to: string;
+  targetName: string;
+  actionLink: string;
+  requesterEmail: string;
+  request: Request;
+}) {
+  try {
+    await sendInviteEmail(params);
+    return 'ses' as const;
+  } catch (error) {
+    if (!isSesAuthorizationError(error)) throw error;
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+    if (!supabaseUrl || !supabaseAnonKey) {
+      throw new Error('SES indisponível e configuração do canal alternativo ausente.');
+    }
+
+    const authClient = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const redirectTo = getPasswordSetupRedirectTo(params.request);
+    const { error: fallbackError } = await authClient.auth.resetPasswordForEmail(params.to, {
+      redirectTo,
+    });
+
+    if (fallbackError) {
+      throw new Error(`SES indisponível e falha no canal alternativo: ${fallbackError.message}`);
+    }
+
+    return 'supabase_recovery' as const;
+  }
+}
+
 async function sendPasswordRecoveryEmail(params: {
   to: string;
   targetName: string;
@@ -726,16 +767,18 @@ async function ensureAuthInvite(
     throw new Error(`Falha ao gerar convite seguro: ${error?.message ?? 'link ausente'}`);
   }
 
-  await sendInviteEmail({
+  const deliveryChannel = await sendInviteEmailWithFallback({
     to: email,
     targetName: name,
     actionLink: data.properties.action_link,
     requesterEmail,
+    request: params.request,
   });
 
   return {
     userId: existing?.id ?? data.user.id,
     emailSent: true,
+    deliveryChannel,
   };
 }
 
@@ -767,15 +810,17 @@ async function resendAuthInvite(
     throw new Error(`Falha ao gerar novo convite: ${error?.message ?? 'link ausente'}`);
   }
 
-  await sendInviteEmail({
+  const deliveryChannel = await sendInviteEmailWithFallback({
     to: params.email,
     targetName: params.name,
     actionLink: data.properties.action_link,
     requesterEmail: params.requesterEmail,
+    request: params.request,
   });
 
   return {
     authUserId: data.user.id,
+    deliveryChannel,
   };
 }
 
@@ -1424,10 +1469,13 @@ Deno.serve(async (request) => {
 
       return jsonResponse({
         mensagem: auth.emailSent
-          ? 'Convite enviado por e-mail com segurança.'
+          ? auth.deliveryChannel === 'supabase_recovery'
+            ? 'Acesso enviado pelo canal alternativo seguro.'
+            : 'Convite enviado por e-mail com segurança.'
           : 'Usuário já existia no Supabase Auth; perfil interno atualizado.',
         id_usuarios: internalUserId,
         auth_user_id: auth.userId,
+        email_channel: auth.emailSent ? auth.deliveryChannel : null,
       }, 200, request);
     }
 
@@ -1461,9 +1509,12 @@ Deno.serve(async (request) => {
       });
 
       return jsonResponse({
-        mensagem: 'Convite reenviado por e-mail com segurança.',
+        mensagem: invite.deliveryChannel === 'supabase_recovery'
+          ? 'Acesso reenviado pelo canal alternativo seguro.'
+          : 'Convite reenviado por e-mail com segurança.',
         resetEmail: email,
         auth_user_id: invite.authUserId,
+        email_channel: invite.deliveryChannel,
       }, 200, request);
     }
 
