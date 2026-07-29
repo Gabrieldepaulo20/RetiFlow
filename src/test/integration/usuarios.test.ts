@@ -43,6 +43,7 @@ describe.skipIf(!envStatus.configured)('Usuários e módulos — integração re
         nota_fiscal: false,
         configuracoes: false,
         contas_a_pagar: true,
+        marketing: true,
         admin: true,
       }, { onConflict: 'fk_usuarios' });
 
@@ -69,6 +70,15 @@ describe.skipIf(!envStatus.configured)('Usuários e módulos — integração re
       clientes: false,
       notas_de_entrada: true,
       contas_a_pagar: true,
+      marketing: true,
+      admin: true,
+    });
+
+    const profileEnvelope = await callRpc(client, 'get_usuario_por_auth_id');
+    const profileData = profileEnvelope.dados as { modulos?: Record<string, boolean> } | undefined;
+    expect(profileEnvelope.status).toBe(200);
+    expect(profileData?.modulos).toMatchObject({
+      marketing: true,
       admin: true,
     });
   });
