@@ -156,9 +156,15 @@ interface GoogleAdsApiResult {
   searchTermView?: { searchTerm?: string; status?: string };
   landingPageView?: { unexpandedFinalUrl?: string };
   callView?: {
+    resourceName?: string;
     callDurationSeconds?: number | string;
     callStatus?: string;
     startCallDateTime?: string;
+    endCallDateTime?: string;
+    callerAreaCode?: string;
+    callerCountryCode?: string;
+    callTrackingDisplayLocation?: string;
+    type?: string;
   };
   conversionAction?: { id?: string; name?: string; category?: string; status?: string };
   metrics?: JsonRecord;
@@ -245,6 +251,17 @@ interface GoogleAdsSummary {
     missed: number;
     averageDurationSeconds: number;
     longestDurationSeconds: number;
+    items: Array<{
+      id: string;
+      startedAt: string;
+      endedAt: string | null;
+      durationSeconds: number;
+      status: string;
+      areaCode: string | null;
+      countryCode: string | null;
+      displayLocation: string;
+      type: string;
+    }>;
   };
   conversionActions: Array<{
     id: string;
@@ -1117,13 +1134,19 @@ function googleAdsCallViewQuery(startDate: string, endDate: string) {
   const endExclusiveDate = addMarketingDays(endDate, 1);
   return `
     SELECT
+      call_view.resource_name,
       call_view.call_duration_seconds,
       call_view.call_status,
-      call_view.start_call_date_time
+      call_view.start_call_date_time,
+      call_view.end_call_date_time,
+      call_view.caller_area_code,
+      call_view.caller_country_code,
+      call_view.call_tracking_display_location,
+      call_view.type
     FROM call_view
     WHERE call_view.start_call_date_time >= '${startDate} 00:00:00'
       AND call_view.start_call_date_time < '${endExclusiveDate} 00:00:00'
-    ORDER BY call_view.start_call_date_time
+    ORDER BY call_view.start_call_date_time DESC
   `;
 }
 
@@ -1373,6 +1396,20 @@ async function fetchGoogleAdsSummary(
         missed: callRows.filter((row) => row.callView?.callStatus === 'MISSED').length,
         averageDurationSeconds: durations.length ? round(totalDuration / durations.length) : 0,
         longestDurationSeconds: durations.length ? Math.max(...durations) : 0,
+        items: callRows.map((row, index) => {
+          const resourceName = row.callView?.resourceName ?? '';
+          return {
+            id: resourceName.split('/').at(-1) || `call-${index + 1}`,
+            startedAt: row.callView?.startCallDateTime ?? '',
+            endedAt: row.callView?.endCallDateTime ?? null,
+            durationSeconds: toNumber(row.callView?.callDurationSeconds),
+            status: row.callView?.callStatus ?? 'UNKNOWN',
+            areaCode: row.callView?.callerAreaCode ?? null,
+            countryCode: row.callView?.callerCountryCode ?? null,
+            displayLocation: row.callView?.callTrackingDisplayLocation ?? 'UNKNOWN',
+            type: row.callView?.type ?? 'UNKNOWN',
+          };
+        }),
       };
     })(),
     conversionActions: conversionActionRows.map((row) => {
@@ -2546,7 +2583,9 @@ async function handleRequest(request: Request) {
             landingPages: [],
             schedule: [],
             clickTypes: googleAds?.clickTypes ?? [],
-            calls: googleAds?.calls ?? null,
+            calls: googleAds?.calls
+              ? { ...googleAds.calls, items: [] }
+              : null,
             conversionActions: [],
             paidActions,
             paidVisitors: [],

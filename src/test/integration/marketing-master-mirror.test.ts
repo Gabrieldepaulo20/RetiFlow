@@ -95,7 +95,17 @@ describe.skipIf(!envStatus.configured)('Crescimento — Master espelha a Retífi
       reported: expect.any(Number),
       received: expect.any(Number),
       averageDurationSeconds: expect.any(Number),
+      items: expect.any(Array),
     });
+    if (payload.dados.campaigns.calls.reported > 0) {
+      expect(payload.dados.campaigns.calls.items).toHaveLength(payload.dados.campaigns.calls.reported);
+      expect(payload.dados.campaigns.calls.items[0]).toMatchObject({
+        id: expect.any(String),
+        startedAt: expect.any(String),
+        durationSeconds: expect.any(Number),
+        status: expect.any(String),
+      });
+    }
     expect(payload.dados.campaigns.paidActions).toMatchObject({
       trackedSessions: expect.any(Number),
       whatsappClicks: expect.any(Number),

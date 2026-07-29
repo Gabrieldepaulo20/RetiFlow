@@ -105,7 +105,31 @@ function buildResumo(): MarketingResumo {
         received: 1,
         missed: 1,
         averageDurationSeconds: 45,
-        longestDurationSeconds: 57,
+        longestDurationSeconds: 65,
+        items: [
+          {
+            id: 'call-1',
+            startedAt: '2026-07-29 10:03:06',
+            endedAt: '2026-07-29 10:04:11',
+            durationSeconds: 65,
+            status: 'RECEIVED',
+            areaCode: '16',
+            countryCode: '55',
+            displayLocation: 'AD',
+            type: 'HIGH_END_MOBILE_SEARCH',
+          },
+          {
+            id: 'call-2',
+            startedAt: '2026-07-28 15:22:00',
+            endedAt: '2026-07-28 15:22:25',
+            durationSeconds: 25,
+            status: 'MISSED',
+            areaCode: null,
+            countryCode: '55',
+            displayLocation: 'AD',
+            type: 'HIGH_END_MOBILE_SEARCH',
+          },
+        ],
       },
       conversionActions: [],
       paidActions: {
@@ -171,6 +195,13 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByText('WhatsApp no site')).toBeInTheDocument();
     expect(screen.getByText('50 de 50 cliques explicados')).toBeInTheDocument();
     expect(screen.getByText('1 atendida · 45s em média')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Detalhes de cada ligação' })).toBeInTheDocument();
+    expect(screen.getByText('29/07/2026 às 10:03')).toBeInTheDocument();
+    expect(screen.getByText('1min 05s')).toBeInTheDocument();
+    expect(screen.getByText('Brasil (+55) · DDD 16')).toBeInTheDocument();
+    expect(screen.getByText('Brasil (+55) · DDD indisponível')).toBeInTheDocument();
+    expect(screen.getAllByText('Atendida').length).toBeGreaterThan(0);
+    expect(screen.getByText(/não fornece nome nem telefone completo ao Retiflow/i)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Os cliques estão virando resultado?' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Onde estamos perdendo oportunidades?' })).toBeInTheDocument();
     expect(screen.getByText('Todas as conversões')).toBeInTheDocument();

@@ -238,6 +238,19 @@ export interface MarketingAdsCallSummary {
   missed: number;
   averageDurationSeconds: number;
   longestDurationSeconds: number;
+  items?: MarketingAdsCallDetail[];
+}
+
+export interface MarketingAdsCallDetail {
+  id: string;
+  startedAt: string;
+  endedAt: string | null;
+  durationSeconds: number;
+  status: string;
+  areaCode: string | null;
+  countryCode: string | null;
+  displayLocation: string;
+  type: string;
 }
 
 export interface MarketingAdsPaidActionSummary {

@@ -218,6 +218,20 @@ function formatDuration(seconds: number | null | undefined) {
   return `${minutes}min ${remainder.toString().padStart(2, '0')}s`;
 }
 
+function formatGoogleAdsCallDateTime(value: string | null | undefined) {
+  if (!value) return 'Horário não informado';
+  const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(value);
+  if (!match) return value;
+  const [, year, month, day, hour, minute] = match;
+  return `${day}/${month}/${year} às ${hour}:${minute}`;
+}
+
+function formatGoogleAdsCallEndTime(value: string | null | undefined) {
+  if (!value) return null;
+  const match = /^\d{4}-\d{2}-\d{2}[ T](\d{2}):(\d{2})/.exec(value);
+  return match ? `${match[1]}:${match[2]}` : null;
+}
+
 function parseChartDate(value: string) {
   const [year, month, day] = value.split('-').map(Number);
   if (!year || !month || !day) return null;
@@ -1509,6 +1523,99 @@ const googleAdsDayLabels: Record<string, string> = {
   SUNDAY: 'Domingo',
 };
 
+const googleAdsCallStatus: Record<string, { label: string; className: string }> = {
+  RECEIVED: {
+    label: 'Atendida',
+    className: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  },
+  MISSED: {
+    label: 'Não atendida',
+    className: 'border-rose-200 bg-rose-50 text-rose-800',
+  },
+  UNKNOWN: {
+    label: 'Não informado',
+    className: 'border-slate-200 bg-slate-50 text-slate-700',
+  },
+};
+
+function GoogleAdsCallDetails({
+  calls,
+}: {
+  calls: NonNullable<MarketingResumo['campaigns']['calls']>;
+}) {
+  const items = calls.items ?? [];
+  if (!items.length) return null;
+
+  return (
+    <Card className="overflow-hidden rounded-2xl border-slate-200 shadow-sm">
+      <CardContent className="p-4 sm:p-5">
+        <PanelHeading
+          eyebrow="Chamadas reais"
+          title="Detalhes de cada ligação"
+          description="Horário, duração e atendimento informados pelo encaminhamento de chamadas do Google."
+        />
+
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs leading-relaxed text-amber-950">
+          <span className="font-bold">Sobre quem ligou:</span>{' '}
+          a API oficial entrega país e DDD, mas não fornece nome nem telefone completo ao Retiflow.
+          Use o horário abaixo para conferir o identificador de chamadas do telefone ou PABX da retífica.
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {items.map((call) => {
+            const status = googleAdsCallStatus[call.status] ?? googleAdsCallStatus.UNKNOWN;
+            const endedAt = formatGoogleAdsCallEndTime(call.endedAt);
+            const country = call.countryCode
+              ? call.countryCode === '55'
+                ? 'Brasil (+55)'
+                : `País (+${call.countryCode})`
+              : 'País indisponível';
+            const location = `${country} · ${call.areaCode ? `DDD ${call.areaCode}` : 'DDD indisponível'}`;
+            const callOrigin = call.type === 'HIGH_END_MOBILE_SEARCH'
+              ? 'Toque em “Ligar” no anúncio'
+              : call.type === 'MANUALLY_DIALED'
+                ? 'Número do anúncio discado manualmente'
+                : call.displayLocation === 'LANDING_PAGE'
+                  ? 'Telefone exibido no site'
+                  : 'Origem não informada';
+
+            return (
+              <article key={call.id} className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Início da chamada</p>
+                    <p className="mt-1 text-sm font-bold text-slate-950">{formatGoogleAdsCallDateTime(call.startedAt)}</p>
+                  </div>
+                  <Badge variant="outline" className={cn('shrink-0', status.className)}>
+                    {status.label}
+                  </Badge>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Duração</p>
+                    <p className="mt-1 text-xl font-black text-slate-950">{formatDuration(call.durationSeconds)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Término</p>
+                    <p className="mt-1 text-xl font-black text-slate-950">{endedAt ?? '—'}</p>
+                  </div>
+                </div>
+
+                <div className="mt-3 space-y-1.5 text-xs text-slate-600">
+                  <p><span className="font-semibold text-slate-800">Local:</span> {location || 'DDD indisponível'}</p>
+                  <p><span className="font-semibold text-slate-800">Origem:</span> {callOrigin}</p>
+                  <p><span className="font-semibold text-slate-800">Número:</span> não fornecido pela API do Google</p>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
   const { financialValuesHidden } = useFinancialPrivacy();
   const ads = resumo.campaigns;
@@ -1716,6 +1823,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
             </div>
           </CardContent>
         </Card>
+        {calls ? <GoogleAdsCallDetails calls={calls} /> : null}
       </section>
 
       <section aria-label="Conversão e eficiência dos anúncios" className="space-y-3">
