@@ -225,6 +225,28 @@ export interface MarketingAdsScheduleMetric extends MarketingAdsTotals {
   hour: number;
 }
 
+export interface MarketingAdsClickTypeMetric {
+  type: string;
+  clicks: number;
+  interactions: number;
+  spend: number;
+}
+
+export interface MarketingAdsCallSummary {
+  reported: number;
+  received: number;
+  missed: number;
+  averageDurationSeconds: number;
+  longestDurationSeconds: number;
+}
+
+export interface MarketingAdsPaidActionSummary {
+  trackedSessions: number;
+  whatsappClicks: number;
+  phoneClicks: number;
+  formSubmits: number;
+}
+
 export interface MarketingAdsConversionActionMetric {
   id: string;
   name: string;
@@ -361,7 +383,10 @@ export interface MarketingResumo {
     searchTerms?: MarketingAdsSearchTermMetric[];
     landingPages?: MarketingAdsLandingPageMetric[];
     schedule?: MarketingAdsScheduleMetric[];
+    clickTypes?: MarketingAdsClickTypeMetric[];
+    calls?: MarketingAdsCallSummary | null;
     conversionActions?: MarketingAdsConversionActionMetric[];
+    paidActions?: MarketingAdsPaidActionSummary;
     paidVisitors?: MarketingPaidVisitor[];
     offlineConversions?: MarketingOfflineConversionSummary | null;
     financialAvailable: boolean;

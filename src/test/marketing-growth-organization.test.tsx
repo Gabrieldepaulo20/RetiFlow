@@ -93,7 +93,27 @@ function buildResumo(): MarketingResumo {
       searchTerms: [],
       landingPages: [],
       schedule: [],
+      clickTypes: [
+        { type: 'URL_CLICKS', clicks: 18, interactions: 18, spend: 15 },
+        { type: 'SITELINKS', clicks: 7, interactions: 7, spend: 6 },
+        { type: 'CALLS', clicks: 10, interactions: 10, spend: 9 },
+        { type: 'LOCATION_EXPANSION', clicks: 9, interactions: 9, spend: 8 },
+        { type: 'GET_DIRECTIONS', clicks: 6, interactions: 6, spend: 7 },
+      ],
+      calls: {
+        reported: 2,
+        received: 1,
+        missed: 1,
+        averageDurationSeconds: 45,
+        longestDurationSeconds: 57,
+      },
       conversionActions: [],
+      paidActions: {
+        trackedSessions: 17,
+        whatsappClicks: 4,
+        phoneClicks: 2,
+        formSubmits: 1,
+      },
       paidVisitors: [],
       offlineConversions: null,
       financialAvailable: true,
@@ -144,7 +164,13 @@ describe('organização do painel Crescimento', () => {
     renderWithTooltips(<GoogleAdsTab resumo={buildResumo()} />);
 
     expect(screen.getByRole('heading', { name: 'Somente desempenho dos anúncios' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Quanto investimos e quantas pessoas reagiram?' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Quanto investimos e quantas interações tivemos?' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Para onde foram os cliques?' })).toBeInTheDocument();
+    expect(screen.getByText('Links do site')).toBeInTheDocument();
+    expect(screen.getByText('Ligar no anúncio')).toBeInTheDocument();
+    expect(screen.getByText('WhatsApp no site')).toBeInTheDocument();
+    expect(screen.getByText('50 de 50 cliques explicados')).toBeInTheDocument();
+    expect(screen.getByText('1 atendida · 45s em média')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Os cliques estão virando resultado?' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Onde estamos perdendo oportunidades?' })).toBeInTheDocument();
     expect(screen.getByText('Todas as conversões')).toBeInTheDocument();

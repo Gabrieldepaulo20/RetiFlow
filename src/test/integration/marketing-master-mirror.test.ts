@@ -84,6 +84,24 @@ describe.skipIf(!envStatus.configured)('Crescimento — Master espelha a Retífi
     expect(payload.dados.campaigns.current.impressions).toBeGreaterThan(0);
     expect(payload.dados.campaigns.current.clicks).toBeGreaterThan(0);
     expect(payload.dados.campaigns.current.spend).toBeGreaterThan(0);
+    expect(payload.dados.campaigns.clickTypes.length).toBeGreaterThan(0);
+    expect(
+      payload.dados.campaigns.clickTypes.reduce(
+        (total: number, item: { clicks: number }) => total + item.clicks,
+        0,
+      ),
+    ).toBe(payload.dados.campaigns.current.clicks);
+    expect(payload.dados.campaigns.calls).toMatchObject({
+      reported: expect.any(Number),
+      received: expect.any(Number),
+      averageDurationSeconds: expect.any(Number),
+    });
+    expect(payload.dados.campaigns.paidActions).toMatchObject({
+      trackedSessions: expect.any(Number),
+      whatsappClicks: expect.any(Number),
+      phoneClicks: expect.any(Number),
+      formSubmits: expect.any(Number),
+    });
     expect(payload.dados.site.current.visits).toBeGreaterThan(0);
     expect(payload.dados.leads.total).toBeGreaterThan(0);
   });

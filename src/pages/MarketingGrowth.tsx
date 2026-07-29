@@ -33,8 +33,10 @@ import {
   Gauge,
   ListChecks,
   MailCheck,
+  MapPin,
   MessageCircle,
   MousePointerClick,
+  Navigation,
   PhoneCall,
   RefreshCw,
   Search,
@@ -83,7 +85,15 @@ const periodOptions = [7, 10, 15, 20, 30, 40, 60, 90];
 const googleAdsHelp = {
   spend: 'Total cobrado pelo Google Ads no período selecionado. Pode existir atraso de processamento na fonte oficial.',
   impressions: 'Quantidade de vezes que os anúncios foram exibidos. A mesma pessoa pode gerar mais de uma impressão.',
-  clicks: 'Quantidade de cliques cobrados ou registrados pelo Google Ads nos anúncios.',
+  clicks: 'Total de cliques registrados pelo Google Ads. Inclui links do site, botão de ligar, localização, rotas e outros recursos do anúncio; não significa somente visitas ao site.',
+  siteClicks: 'Cliques que apontaram para uma página do site, somando URL principal e sitelinks. Uma pessoa pode clicar mais de uma vez, e nem todo clique termina em uma sessão rastreada.',
+  adCalls: 'Cliques no botão de ligação exibido pelo próprio anúncio. O clique pode apenas abrir o discador; chamadas efetivamente registradas aparecem separadamente.',
+  locationClicks: 'Cliques para abrir a localização vinculada ao anúncio ou conhecer o endereço da empresa.',
+  directionClicks: 'Cliques em pedir rota até a empresa.',
+  trackedPaidSessions: 'Sessões que chegaram ao site com identificação de mídia paga, como gclid ou google/cpc. Pode ser menor que os cliques por repetição, bloqueios de medição ou saída antes do carregamento.',
+  paidWhatsappClicks: 'Cliques no WhatsApp feitos dentro do site por sessões identificadas como vindas dos anúncios. Eventos técnicos de pré-lançamento não entram.',
+  paidPhoneClicks: 'Cliques no telefone feitos dentro do site por sessões identificadas como vindas dos anúncios. Não inclui o botão de ligar exibido diretamente no anúncio.',
+  paidFormSubmits: 'Formulários enviados no site por sessões identificadas como vindas dos anúncios.',
   ctr: 'Taxa de cliques: cliques divididos por impressões. Ajuda a avaliar se anúncio e palavra-chave despertam interesse.',
   averageCpc: 'Custo médio por clique: investimento dividido pela quantidade de cliques.',
   conversions: 'Ações principais configuradas no Google Ads, como formulário, WhatsApp, ligação ou cliente cadastrado.',
@@ -346,6 +356,47 @@ function Metric({
         ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+function ClickBreakdownItem({
+  label,
+  value,
+  detail,
+  help,
+  icon: Icon,
+  tone,
+}: {
+  label: string;
+  value: number;
+  detail: string;
+  help: string;
+  icon: typeof Eye;
+  tone: 'slate' | 'teal' | 'amber' | 'violet';
+}) {
+  const tones = {
+    slate: 'border-slate-200 bg-slate-50 text-slate-950',
+    teal: 'border-teal-200 bg-teal-50 text-teal-950',
+    amber: 'border-amber-200 bg-amber-50 text-amber-950',
+    violet: 'border-violet-200 bg-violet-50 text-violet-950',
+  };
+
+  return (
+    <div className={cn('min-w-0 rounded-xl border p-3.5', tones[tone])}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-start gap-1">
+            <p className="text-[10px] font-bold uppercase leading-4 tracking-[0.12em] opacity-70">{label}</p>
+            <HelpTip label={label} description={help} className="text-current opacity-60 hover:text-current" />
+          </div>
+          <p className="mt-1 text-2xl font-black leading-none tracking-tight">{formatNumber(value)}</p>
+        </div>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/80 shadow-sm">
+          <Icon className="h-4 w-4" aria-hidden="true" />
+        </span>
+      </div>
+      <p className="mt-2 text-[11px] leading-relaxed opacity-70">{detail}</p>
+    </div>
   );
 }
 
@@ -1468,8 +1519,22 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
   const searchTerms = ads.searchTerms ?? [];
   const landingPages = ads.landingPages ?? [];
   const schedule = ads.schedule ?? [];
+  const clickTypes = ads.clickTypes ?? [];
+  const paidActions = ads.paidActions;
+  const calls = ads.calls;
   const conversionActions = ads.conversionActions ?? [];
   const paidVisitors = ads.paidVisitors ?? [];
+  const clicksByType = (types: string[]) => clickTypes
+    .filter((item) => types.includes(item.type))
+    .reduce((total, item) => total + item.clicks, 0);
+  const mainUrlClicks = clicksByType(['URL_CLICKS']);
+  const sitelinkClicks = clicksByType(['SITELINKS']);
+  const siteClicks = mainUrlClicks + sitelinkClicks;
+  const adCallClicks = clicksByType(['CALLS']);
+  const locationClicks = clicksByType(['LOCATION_EXPANSION']);
+  const directionClicks = clicksByType(['GET_DIRECTIONS']);
+  const classifiedClicks = siteClicks + adCallClicks + locationClicks + directionClicks;
+  const otherClicks = Math.max(0, current.clicks - classifiedClicks);
 
   if (!ads.financialAvailable) {
     return (
@@ -1507,16 +1572,150 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
       <section aria-label="Alcance e custo dos anúncios" className="space-y-3">
         <PanelHeading
           eyebrow="Alcance e custo"
-          title="Quanto investimos e quantas pessoas reagiram?"
-          description="Os cinco indicadores básicos para acompanhar a entrega e o interesse nos anúncios."
+          title="Quanto investimos e quantas interações tivemos?"
+          description="O total de cliques reúne site, ligação, localização, rotas e outros recursos do anúncio. A divisão exata aparece logo abaixo."
         />
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-5">
           <Metric label="Investimento" value={formatCurrency(current.spend)} detail="Custo oficial no período" help={googleAdsHelp.spend} icon={BadgeDollarSign} current={current.spend} previous={ads.previous?.spend} accent="navy" financial />
           <Metric label="Impressões" value={formatNumber(current.impressions)} detail="Exibições dos anúncios" help={googleAdsHelp.impressions} icon={Eye} current={current.impressions} previous={ads.previous?.impressions} accent="violet" />
-          <Metric label="Cliques" value={formatNumber(current.clicks)} detail="Interações com os anúncios" help={googleAdsHelp.clicks} icon={MousePointerClick} current={current.clicks} previous={ads.previous?.clicks} accent="teal" />
+          <Metric label="Cliques totais" value={formatNumber(current.clicks)} detail="Site + ligar + local + rotas" help={googleAdsHelp.clicks} icon={MousePointerClick} current={current.clicks} previous={ads.previous?.clicks} accent="teal" />
           <Metric label="CTR" value={formatPercent(current.ctr)} detail="Cliques ÷ impressões" help={googleAdsHelp.ctr} icon={Target} accent="violet" />
           <Metric label="CPC médio" value={formatCurrency(current.averageCpc)} detail="Custo médio por clique" help={googleAdsHelp.averageCpc} icon={Gauge} accent="gold" financial />
         </div>
+      </section>
+
+      <section aria-label="Divisão dos cliques dos anúncios" className="space-y-3">
+        <PanelHeading
+          eyebrow="Destino dos cliques"
+          title="Para onde foram os cliques?"
+          description="A soma abaixo explica o total do Google Ads. Depois, mostramos separadamente o que aconteceu já dentro do site."
+        />
+        <Card className="overflow-hidden rounded-2xl border-slate-200 shadow-sm">
+          <CardContent className="p-0">
+            <div className="grid min-w-0 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
+              <div className="min-w-0 p-4 sm:p-5">
+                {clickTypes.length ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <ClickBreakdownItem
+                        label="Links do site"
+                        value={siteClicks}
+                        detail={`${formatNumber(mainUrlClicks)} na URL principal + ${formatNumber(sitelinkClicks)} em sitelinks`}
+                        help={googleAdsHelp.siteClicks}
+                        icon={ExternalLink}
+                        tone="teal"
+                      />
+                      <ClickBreakdownItem
+                        label="Ligar no anúncio"
+                        value={adCallClicks}
+                        detail={calls?.reported
+                          ? `${formatNumber(calls.received)} ${calls.received === 1 ? 'atendida' : 'atendidas'} · ${formatDuration(calls.averageDurationSeconds)} em média`
+                          : 'Abriram o discador pelo próprio anúncio'}
+                        help={googleAdsHelp.adCalls}
+                        icon={PhoneCall}
+                        tone="amber"
+                      />
+                      <ClickBreakdownItem
+                        label="Localização"
+                        value={locationClicks}
+                        detail="Abriram informações do endereço"
+                        help={googleAdsHelp.locationClicks}
+                        icon={MapPin}
+                        tone="slate"
+                      />
+                      <ClickBreakdownItem
+                        label="Pedir rota"
+                        value={directionClicks}
+                        detail="Solicitaram como chegar à retífica"
+                        help={googleAdsHelp.directionClicks}
+                        icon={Navigation}
+                        tone="violet"
+                      />
+                    </div>
+                    {otherClicks > 0 ? (
+                      <div className="mt-3 flex items-center justify-between gap-4 rounded-xl border border-dashed border-slate-300 px-4 py-3 text-sm">
+                        <span className="font-semibold text-slate-700">Outros tipos de clique</span>
+                        <span className="text-lg font-black text-slate-950">{formatNumber(otherClicks)}</span>
+                      </div>
+                    ) : null}
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-950 px-4 py-3 text-white">
+                      <span className="text-xs font-semibold text-slate-300">Conferência da soma</span>
+                      <span className="text-sm font-bold">
+                        {formatNumber(classifiedClicks + otherClicks)} de {formatNumber(current.clicks)} cliques explicados
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex min-h-48 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+                    <div>
+                      <MousePointerClick className="mx-auto h-6 w-6 text-slate-500" aria-hidden="true" />
+                      <p className="mt-3 text-sm font-semibold text-slate-800">Detalhamento aguardando sincronização</p>
+                      <p className="mt-1 text-xs text-slate-500">O total continua correto; a divisão por destino chegará na próxima atualização do Google Ads.</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-slate-200 bg-slate-50 p-4 sm:p-5 lg:border-l lg:border-t-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-700">Depois de entrar no site</p>
+                <h3 className="mt-1 text-base font-bold text-slate-950">Ações das visitas pagas</h3>
+                <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                  Estes números não incluem ligar, localização ou rota feitos diretamente no anúncio.
+                </p>
+                <div className="mt-4 grid grid-cols-2 gap-2.5">
+                  {[
+                    {
+                      label: 'Sessões rastreadas',
+                      value: paidActions?.trackedSessions,
+                      help: googleAdsHelp.trackedPaidSessions,
+                      icon: Users,
+                    },
+                    {
+                      label: 'WhatsApp no site',
+                      value: paidActions?.whatsappClicks,
+                      help: googleAdsHelp.paidWhatsappClicks,
+                      icon: MessageCircle,
+                    },
+                    {
+                      label: 'Telefone no site',
+                      value: paidActions?.phoneClicks,
+                      help: googleAdsHelp.paidPhoneClicks,
+                      icon: PhoneCall,
+                    },
+                    {
+                      label: 'Formulários',
+                      value: paidActions?.formSubmits,
+                      help: googleAdsHelp.paidFormSubmits,
+                      icon: MailCheck,
+                    },
+                  ].map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <div key={item.label} className="min-w-0 rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex min-w-0 items-start gap-1">
+                            <p className="text-[10px] font-bold uppercase leading-4 tracking-[0.08em] text-slate-500">{item.label}</p>
+                            <HelpTip label={item.label} description={item.help} />
+                          </div>
+                          <Icon className="h-4 w-4 shrink-0 text-slate-700" aria-hidden="true" />
+                        </div>
+                        <p className="mt-2 text-xl font-black leading-none text-slate-950">
+                          {item.value === undefined ? '—' : formatNumber(item.value)}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+                {calls?.reported ? (
+                  <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-xs leading-relaxed text-emerald-950">
+                    <span className="font-bold">Ligação registrada pelo Google:</span>{' '}
+                    {formatNumber(calls.received)} {calls.received === 1 ? 'atendida' : 'atendidas'}, com maior duração de {formatDuration(calls.longestDurationSeconds)}.
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </section>
 
       <section aria-label="Conversão e eficiência dos anúncios" className="space-y-3">

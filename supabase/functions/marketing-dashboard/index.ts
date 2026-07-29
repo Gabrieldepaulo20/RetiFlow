@@ -155,11 +155,17 @@ interface GoogleAdsApiResult {
   };
   searchTermView?: { searchTerm?: string; status?: string };
   landingPageView?: { unexpandedFinalUrl?: string };
+  callView?: {
+    callDurationSeconds?: number | string;
+    callStatus?: string;
+    startCallDateTime?: string;
+  };
   conversionAction?: { id?: string; name?: string; category?: string; status?: string };
   metrics?: JsonRecord;
   segments?: {
     date?: string;
     device?: string;
+    clickType?: string;
     dayOfWeek?: string;
     hour?: number | string;
     keyword?: { info?: { text?: string; matchType?: string } };
@@ -227,6 +233,19 @@ interface GoogleAdsSummary {
   }>;
   landingPages: Array<GoogleAdsTotals & { url: string }>;
   schedule: Array<GoogleAdsTotals & { dayOfWeek: string; hour: number }>;
+  clickTypes: Array<{
+    type: string;
+    clicks: number;
+    interactions: number;
+    spend: number;
+  }>;
+  calls: {
+    reported: number;
+    received: number;
+    missed: number;
+    averageDurationSeconds: number;
+    longestDurationSeconds: number;
+  };
   conversionActions: Array<{
     id: string;
     name: string;
@@ -1080,6 +1099,34 @@ function googleAdsDeviceQuery(startDate: string, endDate: string) {
   `;
 }
 
+function googleAdsClickTypeQuery(startDate: string, endDate: string) {
+  return `
+    SELECT
+      segments.click_type,
+      metrics.clicks,
+      metrics.interactions,
+      metrics.cost_micros
+    FROM campaign
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND campaign.status != 'REMOVED'
+    ORDER BY metrics.clicks DESC
+  `;
+}
+
+function googleAdsCallViewQuery(startDate: string, endDate: string) {
+  const endExclusiveDate = addMarketingDays(endDate, 1);
+  return `
+    SELECT
+      call_view.call_duration_seconds,
+      call_view.call_status,
+      call_view.start_call_date_time
+    FROM call_view
+    WHERE call_view.start_call_date_time >= '${startDate} 00:00:00'
+      AND call_view.start_call_date_time < '${endExclusiveDate} 00:00:00'
+    ORDER BY call_view.start_call_date_time
+  `;
+}
+
 function googleAdsKeywordQuery(startDate: string, endDate: string) {
   return `
     SELECT
@@ -1225,6 +1272,8 @@ async function fetchGoogleAdsSummary(
     previousRows,
     dailyRows,
     deviceRows,
+    clickTypeRows,
+    callRows,
     keywordRows,
     searchTermRows,
     landingPageRows,
@@ -1240,6 +1289,8 @@ async function fetchGoogleAdsSummary(
     ),
     runGoogleAdsQuery(credentials, accessToken, googleAdsDailyQuery(range.startDate, range.endDate)),
     runGoogleAdsQuery(credentials, accessToken, googleAdsDeviceQuery(range.startDate, range.endDate)),
+    runGoogleAdsQuery(credentials, accessToken, googleAdsClickTypeQuery(range.startDate, range.endDate)),
+    runGoogleAdsQuery(credentials, accessToken, googleAdsCallViewQuery(range.startDate, range.endDate)),
     runGoogleAdsQuery(credentials, accessToken, googleAdsKeywordQuery(range.startDate, range.endDate)),
     runGoogleAdsQuery(credentials, accessToken, googleAdsSearchTermQuery(range.startDate, range.endDate)),
     runGoogleAdsQuery(credentials, accessToken, googleAdsLandingPageQuery(range.startDate, range.endDate)),
@@ -1307,6 +1358,23 @@ async function fetchGoogleAdsSummary(
       hour: toNumber(row.segments?.hour),
       ...aggregateGoogleAdsRows([row]),
     })),
+    clickTypes: clickTypeRows.map((row) => ({
+      type: row.segments?.clickType ?? 'UNKNOWN',
+      clicks: toNumber(row.metrics?.clicks),
+      interactions: toNumber(row.metrics?.interactions),
+      spend: round(toNumber(row.metrics?.costMicros) / 1_000_000),
+    })),
+    calls: (() => {
+      const durations = callRows.map((row) => toNumber(row.callView?.callDurationSeconds));
+      const totalDuration = durations.reduce((total, duration) => total + duration, 0);
+      return {
+        reported: callRows.length,
+        received: callRows.filter((row) => row.callView?.callStatus === 'RECEIVED').length,
+        missed: callRows.filter((row) => row.callView?.callStatus === 'MISSED').length,
+        averageDurationSeconds: durations.length ? round(totalDuration / durations.length) : 0,
+        longestDurationSeconds: durations.length ? Math.max(...durations) : 0,
+      };
+    })(),
     conversionActions: conversionActionRows.map((row) => {
       const id = row.conversionAction?.id ?? '';
       const performance = conversionActionPerformanceRows.find((item) =>
@@ -1867,6 +1935,28 @@ function withoutGoogleClickIds(item: JsonRecord) {
   };
 }
 
+function isPaidMarketingItem(item: JsonRecord) {
+  const source = String(item.source ?? '').toLowerCase();
+  const medium = String(item.medium ?? '').toLowerCase();
+  return Boolean(getClickIdType(item))
+    || (source === 'google' && ['cpc', 'ppc', 'paid'].includes(medium));
+}
+
+function isTechnicalPaidTest(item: JsonRecord) {
+  const term = String(item.term ?? '').trim().toLowerCase();
+  const campaign = String(item.campaign ?? '').trim().toLowerCase();
+  return term === 'teste_pre_lancamento'
+    || campaign === 'teste_pre_lancamento'
+    || campaign.endsWith('_teste_pre_lancamento');
+}
+
+function getPaidVisitorKey(item: JsonRecord) {
+  return asString(item.session_id, 160)
+    || asString(item.anonymous_id, 160)
+    || asString(item.lead_code, 40)
+    || String(item.id_marketing_site_eventos ?? '');
+}
+
 function buildPaidVisitors(events: JsonRecord[], leads: JsonRecord[]) {
   const leadByCode = new Map(
     leads
@@ -1893,16 +1983,9 @@ function buildPaidVisitors(events: JsonRecord[], leads: JsonRecord[]) {
   }>();
 
   events
-    .filter((event) => {
-      const source = String(event.source ?? '').toLowerCase();
-      const medium = String(event.medium ?? '').toLowerCase();
-      return Boolean(getClickIdType(event)) || (source === 'google' && ['cpc', 'ppc', 'paid'].includes(medium));
-    })
+    .filter((event) => isPaidMarketingItem(event) && !isTechnicalPaidTest(event))
     .forEach((event) => {
-      const rawKey = asString(event.session_id, 160)
-        || asString(event.anonymous_id, 160)
-        || asString(event.lead_code, 40)
-        || String(event.id_marketing_site_eventos ?? '');
+      const rawKey = getPaidVisitorKey(event);
       if (!rawKey) return;
       const leadCode = asString(event.lead_code, 40);
       const lead = leadCode ? leadByCode.get(leadCode) : undefined;
@@ -2147,9 +2230,20 @@ async function handleRequest(request: Request) {
     ]);
     const internal = aggregateInternalData(periodDays, privateData.events, privateData.leads);
     const business = aggregateBusinessData(periodDays, privateData.attributions, privateData.commissions);
+    const paidCurrentEvents = internal.currentEvents.filter((event) =>
+      isPaidMarketingItem(event) && !isTechnicalPaidTest(event)
+    );
     const paidVisitors = hasPrivateAccess
-      ? buildPaidVisitors(internal.currentEvents, internal.currentLeads)
+      ? buildPaidVisitors(paidCurrentEvents, internal.currentLeads)
       : [];
+    const countPaidAction = (type: string) =>
+      paidCurrentEvents.filter((event) => event.event_type === type).length;
+    const paidActions = {
+      trackedSessions: new Set(paidCurrentEvents.map(getPaidVisitorKey).filter(Boolean)).size,
+      whatsappClicks: countPaidAction('whatsapp_click'),
+      phoneClicks: countPaidAction('phone_click'),
+      formSubmits: countPaidAction('form_submit'),
+    };
     const offlineConversions = aggregateOfflineConversions(privateData.offlineConversions);
     const internalActionsCanCoverComparison = Boolean(
       config.hasSiteKey
@@ -2451,7 +2545,10 @@ async function handleRequest(request: Request) {
             searchTerms: [],
             landingPages: [],
             schedule: [],
+            clickTypes: googleAds?.clickTypes ?? [],
+            calls: googleAds?.calls ?? null,
             conversionActions: [],
+            paidActions,
             paidVisitors: [],
             offlineConversions: null,
             financialAvailable: Boolean(googleAds),
@@ -2550,7 +2647,10 @@ async function handleRequest(request: Request) {
           searchTerms: googleAds?.searchTerms ?? [],
           landingPages: googleAds?.landingPages ?? [],
           schedule: googleAds?.schedule ?? [],
+          clickTypes: googleAds?.clickTypes ?? [],
+          calls: googleAds?.calls ?? null,
           conversionActions: googleAds?.conversionActions ?? [],
+          paidActions,
           paidVisitors,
           offlineConversions,
           financialAvailable: Boolean(googleAds),
