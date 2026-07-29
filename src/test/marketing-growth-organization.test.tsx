@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { MarketingResumo } from '@/api/supabase/marketing';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { GoogleAdsTab, ResultsTab } from '@/pages/MarketingGrowth';
+import { GoogleAdsTab, OverviewTab, ResultsTab } from '@/pages/MarketingGrowth';
 import { FinancialPrivacyProvider } from '@/contexts/FinancialPrivacyProvider';
 
 vi.mock('recharts', async () => {
@@ -53,10 +53,10 @@ function buildResumo(): MarketingResumo {
     integrations: [],
     site: {
       current: {
-        visits: 0,
-        sessions: 0,
-        pageViews: 0,
-        whatsappClicks: 0,
+        visits: 20,
+        sessions: 25,
+        pageViews: 50,
+        whatsappClicks: 5,
         phoneClicks: 0,
         formViews: 0,
         formStarts: 0,
@@ -64,18 +64,20 @@ function buildResumo(): MarketingResumo {
         actionEvents: 0,
         leads: 0,
         conversionRate: 0,
+        averageSessionDuration: 90,
       },
       previous: {
-        visits: 0,
-        sessions: 0,
-        pageViews: 0,
-        whatsappClicks: 0,
+        visits: 10,
+        sessions: 10,
+        pageViews: 15,
+        whatsappClicks: 1,
         phoneClicks: 0,
         formViews: 0,
         formStarts: 0,
         formSubmits: 0,
         actionEvents: 0,
         leads: 0,
+        averageSessionDuration: 45,
       },
       pages: [],
       sources: [],
@@ -127,6 +129,17 @@ function renderWithTooltips(node: ReactNode) {
 }
 
 describe('organização do painel Crescimento', () => {
+  it('prioriza visitantes, WhatsApp, tempo e páginas no resumo', () => {
+    renderWithTooltips(<OverviewTab resumo={buildResumo()} />);
+
+    expect(screen.getByText('Visitantes no site')).toBeInTheDocument();
+    expect(screen.getByText('Clicaram no WhatsApp')).toBeInTheDocument();
+    expect(screen.getByText('Tempo médio no site')).toBeInTheDocument();
+    expect(screen.getByText('Páginas por visita')).toBeInTheDocument();
+    expect(screen.getByText('25,0% em relação aos visitantes')).toBeInTheDocument();
+    expect(screen.getByText('1min 30s')).toBeInTheDocument();
+  });
+
   it('mantém a aba Google Ads focada somente em mídia paga e explica seus KPIs', async () => {
     renderWithTooltips(<GoogleAdsTab resumo={buildResumo()} />);
 

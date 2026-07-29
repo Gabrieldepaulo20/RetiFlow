@@ -32,7 +32,6 @@ import {
   Filter,
   Gauge,
   ListChecks,
-  LockKeyhole,
   MailCheck,
   MessageCircle,
   MousePointerClick,
@@ -54,7 +53,6 @@ import {
   type MarketingEventItem,
   type MarketingIntegrationSummary,
   type MarketingLeadItem,
-  type MarketingProvider,
   type MarketingResumo,
   type MarketingSearchTotals,
 } from '@/api/supabase/marketing';
@@ -76,7 +74,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { SectionEmptyState, SectionErrorState } from '@/components/ui/section-state';
 import { cn } from '@/lib/utils';
-import { evaluateMarketingHealth } from '@/services/domain/marketingHealth';
 import { FinancialValue } from '@/components/privacy/FinancialValue';
 import { useFinancialPrivacy } from '@/contexts/FinancialPrivacyContext';
 
@@ -116,6 +113,13 @@ const googleAdsHelp = {
   offlineUploaded: 'Conversões de cliente já aceitas pelo serviço de envio do Google.',
   offlinePending: 'Conversões aguardando processamento ou sendo processadas neste momento.',
   offlineRetry: 'Conversões temporariamente rejeitadas que serão enviadas novamente de forma automática.',
+} as const;
+
+const siteMetricHelp = {
+  visitors: 'Pessoas ativas identificadas pelo Google Analytics no período. Uma mesma pessoa pode iniciar mais de uma sessão.',
+  whatsapp: 'Cliques únicos rastreados no botão do WhatsApp. Repetições da mesma sessão são deduplicadas; o clique indica intenção, mas não confirma que a mensagem foi enviada.',
+  averageTime: 'Tempo médio de atividade por sessão informado pelo Google Analytics.',
+  pagesPerVisit: 'Quantidade de páginas vistas dividida pelo total de sessões do período.',
 } as const;
 
 const eventLabels: Record<string, string> = {
@@ -306,18 +310,18 @@ function Metric({
   };
 
   return (
-    <Card className="group overflow-hidden rounded-2xl border-border/70 bg-card shadow-[0_10px_35px_-28px_rgba(15,23,42,0.6)] transition-transform duration-200 hover:-translate-y-0.5">
-      <CardContent className="p-4 sm:p-5">
+    <Card className="group min-w-0 overflow-hidden rounded-2xl border-border/70 bg-card shadow-[0_10px_35px_-28px_rgba(15,23,42,0.6)] transition-transform duration-200 hover:-translate-y-0.5">
+      <CardContent className="min-w-0 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-1">
-            <p className="min-w-0 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground sm:text-xs">{label}</p>
+            <p className="min-w-0 text-[11px] font-bold uppercase leading-4 tracking-[0.12em] text-muted-foreground">{label}</p>
             {help ? <HelpTip label={label} description={help} /> : null}
           </div>
-          <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl shadow-sm', accents[accent])}>
-            <Icon className="h-5 w-5" />
+          <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-xl shadow-sm', accents[accent])}>
+            <Icon className="h-4 w-4" />
           </div>
         </div>
-        <p className="mt-3 break-words text-xl font-bold leading-tight tracking-tight text-foreground sm:text-3xl">
+        <p className="mt-3 break-words text-2xl font-bold leading-tight tracking-tight text-foreground">
           {financial ? <FinancialValue>{value}</FinancialValue> : value}
         </p>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
@@ -415,266 +419,56 @@ function ChartTooltip({
   );
 }
 
-function IntegrationStrip({ integrations }: { integrations: MarketingIntegrationSummary[] }) {
-  const order: MarketingProvider[] = ['internal', 'ga4', 'search_console', 'google_ads'];
-  const displayed: MarketingIntegrationSummary[] = order.map((provider) => (
-    integrations.find((item) => item.provider === provider) ?? {
-      provider,
-      status: 'not_connected' as const,
-      lastSyncAt: null,
-    }
-  ));
-
-  return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-      {displayed.map((integration) => {
-        const status = statusStyle[integration.status] ?? statusStyle.not_connected;
-        const StatusIcon = status.icon;
-        return (
-          <div key={integration.provider} className="rounded-2xl border border-border/70 bg-card px-3.5 py-3 shadow-sm">
-            <div className="flex items-start justify-between gap-2">
-              <p className="min-w-0 text-sm font-semibold text-foreground">{providerLabels[integration.provider] ?? integration.provider}</p>
-              <Badge variant="outline" className={cn('shrink-0 gap-1 text-[10px]', status.className)}>
-                <StatusIcon className={cn('h-3 w-3', integration.status === 'syncing' && 'motion-safe:animate-spin')} />
-                {status.label}
-              </Badge>
-            </div>
-            <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
-              {integration.freshness ?? (integration.lastSyncAt ? formatDateTime(integration.lastSyncAt) : 'Sem sincronização')}
-            </p>
-            <p className="mt-1 text-[10px] leading-snug text-muted-foreground/80">
-              {integration.lastSyncAt ? `Última leitura: ${formatDateTime(integration.lastSyncAt)}` : 'Ainda sem leitura confirmada'}
-            </p>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function GrowthDecisionPulse({ resumo }: { resumo: MarketingResumo }) {
-  const health = evaluateMarketingHealth(resumo);
-  const presentation = {
-    critical: {
-      icon: AlertTriangle,
-      labelClass: 'border-rose-200 bg-rose-50 text-rose-700',
-      railClass: 'border-l-rose-500',
-      iconClass: 'bg-rose-600 text-white',
-    },
-    attention: {
-      icon: AlertTriangle,
-      labelClass: 'border-amber-200 bg-amber-50 text-amber-800',
-      railClass: 'border-l-amber-500',
-      iconClass: 'bg-amber-400 text-slate-950',
-    },
-    healthy: {
-      icon: CheckCircle2,
-      labelClass: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-      railClass: 'border-l-emerald-500',
-      iconClass: 'bg-emerald-600 text-white',
-    },
-    insufficient: {
-      icon: Clock3,
-      labelClass: 'border-slate-200 bg-slate-50 text-slate-700',
-      railClass: 'border-l-slate-400',
-      iconClass: 'bg-slate-700 text-white',
-    },
-  }[health.status];
-  const StatusIcon = presentation.icon;
-
-  return (
-    <section
-      aria-labelledby="growth-decision-title"
-      aria-live="polite"
-      className={cn(
-        'rounded-2xl border border-l-4 bg-card p-4 shadow-[0_12px_40px_-32px_rgba(15,23,42,0.7)] sm:p-5',
-        presentation.railClass,
-      )}
-    >
-      <div className="grid gap-4 xl:grid-cols-[minmax(280px,0.72fr)_minmax(0,1.28fr)] xl:items-center">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl', presentation.iconClass)}>
-            <StatusIcon className="h-5 w-5" />
-          </span>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-700">Pulso de decisão</p>
-              <Badge variant="outline" className={cn('text-[10px]', presentation.labelClass)}>
-                {health.label}
-              </Badge>
-            </div>
-            <h2 id="growth-decision-title" className="mt-1 text-lg font-bold tracking-tight text-foreground">
-              Há sinais que exigem atenção?
-            </h2>
-            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{health.summary}</p>
-            <p className="mt-2 text-[11px] text-muted-foreground">
-              Eventos internos: ciclo de {resumo.quality?.refreshIntervalMinutes ?? 5} min · Ações principais: {resumo.quality?.actionMetricsLabel ?? 'fonte informada no painel'}.
-            </p>
-          </div>
-        </div>
-
-        <div className="grid min-w-0 gap-2 sm:grid-cols-3">
-          {health.signals.slice(0, 3).map((item) => (
-            <div key={item.id} className="min-w-0 rounded-xl border bg-background px-3 py-2.5">
-              <p className={cn(
-                'text-xs font-bold',
-                item.severity === 'critical' && 'text-rose-700',
-                item.severity === 'warning' && 'text-amber-800',
-                item.severity === 'positive' && 'text-emerald-700',
-                item.severity === 'info' && 'text-slate-700',
-              )}>
-                {item.title}
-              </p>
-              <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">{item.description}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function AcquisitionRail({ resumo }: { resumo: MarketingResumo }) {
-  const funnel = resumo.executive?.funnel ?? {
-    visits: resumo.site.current.visits,
-    whatsappClicks: resumo.site.current.whatsappClicks,
-    formStarts: resumo.site.current.formStarts ?? 0,
-    formSubmits: resumo.site.current.formSubmits,
-    identifiedClients: resumo.business?.current.identifiedClients ?? 0,
-    approvedOrders: resumo.business?.current.approvedOrders ?? 0,
-  };
-  const steps = [
-    { label: 'Pessoas no site', value: funnel.visits, icon: Users },
-    { label: 'WhatsApp', value: funnel.whatsappClicks, icon: MessageCircle },
-    { label: 'Formulários iniciados', value: funnel.formStarts, icon: FileWarning },
-    { label: 'Formulários enviados', value: funnel.formSubmits, icon: MailCheck },
-    { label: 'Clientes identificados', value: funnel.identifiedClients, icon: UserCheck },
-    { label: 'O.S. aprovadas', value: funnel.approvedOrders, icon: FileCheck2 },
-  ];
-
-  return (
-    <Card className="overflow-hidden rounded-3xl border-0 bg-slate-950 text-white shadow-[0_24px_70px_-35px_rgba(15,23,42,0.85)]">
-      <CardContent className="p-5 sm:p-7">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-300">Marcos da aquisição</p>
-            <h2 className="mt-1 text-xl font-bold tracking-tight">Volumes que conectam site e oficina</h2>
-          </div>
-          <p className="max-w-xl text-xs text-slate-400">
-            Leitura por marco do período, não uma coorte sequencial. WhatsApp mede clique, não mensagem enviada.
-          </p>
-        </div>
-        <div className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-2xl bg-white/10 md:grid-cols-3 xl:grid-cols-6">
-          {steps.map((step) => {
-            const Icon = step.icon;
-            return (
-              <div key={step.label} className="relative bg-slate-950 p-4 sm:p-5">
-                <div className="flex items-center">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-amber-300">
-                    <Icon className="h-4 w-4" />
-                  </span>
-                </div>
-                <p className="mt-5 text-2xl font-bold">{formatNumber(step.value)}</p>
-                <p className="mt-1 text-xs leading-relaxed text-slate-400">{step.label}</p>
-              </div>
-            );
-          })}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function BasicAcquisitionRail({ resumo }: { resumo: MarketingResumo }) {
-  const current = resumo.site.current;
-  const steps = [
-    { label: 'Pessoas no site', value: current.visits, icon: Users },
-    { label: 'Páginas vistas', value: current.pageViews ?? 0, icon: Eye },
-    { label: 'Cliques no WhatsApp', value: current.whatsappClicks, icon: MessageCircle },
-    { label: 'Cliques no telefone', value: current.phoneClicks ?? 0, icon: PhoneCall },
-    { label: 'Formulários iniciados', value: current.formStarts ?? 0, icon: FileWarning },
-    { label: 'Formulários enviados', value: current.formSubmits, icon: MailCheck },
-  ];
-
-  return (
-    <Card className="overflow-hidden rounded-3xl border-0 bg-slate-950 text-white shadow-[0_24px_80px_-48px_rgba(15,23,42,0.95)]">
-      <CardContent className="p-0">
-        <div className="flex flex-col gap-2 border-b border-white/10 px-5 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-6">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-300">Sinais até o contato</p>
-            <h2 className="mt-1 text-xl font-bold tracking-tight">Como o interesse aparece no site</h2>
-          </div>
-          <p className="max-w-xl text-xs text-slate-400">
-            São volumes paralelos do período, sem identificar pessoas e sem assumir uma conversão sequencial.
-          </p>
-        </div>
-        <div className="grid grid-cols-2 gap-px bg-white/10 md:grid-cols-3 xl:grid-cols-6">
-          {steps.map((step) => {
-            const Icon = step.icon;
-            return (
-              <div key={step.label} className="bg-slate-950 p-4 sm:p-5">
-                <div className="flex items-center">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-amber-300">
-                    <Icon className="h-4 w-4" />
-                  </span>
-                </div>
-                <p className="mt-5 text-2xl font-bold">{formatNumber(step.value)}</p>
-                <p className="mt-1 text-xs leading-relaxed text-slate-400">{step.label}</p>
-              </div>
-            );
-          })}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 function BasicOverviewTab({ resumo }: { resumo: MarketingResumo }) {
   const current = resumo.site.current;
   const previous = resumo.site.previous;
   const search = resumo.searchConsole;
-  const totalContacts = current.whatsappClicks + (current.phoneClicks ?? 0) + current.formSubmits;
-  const previousContacts = previous.whatsappClicks + (previous.phoneClicks ?? 0) + previous.formSubmits;
   const pagesPerSession = current.sessions ? (current.pageViews ?? 0) / current.sessions : 0;
+  const previousPagesPerSession = previous.sessions ? (previous.pageViews ?? 0) / previous.sessions : 0;
+  const whatsappShare = percentage(current.whatsappClicks, current.visits);
   const showInternalDailyActions = resumo.quality?.actionMetricsSource !== 'ga4';
 
   return (
     <div className="space-y-5">
-      <BasicAcquisitionRail resumo={resumo} />
-
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <Metric
-          label="Impressões no Google"
-          value={search ? formatNumber(search.current.impressions) : 'Aguardando'}
-          detail="Quantas vezes o site apareceu na busca"
-          icon={Search}
-          current={search?.current.impressions}
-          previous={search?.previous.impressions}
-          accent="navy"
-        />
-        <Metric
-          label="Pessoas no site"
+          label="Visitantes no site"
           value={formatNumber(current.visits)}
-          detail={`${formatNumber(current.sessions)} sessões no período`}
+          detail={`${formatNumber(current.sessions)} visitas no período`}
+          help={siteMetricHelp.visitors}
           icon={Users}
           current={current.visits}
           previous={previous.visits}
+          accent="navy"
+        />
+        <Metric
+          label="Clicaram no WhatsApp"
+          value={formatNumber(current.whatsappClicks)}
+          detail={`${formatPercent(whatsappShare)} em relação aos visitantes`}
+          help={siteMetricHelp.whatsapp}
+          icon={MessageCircle}
+          current={current.whatsappClicks}
+          previous={previous.whatsappClicks}
           accent="teal"
         />
         <Metric
-          label="Ações de contato"
-          value={formatNumber(totalContacts)}
-          detail="WhatsApp, telefone e formulários enviados"
-          icon={MessageCircle}
-          current={totalContacts}
-          previous={previousContacts}
+          label="Tempo médio no site"
+          value={formatDuration(current.averageSessionDuration)}
+          detail="Duração média de cada visita"
+          help={siteMetricHelp.averageTime}
+          icon={Clock3}
+          current={current.averageSessionDuration}
+          previous={previous.averageSessionDuration}
           accent="gold"
         />
         <Metric
-          label="Páginas por sessão"
+          label="Páginas por visita"
           value={pagesPerSession.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
           detail={`${formatNumber(current.pageViews)} páginas vistas`}
+          help={siteMetricHelp.pagesPerVisit}
           icon={Eye}
+          current={pagesPerSession}
+          previous={previousPagesPerSession}
           accent="violet"
         />
       </div>
@@ -770,58 +564,63 @@ function BasicOverviewTab({ resumo }: { resumo: MarketingResumo }) {
           </CardContent>
         </Card>
       </div>
+
+      <BehaviorTab resumo={resumo} showSummary={false} />
     </div>
   );
 }
 
-function OverviewTab({ resumo }: { resumo: MarketingResumo }) {
+export function OverviewTab({ resumo }: { resumo: MarketingResumo }) {
   const current = resumo.site.current;
   const previous = resumo.site.previous;
   const business = resumo.business?.current ?? resumo.executive?.business;
-  const previousBusiness = resumo.business?.previous ?? resumo.executive?.previousBusiness;
+  const pagesPerSession = current.sessions ? (current.pageViews ?? 0) / current.sessions : 0;
+  const previousPagesPerSession = previous.sessions ? (previous.pageViews ?? 0) / previous.sessions : 0;
+  const whatsappShare = percentage(current.whatsappClicks, current.visits);
   const showInternalDailyActions = resumo.quality?.actionMetricsSource !== 'ga4';
 
   return (
     <div className="space-y-5">
-      <AcquisitionRail resumo={resumo} />
-
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <Metric
-          label="Pessoas no site"
+          label="Visitantes no site"
           value={formatNumber(current.visits)}
-          detail={`${formatNumber(current.sessions)} sessões no período`}
+          detail={`${formatNumber(current.sessions)} visitas no período`}
+          help={siteMetricHelp.visitors}
           icon={Users}
           current={current.visits}
           previous={previous.visits}
           accent="navy"
         />
         <Metric
-          label="Cliques no WhatsApp"
+          label="Clicaram no WhatsApp"
           value={formatNumber(current.whatsappClicks)}
-          detail="Cliques únicos e rastreados"
+          detail={`${formatPercent(whatsappShare)} em relação aos visitantes`}
+          help={siteMetricHelp.whatsapp}
           icon={MessageCircle}
           current={current.whatsappClicks}
           previous={previous.whatsappClicks}
           accent="teal"
         />
         <Metric
-          label="Clientes da internet"
-          value={formatNumber(business?.identifiedClients)}
-          detail="Vinculados por código, telefone ou e-mail"
-          icon={UserCheck}
-          current={business?.identifiedClients}
-          previous={previousBusiness?.identifiedClients}
-          accent="violet"
+          label="Tempo médio no site"
+          value={formatDuration(current.averageSessionDuration)}
+          detail="Duração média de cada visita"
+          help={siteMetricHelp.averageTime}
+          icon={Clock3}
+          current={current.averageSessionDuration}
+          previous={previous.averageSessionDuration}
+          accent="gold"
         />
         <Metric
-          label="Comissão acumulada"
-          value={formatCurrency(business?.commission)}
-          detail={`${formatPercent((resumo.config.commissionRate ?? 0.2) * 100)} sobre serviços aprovados`}
-          icon={BadgeDollarSign}
-          current={business?.commission}
-          previous={previousBusiness?.commission}
-          accent="gold"
-          financial
+          label="Páginas por visita"
+          value={pagesPerSession.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+          detail={`${formatNumber(current.pageViews)} páginas vistas`}
+          help={siteMetricHelp.pagesPerVisit}
+          icon={Eye}
+          current={pagesPerSession}
+          previous={previousPagesPerSession}
+          accent="violet"
         />
       </div>
 
@@ -829,7 +628,7 @@ function OverviewTab({ resumo }: { resumo: MarketingResumo }) {
         <Card className="rounded-2xl border-border/70 shadow-sm">
           <CardContent className="p-4 sm:p-6">
             <PanelHeading
-              eyebrow="Pulso diário"
+              eyebrow="Evolução diária"
               title="Crescimento do site"
               description={showInternalDailyActions
                 ? 'Pessoas, páginas vistas e ações internas no período selecionado.'
@@ -922,6 +721,8 @@ function OverviewTab({ resumo }: { resumo: MarketingResumo }) {
           </CardContent>
         </Card>
       </div>
+
+      <BehaviorTab resumo={resumo} showSummary={false} />
     </div>
   );
 }
@@ -1082,7 +883,7 @@ function SearchTable({
   );
 }
 
-function BehaviorTab({ resumo }: { resumo: MarketingResumo }) {
+function BehaviorTab({ resumo, showSummary = true }: { resumo: MarketingResumo; showSummary?: boolean }) {
   const current = resumo.site.current;
   const previous = resumo.site.previous;
   const bounceRate = Math.max(0, 100 - (current.engagementRate ?? 0));
@@ -1097,14 +898,16 @@ function BehaviorTab({ resumo }: { resumo: MarketingResumo }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
-        <Metric label="Taxa de engajamento" value={formatPercent(current.engagementRate)} detail="Pessoas que realmente interagiram" icon={Activity} current={current.engagementRate} previous={previous.engagementRate} accent="teal" />
-        <Metric label="Taxa de rejeição" value={formatPercent(bounceRate)} detail="Complemento da taxa de engajamento do GA4" icon={ArrowDownRight} accent="rose" />
-        <Metric label="Novos usuários" value={formatNumber(current.newUsers)} detail={`${formatNumber(recurringUsers)} recorrentes estimados`} icon={Users} current={current.newUsers} previous={previous.newUsers} accent="navy" />
-        <Metric label="Tempo médio" value={formatDuration(current.averageSessionDuration)} detail="Duração média por sessão" icon={Clock3} current={current.averageSessionDuration} previous={previous.averageSessionDuration} accent="gold" />
-        <Metric label="Sessões engajadas" value={formatNumber(current.engagedSessions)} detail={`de ${formatNumber(current.sessions)} sessões`} icon={Gauge} current={current.engagedSessions} previous={previous.engagedSessions} accent="navy" />
-        <Metric label="Páginas vistas" value={formatNumber(current.pageViews)} detail={`${formatNumber(current.visits)} pessoas no site`} icon={Eye} current={current.pageViews} previous={previous.pageViews} accent="violet" />
-      </div>
+      {showSummary ? (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6">
+          <Metric label="Taxa de engajamento" value={formatPercent(current.engagementRate)} detail="Pessoas que realmente interagiram" icon={Activity} current={current.engagementRate} previous={previous.engagementRate} accent="teal" />
+          <Metric label="Taxa de rejeição" value={formatPercent(bounceRate)} detail="Complemento da taxa de engajamento do GA4" icon={ArrowDownRight} accent="rose" />
+          <Metric label="Novos usuários" value={formatNumber(current.newUsers)} detail={`${formatNumber(recurringUsers)} recorrentes estimados`} icon={Users} current={current.newUsers} previous={previous.newUsers} accent="navy" />
+          <Metric label="Tempo médio" value={formatDuration(current.averageSessionDuration)} detail="Duração média por sessão" icon={Clock3} current={current.averageSessionDuration} previous={previous.averageSessionDuration} accent="gold" />
+          <Metric label="Sessões engajadas" value={formatNumber(current.engagedSessions)} detail={`de ${formatNumber(current.sessions)} sessões`} icon={Gauge} current={current.engagedSessions} previous={previous.engagedSessions} accent="navy" />
+          <Metric label="Páginas vistas" value={formatNumber(current.pageViews)} detail={`${formatNumber(current.visits)} pessoas no site`} icon={Eye} current={current.pageViews} previous={previous.pageViews} accent="violet" />
+        </div>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <Card className="rounded-2xl border-border/70 shadow-sm">
@@ -1707,7 +1510,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           title="Quanto investimos e quantas pessoas reagiram?"
           description="Os cinco indicadores básicos para acompanhar a entrega e o interesse nos anúncios."
         />
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-5">
           <Metric label="Investimento" value={formatCurrency(current.spend)} detail="Custo oficial no período" help={googleAdsHelp.spend} icon={BadgeDollarSign} current={current.spend} previous={ads.previous?.spend} accent="navy" financial />
           <Metric label="Impressões" value={formatNumber(current.impressions)} detail="Exibições dos anúncios" help={googleAdsHelp.impressions} icon={Eye} current={current.impressions} previous={ads.previous?.impressions} accent="violet" />
           <Metric label="Cliques" value={formatNumber(current.clicks)} detail="Interações com os anúncios" help={googleAdsHelp.clicks} icon={MousePointerClick} current={current.clicks} previous={ads.previous?.clicks} accent="teal" />
@@ -1881,7 +1684,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
       </Card>
 
       <Tabs defaultValue="campanhas" className="space-y-4">
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-muted/80 p-1 sm:grid-cols-4 xl:grid-cols-7">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-muted/80 p-1 sm:grid-cols-4 2xl:grid-cols-7">
           <TabsTrigger value="campanhas">Campanhas</TabsTrigger>
           <TabsTrigger value="dispositivos">Dispositivos</TabsTrigger>
           <TabsTrigger value="palavras">Palavras-chave</TabsTrigger>
@@ -2332,17 +2135,12 @@ export default function MarketingGrowth() {
             <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
               <div className="max-w-3xl">
                 <div className="flex flex-wrap items-center gap-2">
-                  {hasPrivateAccess ? (
-                    <Badge className="gap-1.5 border-amber-300/20 bg-amber-300/10 text-amber-200 hover:bg-amber-300/10">
-                      <LockKeyhole className="h-3.5 w-3.5" />
-                      Análise completa · {isCurrentUserMegaMaster ? 'Mega Master' : 'Master'}
-                    </Badge>
-                  ) : (
+                  {!hasPrivateAccess ? (
                     <Badge className="gap-1.5 border-sky-300/20 bg-sky-300/10 text-sky-200 hover:bg-sky-300/10">
                       <Building2 className="h-3.5 w-3.5" />
                       Visão da Retífica
                     </Badge>
-                  )}
+                  ) : null}
                   <Badge className="gap-1.5 border-teal-300/20 bg-teal-300/10 text-teal-200 hover:bg-teal-300/10">
                     <span className="relative flex h-2 w-2">
                       <span className="absolute inline-flex h-full w-full rounded-full bg-teal-300 opacity-75 motion-safe:animate-ping" />
@@ -2441,10 +2239,6 @@ export default function MarketingGrowth() {
           </div>
         </header>
 
-        {query.data ? <GrowthDecisionPulse resumo={query.data} /> : null}
-
-        {hasPrivateAccess && query.data ? <IntegrationStrip integrations={query.data.integrations} /> : null}
-
         {query.error && !query.data ? (
           <SectionErrorState
             title="Não foi possível carregar o painel"
@@ -2480,20 +2274,25 @@ export default function MarketingGrowth() {
           hasPrivateAccess ? (
             <Tabs defaultValue="visao" className="space-y-5">
               <div className="pb-1">
-                <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-muted/80 p-1 sm:grid-cols-4 xl:grid-cols-7">
-                  <TabsTrigger value="visao">Visão geral</TabsTrigger>
-                  <TabsTrigger value="seo">SEO</TabsTrigger>
-                  <TabsTrigger value="google-ads">Google Ads</TabsTrigger>
-                  <TabsTrigger value="comportamento">Comportamento</TabsTrigger>
+                <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-muted/80 p-1 sm:grid-cols-3 xl:grid-cols-5">
+                  <TabsTrigger value="visao">Resumo</TabsTrigger>
+                  <TabsTrigger value="google">Google</TabsTrigger>
                   <TabsTrigger value="contatos">Contatos</TabsTrigger>
-                  <TabsTrigger value="resultado">Resultado</TabsTrigger>
+                  <TabsTrigger value="resultado">Resultados</TabsTrigger>
                   <TabsTrigger value="qualidade">Qualidade</TabsTrigger>
                 </TabsList>
               </div>
               <TabsContent value="visao"><OverviewTab resumo={query.data} /></TabsContent>
-              <TabsContent value="seo"><SeoTab resumo={query.data} /></TabsContent>
-              <TabsContent value="google-ads"><GoogleAdsTab resumo={query.data} /></TabsContent>
-              <TabsContent value="comportamento"><BehaviorTab resumo={query.data} /></TabsContent>
+              <TabsContent value="google">
+                <Tabs defaultValue="google-ads" className="space-y-4">
+                  <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-muted/60 p-1">
+                    <TabsTrigger value="google-ads">Google Ads</TabsTrigger>
+                    <TabsTrigger value="seo">SEO orgânico</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="google-ads"><GoogleAdsTab resumo={query.data} /></TabsContent>
+                  <TabsContent value="seo"><SeoTab resumo={query.data} /></TabsContent>
+                </Tabs>
+              </TabsContent>
               <TabsContent value="contatos">
                 <ContactsTab
                   resumo={query.data}
@@ -2507,16 +2306,14 @@ export default function MarketingGrowth() {
           ) : (
             <Tabs defaultValue="resumo" className="space-y-5">
               <div className="pb-1">
-                <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-muted/80 p-1 sm:grid-cols-4">
+                <TabsList className="grid h-auto w-full grid-cols-3 gap-1 rounded-xl bg-muted/80 p-1">
                   <TabsTrigger value="resumo">Resumo</TabsTrigger>
                   <TabsTrigger value="google">Google</TabsTrigger>
-                  <TabsTrigger value="site">Site</TabsTrigger>
                   <TabsTrigger value="contatos">Contatos</TabsTrigger>
                 </TabsList>
               </div>
               <TabsContent value="resumo"><BasicOverviewTab resumo={query.data} /></TabsContent>
               <TabsContent value="google"><SeoTab resumo={query.data} /></TabsContent>
-              <TabsContent value="site"><BehaviorTab resumo={query.data} /></TabsContent>
               <TabsContent value="contatos"><BasicContactsTab resumo={query.data} /></TabsContent>
             </Tabs>
           )
