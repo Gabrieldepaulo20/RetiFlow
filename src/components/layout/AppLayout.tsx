@@ -32,7 +32,7 @@ import { getMarketingResumo, getMarketingResumoQueryKey, DEFAULT_MARKETING_RESUM
 import { MARKETING_RESUMO_CACHE_TTL_MS } from '@/api/supabase/marketingCache';
 import { useSystemUsersQuery } from '@/hooks/useSystemUsersQuery';
 import { getInitials } from '@/lib/avatarInitials';
-import { hasFullMarketingAccess } from '@/services/auth/superAdmin';
+import { hasFullMarketingAccess, isSuperAdmin } from '@/services/auth/superAdmin';
 import { FinancialPrivacyToggle } from '@/components/privacy/FinancialPrivacyToggle';
 import {
   LayoutDashboard, Users, FileText, KanbanSquare, Calendar, Settings, Wallet,
@@ -193,11 +193,13 @@ export default function AppLayout() {
 
   const canWarmMarketing = Boolean(user && canAccessModule('marketing'));
   const hasPrivateMarketingAccess = hasFullMarketingAccess(realUser);
+  const isCurrentUserMegaMaster = isSuperAdmin(realUser);
   const { data: marketingWarmupUsers = [] } = useSystemUsersQuery({
-    enabled: canWarmMarketing && isAdmin && hasPrivateMarketingAccess,
+    enabled: canWarmMarketing && isAdmin && hasPrivateMarketingAccess && isCurrentUserMegaMaster,
   });
   const marketingWarmupTargetUserId = useMemo(() => {
     if (!canWarmMarketing || !isAdmin || !hasPrivateMarketingAccess) return null;
+    if (!isCurrentUserMegaMaster) return null;
     if (isSupportImpersonating && operationalUser?.moduleAccess?.marketing === true) {
       return operationalUser.id;
     }
@@ -207,9 +209,9 @@ export default function AppLayout() {
       && candidate.role !== 'ADMIN'
       && candidate.moduleAccess?.marketing === true
     ))?.id ?? null;
-  }, [canWarmMarketing, hasPrivateMarketingAccess, isAdmin, isSupportImpersonating, marketingWarmupUsers, operationalUser]);
+  }, [canWarmMarketing, hasPrivateMarketingAccess, isAdmin, isCurrentUserMegaMaster, isSupportImpersonating, marketingWarmupUsers, operationalUser]);
   const canWarmMarketingData = canWarmMarketing
-    && (!hasPrivateMarketingAccess || Boolean(marketingWarmupTargetUserId));
+    && (!hasPrivateMarketingAccess || !isCurrentUserMegaMaster || Boolean(marketingWarmupTargetUserId));
 
   const warmMarketingGrowth = useCallback(() => {
     void preloadRouteModule('/crescimento');

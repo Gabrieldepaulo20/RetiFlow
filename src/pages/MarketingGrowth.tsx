@@ -2256,7 +2256,7 @@ export default function MarketingGrowth() {
   const hasPrivateAccess = hasFullMarketingAccess(realUser);
   const isCurrentUserMegaMaster = isSuperAdmin(realUser);
   const { data: systemUsers = [], isLoading: isLoadingUsers } = useSystemUsersQuery({
-    enabled: hasPrivateAccess && isAdmin,
+    enabled: hasPrivateAccess && isAdmin && isCurrentUserMegaMaster,
   });
   const selectableUsers = useMemo(() => systemUsers.filter((user) => (
     user.isActive
@@ -2268,7 +2268,10 @@ export default function MarketingGrowth() {
   const [selectedUserId, setSelectedUserId] = useState('');
 
   useEffect(() => {
-    if (!hasPrivateAccess) return;
+    if (!hasPrivateAccess || !isCurrentUserMegaMaster) {
+      setSelectedUserId('');
+      return;
+    }
     if (!selectableUsers.length) {
       setSelectedUserId('');
       return;
@@ -2284,10 +2287,10 @@ export default function MarketingGrowth() {
     if (selectedUserId && selectableUsers.some((user) => user.id === selectedUserId)) return;
     const retifica = selectableUsers.find((user) => user.email?.trim().toLowerCase() === RETIFICA_PREMIUM_EMAIL);
     setSelectedUserId(retifica?.id ?? selectableUsers[0]?.id ?? '');
-  }, [hasPrivateAccess, isSupportImpersonating, operationalUser, selectableUsers, selectedUserId]);
+  }, [hasPrivateAccess, isCurrentUserMegaMaster, isSupportImpersonating, operationalUser, selectableUsers, selectedUserId]);
 
-  const targetUserId = hasPrivateAccess ? selectedUserId : null;
-  const queryEnabled = hasPrivateAccess ? Boolean(selectedUserId) : true;
+  const targetUserId = hasPrivateAccess && isCurrentUserMegaMaster ? selectedUserId : null;
+  const queryEnabled = !hasPrivateAccess || !isCurrentUserMegaMaster || Boolean(selectedUserId);
   const requesterUserId = realUser?.id ?? '';
   const queryKey = useMemo(
     () => getMarketingResumoQueryKey(periodDays, targetUserId, requesterUserId),
@@ -2360,7 +2363,7 @@ export default function MarketingGrowth() {
               </div>
 
               <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_auto] xl:w-auto">
-                {hasPrivateAccess ? (
+                {hasPrivateAccess && isCurrentUserMegaMaster ? (
                   <Select value={selectedUserId} onValueChange={setSelectedUserId} disabled={isLoadingUsers || !selectableUsers.length}>
                     <SelectTrigger className="h-11 border-white/15 bg-white/5 text-white hover:bg-white/10 sm:w-[280px]">
                       <Users className="mr-2 h-4 w-4 text-amber-300" />
@@ -2373,7 +2376,11 @@ export default function MarketingGrowth() {
                 ) : (
                   <div className="flex h-11 items-center rounded-xl border border-white/15 bg-white/5 px-4 text-sm text-slate-200 sm:min-w-[280px]">
                     <Building2 className="mr-2 h-4 w-4 text-amber-300" />
-                    <span className="truncate">{query.data?.context?.targetName ?? realUser?.name ?? 'Retífica Premium'}</span>
+                    <span className="truncate">
+                      {hasPrivateAccess
+                        ? query.data?.context?.targetName ?? 'Retífica Premium'
+                        : query.data?.context?.targetName ?? realUser?.name ?? 'Retífica Premium'}
+                    </span>
                   </div>
                 )}
                 <Button
@@ -2460,7 +2467,7 @@ export default function MarketingGrowth() {
 
         {!query.data && query.isLoading ? <LoadingDashboard /> : null}
 
-        {hasPrivateAccess && !query.error && !query.isLoading && !isLoadingUsers && !selectableUsers.length ? (
+        {hasPrivateAccess && isCurrentUserMegaMaster && !query.error && !query.isLoading && !isLoadingUsers && !selectableUsers.length ? (
           <SectionEmptyState
             icon={Users}
             title="Nenhuma empresa com Crescimento habilitado"
@@ -2519,7 +2526,7 @@ export default function MarketingGrowth() {
           <span className="inline-flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-emerald-600" />
             {hasPrivateAccess
-              ? 'Visão completa protegida: contatos, atribuição e comissões só aparecem para o Mega Master.'
+              ? 'Visão completa protegida: KPIs e resultados aparecem para administradores autorizados; vínculos manuais continuam exclusivos do Mega Master.'
               : 'Visão resumida: nenhum nome, telefone, cliente ou valor de comissão é enviado para esta conta.'}
           </span>
           <span className="inline-flex items-center gap-2">

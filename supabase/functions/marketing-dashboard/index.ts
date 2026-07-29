@@ -1364,6 +1364,20 @@ async function getTargetUserByAuthId(
   return normalizeInternalUser(data as RawInternalUserProfile | null);
 }
 
+async function getTargetUserByEmail(
+  serviceClient: ServiceClient,
+  email: string,
+) {
+  const { data, error } = await serviceClient
+    .schema('RetificaPremium')
+    .from('Usuarios')
+    .select('id_usuarios, nome, email, acesso, status, modulos:Modulos(admin, marketing)')
+    .ilike('email', normalizeEmail(email))
+    .maybeSingle();
+  if (error) throw new Error(`Não foi possível carregar a empresa principal: ${error.message}`);
+  return normalizeInternalUser(data as RawInternalUserProfile | null);
+}
+
 async function getMarketingConfig(
   serviceClient: ServiceClient,
   targetUserId: string,
@@ -2078,19 +2092,30 @@ async function handleRequest(request: Request) {
     if (requesterIsAllowlisted && !requesterIsActiveAdmin) {
       return jsonResponse({ error: 'Perfil Mega Master inativo ou sem permissão administrativa.' }, 403, request);
     }
+    const requesterIsMegaMaster = requesterIsAllowlisted && requesterIsActiveAdmin;
     const hasPrivateAccess = requesterIsActiveAdmin && requesterProfile?.modulos?.marketing === true;
-    const canManageAttribution = requesterIsAllowlisted && requesterIsActiveAdmin;
-    const targetUser = hasPrivateAccess
-      ? requestedTargetUserId
+    const canManageAttribution = requesterIsMegaMaster;
+    let targetUser = requesterProfile;
+
+    if (hasPrivateAccess) {
+      const retificaPremium = await getTargetUserByEmail(serviceClient, RETIFICA_PREMIUM_MARKETING_EMAIL);
+      if (!retificaPremium) {
+        return jsonResponse({ error: 'A empresa Retífica Premium não foi encontrada.' }, 503, request);
+      }
+
+      if (!requesterIsMegaMaster && requestedTargetUserId && requestedTargetUserId !== retificaPremium.id_usuarios) {
+        return jsonResponse({ error: 'O Master autorizado consulta somente os dados da Retífica Premium.' }, 403, request);
+      }
+
+      targetUser = requesterIsMegaMaster && requestedTargetUserId
         ? await getTargetUser(serviceClient, requestedTargetUserId)
-        : null
-      : requesterProfile;
+        : retificaPremium;
+    }
+
     if (!targetUser) {
       return jsonResponse({
-        error: hasPrivateAccess
-          ? 'Selecione a empresa que será analisada.'
-          : 'Perfil da empresa não encontrado.',
-      }, hasPrivateAccess ? 400 : 403, request);
+        error: 'Perfil da empresa não encontrado.',
+      }, 403, request);
     }
     if (!hasPrivateAccess && requestedTargetUserId && requestedTargetUserId !== targetUser.id_usuarios) {
       return jsonResponse({ error: 'A empresa autenticada não pode consultar dados de outra conta.' }, 403, request);
