@@ -165,6 +165,27 @@ describe('App routes', () => {
     expect(await findElement()).toBeInTheDocument();
   });
 
+  it('exibe uma ação textual azul para acessar um usuário em modo suporte', async () => {
+    vi.stubEnv('VITE_SUPER_ADMIN_EMAILS', 'gabrielwilliam208@gmail.com');
+    authenticateAs('ADMIN', {
+      email: 'gabrielwilliam208@gmail.com',
+      name: 'Gabriel Mega Master',
+    });
+
+    renderAt('/admin/usuarios');
+
+    expect(await screen.findByRole('heading', { name: 'Usuários do Sistema' })).toBeInTheDocument();
+    const supportButton = screen.getByRole('button', {
+      name: 'Acessar Paula Martins em modo suporte',
+    });
+    expect(supportButton).toHaveTextContent('Acessar modo suporte');
+    expect(supportButton).toHaveClass('bg-blue-600', 'rounded-xl');
+
+    fireEvent.click(supportButton);
+
+    expect(await screen.findByRole('heading', { name: 'Entrar em modo suporte' })).toBeInTheDocument();
+  });
+
   it('shows Settings as partially local when opened by admin', async () => {
     authenticateAs('ADMIN');
     renderAt('/admin/configuracoes');

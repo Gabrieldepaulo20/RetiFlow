@@ -1143,21 +1143,16 @@ export default function AdminClients() {
                       ) : null}
 
                       {canStartSupportForUser(user) ? (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-primary hover:text-primary"
-                              disabled={isMutatingUser}
-                              onClick={() => setShowSupportAccessDialog(user.id)}
-                              aria-label={`Acessar ${user.name} em modo suporte`}
-                            >
-                              <LogIn className="w-4 h-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Acessar em modo suporte</TooltipContent>
-                        </Tooltip>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="shrink-0 rounded-xl bg-blue-600 px-3 text-xs font-semibold text-white shadow-sm shadow-blue-600/20 hover:bg-blue-700 focus-visible:ring-blue-500"
+                          disabled={isMutatingUser}
+                          onClick={() => setShowSupportAccessDialog(user.id)}
+                          aria-label={`Acessar ${user.name} em modo suporte`}
+                        >
+                          Acessar modo suporte
+                        </Button>
                       ) : null}
 
                       <Button
