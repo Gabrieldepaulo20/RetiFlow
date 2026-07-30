@@ -115,6 +115,11 @@ const googleAdsHelp = {
   dailyBudget: 'Limite médio diário definido para a campanha. O gasto de um dia pode variar, respeitando a cobrança média do período.',
   optimizationScore: 'Estimativa do Google, de 0% a 100%, sobre o quanto a campanha segue as recomendações automáticas da plataforma.',
   qualityScore: 'Nota de 1 a 10 para relevância da palavra-chave, do anúncio e da página de destino. Não é uma métrica financeira.',
+  adRelevance: 'Compara a relevância do anúncio para esta palavra-chave com outros anunciantes: abaixo, na média ou acima da média.',
+  landingPageQuality: 'Compara a experiência da página de destino para esta palavra-chave com outros anunciantes.',
+  expectedCtr: 'Compara a probabilidade estimada de clique desta palavra-chave com outros anunciantes.',
+  network: 'Rede em que o anúncio apareceu. Pesquisa Google e Parceiros de Pesquisa devem ser avaliados separadamente porque podem ter qualidade e custo diferentes.',
+  adGroup: 'Conjunto de palavras-chave e anúncios com o mesmo tema. Grupos enxutos facilitam relevância, leitura de custo e otimização.',
   matchType: 'Regra que define o quanto a pesquisa da pessoa precisa se aproximar da palavra-chave configurada.',
   searchTerm: 'Texto que a pessoa realmente digitou no Google antes de o anúncio ser acionado.',
   landingPage: 'Primeira página do site aberta depois do clique no anúncio.',
@@ -855,7 +860,128 @@ function SearchMetric({
   );
 }
 
-function SeoTab({ resumo }: { resumo: MarketingResumo }) {
+function AiTrafficPanel({ resumo }: { resumo: MarketingResumo }) {
+  const ai = resumo.site.aiTraffic;
+  const actions = (ai?.whatsappClicks ?? 0) + (ai?.phoneClicks ?? 0) + (ai?.formSubmits ?? 0);
+
+  return (
+    <div className="space-y-4">
+      <Card className="overflow-hidden rounded-2xl border-violet-200 bg-gradient-to-br from-violet-50 via-white to-amber-50 shadow-sm">
+        <CardContent className="p-4 sm:p-6">
+          <PanelHeading
+            eyebrow="Descoberta por inteligência artificial"
+            title="Visitas confirmadas vindas de IAs"
+            description="Reconhece links e referências de ChatGPT, Perplexity, Gemini, Copilot, Claude, Meta AI, Grok e You.com. Só conta quando a pessoa realmente chega ao site."
+            action={(
+              <Badge variant="outline" className="border-violet-200 bg-white/80 text-violet-800">
+                Rastreamento ativo
+              </Badge>
+            )}
+          />
+
+          <div className="mt-5 grid grid-cols-2 gap-3 xl:grid-cols-3 2xl:grid-cols-5">
+            <Metric
+              label="Sessões por IA"
+              value={formatNumber(ai?.sessions)}
+              detail="Entradas confirmadas no site"
+              help="Sessões cuja origem ou referência identifica uma plataforma de IA. Não inclui apenas uma menção sem clique."
+              icon={Sparkles}
+              accent="violet"
+            />
+            <Metric
+              label="Engajadas"
+              value={formatNumber(ai?.engagedSessions)}
+              detail={formatPercent(ai?.engagementRate)}
+              help="Sessões por IA que atenderam aos critérios de engajamento do Google Analytics."
+              icon={Activity}
+              accent="teal"
+            />
+            <Metric
+              label="Tempo médio"
+              value={formatDuration(ai?.averageSessionDuration)}
+              detail={`${formatDecimal(ai?.pagesPerSession)} páginas por sessão`}
+              help="Duração média e páginas vistas nas sessões confirmadas vindas de IAs."
+              icon={Clock3}
+              accent="gold"
+            />
+            <Metric
+              label="Ações de contato"
+              value={formatNumber(actions)}
+              detail={`${formatNumber(ai?.whatsappClicks)} WhatsApp · ${formatNumber(ai?.phoneClicks)} telefone`}
+              help="Cliques em WhatsApp e telefone mais formulários enviados após uma visita atribuída a IA."
+              icon={MessageCircle}
+              accent="navy"
+            />
+            <Metric
+              label="Contatos registrados"
+              value={formatNumber(ai?.leads)}
+              detail={`${formatNumber(ai?.formSubmits)} formulários enviados`}
+              help="Contatos gravados no funil interno e associados a uma origem de IA."
+              icon={UserCheck}
+              accent="teal"
+            />
+          </div>
+
+          <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)]">
+            <div className="overflow-auto rounded-xl border border-violet-100 bg-white/85">
+              {ai?.engines.length ? (
+                <table className="w-full min-w-[620px] text-left text-xs">
+                  <thead className="border-b bg-violet-50/80 text-[10px] uppercase tracking-[0.12em] text-violet-900">
+                    <tr>
+                      <th className="px-3 py-3 font-semibold">IA identificada</th>
+                      <th className="px-3 py-3 text-right font-semibold">Sessões</th>
+                      <th className="px-3 py-3 text-right font-semibold">Páginas</th>
+                      <th className="px-3 py-3 text-right font-semibold">Engajamento</th>
+                      <th className="px-3 py-3 text-right font-semibold">Ações</th>
+                      <th className="px-3 py-3 text-right font-semibold">Contatos</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {ai.engines.map((item) => (
+                      <tr key={`${item.source}-${item.medium}`}>
+                        <td className="px-3 py-3">
+                          <p className="font-semibold text-foreground">{item.aiEngine}</p>
+                          <p className="text-[11px] text-muted-foreground">{item.source} / {item.medium}</p>
+                        </td>
+                        <td className="px-3 py-3 text-right font-semibold">{formatNumber(item.visits)}</td>
+                        <td className="px-3 py-3 text-right">{formatNumber(item.pageViews)}</td>
+                        <td className="px-3 py-3 text-right">{formatPercent(item.engagementRate)}</td>
+                        <td className="px-3 py-3 text-right">
+                          {formatNumber((item.whatsappClicks ?? 0) + (item.phoneClicks ?? 0) + (item.formSubmits ?? 0))}
+                        </td>
+                        <td className="px-3 py-3 text-right">{formatNumber(item.leads)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="flex min-h-36 items-center justify-center p-6 text-center">
+                  <div>
+                    <Sparkles className="mx-auto h-6 w-6 text-violet-600" aria-hidden="true" />
+                    <p className="mt-3 text-sm font-semibold text-slate-900">Ainda não houve visita confirmada por IA</p>
+                    <p className="mt-1 text-xs text-slate-600">O painel está preparado e exibirá a plataforma assim que alguém clicar numa recomendação.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs leading-relaxed text-amber-950">
+              <p className="font-bold">O que não deve ser confundido</p>
+              <p className="mt-2">
+                Uma IA pode citar a Retífica Premium sem gerar clique. Essa menção não chega ao site e não pode ser contada pelo Analytics.
+              </p>
+              <p className="mt-2">
+                Quando o relatório de IA do Search Console for liberado para a propriedade, ele complementará este bloco com impressões do Google AI; até lá, mostramos somente dados comprováveis.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export function SeoTab({ resumo }: { resumo: MarketingResumo }) {
   const search = resumo.searchConsole;
   const baseline = resumo.snapshots?.find((snapshot) => (
     snapshot.snapshot_type === 'executive_summary'
@@ -865,6 +991,7 @@ function SeoTab({ resumo }: { resumo: MarketingResumo }) {
   if (!search) {
     return (
       <div className="space-y-4">
+        <AiTrafficPanel resumo={resumo} />
         <SectionEmptyState
           icon={Search}
           title="Search Console aguardando autorização"
@@ -887,6 +1014,7 @@ function SeoTab({ resumo }: { resumo: MarketingResumo }) {
 
   return (
     <div className="space-y-5">
+      <AiTrafficPanel resumo={resumo} />
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <SearchMetric label="Impressões orgânicas" current={search.current.impressions} previous={search.previous.impressions} kind="number" />
         <SearchMetric label="Cliques orgânicos" current={search.current.clicks} previous={search.previous.clicks} kind="number" />
@@ -1562,6 +1690,24 @@ const googleAdsDeviceLabels: Record<string, string> = {
   UNKNOWN: 'Não informado',
 };
 
+const googleAdsNetworkLabels: Record<string, string> = {
+  SEARCH: 'Pesquisa Google',
+  SEARCH_PARTNERS: 'Parceiros de Pesquisa',
+  CONTENT: 'Rede de Display',
+  YOUTUBE_SEARCH: 'Pesquisa do YouTube',
+  YOUTUBE_WATCH: 'Vídeos do YouTube',
+  MIXED: 'Rede mista',
+  UNKNOWN: 'Não informado',
+};
+
+const googleAdsQualityBucketLabels: Record<string, string> = {
+  BELOW_AVERAGE: 'Abaixo',
+  AVERAGE: 'Na média',
+  ABOVE_AVERAGE: 'Acima',
+  UNKNOWN: '—',
+  UNSPECIFIED: '—',
+};
+
 const googleAdsDayLabels: Record<string, string> = {
   MONDAY: 'Segunda',
   TUESDAY: 'Terça',
@@ -1671,6 +1817,8 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
   const current = ads.current;
   const offline = ads.offlineConversions;
   const devices = ads.devices ?? [];
+  const networks = ads.networks ?? [];
+  const adGroups = ads.adGroups ?? [];
   const keywords = ads.keywords ?? [];
   const searchTerms = ads.searchTerms ?? [];
   const landingPages = ads.landingPages ?? [];
@@ -1939,6 +2087,49 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           <Metric label="Primeira posição" value={formatPercent(current.searchAbsoluteTopImpressionShare)} detail="Topo absoluto da pesquisa" help={googleAdsHelp.searchAbsoluteTopImpressionShare} icon={Target} accent="gold" />
           <Metric label="Cliques inválidos" value={formatNumber(current.invalidClicks)} detail={`${formatPercent(current.invalidClickRate)} dos cliques filtrados`} help={googleAdsHelp.invalidClicks} icon={ShieldCheck} accent="navy" />
         </div>
+        <Card className="rounded-2xl border-border/70 shadow-sm">
+          <CardContent className="p-4 sm:p-5">
+            <PanelHeading
+              eyebrow="Rede de veiculação"
+              title="Pesquisa Google x parceiros"
+              description="Separa custo e resultado por rede para revelar tráfego barato que não gera conversão."
+            />
+            {networks.length ? (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {networks.map((item) => (
+                  <div key={item.network} className="rounded-xl border bg-card p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                        {googleAdsNetworkLabels[item.network] ?? item.network}
+                      </p>
+                      <HelpTip label="Rede" description={googleAdsHelp.network} />
+                    </div>
+                    <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <dt className="text-muted-foreground">Cliques</dt>
+                        <dd className="mt-1 font-bold">{formatNumber(item.clicks)}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">CTR</dt>
+                        <dd className="mt-1 font-bold">{formatPercent(item.ctr)}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">Custo</dt>
+                        <dd className="mt-1 font-bold"><FinancialValue>{formatCurrency(item.spend)}</FinancialValue></dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">Conversões</dt>
+                        <dd className="mt-1 font-bold">{formatDecimal(item.conversions)}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-muted-foreground">A divisão por rede aparecerá na próxima sincronização da API.</p>
+            )}
+          </CardContent>
+        </Card>
       </section>
 
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.7fr)]">
@@ -2084,7 +2275,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           <TabsTrigger value="conversoes">Conversões</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="campanhas">
+        <TabsContent value="campanhas" className="space-y-4">
           <Card className="rounded-2xl border-border/70 shadow-sm">
             <CardContent className="p-4 sm:p-6">
               <PanelHeading eyebrow="Estrutura" title="Desempenho por campanha" />
@@ -2120,6 +2311,48 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                   </tbody>
                 </table>
                 {ads.items.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">Nenhuma campanha veiculou neste período.</div> : null}
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="rounded-2xl border-border/70 shadow-sm">
+            <CardContent className="p-4 sm:p-6">
+              <PanelHeading
+                eyebrow="Estrutura"
+                title="Desempenho por grupo de anúncios"
+                description="Mostra qual tema concentra custo, cliques e conversões sem criar mais uma aba."
+              />
+              <div className="mt-5 overflow-auto rounded-xl border">
+                <table className="w-full min-w-[860px] text-left text-xs">
+                  <thead className="border-b bg-muted/70 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                    <tr>
+                      <AdsTableHead label="Grupo" help={googleAdsHelp.adGroup} />
+                      <AdsTableHead label="Campanha" />
+                      <AdsTableHead label="Status" />
+                      <AdsTableHead label="Impressões" help={googleAdsHelp.impressions} align="right" />
+                      <AdsTableHead label="Cliques" help={googleAdsHelp.clicks} align="right" />
+                      <AdsTableHead label="CTR" help={googleAdsHelp.ctr} align="right" />
+                      <AdsTableHead label="Custo" help={googleAdsHelp.spend} align="right" />
+                      <AdsTableHead label="Conversões" help={googleAdsHelp.conversions} align="right" />
+                      <AdsTableHead label="CPA" help={googleAdsHelp.cpa} align="right" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {adGroups.map((item) => (
+                      <tr key={`${item.campaignId}-${item.id}`}>
+                        <td className="px-3 py-3 font-semibold">{item.name}</td>
+                        <td className="px-3 py-3 text-muted-foreground">{item.campaign}</td>
+                        <td className="px-3 py-3">{item.status}</td>
+                        <td className="px-3 py-3 text-right">{formatNumber(item.impressions)}</td>
+                        <td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td>
+                        <td className="px-3 py-3 text-right">{formatPercent(item.ctr)}</td>
+                        <td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.spend)}</FinancialValue></td>
+                        <td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td>
+                        <td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.cpl)}</FinancialValue></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {adGroups.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">A divisão por grupo aparecerá na próxima sincronização da API.</div> : null}
               </div>
             </CardContent>
           </Card>
@@ -2161,11 +2394,14 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           <Card className="rounded-2xl border-border/70 shadow-sm"><CardContent className="p-4 sm:p-6">
             <PanelHeading eyebrow="Intenção comprada" title="Palavras-chave" description="Use o índice de qualidade, CTR e CPA para ajustar lances e anúncios." />
             <div className="mt-5 overflow-auto rounded-xl border">
-              <table className="w-full min-w-[900px] text-left text-xs"><thead className="border-b bg-muted/70"><tr>
+              <table className="w-full min-w-[1220px] text-left text-xs"><thead className="border-b bg-muted/70"><tr>
                 <AdsTableHead label="Palavra-chave" />
                 <AdsTableHead label="Grupo" />
                 <AdsTableHead label="Correspondência" help={googleAdsHelp.matchType} />
                 <AdsTableHead label="Qualidade" help={googleAdsHelp.qualityScore} align="right" />
+                <AdsTableHead label="Anúncio" help={googleAdsHelp.adRelevance} />
+                <AdsTableHead label="Página" help={googleAdsHelp.landingPageQuality} />
+                <AdsTableHead label="CTR esperado" help={googleAdsHelp.expectedCtr} />
                 <AdsTableHead label="Impressões" help={googleAdsHelp.impressions} align="right" />
                 <AdsTableHead label="Cliques" help={googleAdsHelp.clicks} align="right" />
                 <AdsTableHead label="CTR" help={googleAdsHelp.ctr} align="right" />
@@ -2176,7 +2412,11 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                 {keywords.map((item) => <tr key={`${item.campaignId}-${item.adGroupId}-${item.criterionId}`}>
                   <td className="px-3 py-3"><p className="font-semibold">{item.keyword}</p><p className="text-[11px] text-muted-foreground">{item.campaign}</p></td>
                   <td className="px-3 py-3">{item.adGroup}</td><td className="px-3 py-3">{item.matchType}</td>
-                  <td className="px-3 py-3 text-right">{item.qualityScore || '—'}</td><td className="px-3 py-3 text-right">{formatNumber(item.impressions)}</td>
+                  <td className="px-3 py-3 text-right">{item.qualityScore || '—'}</td>
+                  <td className="px-3 py-3">{googleAdsQualityBucketLabels[item.creativeQualityScore ?? 'UNKNOWN'] ?? item.creativeQualityScore ?? '—'}</td>
+                  <td className="px-3 py-3">{googleAdsQualityBucketLabels[item.landingPageQualityScore ?? 'UNKNOWN'] ?? item.landingPageQualityScore ?? '—'}</td>
+                  <td className="px-3 py-3">{googleAdsQualityBucketLabels[item.expectedCtrScore ?? 'UNKNOWN'] ?? item.expectedCtrScore ?? '—'}</td>
+                  <td className="px-3 py-3 text-right">{formatNumber(item.impressions)}</td>
                   <td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td><td className="px-3 py-3 text-right">{formatPercent(item.ctr)}</td><td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.spend)}</FinancialValue></td>
                   <td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td><td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.cpl)}</FinancialValue></td>
                 </tr>)}
@@ -2677,7 +2917,7 @@ export default function MarketingGrowth() {
                 <Tabs defaultValue="google-ads" className="space-y-4">
                   <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-muted/60 p-1">
                     <TabsTrigger value="google-ads">Google Ads</TabsTrigger>
-                    <TabsTrigger value="seo">SEO orgânico</TabsTrigger>
+                    <TabsTrigger value="seo">SEO e IA</TabsTrigger>
                   </TabsList>
                   <TabsContent value="google-ads"><GoogleAdsTab resumo={query.data} /></TabsContent>
                   <TabsContent value="seo"><SeoTab resumo={query.data} /></TabsContent>

@@ -69,7 +69,29 @@ export interface MarketingSourceMetric {
   source: string;
   medium: string;
   visits: number;
+  pageViews?: number;
+  engagedSessions?: number;
+  engagementRate?: number;
+  averageSessionDuration?: number;
+  whatsappClicks?: number;
+  phoneClicks?: number;
+  formSubmits?: number;
   leads: number;
+  aiEngine?: string | null;
+}
+
+export interface MarketingAiTrafficSummary {
+  sessions: number;
+  pageViews: number;
+  engagedSessions: number;
+  engagementRate: number;
+  averageSessionDuration: number;
+  pagesPerSession: number;
+  whatsappClicks: number;
+  phoneClicks: number;
+  formSubmits: number;
+  leads: number;
+  engines: Array<MarketingSourceMetric & { aiEngine: string }>;
 }
 
 export interface MarketingDailyMetric {
@@ -201,6 +223,18 @@ export interface MarketingAdsDeviceMetric extends MarketingAdsTotals {
   device: string;
 }
 
+export interface MarketingAdsNetworkMetric extends MarketingAdsTotals {
+  network: string;
+}
+
+export interface MarketingAdsAdGroupMetric extends MarketingAdsTotals {
+  campaignId: string;
+  campaign: string;
+  id: string;
+  name: string;
+  status: string;
+}
+
 export interface MarketingAdsKeywordMetric extends MarketingAdsTotals {
   campaignId: string;
   campaign: string;
@@ -211,6 +245,9 @@ export interface MarketingAdsKeywordMetric extends MarketingAdsTotals {
   matchType: string;
   status: string;
   qualityScore: number;
+  creativeQualityScore?: string;
+  landingPageQualityScore?: string;
+  expectedCtrScore?: string;
 }
 
 export interface MarketingAdsSearchTermMetric extends MarketingAdsTotals {
@@ -333,6 +370,7 @@ export interface MarketingResumo {
     previous: Omit<MarketingSiteTotals, 'conversionRate'>;
     pages: MarketingPageMetric[];
     sources: MarketingSourceMetric[];
+    aiTraffic?: MarketingAiTrafficSummary;
     devices?: MarketingDeviceMetric[];
     daily: MarketingDailyMetric[];
     eventCounts?: Array<{ event: string; count: number }>;
@@ -397,6 +435,8 @@ export interface MarketingResumo {
     items: MarketingAdsCampaignMetric[];
     daily: MarketingAdsDailyMetric[];
     devices?: MarketingAdsDeviceMetric[];
+    networks?: MarketingAdsNetworkMetric[];
+    adGroups?: MarketingAdsAdGroupMetric[];
     keywords?: MarketingAdsKeywordMetric[];
     searchTerms?: MarketingAdsSearchTermMetric[];
     landingPages?: MarketingAdsLandingPageMetric[];

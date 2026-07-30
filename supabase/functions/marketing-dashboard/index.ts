@@ -62,7 +62,29 @@ interface MarketingSourceMetric {
   source: string;
   medium: string;
   visits: number;
+  pageViews: number;
+  engagedSessions: number;
+  engagementRate: number;
+  averageSessionDuration: number;
+  whatsappClicks: number;
+  phoneClicks: number;
+  formSubmits: number;
   leads: number;
+  aiEngine?: string | null;
+}
+
+interface MarketingAiTrafficSummary {
+  sessions: number;
+  pageViews: number;
+  engagedSessions: number;
+  engagementRate: number;
+  averageSessionDuration: number;
+  pagesPerSession: number;
+  whatsappClicks: number;
+  phoneClicks: number;
+  formSubmits: number;
+  leads: number;
+  engines: Array<MarketingSourceMetric & { aiEngine: string }>;
 }
 
 interface GoogleServiceAccount {
@@ -151,7 +173,12 @@ interface GoogleAdsApiResult {
     criterionId?: string;
     status?: string;
     keyword?: { text?: string; matchType?: string };
-    qualityInfo?: { qualityScore?: number | string };
+    qualityInfo?: {
+      qualityScore?: number | string;
+      creativeQualityScore?: string;
+      postClickQualityScore?: string;
+      searchPredictedCtr?: string;
+    };
   };
   searchTermView?: { searchTerm?: string; status?: string };
   landingPageView?: { unexpandedFinalUrl?: string };
@@ -174,6 +201,7 @@ interface GoogleAdsApiResult {
     clickType?: string;
     dayOfWeek?: string;
     hour?: number | string;
+    adNetworkType?: string;
     keyword?: { info?: { text?: string; matchType?: string } };
     conversionAction?: string;
     conversionActionName?: string;
@@ -219,6 +247,14 @@ interface GoogleAdsSummary {
   }>;
   daily: Array<GoogleAdsTotals & { date: string }>;
   devices: Array<GoogleAdsTotals & { device: string }>;
+  networks: Array<GoogleAdsTotals & { network: string }>;
+  adGroups: Array<GoogleAdsTotals & {
+    campaignId: string;
+    campaign: string;
+    id: string;
+    name: string;
+    status: string;
+  }>;
   keywords: Array<GoogleAdsTotals & {
     campaignId: string;
     campaign: string;
@@ -229,6 +265,9 @@ interface GoogleAdsSummary {
     matchType: string;
     status: string;
     qualityScore: number;
+    creativeQualityScore: string;
+    landingPageQualityScore: string;
+    expectedCtrScore: string;
   }>;
   searchTerms: Array<GoogleAdsTotals & {
     campaign: string;
@@ -519,6 +558,103 @@ function getNamedEventCount(events: Map<string, number>, names: string[]) {
   return names.reduce((total, name) => total + (events.get(name) ?? 0), 0);
 }
 
+const aiTrafficSources = [
+  { engine: 'ChatGPT', hosts: ['chatgpt.com', 'chat.openai.com'] },
+  { engine: 'Perplexity', hosts: ['perplexity.ai'] },
+  { engine: 'Gemini', hosts: ['gemini.google.com'] },
+  { engine: 'Microsoft Copilot', hosts: ['copilot.microsoft.com'] },
+  { engine: 'Claude', hosts: ['claude.ai'] },
+  { engine: 'Meta AI', hosts: ['meta.ai'] },
+  { engine: 'Grok', hosts: ['grok.com'] },
+  { engine: 'You.com', hosts: ['you.com'] },
+] as const;
+
+function normalizedSourceHost(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '');
+  return normalized.split('/')[0].split('?')[0];
+}
+
+function getAiEngine(source: string) {
+  const host = normalizedSourceHost(source);
+  return aiTrafficSources.find((rule) =>
+    rule.hosts.some((candidate) => host === candidate || host.endsWith(`.${candidate}`))
+  )?.engine ?? null;
+}
+
+function sourceKey(source: string, medium?: string) {
+  return `${normalizedSourceHost(source)}\u0000${String(medium ?? '').trim().toLowerCase()}`;
+}
+
+function emptySourceMetric(source: string, medium: string): MarketingSourceMetric {
+  return {
+    source,
+    medium,
+    visits: 0,
+    pageViews: 0,
+    engagedSessions: 0,
+    engagementRate: 0,
+    averageSessionDuration: 0,
+    whatsappClicks: 0,
+    phoneClicks: 0,
+    formSubmits: 0,
+    leads: 0,
+    aiEngine: getAiEngine(source),
+  };
+}
+
+function buildAiTrafficSummary(sources: MarketingSourceMetric[]): MarketingAiTrafficSummary {
+  const grouped = new Map<string, MarketingSourceMetric & { aiEngine: string; durationWeighted: number }>();
+  sources
+    .filter((item): item is MarketingSourceMetric & { aiEngine: string } => Boolean(item.aiEngine))
+    .forEach((item) => {
+      const existing = grouped.get(item.aiEngine) ?? {
+        ...emptySourceMetric(item.source, item.medium),
+        aiEngine: item.aiEngine,
+        durationWeighted: 0,
+      };
+      if (!existing.source.split(', ').includes(item.source)) {
+        existing.source = `${existing.source}, ${item.source}`;
+      }
+      existing.visits += item.visits;
+      existing.pageViews += item.pageViews;
+      existing.engagedSessions += item.engagedSessions;
+      existing.durationWeighted += item.averageSessionDuration * item.visits;
+      existing.whatsappClicks += item.whatsappClicks;
+      existing.phoneClicks += item.phoneClicks;
+      existing.formSubmits += item.formSubmits;
+      existing.leads += item.leads;
+      grouped.set(item.aiEngine, existing);
+    });
+  const engines = Array.from(grouped.values())
+    .map(({ durationWeighted, ...item }) => ({
+      ...item,
+      engagementRate: percentage(item.engagedSessions, item.visits),
+      averageSessionDuration: item.visits ? round(durationWeighted / item.visits) : 0,
+    }))
+    .sort((a, b) => b.visits - a.visits);
+  const sessions = engines.reduce((total, item) => total + item.visits, 0);
+  const pageViews = engines.reduce((total, item) => total + item.pageViews, 0);
+  const engagedSessions = engines.reduce((total, item) => total + item.engagedSessions, 0);
+  const durationWeighted = engines.reduce(
+    (total, item) => total + (item.averageSessionDuration * item.visits),
+    0,
+  );
+
+  return {
+    sessions,
+    pageViews,
+    engagedSessions,
+    engagementRate: percentage(engagedSessions, sessions),
+    averageSessionDuration: sessions ? round(durationWeighted / sessions) : 0,
+    pagesPerSession: sessions ? round(pageViews / sessions, 2) : 0,
+    whatsappClicks: engines.reduce((total, item) => total + item.whatsappClicks, 0),
+    phoneClicks: engines.reduce((total, item) => total + item.phoneClicks, 0),
+    formSubmits: engines.reduce((total, item) => total + item.formSubmits, 0),
+    leads: engines.reduce((total, item) => total + item.leads, 0),
+    engines,
+  };
+}
+
 function buildGa4Totals(report: GoogleRunReportResponse, events: Map<string, number>) {
   return {
     activeUsers: metricValue(report, 0, 0),
@@ -599,9 +735,15 @@ async function fetchGa4Summary(
     runGa4Report(accessToken, propertyId, {
       dateRanges: [{ startDate: range.startDate, endDate: range.endDate }],
       dimensions: [{ name: 'sessionSource' }, { name: 'sessionMedium' }],
-      metrics: [{ name: 'sessions' }],
+      metrics: [
+        { name: 'sessions' },
+        { name: 'screenPageViews' },
+        { name: 'engagedSessions' },
+        { name: 'engagementRate' },
+        { name: 'averageSessionDuration' },
+      ],
       orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
-      limit: '12',
+      limit: '100',
     }),
     runGa4Report(accessToken, propertyId, {
       dateRanges: [{ startDate: range.startDate, endDate: range.endDate }],
@@ -663,11 +805,20 @@ async function fetchGa4Summary(
 
   const sources = (sourcesReport.rows ?? []).map((row) => {
     const source = row.dimensionValues?.[0]?.value || 'direto';
+    const medium = row.dimensionValues?.[1]?.value || 'sem meio';
     return {
       source,
-      medium: row.dimensionValues?.[1]?.value || 'sem meio',
+      medium,
       visits: toNumber(row.metricValues?.[0]?.value),
+      pageViews: toNumber(row.metricValues?.[1]?.value),
+      engagedSessions: toNumber(row.metricValues?.[2]?.value),
+      engagementRate: round(toNumber(row.metricValues?.[3]?.value) * 100),
+      averageSessionDuration: round(toNumber(row.metricValues?.[4]?.value)),
+      whatsappClicks: 0,
+      phoneClicks: 0,
+      formSubmits: 0,
       leads: 0,
+      aiEngine: getAiEngine(source),
     };
   });
 
@@ -697,10 +848,43 @@ function mergeGa4WithInternalData(
   ga4: Ga4Summary,
   internalDaily: MarketingDailyMetric[],
   conversionsByPath: Map<string, number>,
-  leadsBySource: Map<string, number>,
+  internalSources: MarketingSourceMetric[],
   includeInternalActions: boolean,
 ): Ga4Summary {
   const internalByDate = new Map(internalDaily.map((item) => [item.date, item]));
+  const internalByExactSource = new Map(
+    internalSources.map((item) => [sourceKey(item.source, item.medium), item]),
+  );
+  const internalBySource = new Map<string, MarketingSourceMetric>();
+  internalSources.forEach((item) => {
+    const key = normalizedSourceHost(item.source);
+    const existing = internalBySource.get(key) ?? emptySourceMetric(item.source, item.medium);
+    existing.visits += item.visits;
+    existing.whatsappClicks += item.whatsappClicks;
+    existing.phoneClicks += item.phoneClicks;
+    existing.formSubmits += item.formSubmits;
+    existing.leads += item.leads;
+    internalBySource.set(key, existing);
+  });
+  const mergedSourceHosts = new Set<string>();
+  const mergedSources = ga4.sources.map((item) => {
+    const sourceHost = normalizedSourceHost(item.source);
+    mergedSourceHosts.add(sourceHost);
+    const internal = internalByExactSource.get(sourceKey(item.source, item.medium))
+      ?? (item.aiEngine ? internalBySource.get(sourceHost) : undefined);
+
+    return {
+      ...item,
+      whatsappClicks: internal?.whatsappClicks ?? 0,
+      phoneClicks: internal?.phoneClicks ?? 0,
+      formSubmits: internal?.formSubmits ?? 0,
+      leads: internal?.leads ?? 0,
+    };
+  });
+  internalSources.forEach((item) => {
+    const sourceHost = normalizedSourceHost(item.source);
+    if (!mergedSourceHosts.has(sourceHost)) mergedSources.push(item);
+  });
 
   return {
     ...ga4,
@@ -713,10 +897,7 @@ function mergeGa4WithInternalData(
       ...item,
       conversions: conversionsByPath.get(item.path) ?? 0,
     })),
-    sources: ga4.sources.map((item) => ({
-      ...item,
-      leads: leadsBySource.get(`${item.source}\u0000${item.medium}`) ?? 0,
-    })),
+    sources: mergedSources.sort((a, b) => b.visits - a.visits),
   };
 }
 
@@ -935,6 +1116,23 @@ async function runGoogleAdsQuery(
   });
 }
 
+async function runOptionalGoogleAdsQuery(
+  credentials: GoogleAdsCredentials,
+  accessToken: string,
+  query: string,
+  reportName: string,
+) {
+  try {
+    return await runGoogleAdsQuery(credentials, accessToken, query);
+  } catch (error) {
+    console.error(
+      `Google Ads optional report failed: ${reportName}`,
+      error instanceof Error ? error.message : 'unknown',
+    );
+    return [];
+  }
+}
+
 function googleAdsShareValue(value: unknown) {
   const ratio = toNumber(value);
   return ratio > 0 ? ratio * 100 : 0;
@@ -1116,6 +1314,52 @@ function googleAdsDeviceQuery(startDate: string, endDate: string) {
   `;
 }
 
+function googleAdsNetworkQuery(startDate: string, endDate: string) {
+  return `
+    SELECT
+      segments.ad_network_type,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.interactions,
+      metrics.cost_micros,
+      metrics.conversions,
+      metrics.all_conversions,
+      metrics.conversions_value,
+      metrics.all_conversions_value,
+      metrics.invalid_clicks
+    FROM campaign
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND campaign.status != 'REMOVED'
+    ORDER BY metrics.cost_micros DESC
+  `;
+}
+
+function googleAdsAdGroupQuery(startDate: string, endDate: string) {
+  return `
+    SELECT
+      campaign.id,
+      campaign.name,
+      ad_group.id,
+      ad_group.name,
+      ad_group.status,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.interactions,
+      metrics.cost_micros,
+      metrics.conversions,
+      metrics.all_conversions,
+      metrics.conversions_value,
+      metrics.all_conversions_value,
+      metrics.invalid_clicks
+    FROM ad_group
+    WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      AND campaign.status != 'REMOVED'
+      AND ad_group.status != 'REMOVED'
+    ORDER BY metrics.cost_micros DESC
+    LIMIT 100
+  `;
+}
+
 function googleAdsClickTypeQuery(startDate: string, endDate: string) {
   return `
     SELECT
@@ -1162,6 +1406,9 @@ function googleAdsKeywordQuery(startDate: string, endDate: string) {
       ad_group_criterion.keyword.text,
       ad_group_criterion.keyword.match_type,
       ad_group_criterion.quality_info.quality_score,
+      ad_group_criterion.quality_info.creative_quality_score,
+      ad_group_criterion.quality_info.post_click_quality_score,
+      ad_group_criterion.quality_info.search_predicted_ctr,
       metrics.impressions,
       metrics.clicks,
       metrics.interactions,
@@ -1295,6 +1542,8 @@ async function fetchGoogleAdsSummary(
     previousRows,
     dailyRows,
     deviceRows,
+    networkRows,
+    adGroupRows,
     clickTypeRows,
     callRows,
     keywordRows,
@@ -1312,6 +1561,18 @@ async function fetchGoogleAdsSummary(
     ),
     runGoogleAdsQuery(credentials, accessToken, googleAdsDailyQuery(range.startDate, range.endDate)),
     runGoogleAdsQuery(credentials, accessToken, googleAdsDeviceQuery(range.startDate, range.endDate)),
+    runOptionalGoogleAdsQuery(
+      credentials,
+      accessToken,
+      googleAdsNetworkQuery(range.startDate, range.endDate),
+      'networks',
+    ),
+    runOptionalGoogleAdsQuery(
+      credentials,
+      accessToken,
+      googleAdsAdGroupQuery(range.startDate, range.endDate),
+      'ad-groups',
+    ),
     runGoogleAdsQuery(credentials, accessToken, googleAdsClickTypeQuery(range.startDate, range.endDate)),
     runGoogleAdsQuery(credentials, accessToken, googleAdsCallViewQuery(range.startDate, range.endDate)),
     runGoogleAdsQuery(credentials, accessToken, googleAdsKeywordQuery(range.startDate, range.endDate)),
@@ -1352,6 +1613,18 @@ async function fetchGoogleAdsSummary(
       device: row.segments?.device ?? 'UNKNOWN',
       ...aggregateGoogleAdsRows([row]),
     })),
+    networks: networkRows.map((row) => ({
+      network: row.segments?.adNetworkType ?? 'UNKNOWN',
+      ...aggregateGoogleAdsRows([row]),
+    })),
+    adGroups: adGroupRows.map((row) => ({
+      campaignId: row.campaign?.id ?? '',
+      campaign: row.campaign?.name ?? 'Campanha sem nome',
+      id: row.adGroup?.id ?? '',
+      name: row.adGroup?.name ?? 'Grupo sem nome',
+      status: row.adGroup?.status ?? 'UNKNOWN',
+      ...aggregateGoogleAdsRows([row]),
+    })),
     keywords: keywordRows.map((row) => ({
       campaignId: row.campaign?.id ?? '',
       campaign: row.campaign?.name ?? 'Campanha sem nome',
@@ -1362,6 +1635,9 @@ async function fetchGoogleAdsSummary(
       matchType: row.adGroupCriterion?.keyword?.matchType ?? 'UNKNOWN',
       status: row.adGroupCriterion?.status ?? 'UNKNOWN',
       qualityScore: toNumber(row.adGroupCriterion?.qualityInfo?.qualityScore),
+      creativeQualityScore: row.adGroupCriterion?.qualityInfo?.creativeQualityScore ?? 'UNKNOWN',
+      landingPageQualityScore: row.adGroupCriterion?.qualityInfo?.postClickQualityScore ?? 'UNKNOWN',
+      expectedCtrScore: row.adGroupCriterion?.qualityInfo?.searchPredictedCtr ?? 'UNKNOWN',
       ...aggregateGoogleAdsRows([row]),
     })),
     searchTerms: searchTermRows.map((row) => ({
@@ -1831,7 +2107,6 @@ function aggregateInternalData(
   const pageMap = new Map<string, MarketingPageMetric>();
   const sourceMap = new Map<string, MarketingSourceMetric>();
   const conversionsByPath = new Map<string, number>();
-  const leadsBySource = new Map<string, number>();
 
   currentEvents.forEach((event) => {
     const path = String(event.page_path || '/');
@@ -1851,8 +2126,12 @@ function aggregateInternalData(
     const source = String(event.source || 'direto');
     const medium = String(event.medium || 'sem meio');
     const sourceKey = `${source}\u0000${medium}`;
-    const sourceMetric = sourceMap.get(sourceKey) ?? { source, medium, visits: 0, leads: 0 };
+    const sourceMetric = sourceMap.get(sourceKey) ?? emptySourceMetric(source, medium);
     if (event.event_type === 'page_view') sourceMetric.visits += 1;
+    if (event.event_type === 'page_view') sourceMetric.pageViews += 1;
+    if (event.event_type === 'whatsapp_click') sourceMetric.whatsappClicks += 1;
+    if (event.event_type === 'phone_click') sourceMetric.phoneClicks += 1;
+    if (event.event_type === 'form_submit') sourceMetric.formSubmits += 1;
     sourceMap.set(sourceKey, sourceMetric);
   });
 
@@ -1860,8 +2139,7 @@ function aggregateInternalData(
     const source = String(lead.source || 'direto');
     const medium = String(lead.medium || 'sem meio');
     const sourceKey = `${source}\u0000${medium}`;
-    leadsBySource.set(sourceKey, (leadsBySource.get(sourceKey) ?? 0) + 1);
-    const metric = sourceMap.get(sourceKey) ?? { source, medium, visits: 0, leads: 0 };
+    const metric = sourceMap.get(sourceKey) ?? emptySourceMetric(source, medium);
     metric.leads += 1;
     sourceMap.set(sourceKey, metric);
   });
@@ -1916,9 +2194,8 @@ function aggregateInternalData(
     previous,
     daily,
     pages: Array.from(pageMap.values()).sort((a, b) => b.views - a.views).slice(0, 12),
-    sources: Array.from(sourceMap.values()).sort((a, b) => b.visits - a.visits).slice(0, 12),
+    sources: Array.from(sourceMap.values()).sort((a, b) => b.visits - a.visits),
     conversionsByPath,
-    leadsBySource,
     formAbandonment: Array.from(formAbandonmentMap.values())
       .map(({ totalSeconds: _totalSeconds, ...item }) => item)
       .sort((a, b) => b.count - a.count),
@@ -2344,7 +2621,7 @@ async function handleRequest(request: Request) {
           cachedGa4,
           internal.daily,
           internal.conversionsByPath,
-          internal.leadsBySource,
+          internal.sources,
           internalActionsCanCoverComparison,
         );
         integrations = mergeIntegration(integrations, {
@@ -2536,6 +2813,8 @@ async function handleRequest(request: Request) {
       engagedSessions: gaPrevious?.engagedSessions ?? 0,
       leads: internal.previous.leads,
     };
+    const siteSources = ga4?.sources ?? internal.sources;
+    const aiTraffic = buildAiTrafficSummary(siteSources);
 
     const unlinkedLeads = internal.currentLeads.filter((lead) => !lead.fk_clientes);
     const quality = {
@@ -2585,7 +2864,8 @@ async function handleRequest(request: Request) {
             current: siteCurrent,
             previous: sitePrevious,
             pages: ga4?.pages ?? internal.pages,
-            sources: ga4?.sources ?? internal.sources,
+            sources: siteSources,
+            aiTraffic,
             devices: ga4?.devices ?? [],
             daily: ga4?.daily ?? internal.daily,
           },
@@ -2616,6 +2896,8 @@ async function handleRequest(request: Request) {
             items: [],
             daily: googleAds?.daily ?? [],
             devices: [],
+            networks: [],
+            adGroups: [],
             keywords: [],
             searchTerms: [],
             landingPages: [],
@@ -2679,7 +2961,8 @@ async function handleRequest(request: Request) {
           current: siteCurrent,
           previous: sitePrevious,
           pages: ga4?.pages ?? internal.pages,
-          sources: ga4?.sources ?? internal.sources,
+          sources: siteSources,
+          aiTraffic,
           devices: ga4?.devices ?? [],
           daily: ga4?.daily ?? internal.daily,
           eventCounts: ga4?.eventCounts ?? [],
@@ -2720,6 +3003,8 @@ async function handleRequest(request: Request) {
           items: googleAds?.items ?? [],
           daily: googleAds?.daily ?? [],
           devices: googleAds?.devices ?? [],
+          networks: googleAds?.networks ?? [],
+          adGroups: googleAds?.adGroups ?? [],
           keywords: googleAds?.keywords ?? [],
           searchTerms: googleAds?.searchTerms ?? [],
           landingPages: googleAds?.landingPages ?? [],

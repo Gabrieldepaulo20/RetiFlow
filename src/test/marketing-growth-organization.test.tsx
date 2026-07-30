@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { MarketingResumo } from '@/api/supabase/marketing';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { GoogleAdsTab, OverviewTab, ResultsTab } from '@/pages/MarketingGrowth';
+import { GoogleAdsTab, OverviewTab, ResultsTab, SeoTab } from '@/pages/MarketingGrowth';
 import { FinancialPrivacyProvider } from '@/contexts/FinancialPrivacyProvider';
 
 vi.mock('recharts', async () => {
@@ -81,6 +81,34 @@ function buildResumo(): MarketingResumo {
       },
       pages: [],
       sources: [],
+      aiTraffic: {
+        sessions: 3,
+        pageViews: 7,
+        engagedSessions: 2,
+        engagementRate: 66.7,
+        averageSessionDuration: 82,
+        pagesPerSession: 2.33,
+        whatsappClicks: 1,
+        phoneClicks: 0,
+        formSubmits: 1,
+        leads: 1,
+        engines: [
+          {
+            source: 'chatgpt.com',
+            medium: 'ai_referral',
+            visits: 3,
+            pageViews: 7,
+            engagedSessions: 2,
+            engagementRate: 66.7,
+            averageSessionDuration: 82,
+            whatsappClicks: 1,
+            phoneClicks: 0,
+            formSubmits: 1,
+            leads: 1,
+            aiEngine: 'ChatGPT',
+          },
+        ],
+      },
       daily: [],
     },
     campaigns: {
@@ -89,7 +117,37 @@ function buildResumo(): MarketingResumo {
       items: [],
       daily: [],
       devices: [],
-      keywords: [],
+      networks: [
+        { ...adsTotals, network: 'SEARCH' },
+        { ...adsTotals, network: 'SEARCH_PARTNERS', spend: 5, clicks: 8, conversions: 0 },
+      ],
+      adGroups: [
+        {
+          ...adsTotals,
+          campaignId: 'campaign-1',
+          campaign: 'Pesquisa regional',
+          id: 'group-1',
+          name: 'Retífica de cabeçote',
+          status: 'ENABLED',
+        },
+      ],
+      keywords: [
+        {
+          ...adsTotals,
+          campaignId: 'campaign-1',
+          campaign: 'Pesquisa regional',
+          adGroupId: 'group-1',
+          adGroup: 'Retífica de cabeçote',
+          criterionId: 'keyword-1',
+          keyword: 'retífica de cabeçote',
+          matchType: 'PHRASE',
+          status: 'ENABLED',
+          qualityScore: 8,
+          creativeQualityScore: 'ABOVE_AVERAGE',
+          landingPageQualityScore: 'AVERAGE',
+          expectedCtrScore: 'BELOW_AVERAGE',
+        },
+      ],
       searchTerms: [],
       landingPages: [],
       schedule: [],
@@ -219,6 +277,9 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByText(/não fornece nome nem telefone completo ao Retiflow/i)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Os cliques estão virando resultado?' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Onde estamos perdendo oportunidades?' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Pesquisa Google x parceiros' })).toBeInTheDocument();
+    expect(screen.getByText('Parceiros de Pesquisa')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Desempenho por grupo de anúncios' })).toBeInTheDocument();
     expect(screen.getByText('Todas as conversões')).toBeInTheDocument();
     expect(screen.queryByText('Comissão gerada')).not.toBeInTheDocument();
     expect(screen.queryByText('O.S. aprovadas')).not.toBeInTheDocument();
@@ -229,6 +290,13 @@ describe('organização do painel Crescimento', () => {
     await waitFor(() => {
       expect(screen.getAllByText(/Taxa de cliques: cliques divididos por impressões/i).length).toBeGreaterThan(0);
     });
+
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Palavras-chave' }), { key: 'Enter', code: 'Enter' });
+    await waitFor(() => expect(screen.getByText('CTR esperado')).toBeInTheDocument());
+    expect(screen.getAllByText('Retífica de cabeçote').length).toBeGreaterThan(0);
+    expect(screen.getByText('Acima')).toBeInTheDocument();
+    expect(screen.getByText('Na média')).toBeInTheDocument();
+    expect(screen.getByText('Abaixo')).toBeInTheDocument();
   });
 
   it('mantém Resultado exclusivamente comercial, sem repetir o bloco de Google Ads', () => {
@@ -243,5 +311,14 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByRole('heading', { name: 'O.S. que geraram comissão' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Google Ads' })).not.toBeInTheDocument();
     expect(screen.queryByText('Mídia paga')).not.toBeInTheDocument();
+  });
+
+  it('separa tráfego confirmado por IA de menções sem clique', () => {
+    renderWithTooltips(<SeoTab resumo={buildResumo()} />);
+
+    expect(screen.getByRole('heading', { name: 'Visitas confirmadas vindas de IAs' })).toBeInTheDocument();
+    expect(screen.getByText('ChatGPT')).toBeInTheDocument();
+    expect(screen.getByText('chatgpt.com / ai_referral')).toBeInTheDocument();
+    expect(screen.getByText(/Uma IA pode citar a Retífica Premium sem gerar clique/i)).toBeInTheDocument();
   });
 });
