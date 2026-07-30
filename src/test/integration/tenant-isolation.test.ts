@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createAnonClient, createServiceClient, callRpc } from './helpers/client';
 import { getIntegrationEnvStatus, warnIntegrationSkipped } from './helpers/env';
+import { deleteTestUser } from './helpers/seed';
 
 const skipIntegration = !getIntegrationEnvStatus().configured;
 if (skipIntegration) warnIntegrationSkipped('tenant-isolation.test');
@@ -9,8 +10,6 @@ const TEST_EMAIL = `tenant-isolation-${Date.now()}@retifica.test`;
 const TEST_PASSWORD = `TenantIsolation@${Date.now()}`;
 
 describe.skipIf(skipIntegration)('Tenant isolation — dados operacionais por usuário', () => {
-  let authId: string | null = null;
-
   beforeAll(async () => {
     const service = createServiceClient();
 
@@ -24,7 +23,7 @@ describe.skipIf(skipIntegration)('Tenant isolation — dados operacionais por us
       throw new Error(`[tenant-isolation] Falha ao criar usuário isolado: ${error?.message}`);
     }
 
-    authId = data.user.id;
+    const authId = data.user.id;
 
     const { error: insertError } = await service
       .schema('RetificaPremium')
@@ -44,17 +43,7 @@ describe.skipIf(skipIntegration)('Tenant isolation — dados operacionais por us
   });
 
   afterAll(async () => {
-    const service = createServiceClient();
-
-    await service
-      .schema('RetificaPremium')
-      .from('Usuarios')
-      .delete()
-      .eq('email', TEST_EMAIL);
-
-    if (authId) {
-      await service.auth.admin.deleteUser(authId);
-    }
+    await deleteTestUser(TEST_EMAIL);
   });
 
   async function signInIsolatedUser() {

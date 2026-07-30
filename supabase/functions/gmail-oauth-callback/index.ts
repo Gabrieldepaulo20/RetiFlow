@@ -65,6 +65,54 @@ async function encryptToken(token: string) {
   return `${toBase64(iv)}:${toBase64(new Uint8Array(encrypted))}`;
 }
 
+type OAuthStateRow = {
+  id_gmail_oauth_states: string;
+  fk_auth_user: string;
+  flow_kind?: 'legacy' | 'self' | 'support';
+  fk_actor_usuarios?: string | null;
+  fk_target_usuarios?: string | null;
+  fk_sessao_suporte?: string | null;
+};
+
+async function validateSupportOAuthState(
+  service: ReturnType<typeof createClient>,
+  stateRow: OAuthStateRow,
+) {
+  const contextValues = [
+    stateRow.fk_actor_usuarios,
+    stateRow.fk_target_usuarios,
+    stateRow.fk_sessao_suporte,
+  ];
+  const hasSupportContext = contextValues.every(Boolean);
+  if (stateRow.flow_kind === 'self') {
+    return contextValues.every((value) => !value);
+  }
+  if (stateRow.flow_kind !== 'support' || !hasSupportContext) return false;
+
+  const { data: sessionIsValid, error: sessionError } = await service
+    .schema('RetificaPremium')
+    .rpc('sessao_suporte_valida', {
+      p_sessao_suporte: stateRow.fk_sessao_suporte,
+      p_actor_usuario_id: stateRow.fk_actor_usuarios,
+      p_target_usuario_id: stateRow.fk_target_usuarios,
+    });
+
+  if (sessionError || sessionIsValid !== true) return false;
+
+  const { data: target, error: targetError } = await service
+    .schema('RetificaPremium')
+    .from('Usuarios')
+    .select('auth_id,status')
+    .eq('id_usuarios', stateRow.fk_target_usuarios)
+    .maybeSingle();
+
+  return Boolean(
+    !targetError
+    && target?.status === true
+    && target.auth_id === stateRow.fk_auth_user,
+  );
+}
+
 Deno.serve(async (request) => {
   const url = new URL(request.url);
   const code = url.searchParams.get('code') ?? '';
@@ -89,13 +137,17 @@ Deno.serve(async (request) => {
   const { data: stateRow, error: stateError } = await service
     .schema('RetificaPremium')
     .from('Gmail_OAuth_States')
-    .select('*')
+    .update({ used_at: new Date().toISOString() })
     .eq('state', state)
     .is('used_at', null)
     .gt('expires_at', new Date().toISOString())
+    .select('*')
     .single();
 
   if (stateError || !stateRow) return redirectWithStatus('error', 'state_expirado');
+  if (!await validateSupportOAuthState(service, stateRow as OAuthStateRow)) {
+    return redirectWithStatus('error', 'suporte_encerrado');
+  }
 
   const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -136,26 +188,40 @@ Deno.serve(async (request) => {
   } catch {
     return redirectWithStatus('error', 'criptografia_token');
   }
-  const { error: upsertError } = await service
-    .schema('RetificaPremium')
-    .from('Gmail_Connections')
-    .upsert({
-      fk_auth_user: stateRow.fk_auth_user,
-      email,
-      refresh_token_cipher: encrypted,
-      status: 'CONNECTED',
-      sync_enabled: true,
-      last_error: null,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'fk_auth_user,email' });
 
-  if (upsertError) return redirectWithStatus('error', 'salvar_conexao');
+  const hasSupportContext = Boolean(
+    stateRow.fk_actor_usuarios
+    && stateRow.fk_target_usuarios
+    && stateRow.fk_sessao_suporte,
+  );
 
-  await service
-    .schema('RetificaPremium')
-    .from('Gmail_OAuth_States')
-    .update({ used_at: new Date().toISOString() })
-    .eq('id_gmail_oauth_states', stateRow.id_gmail_oauth_states);
+  if (hasSupportContext) {
+    // A RPC revalida a sessão, salva o token e grava a auditoria no mesmo commit.
+    const { error: supportSaveError } = await service
+      .schema('RetificaPremium')
+      .rpc('salvar_conexao_gmail_suporte', {
+        p_oauth_state_id: stateRow.id_gmail_oauth_states,
+        p_email: email,
+        p_refresh_token_cipher: encrypted,
+      });
+
+    if (supportSaveError) return redirectWithStatus('error', 'suporte_encerrado');
+  } else {
+    const { error: upsertError } = await service
+      .schema('RetificaPremium')
+      .from('Gmail_Connections')
+      .upsert({
+        fk_auth_user: stateRow.fk_auth_user,
+        email,
+        refresh_token_cipher: encrypted,
+        status: 'CONNECTED',
+        sync_enabled: true,
+        last_error: null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'fk_auth_user,email' });
+
+    if (upsertError) return redirectWithStatus('error', 'salvar_conexao');
+  }
 
   return redirectWithStatus('connected');
 });

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAnexoContaPagarUrl } from '@/api/supabase/contas-pagar';
-import { SUPPORT_SESSION_STORAGE_KEY } from '@/services/auth/supportContext';
+import { setActiveSupportSession } from '@/services/auth/supportContext';
 
 const mocks = vi.hoisted(() => ({
   from: vi.fn(),
@@ -36,6 +36,7 @@ describe('payable attachment signed URL helper', () => {
     });
     window.localStorage.clear();
     window.sessionStorage.clear();
+    setActiveSupportSession(null);
   });
 
   it('uses direct Storage signing for the owning user', async () => {
@@ -54,12 +55,29 @@ describe('payable attachment signed URL helper', () => {
   });
 
   it('uses the audited Edge Function when support context is active', async () => {
-    window.localStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify({
+    setActiveSupportSession({
       id: '11111111-1111-4111-8111-111111111111',
       reason: 'abrir anexo',
-      actorUser: { id: 'actor-id', email: 'gabrielwilliam208@gmail.com', name: 'Gabriel' },
-      targetUser: { id: '22222222-2222-4222-8222-222222222222', email: 'retificapremium5@gmail.com', name: 'Retífica Premium' },
-    }));
+      startedAt: '2026-07-30T12:00:00.000Z',
+      expiresAt: null,
+      actorUser: {
+        id: 'actor-id',
+        email: 'gabrielwilliam208@gmail.com',
+        name: 'Gabriel',
+        role: 'ADMIN',
+        isActive: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        moduleAccess: { admin: true },
+      },
+      targetUser: {
+        id: '22222222-2222-4222-8222-222222222222',
+        email: 'retificapremium5@gmail.com',
+        name: 'Retífica Premium',
+        role: 'RECEPCAO',
+        isActive: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    });
     mocks.invoke.mockResolvedValue({
       data: { signedUrl: 'https://signed.example.com/suporte.pdf' },
       error: null,

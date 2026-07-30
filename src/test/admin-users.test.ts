@@ -307,7 +307,7 @@ describe('callAdminUsersFunction', () => {
           id: 'session-1',
           reason: 'Cliente pediu ajuda com uma O.S.',
           startedAt: '2026-04-29T12:00:00.000Z',
-          expiresAt: '2026-04-29T13:00:00.000Z',
+          expiresAt: null,
           actorUser: {
             id: 'user-master',
             name: 'Gabriel Master',
@@ -345,6 +345,79 @@ describe('callAdminUsersFunction', () => {
         action: 'start_support_impersonation',
         targetUserId: VALID_UUID,
         reason: 'Cliente pediu ajuda com uma O.S.',
+      },
+    }));
+  });
+
+  it('loads only the support target ids authorized by the server', async () => {
+    mocks.invoke.mockResolvedValue({
+      data: {
+        mensagem: 'Alvos de suporte carregados.',
+        supportTargetUserIds: [VALID_UUID],
+      },
+      error: null,
+    });
+
+    await expect(callAdminUsersFunction({
+      action: 'get_support_targets',
+    })).resolves.toMatchObject({
+      supportTargetUserIds: [VALID_UUID],
+    });
+
+    expect(mocks.invoke).toHaveBeenCalledWith('admin-users', expect.objectContaining({
+      body: {
+        action: 'get_support_targets',
+      },
+    }));
+  });
+
+  it('revalidates a persisted support session with its exact target', async () => {
+    mocks.invoke.mockResolvedValue({
+      data: {
+        mensagem: 'Sessão de suporte validada.',
+        supportSession: {
+          id: '11111111-1111-4111-8111-111111111111',
+          reason: 'Atendimento operacional autorizado',
+          startedAt: '2026-07-30T12:00:00.000Z',
+          expiresAt: null,
+          actorUser: {
+            id: '22222222-2222-4222-8222-222222222222',
+            name: 'Guilherme Henrique',
+            email: 'guilhermehenriquedepaulo2@gmail.com',
+            role: 'ADMIN',
+            isActive: true,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            moduleAccess: { admin: true },
+          },
+          targetUser: {
+            id: VALID_UUID,
+            name: 'Retífica Premium',
+            email: 'retificapremium5@gmail.com',
+            role: 'RECEPCAO',
+            isActive: true,
+            createdAt: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      },
+      error: null,
+    });
+
+    await expect(callAdminUsersFunction({
+      action: 'validate_support_impersonation',
+      sessionId: '11111111-1111-4111-8111-111111111111',
+      targetUserId: VALID_UUID,
+    })).resolves.toMatchObject({
+      supportSession: {
+        id: '11111111-1111-4111-8111-111111111111',
+        targetUser: { id: VALID_UUID },
+      },
+    });
+
+    expect(mocks.invoke).toHaveBeenCalledWith('admin-users', expect.objectContaining({
+      body: {
+        action: 'validate_support_impersonation',
+        sessionId: '11111111-1111-4111-8111-111111111111',
+        targetUserId: VALID_UUID,
       },
     }));
   });

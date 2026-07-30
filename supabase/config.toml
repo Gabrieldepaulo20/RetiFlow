@@ -58,3 +58,8 @@ verify_jwt = false
 
 [functions.support-inbound]
 verify_jwt = false
+
+# A própria Function valida o bearer token com auth.getUser e precisa responder
+# ao preflight OPTIONS antes de existir JWT no navegador.
+[functions.note-pdf-url]
+verify_jwt = false

@@ -1,6 +1,9 @@
 import { callRPC } from './_base';
 import { NoteStatus, NotePaymentStatus, NoteType, IntakeNote, STATUS_LABELS, toPaymentMethod } from '@/types';
-import { readStoredSupportContext } from '@/services/auth/supportContext';
+import {
+  assertActiveSupportScopeUnchanged,
+  readActiveSupportContext,
+} from '@/services/auth/supportContext';
 import { getPerfil } from './auth';
 import { buildNotePdfStoragePath } from '@/services/storage/storagePaths';
 import type { ResolvedDocumentCustomization } from '@/services/domain/documentCustomization';
@@ -225,6 +228,64 @@ export function extractNotaStoragePath(pathOrUrl: string | null | undefined): st
   }
 }
 
+async function getNotaPdfFunctionErrorMessage(error: unknown) {
+  const fallback = error instanceof Error
+    ? error.message
+    : 'Não foi possível gerar link seguro do PDF.';
+  const context = typeof error === 'object' && error !== null && 'context' in error
+    ? (error as { context?: unknown }).context
+    : null;
+
+  if (!(context instanceof Response)) return fallback;
+
+  try {
+    const body = await context.clone().json() as { error?: unknown; mensagem?: unknown };
+    if (typeof body.error === 'string') return body.error;
+    if (typeof body.mensagem === 'string') return body.mensagem;
+  } catch {
+    // Mantém a mensagem original do SDK quando o corpo não é JSON.
+  }
+
+  return fallback;
+}
+
+async function getNotaPDFSignedUrlViaFunction(params: {
+  pathOrUrl: string;
+  supportContext: NonNullable<ReturnType<typeof readActiveSupportContext>>;
+  expiresIn: number;
+}) {
+  const { supabase } = await import('@/lib/supabase');
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+
+  if (sessionError || !accessToken) {
+    throw new Error('Sessão Supabase não encontrada. Faça login novamente para abrir o PDF.');
+  }
+
+  const { data, error } = await supabase.functions.invoke<{
+    signedUrl?: string;
+    error?: string;
+  }>('note-pdf-url', {
+    body: {
+      pathOrUrl: params.pathOrUrl,
+      support: params.supportContext,
+      expiresIn: params.expiresIn,
+    },
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (error) {
+    throw new Error(await getNotaPdfFunctionErrorMessage(error));
+  }
+  if (!data?.signedUrl) {
+    throw new Error(data?.error ?? 'Não foi possível gerar link seguro do PDF.');
+  }
+
+  return data.signedUrl;
+}
+
 export async function getNotaPDFSignedUrl(
   pathOrUrl: string | null | undefined,
   expiresIn = DEFAULT_NOTA_PDF_SIGNED_URL_TTL,
@@ -236,6 +297,17 @@ export async function getNotaPDFSignedUrl(
   const path = extractNotaStoragePath(value);
   if (!path) {
     return /^https?:\/\//i.test(value) ? value : null;
+  }
+
+  const supportContext = readActiveSupportContext();
+  if (supportContext) {
+    const signedUrl = await getNotaPDFSignedUrlViaFunction({
+      pathOrUrl: value,
+      supportContext,
+      expiresIn,
+    });
+    assertActiveSupportScopeUnchanged(supportContext);
+    return signedUrl;
   }
 
   const { supabase } = await import('@/lib/supabase');
@@ -252,7 +324,7 @@ export async function getNotaPDFSignedUrl(
 }
 
 export async function uploadNotaPDF(blob: Blob, osNumero: string): Promise<string> {
-  if (readStoredSupportContext()) {
+  if (readActiveSupportContext()) {
     throw new Error('[uploadNotaPDF] Upload de PDF em modo suporte exige auditoria backend por ação.');
   }
 

@@ -1,11 +1,11 @@
-import { lazy, ReactNode, Suspense } from 'react';
+import { lazy, ReactNode, Suspense, useEffect, useRef } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { Toaster } from '@/components/ui/toaster';
 import { Toaster as Sonner } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { LoadingScreen } from '@/components/ui/loading-screen';
-import { AuthProvider } from '@/contexts/AuthContext';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { DataProvider } from '@/contexts/DataContext';
 import { FinancialPrivacyProvider } from '@/contexts/FinancialPrivacyProvider';
 import AppLayout from '@/components/layout/AppLayout';
@@ -73,20 +73,66 @@ function SuspendedPage({ children }: { children: ReactNode }) {
   return <Suspense fallback={<PageFallback />}>{children}</Suspense>;
 }
 
+function ScopeBoundDataProvider({ children }: { children: ReactNode }) {
+  const {
+    realUser,
+    operationalUser,
+    supportSession,
+    isSupportSessionValidating,
+  } = useAuth();
+  const scopeKey = isSupportSessionValidating
+    ? `support-validation:${realUser?.id ?? 'anonymous'}`
+    : [
+        realUser?.id ?? 'anonymous',
+        operationalUser?.id ?? 'no-operational-user',
+        supportSession?.id ?? 'own-context',
+      ].join(':');
+
+  // Remontar o provider zera os arrays no mesmo commit da troca de tenant,
+  // impedindo um frame com dados do escopo anterior.
+  return <DataProvider key={scopeKey}>{children}</DataProvider>;
+}
+
+function SupportSessionRedirect() {
+  const {
+    realUser,
+    isSupportImpersonating,
+    canAccessModule,
+  } = useAuth();
+  const navigate = useNavigate();
+  const previousSupportState = useRef(isSupportImpersonating);
+
+  useEffect(() => {
+    const wasSupporting = previousSupportState.current;
+    previousSupportState.current = isSupportImpersonating;
+    if (
+      wasSupporting
+      && !isSupportImpersonating
+      && realUser?.role === 'ADMIN'
+      && canAccessModule('admin')
+    ) {
+      navigate('/admin/usuarios', { replace: true });
+    }
+  }, [canAccessModule, isSupportImpersonating, navigate, realUser?.role]);
+
+  return null;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
       <Sonner />
       <AuthProvider>
-        <DataProvider>
-          <FinancialPrivacyProvider>
-            <BrowserRouter
-              future={{
-                v7_startTransition: true,
-                v7_relativeSplatPath: true,
-              }}
-            >
+        <BrowserRouter
+          future={{
+            v7_startTransition: true,
+            v7_relativeSplatPath: true,
+          }}
+        >
+          <SupportSessionRedirect />
+          <ScopeBoundDataProvider>
+            <FinancialPrivacyProvider>
               <ErrorBoundary>
                 <Routes>
                 <Route path="/login" element={<SuspendedPage><Login /></SuspendedPage>} />
@@ -158,9 +204,9 @@ const App = () => (
                 <Route path="*" element={<SuspendedPage><NotFound /></SuspendedPage>} />
                 </Routes>
               </ErrorBoundary>
-            </BrowserRouter>
-          </FinancialPrivacyProvider>
-        </DataProvider>
+            </FinancialPrivacyProvider>
+          </ScopeBoundDataProvider>
+        </BrowserRouter>
       </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>

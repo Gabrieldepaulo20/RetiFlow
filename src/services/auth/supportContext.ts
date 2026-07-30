@@ -7,21 +7,43 @@ export interface StoredSupportContext {
   targetUserId: string;
 }
 
+export type ActiveSupportScopeSnapshot = StoredSupportContext | null;
+
+let activeSupportSession: SupportImpersonationSession | null = null;
+
+function parseSupportSession(raw: string | null) {
+  if (!raw) return null;
+
+  const parsed = JSON.parse(raw) as SupportImpersonationSession;
+  if (!parsed?.id || !parsed?.actorUser?.id || !parsed?.targetUser?.id) return null;
+  return parsed;
+}
+
 export function readStoredSupportSession() {
   if (typeof window === 'undefined') return null;
 
   try {
-    const raw = window.localStorage.getItem(SUPPORT_SESSION_STORAGE_KEY)
-      ?? window.sessionStorage.getItem(SUPPORT_SESSION_STORAGE_KEY);
-    if (!raw) return null;
+    const tabSession = parseSupportSession(
+      window.sessionStorage.getItem(SUPPORT_SESSION_STORAGE_KEY),
+    );
+    const legacySession = parseSupportSession(
+      window.localStorage.getItem(SUPPORT_SESSION_STORAGE_KEY),
+    );
+    // O formato legado nunca pode sobreviver à primeira leitura desta aba.
+    // Removemos antes de retornar inclusive quando já existe candidato válido
+    // no sessionStorage, evitando que outra aba migre uma sessão antiga.
+    window.localStorage.removeItem(SUPPORT_SESSION_STORAGE_KEY);
+    if (tabSession) return tabSession;
 
-    const parsed = JSON.parse(raw) as SupportImpersonationSession;
-    if (!parsed?.id || !parsed?.actorUser?.id || !parsed?.targetUser?.id) return null;
-
-    // A sessão de suporte só encerra quando o Mega Master clica em "Sair"
-    // (ou troca de usuário real / perde permissão). Não expira por tempo e
-    // persiste através de reloads.
-    return parsed;
+    // Migração única do formato antigo em localStorage. O candidato passa a ser
+    // isolado por aba e ainda precisa ser validado no servidor pelo AuthContext.
+    if (legacySession) {
+      window.sessionStorage.setItem(
+        SUPPORT_SESSION_STORAGE_KEY,
+        JSON.stringify(legacySession),
+      );
+    }
+    return legacySession;
   } catch {
     window.localStorage.removeItem(SUPPORT_SESSION_STORAGE_KEY);
     window.sessionStorage.removeItem(SUPPORT_SESSION_STORAGE_KEY);
@@ -36,16 +58,52 @@ export function writeStoredSupportSession(supportSession: SupportImpersonationSe
     window.sessionStorage.removeItem(SUPPORT_SESSION_STORAGE_KEY);
     return;
   }
-  window.localStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify(supportSession));
-  window.sessionStorage.removeItem(SUPPORT_SESSION_STORAGE_KEY);
+  window.sessionStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify(supportSession));
+  window.localStorage.removeItem(SUPPORT_SESSION_STORAGE_KEY);
 }
 
-export function readStoredSupportContext(): StoredSupportContext | null {
-  const supportSession = readStoredSupportSession();
+/**
+ * Ativa o contexto usado pelas APIs desta aba. Storage nunca é autoridade:
+ * somente o AuthContext chama esta função após validação do backend.
+ */
+export function setActiveSupportSession(
+  supportSession: SupportImpersonationSession | null,
+) {
+  activeSupportSession = supportSession;
+}
+
+export function readActiveSupportContext(): StoredSupportContext | null {
+  const supportSession = activeSupportSession;
   if (!supportSession) return null;
 
   return {
     sessionId: supportSession.id,
     targetUserId: supportSession.targetUser.id,
   };
+}
+
+/**
+ * Captura a autoridade ativa no início de uma operação com múltiplas chamadas.
+ * Cada etapa assíncrona deve confirmar o snapshot antes de continuar, para que
+ * revogação/saída/troca de alvo nunca faça a cadeia cair no usuário autenticado.
+ */
+export function captureActiveSupportScope(): ActiveSupportScopeSnapshot {
+  const supportContext = readActiveSupportContext();
+  return supportContext ? { ...supportContext } : null;
+}
+
+export function assertActiveSupportScopeUnchanged(
+  expected: ActiveSupportScopeSnapshot,
+): void {
+  const current = readActiveSupportContext();
+  const unchanged = expected
+    ? current?.sessionId === expected.sessionId
+      && current.targetUserId === expected.targetUserId
+    : current === null;
+
+  if (!unchanged) {
+    throw new Error(
+      'O contexto de acesso mudou durante a operação. A ação foi interrompida; recarregue os dados e tente novamente.',
+    );
+  }
 }

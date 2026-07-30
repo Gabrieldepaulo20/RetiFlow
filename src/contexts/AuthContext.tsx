@@ -14,9 +14,10 @@ import { loadSystemUsers } from '@/services/auth/systemUsers';
 import { supabase } from '@/lib/supabase';
 import { dbUserToSystemUser } from '@/services/auth/supabaseUserMapping';
 import { canUserAccessModule, canUserAccessModuleInContext, getDefaultRedirect } from '@/services/auth/defaultRedirect';
-import { isSuperAdmin } from '@/services/auth/superAdmin';
+import { isAdminMaster, isSuperAdmin } from '@/services/auth/superAdmin';
 import {
   readStoredSupportSession,
+  setActiveSupportSession,
   writeStoredSupportSession,
 } from '@/services/auth/supportContext';
 import { callAdminUsersFunction } from '@/api/supabase/admin-users';
@@ -47,6 +48,7 @@ interface AuthContextType {
   session: AuthSession | null;
   supportSession: SupportImpersonationSession | null;
   isSupportImpersonating: boolean;
+  isSupportSessionValidating: boolean;
   isAuthLoading: boolean;
   profileError: string | null;
   isAuthenticated: boolean;
@@ -110,9 +112,33 @@ async function fetchProfileFromSupabase(): Promise<{
   return { session: createRealSession(dbUserToSystemUser(envelope.dados)), isTransientError: false };
 }
 
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error('Tempo limite excedido ao validar a sessão de suporte.'));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(() => loadStoredSession());
-  const [supportSession, setSupportSession] = useState<SupportImpersonationSession | null>(() => readStoredSupportSession());
+  const [supportSession, setSupportSession] = useState<SupportImpersonationSession | null>(
+    () => {
+      const initialSession = IS_REAL_AUTH ? null : readStoredSupportSession();
+      setActiveSupportSession(initialSession);
+      return initialSession;
+    },
+  );
+  const [storedSupportCandidate, setStoredSupportCandidate] = useState<SupportImpersonationSession | null>(
+    () => IS_REAL_AUTH ? readStoredSupportSession() : null,
+  );
   const [isAuthLoading, setIsAuthLoading] = useState(IS_REAL_AUTH);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [moduleAccessVersion, setModuleAccessVersion] = useState(0);
@@ -120,9 +146,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const pendingMfaSessionRef = useRef<{ session: AuthSession; portal: LoginPortal } | null>(null);
   const lastSuccessfulProfileFetchAt = useRef<number>(0);
   const previousAuthenticatedUserId = useRef<string | null>(session?.user.id ?? null);
+  const validatedSupportSessionKey = useRef<string | null>(null);
   const PROFILE_CACHE_TTL_MS = 30_000;
 
   const authMode: AuthMode = IS_REAL_AUTH ? 'real' : 'development';
+
+  const clearSupportState = useCallback(() => {
+    validatedSupportSessionKey.current = null;
+    setActiveSupportSession(null);
+    setSupportSession(null);
+    setStoredSupportCandidate(null);
+    writeStoredSupportSession(null);
+    queryClient.clear();
+    clearAllCachedMarketingResumo();
+  }, []);
 
   useEffect(() => {
     const currentUserId = session?.user.id ?? null;
@@ -141,16 +178,154 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const realUser = session?.user ?? null;
     if (!supportSession) return;
     if (IS_REAL_AUTH && isAuthLoading && !realUser) return;
-    // Sessão de suporte não expira por tempo — só encerra no "Sair", troca de
-    // usuário real ou perda de permissão de Mega Master.
+
+    // Sessão já validada continua ativa somente enquanto pertencer ao mesmo
+    // operador administrativo autenticado.
     const actorMismatch = supportSession.actorUser.id !== realUser?.id;
-    const requesterCannotImpersonate = !isSuperAdmin(realUser);
+    const requesterCannotImpersonate = !isSuperAdmin(realUser) && !isAdminMaster(realUser);
 
     if (!realUser || actorMismatch || requesterCannotImpersonate) {
-      setSupportSession(null);
-      writeStoredSupportSession(null);
+      clearSupportState();
     }
-  }, [isAuthLoading, session, supportSession]);
+  }, [clearSupportState, isAuthLoading, session?.user, supportSession]);
+
+  useEffect(() => {
+    if (!storedSupportCandidate) return;
+    if (IS_REAL_AUTH && isAuthLoading) return;
+
+    const realUser = session?.user ?? null;
+    const candidateMatchesActor = storedSupportCandidate.actorUser.id === realUser?.id;
+    const requesterCanImpersonate = isSuperAdmin(realUser) || isAdminMaster(realUser);
+
+    if (!realUser || !candidateMatchesActor || !requesterCanImpersonate) {
+      clearSupportState();
+      return;
+    }
+
+    if (!IS_REAL_AUTH) {
+      setActiveSupportSession(storedSupportCandidate);
+      setSupportSession(storedSupportCandidate);
+      setStoredSupportCandidate(null);
+      return;
+    }
+
+    const validationKey = [
+      realUser.id,
+      storedSupportCandidate.id,
+      storedSupportCandidate.targetUser.id,
+    ].join(':');
+    if (validatedSupportSessionKey.current === validationKey) return;
+
+    validatedSupportSessionKey.current = validationKey;
+    let cancelled = false;
+
+    void withTimeout(callAdminUsersFunction({
+      action: 'validate_support_impersonation',
+      sessionId: storedSupportCandidate.id,
+      targetUserId: storedSupportCandidate.targetUser.id,
+    }), 12_000).then((result) => {
+      if (cancelled) return;
+      const validated = result.supportSession;
+      const responseMatchesRequest = Boolean(
+        validated
+        && validated.id === storedSupportCandidate.id
+        && validated.actorUser.id === realUser.id
+        && validated.targetUser.id === storedSupportCandidate.targetUser.id,
+      );
+
+      if (!validated || !responseMatchesRequest) {
+        throw new Error('Sessão de suporte retornada pelo servidor é inválida.');
+      }
+
+      queryClient.clear();
+      clearAllCachedMarketingResumo();
+      setActiveSupportSession(validated);
+      setSupportSession(validated);
+      setStoredSupportCandidate(null);
+      writeStoredSupportSession(validated);
+    }).catch(() => {
+      if (cancelled) return;
+      clearSupportState();
+    });
+
+    return () => {
+      cancelled = true;
+      if (validatedSupportSessionKey.current === validationKey) {
+        validatedSupportSessionKey.current = null;
+      }
+    };
+  }, [clearSupportState, isAuthLoading, session?.user, storedSupportCandidate]);
+
+  useEffect(() => {
+    if (
+      !IS_REAL_AUTH
+      || isAuthLoading
+      || !session?.user
+      || !supportSession
+      || typeof window === 'undefined'
+      || typeof document === 'undefined'
+    ) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    let validationInFlight = false;
+
+    const validateActiveSupportSession = async () => {
+      if (cancelled || validationInFlight) return;
+      validationInFlight = true;
+      try {
+        const result = await withTimeout(callAdminUsersFunction({
+          action: 'validate_support_impersonation',
+          sessionId: supportSession.id,
+          targetUserId: supportSession.targetUser.id,
+        }), 12_000);
+        if (cancelled) return;
+
+        const validated = result.supportSession;
+        const stillMatches = Boolean(
+          validated
+          && validated.id === supportSession.id
+          && validated.actorUser.id === session.user.id
+          && validated.targetUser.id === supportSession.targetUser.id,
+        );
+        if (!stillMatches) clearSupportState();
+      } catch {
+        // Sem confirmação do servidor, a aba deixa de manter dados do alvo
+        // carregados. O operador pode iniciar uma nova sessão pelo painel Admin.
+        if (!cancelled) clearSupportState();
+      } finally {
+        validationInFlight = false;
+      }
+    };
+
+    const handleFocus = () => {
+      void validateActiveSupportSession();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void validateActiveSupportSession();
+      }
+    };
+
+    const interval = window.setInterval(() => {
+      void validateActiveSupportSession();
+    }, 30_000);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [
+    clearSupportState,
+    isAuthLoading,
+    session?.user,
+    supportSession,
+  ]);
 
   const applyProfileResult = useCallback((
     result: { session: AuthSession | null; isTransientError: boolean },
@@ -166,8 +341,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!result.session) {
       void supabase.auth.signOut();
       setSession(null);
-      setSupportSession(null);
-      writeStoredSupportSession(null);
+      clearSupportState();
       setProfileError(null);
       return false;
     }
@@ -176,7 +350,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfileError(null);
     lastSuccessfulProfileFetchAt.current = Date.now();
     return true;
-  }, []);
+  }, [clearSupportState]);
 
   const refreshProfile = useCallback(async (options?: { keepCurrentSessionOnTransientError?: boolean; force?: boolean }) => {
     if (!IS_REAL_AUTH) return true;
@@ -189,15 +363,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { session: sbSession } } = await supabase.auth.getSession();
     if (!sbSession) {
       setSession(null);
-      setSupportSession(null);
-      writeStoredSupportSession(null);
+      clearSupportState();
       setProfileError(null);
       return false;
     }
 
     const result = await fetchProfileFromSupabase();
     return applyProfileResult(result, options);
-  }, [applyProfileResult]);
+  }, [applyProfileResult, clearSupportState]);
 
   useEffect(() => subscribeToModuleAccessChanges(() => setModuleAccessVersion((v) => v + 1)), []);
 
@@ -239,8 +412,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (!sbSession) {
           setSession(null);
-          setSupportSession(null);
-          writeStoredSupportSession(null);
+          clearSupportState();
           setProfileError(null);
           if (options?.initialEvent) setIsAuthLoading(false);
           return;
@@ -275,8 +447,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (event === 'SIGNED_OUT') {
         setSession(null);
-        setSupportSession(null);
-        writeStoredSupportSession(null);
+        clearSupportState();
         setIsAuthLoading(false);
         setProfileError(null);
         return;
@@ -302,7 +473,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       pendingTimers.clear();
       subscription.unsubscribe();
     };
-  }, [applyProfileResult]);
+  }, [applyProfileResult, clearSupportState]);
 
   const realUser = session?.user ?? null;
   const supportTargetUser = realUser && supportSession ? supportSession.targetUser : null;
@@ -410,8 +581,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
     }
 
-    setSupportSession(null);
-    writeStoredSupportSession(null);
+    clearSupportState();
     commitSession(response.session);
     return {
       success: true,
@@ -419,7 +589,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         operationalOnly: portal === 'client' && isAdminUser,
       }),
     };
-  }, [commitSession]);
+  }, [clearSupportState, commitSession]);
 
   const completeMfaLogin = useCallback(async (): Promise<LoginResult> => {
     const pending = pendingMfaSessionRef.current;
@@ -442,8 +612,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     pendingMfaSessionRef.current = null;
-    setSupportSession(null);
-    writeStoredSupportSession(null);
+    clearSupportState();
     commitSession(pending.session);
 
     return {
@@ -452,14 +621,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         operationalOnly: pending.portal === 'client' && pending.session.user.role === 'ADMIN',
       }),
     };
-  }, [commitSession]);
+  }, [clearSupportState, commitSession]);
 
   const logout = useCallback(async () => {
     if (IS_REAL_AUTH) await supabase.auth.signOut();
-    setSupportSession(null);
-    writeStoredSupportSession(null);
+    clearSupportState();
     commitSession(null);
-  }, [commitSession]);
+  }, [clearSupportState, commitSession]);
 
   useEffect(() => {
     if (!IS_REAL_AUTH || !realUser?.id) return undefined;
@@ -487,8 +655,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [logout, realUser?.id]);
 
   const startSupportImpersonation = useCallback(async (targetUserId: string, reason: string) => {
-    if (!isSuperAdmin(sessionRef.current?.user)) {
-      throw new Error('Somente o Mega Master autorizado pode acessar clientes em modo suporte.');
+    const actorUser = sessionRef.current?.user;
+    if (!isSuperAdmin(actorUser) && !isAdminMaster(actorUser)) {
+      throw new Error('Seu perfil não possui acesso administrativo ao modo suporte.');
     }
 
     const result = await callAdminUsersFunction({
@@ -501,26 +670,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error('A Function não retornou a sessão de suporte.');
     }
 
+    if (
+      result.supportSession.actorUser.id !== actorUser?.id
+      || result.supportSession.targetUser.id !== targetUserId
+    ) {
+      throw new Error('A sessão retornada não corresponde ao operador e à conta solicitados.');
+    }
+
+    validatedSupportSessionKey.current = [
+      actorUser.id,
+      result.supportSession.id,
+      targetUserId,
+    ].join(':');
+    setActiveSupportSession(result.supportSession);
     setSupportSession(result.supportSession);
+    setStoredSupportCandidate(null);
     writeStoredSupportSession(result.supportSession);
+    queryClient.clear();
+    clearAllCachedMarketingResumo();
     return result.supportSession;
   }, []);
 
   const endSupportImpersonation = useCallback(async () => {
     const current = supportSession;
-    setSupportSession(null);
-    writeStoredSupportSession(null);
+    // A aba perde a autoridade do alvo imediatamente. A confirmação remota é
+    // feita depois e nunca mantém dados do cliente visíveis por falha de rede.
+    clearSupportState();
 
-    if (!current || !IS_REAL_AUTH) return;
-    try {
-      await callAdminUsersFunction({
-        action: 'end_support_impersonation',
-        sessionId: current.id,
-      });
-    } catch {
-      // Não mantém o usuário preso no modo suporte por falha transitória de rede.
+    if (current && IS_REAL_AUTH) {
+      try {
+        await callAdminUsersFunction({
+          action: 'end_support_impersonation',
+          sessionId: current.id,
+        });
+      } catch {
+        throw new Error(
+          'Você saiu desta aba, mas o servidor não confirmou o encerramento. Não opere outra aba em modo suporte até a conexão voltar.',
+        );
+      }
     }
-  }, [supportSession]);
+  }, [clearSupportState, supportSession]);
 
   const can = useCallback((permission: Permission) => hasPermission(user, permission), [user]);
 
@@ -543,6 +732,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       supportSession,
       isSupportImpersonating: Boolean(realUser && supportSession),
+      isSupportSessionValidating: Boolean(IS_REAL_AUTH && storedSupportCandidate),
       isAuthLoading,
       profileError,
       isAuthenticated: Boolean(realUser),
@@ -559,7 +749,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAdmin: realUser?.role === 'ADMIN',
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [authMode, realUser, user, operationalUser, supportTargetUser, session, supportSession, isAuthLoading, profileError, login, logout, startSupportImpersonation, endSupportImpersonation, retryAuth, refreshProfile, isProfileFresh, completeMfaLogin, can, canAccessModule, moduleAccessVersion],
+    [authMode, realUser, user, operationalUser, supportTargetUser, session, supportSession, storedSupportCandidate, isAuthLoading, profileError, login, logout, startSupportImpersonation, endSupportImpersonation, retryAuth, refreshProfile, isProfileFresh, completeMfaLogin, can, canAccessModule, moduleAccessVersion],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

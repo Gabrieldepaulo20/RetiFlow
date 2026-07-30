@@ -36,7 +36,8 @@ export type AdminUserActionResult = {
   confirmationEmail?: string | null;
   confirmationSent?: boolean;
   confirmationWarning?: string | null;
-  supportSession?: SupportImpersonationSession;
+  supportSession?: SupportImpersonationSession | null;
+  supportTargetUserIds?: string[];
   deletionReport?: AdminUserDeletionReport;
   userPresence?: AdminUserPresence[];
 };
@@ -76,11 +77,16 @@ type AdminUserAction =
       reason: string;
     }
   | {
+      action: 'validate_support_impersonation';
+      sessionId: string;
+      targetUserId: string;
+    }
+  | {
       action: 'end_support_impersonation';
       sessionId: string;
     }
   | {
-      action: 'get_user_presence';
+      action: 'get_support_targets' | 'get_user_presence';
     };
 
 const RETRYABLE_CREATE_STATUSES = new Set([404, 408, 429, 500, 502, 503, 504]);

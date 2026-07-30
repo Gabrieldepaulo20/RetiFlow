@@ -69,7 +69,8 @@ export interface SupportImpersonationSession {
   targetUser: SystemUser;
   reason: string;
   startedAt: string;
-  expiresAt: string;
+  /** Campo legado; sessões atuais encerram somente por ended_at no backend. */
+  expiresAt: string | null;
 }
 
 export interface LoginCredentials {

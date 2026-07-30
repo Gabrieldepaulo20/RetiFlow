@@ -1,6 +1,29 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-07-24
+Atualizado em: 2026-07-30
+
+---
+
+## Suporte Restrito Guilherme Para Retifica Premium - 2026-07-30
+
+- O acesso de suporte deixou de depender de permissao implicita de administrador:
+  - cada acesso exige uma permissao privada e revogavel entre o atendente e a empresa;
+  - Guilherme recebe somente o par `Guilherme -> Retifica Premium`;
+  - ele nao se torna Mega Master e nao recebe acesso de suporte a outras empresas.
+- A autorizacao e validada no backend ao listar empresas, iniciar, revalidar e encerrar uma sessao.
+  Sessoes perdem validade quando a permissao e revogada, o usuario e desativado, o modulo administrativo
+  e removido ou o cadastro muda de escopo.
+- O frontend trata o contexto salvo apenas como candidato. Os dados da empresa so sao carregados depois
+  da validacao no servidor, com nova validacao a cada 30 segundos e ao voltar para a aba.
+- Cada sessao fica isolada por aba, troca de empresa remonta o contexto de dados e saida/revogacao limpa
+  caches e retorna o administrador para a area segura.
+- OAuth e leitura do Gmail preservam o mesmo limite de empresa, registram auditoria e interrompem o
+  processamento se a permissao de suporte deixar de ser valida.
+- PDFs privados de O.S. usam uma Edge Function auditada, validam sessao/alvo antes e depois da
+  assinatura e entregam URL temporaria de no maximo 10 minutos, sem abrir a policy do bucket.
+- A publicacao precisa ser coordenada: callback OAuth compativel, migration, `admin-users`,
+  `gmail-oauth-start`, `gmail-scan-payables`, `note-pdf-url`, frontend e teste autenticado final.
+  Estados OAuth iniciados antes da migration devem ser reiniciados.
 
 ---
 

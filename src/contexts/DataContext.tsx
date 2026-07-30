@@ -77,6 +77,10 @@ import { dashboardResumoToDomainData, getDashboardResumo, getServicosResumo } fr
 import { buildMeaningfulPayableTitle } from '@/services/domain/payables';
 import { sanitizeClientInput } from '@/services/domain/customers';
 import { DEFAULT_NOTE_DEADLINE_DAYS } from '@/services/domain/textNormalization';
+import {
+  assertActiveSupportScopeUnchanged,
+  captureActiveSupportScope,
+} from '@/services/auth/supportContext';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -302,8 +306,10 @@ const OperationalCtx = createContext<OperationalData | null>(null);
 const uid = () => generateId();
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const { operationalUser, isAuthLoading } = useAuth();
-  const activeUserId = IS_REAL_AUTH ? operationalUser?.id ?? null : null;
+  const { operationalUser, isAuthLoading, isSupportSessionValidating } = useAuth();
+  const activeUserId = IS_REAL_AUTH && !isSupportSessionValidating
+    ? operationalUser?.id ?? null
+    : null;
 
   // Carrega estado do localStorage uma única vez na montagem.
   // useRef garante execução única mesmo em StrictMode double-render.
@@ -382,8 +388,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const refreshEmailSuggestions = useCallback(async () => {
     if (!IS_REAL_AUTH) return;
+    const operationScope = captureActiveSupportScope();
     await reconciliarSugestoesEmail().catch((error) => logError(error, 'DataContext.reconciliarSugestoesEmail'));
+    assertActiveSupportScopeUnchanged(operationScope);
     const dados = await getSugestoesEmail();
+    assertActiveSupportScopeUnchanged(operationScope);
     setEmailSuggestions(dados.map(supabaseToEmailSuggestion));
   }, []);
 
@@ -476,7 +485,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [activeUserId, isAuthLoading, refreshEmailSuggestions, resetRealData]);
+  }, [
+    activeUserId,
+    isAuthLoading,
+    isSupportSessionValidating,
+    refreshEmailSuggestions,
+    resetRealData,
+  ]);
 
   // Grava estado relevante no localStorage após 400ms de inatividade.
   // payableCategories/payableSuppliers são catálogos estáticos do seed — não precisam persistir.
@@ -633,6 +648,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const updateClient = useCallback(async (id: string, data: Partial<Client>): Promise<void> => {
     if (IS_REAL_AUTH) {
+      const operationScope = captureActiveSupportScope();
       const current = clientById.get(id);
       if (!current) {
         throw new Error('Cliente não encontrado na lista atual. Recarregue a página e tente novamente.');
@@ -644,15 +660,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
         } else {
           await inativarCliente(id);
         }
+        assertActiveSupportScopeUnchanged(operationScope);
       }
       // Full upsert persists all fields including address and contacts
       const expectedClient = sanitizeClientInput({ ...current, ...data });
       if (current) {
         const payload = clientToNovoClientePayload(expectedClient);
+        assertActiveSupportScopeUnchanged(operationScope);
         await salvarClienteCompleto({ ...payload, id_clientes: id });
+        assertActiveSupportScopeUnchanged(operationScope);
       }
 
       const refreshed = await getClientes({ p_limite: 5000 });
+      assertActiveSupportScopeUnchanged(operationScope);
       const nextClients = refreshed.dados.map(supabaseToClient);
       const persisted = nextClients.find((client) => client.id === id);
 
@@ -999,6 +1019,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // ── Contas a Pagar callbacks ──────────────────────────────────────────────
 
   const addPayable = useCallback(async (data: Omit<AccountPayable, 'id' | 'createdAt' | 'updatedAt'>): Promise<AccountPayable> => {
+    const operationScope = captureActiveSupportScope();
     const now = new Date().toISOString();
     const competencyDate = data.competencyDate ?? `${data.dueDate.slice(0, 7)}-01`;
     const title = buildMeaningfulPayableTitle({
@@ -1045,24 +1066,27 @@ export function DataProvider({ children }: { children: ReactNode }) {
           p_favorecido_tipo: newPayable.favorecidoTipo,
         });
         newPayable.id = dbId;
+        assertActiveSupportScopeUnchanged(operationScope);
         if (newPayable.status === 'PAGO' && newPayable.paidAmount) {
           await registrarPagamento({
             p_id_contas_pagar: dbId,
             p_valor_pago: newPayable.paidAmount,
             p_pago_com: newPayable.paidWith,
           });
+          assertActiveSupportScopeUnchanged(operationScope);
         }
       } catch (err) {
         console.error('[addPayable]', err);
         throw err;
       }
     }
+    if (IS_REAL_AUTH) {
+      await refreshEmailSuggestions().catch((error) => logError(error, 'DataContext.refreshEmailSuggestions.afterAddPayable'));
+      assertActiveSupportScopeUnchanged(operationScope);
+    }
     setPayables((prev) => [newPayable, ...prev]);
     bumpDataVersion();
     addActivity(`Conta a pagar criada: ${newPayable.title}`);
-    if (IS_REAL_AUTH) {
-      await refreshEmailSuggestions().catch((error) => logError(error, 'DataContext.refreshEmailSuggestions.afterAddPayable'));
-    }
     return newPayable;
   }, [addActivity, bumpDataVersion, refreshEmailSuggestions]);
 
@@ -1197,6 +1221,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [payables]);
 
   const acceptEmailSuggestion = useCallback(async (id: string): Promise<AccountPayable | null> => {
+    const operationScope = captureActiveSupportScope();
     const suggestion = emailSuggestions.find((s) => s.id === id);
     if (!suggestion) return null;
     const now = new Date().toISOString();
@@ -1228,12 +1253,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
     };
     if (IS_REAL_AUTH) {
       const dbId = await aceitarSugestaoEmail(id);
+      assertActiveSupportScopeUnchanged(operationScope);
       if (title !== suggestion.suggestedTitle) {
         await updateContaPagar(dbId, { p_titulo: title });
+        assertActiveSupportScopeUnchanged(operationScope);
       }
       const refreshed = await getContasPagar({ p_limite: 5000 });
-      setPayables(refreshed.dados.map(supabaseToAccountPayable));
+      assertActiveSupportScopeUnchanged(operationScope);
+      const nextPayables = refreshed.dados.map(supabaseToAccountPayable);
       await refreshEmailSuggestions().catch((error) => logError(error, 'DataContext.refreshEmailSuggestions.afterAccept'));
+      assertActiveSupportScopeUnchanged(operationScope);
+      setPayables(nextPayables);
       bumpDataVersion();
       return { ...newPayable, id: dbId };
     }

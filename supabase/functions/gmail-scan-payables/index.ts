@@ -41,6 +41,13 @@ class GmailReconnectRequiredError extends Error {
   }
 }
 
+class SupportSessionRevokedError extends Error {
+  constructor() {
+    super('Sessão de suporte encerrada durante a busca Gmail.');
+    this.name = 'SupportSessionRevokedError';
+  }
+}
+
 function isGmailReconnectRequiredError(error: unknown): error is GmailReconnectRequiredError {
   return error instanceof GmailReconnectRequiredError || (error instanceof Error && error.name === 'GmailReconnectRequiredError');
 }
@@ -85,11 +92,6 @@ async function fetchWithTimeout(url: string | URL, init: RequestInit, timeoutMs:
   }
 }
 
-function getSuperAdminEmails() {
-  const raw = Deno.env.get('SUPER_ADMIN_EMAILS') ?? Deno.env.get('SUPER_ADMIN_EMAIL') ?? '';
-  return new Set(raw.split(',').map((email) => email.trim().toLowerCase()).filter(Boolean));
-}
-
 function getCorsHeaders(request: Request) {
   const origin = request.headers.get('Origin') ?? '';
   const configured = (Deno.env.get('CORS_ALLOWED_ORIGINS') ?? Deno.env.get('ALLOWED_ORIGINS') ?? '')
@@ -131,6 +133,29 @@ type ScanRequestBody = {
   };
 };
 
+type SupportAuditContext = {
+  actorUsuarioId: string;
+  targetUsuarioId: string;
+  supportSessionId: string;
+};
+
+async function assertSupportSessionStillValid(
+  service: ReturnType<typeof createClient>,
+  supportAudit: SupportAuditContext | null,
+) {
+  if (!supportAudit) return;
+
+  const { data, error } = await service
+    .schema('RetificaPremium')
+    .rpc('sessao_suporte_valida', {
+      p_sessao_suporte: supportAudit.supportSessionId,
+      p_actor_usuario_id: supportAudit.actorUsuarioId,
+      p_target_usuario_id: supportAudit.targetUsuarioId,
+    });
+
+  if (error || data !== true) throw new SupportSessionRevokedError();
+}
+
 async function resolveSupportTarget(params: {
   service: ReturnType<typeof createClient>;
   actorAuthUserId: string;
@@ -152,7 +177,7 @@ async function resolveSupportTarget(params: {
   const { data: actor, error: actorError } = await params.service
     .schema('RetificaPremium')
     .from('Usuarios')
-    .select('id_usuarios,email,acesso,Modulos(admin)')
+    .select('id_usuarios,email,acesso,status,Modulos(admin)')
     .eq('auth_id', params.actorAuthUserId)
     .maybeSingle();
 
@@ -160,45 +185,36 @@ async function resolveSupportTarget(params: {
     ? Boolean(actor.Modulos[0]?.admin)
     : Boolean((actor?.Modulos as { admin?: boolean } | null)?.admin);
 
-  const superAdminEmails = getSuperAdminEmails();
-  const actorEmail = String(actor?.email ?? '').toLowerCase();
-
   if (
     actorError
     || !actor
-    || superAdminEmails.size === 0
-    || !superAdminEmails.has(actorEmail)
+    || actor.status !== true
     || String(actor.acesso ?? '') !== 'administrador'
     || !admin
   ) {
-    throw new Error('Somente o Mega Master pode buscar Gmail em modo suporte.');
+    throw new Error('Operador administrativo inválido para buscar Gmail em modo suporte.');
   }
 
-  // A sessão de suporte não expira mais por tempo (decisão firmada em
-  // 20260605150000_support_session_no_time_expiry); encerra apenas via "Sair do
-  // suporte" (ended_at). Mantido alinhado com resolve_suporte_contexto_usuario_id.
-  const { data: session, error: sessionError } = await params.service
+  const { data: sessionIsValid, error: sessionValidationError } = await params.service
     .schema('RetificaPremium')
-    .from('Sessoes_Suporte')
-    .select('id_sessao_suporte')
-    .eq('id_sessao_suporte', params.supportContext.sessionId)
-    .eq('fk_actor_usuarios', actor.id_usuarios)
-    .eq('fk_target_usuarios', params.supportContext.targetUserId)
-    .is('ended_at', null)
-    .maybeSingle();
+    .rpc('sessao_suporte_valida', {
+      p_sessao_suporte: params.supportContext.sessionId,
+      p_actor_usuario_id: actor.id_usuarios,
+      p_target_usuario_id: params.supportContext.targetUserId,
+    });
 
-  if (sessionError || !session) {
-    throw new Error('Sessão de suporte inválida ou expirada.');
+  if (sessionValidationError || sessionIsValid !== true) {
+    throw new Error('Sessão de suporte inválida ou encerrada.');
   }
 
   const { data: target, error: targetError } = await params.service
     .schema('RetificaPremium')
     .from('Usuarios')
-    .select('id_usuarios,auth_id')
+    .select('id_usuarios,auth_id,status')
     .eq('id_usuarios', params.supportContext.targetUserId)
     .maybeSingle();
 
-  if (targetError || !target?.auth_id) {
+  if (targetError || !target?.auth_id || target.status !== true) {
     throw new Error('Cliente alvo sem conta de autenticação para buscar Gmail.');
   }
 
@@ -514,11 +530,13 @@ async function getGmailAttachments(params: {
   accessToken: string;
   messageId: string;
   payload?: GmailPayload;
+  beforeExternalCall?: () => Promise<void>;
 }) {
   const attachments: GmailAttachment[] = [];
   for (const part of collectAttachmentParts(params.payload)) {
     const attachmentId = part.body?.attachmentId;
     if (!attachmentId) continue;
+    await params.beforeExternalCall?.();
     const response = await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages/${params.messageId}/attachments/${attachmentId}`,
       { headers: { Authorization: `Bearer ${params.accessToken}` } },
@@ -875,6 +893,7 @@ async function analyzePayableEmail(params: {
   snippet: string;
   bodyText: string;
   attachments: GmailAttachment[];
+  beforeExternalCall?: () => Promise<void>;
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const emailText = [
@@ -960,6 +979,7 @@ async function analyzePayableEmail(params: {
     for (const attachment of params.attachments) {
       if (attachment.mimeType.startsWith('image/')) continue;
       const file = new File([attachment.bytes], attachment.filename, { type: attachment.mimeType });
+      await params.beforeExternalCall?.();
       uploadedFileIds.push((await uploadOpenAIFile(file, params.apiKey)).id);
     }
 
@@ -968,6 +988,7 @@ async function analyzePayableEmail(params: {
       ...imageInputs,
       ...uploadedFileIds.map((file_id) => ({ type: 'input_file', file_id })),
     ];
+    await params.beforeExternalCall?.();
     const response = await fetchWithTimeout('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
@@ -1081,11 +1102,7 @@ Deno.serve(async (request) => {
   const service = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
   const isScheduled = Boolean(cronSecret) && isUuid(requestBody.scheduledUserId);
   let authUserId = '';
-  let supportAudit: {
-    actorUsuarioId: string;
-    targetUsuarioId: string;
-    supportSessionId: string;
-  } | null = null;
+  let supportAudit: SupportAuditContext | null = null;
 
   if (isScheduled) {
     const { data: secretIsValid, error: secretError } = await service
@@ -1130,6 +1147,32 @@ Deno.serve(async (request) => {
 
   if (connectionError || !connection) return jsonResponse({ error: 'Gmail ainda não conectado.' }, 400, request);
 
+  if (supportAudit) {
+    try {
+      await assertSupportSessionStillValid(service, supportAudit);
+    } catch {
+      return jsonResponse({ error: 'Sessão de suporte inválida ou encerrada.' }, 403, request);
+    }
+
+    const { error: auditStartError } = await service
+      .schema('RetificaPremium')
+      .from('Logs_Acoes_Suporte')
+      .insert({
+        fk_actor_usuarios: supportAudit.actorUsuarioId,
+        fk_target_usuarios: supportAudit.targetUsuarioId,
+        fk_sessao_suporte: supportAudit.supportSessionId,
+        acao: 'gmail_scan_payables_start',
+        entidade: 'Gmail_Connections',
+        entidade_id: connection.id_gmail_connections,
+        descricao: 'Busca Gmail iniciada em modo suporte.',
+      });
+    if (auditStartError) {
+      return jsonResponse({
+        error: `Falha ao auditar início da busca Gmail: ${auditStartError.message}`,
+      }, 500, request);
+    }
+  }
+
   const { data: owner } = await service
     .schema('RetificaPremium')
     .from('Usuarios')
@@ -1145,8 +1188,18 @@ Deno.serve(async (request) => {
   let reconciled = 0;
   let attachmentsFound = 0;
 
+  const recordScannedMessageForContext = async (
+    existingId: string | null,
+    payload: Record<string, unknown>,
+  ) => {
+    await assertSupportSessionStillValid(service, supportAudit);
+    await recordScannedMessage(service, existingId, payload);
+  };
+
   try {
-    const accessToken = await refreshAccessToken(await decryptToken(connection.refresh_token_cipher));
+    const refreshToken = await decryptToken(connection.refresh_token_cipher);
+    await assertSupportSessionStillValid(service, supportAudit);
+    const accessToken = await refreshAccessToken(refreshToken);
     const lastSyncAt = connection.last_sync_at ? new Date(connection.last_sync_at) : null;
     const lastSyncOverlap = lastSyncAt && !Number.isNaN(lastSyncAt.getTime())
       ? new Date(lastSyncAt.getTime() - 24 * 60 * 60 * 1000)
@@ -1171,12 +1224,17 @@ Deno.serve(async (request) => {
       ? Math.min(Math.max(Number(requestBody.maxMessages), 1), scheduledMaxMessagesCap)
       : manualMaxMessages;
     const messageIds = Array.from(new Set((await Promise.all(
-      queries.map((query, index) => listGmailMessageIds(accessToken, query, index === 3 || index === 8 ? 30 : 50)),
+      queries.map(async (query, index) => {
+        await assertSupportSessionStillValid(service, supportAudit);
+        return listGmailMessageIds(accessToken, query, index === 3 || index === 8 ? 30 : 50);
+      }),
     )).flat())).slice(0, maxMessages);
 
     let reconnectError: GmailReconnectRequiredError | null = null;
+    let supportRevokedError: SupportSessionRevokedError | null = null;
     const seenSuggestionKeys = new Set<string>();
     const processMessage = async (messageId: string): Promise<void> => {
+      await assertSupportSessionStillValid(service, supportAudit);
       scanned += 1;
       const { data: existing } = await service
         .schema('RetificaPremium')
@@ -1191,6 +1249,7 @@ Deno.serve(async (request) => {
         return;
       }
 
+      await assertSupportSessionStillValid(service, supportAudit);
       const detailResponse = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=full`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
@@ -1217,7 +1276,12 @@ Deno.serve(async (request) => {
         ? new Date(Number(detail.internalDate)).toISOString()
         : new Date(header(headers, 'Date') || Date.now()).toISOString();
       const bodyText = extractPayloadText(detail.payload);
-      const attachments = await getGmailAttachments({ accessToken, messageId, payload: detail.payload });
+      const attachments = await getGmailAttachments({
+        accessToken,
+        messageId,
+        payload: detail.payload,
+        beforeExternalCall: () => assertSupportSessionStillValid(service, supportAudit),
+      });
       attachmentsFound += attachments.length;
       const securityContext = buildSecurityContext(headers, labelIds);
       const text = `${subject}\n${from.name}\n${from.email}\n${securityContext}\n${detail.snippet ?? ''}\n${bodyText}`;
@@ -1234,8 +1298,10 @@ Deno.serve(async (request) => {
           snippet: detail.snippet ?? '',
           bodyText,
           attachments,
+          beforeExternalCall: () => assertSupportSessionStillValid(service, supportAudit),
         }), labelIds), text);
       } catch (error) {
+        if (error instanceof SupportSessionRevokedError) throw error;
         errors.push(`Mensagem ${messageId}: ${error instanceof Error ? error.message : 'falha na IA'}`);
         return;
       }
@@ -1244,7 +1310,7 @@ Deno.serve(async (request) => {
       // em quarentena ou revisão antes de permitir criação.
       if (!analysis.isPayable || !analysis.amount || !analysis.dueDate || analysis.confidence < 40) {
         skipped += 1;
-        await recordScannedMessage(service, existing?.id_gmail_scanned_messages ?? null, {
+        await recordScannedMessageForContext(existing?.id_gmail_scanned_messages ?? null, {
           fk_auth_user: authUserId,
           gmail_message_id: messageId,
           message_hash: `${scanVersion}:${await sha256Hex(`${text}\n${attachments.map((attachment) => attachment.filename).join('\n')}`)}`,
@@ -1259,7 +1325,7 @@ Deno.serve(async (request) => {
       const duplicateKey = suggestionDedupKey(analysis);
       if (duplicateKey && seenSuggestionKeys.has(duplicateKey)) {
         skipped += 1;
-        await recordScannedMessage(service, existing?.id_gmail_scanned_messages ?? null, {
+        await recordScannedMessageForContext(existing?.id_gmail_scanned_messages ?? null, {
           fk_auth_user: authUserId,
           gmail_message_id: messageId,
           message_hash: `${scanVersion}:run-duplicate:${await sha256Hex(`${text}\n${attachments.map((attachment) => attachment.filename).join('\n')}`)}`,
@@ -1276,7 +1342,7 @@ Deno.serve(async (request) => {
         if (existingSuggestion) {
           if (duplicateKey) seenSuggestionKeys.add(duplicateKey);
           skipped += 1;
-          await recordScannedMessage(service, existing?.id_gmail_scanned_messages ?? null, {
+          await recordScannedMessageForContext(existing?.id_gmail_scanned_messages ?? null, {
             fk_auth_user: authUserId,
             gmail_message_id: messageId,
             message_hash: `${scanVersion}:existing-suggestion:${await sha256Hex(`${text}\n${attachments.map((attachment) => attachment.filename).join('\n')}`)}`,
@@ -1293,7 +1359,7 @@ Deno.serve(async (request) => {
       if (alreadyRegistered) {
         if (duplicateKey) seenSuggestionKeys.add(duplicateKey);
         skipped += 1;
-        await recordScannedMessage(service, existing?.id_gmail_scanned_messages ?? null, {
+        await recordScannedMessageForContext(existing?.id_gmail_scanned_messages ?? null, {
           fk_auth_user: authUserId,
           gmail_message_id: messageId,
           message_hash: `${scanVersion}:existing-payable:${await sha256Hex(`${text}\n${attachments.map((attachment) => attachment.filename).join('\n')}`)}`,
@@ -1324,6 +1390,7 @@ Deno.serve(async (request) => {
           sameYearMonth(c.vencimento_sugerido as string, analysis.dueDate));
 
         if (match) {
+          await assertSupportSessionStillValid(service, supportAudit);
           await service
             .schema('RetificaPremium')
             .from('Sugestoes_Email')
@@ -1331,7 +1398,7 @@ Deno.serve(async (request) => {
             .eq('id_sugestoes_email', match.id_sugestoes_email as string)
             .eq('fk_auth_user', authUserId);
 
-          await recordScannedMessage(service, existing?.id_gmail_scanned_messages ?? null, {
+          await recordScannedMessageForContext(existing?.id_gmail_scanned_messages ?? null, {
             fk_auth_user: authUserId,
             gmail_message_id: messageId,
             message_hash: `${scanVersion}:${await sha256Hex(`${text}\n${attachments.map((attachment) => attachment.filename).join('\n')}`)}`,
@@ -1345,6 +1412,7 @@ Deno.serve(async (request) => {
         }
       }
 
+      await assertSupportSessionStillValid(service, supportAudit);
       const { data: suggestion, error: suggestionError } = await service
         .schema('RetificaPremium')
         .from('Sugestoes_Email')
@@ -1381,7 +1449,7 @@ Deno.serve(async (request) => {
       }
 
       if (duplicateKey) seenSuggestionKeys.add(duplicateKey);
-      await recordScannedMessage(service, existing?.id_gmail_scanned_messages ?? null, {
+      await recordScannedMessageForContext(existing?.id_gmail_scanned_messages ?? null, {
         fk_auth_user: authUserId,
         gmail_message_id: messageId,
         message_hash: `${scanVersion}:${await sha256Hex(`${text}\n${attachments.map((attachment) => attachment.filename).join('\n')}`)}`,
@@ -1402,11 +1470,15 @@ Deno.serve(async (request) => {
     let cursor = 0;
     const concurrency = Math.min(getScanConcurrency(), messageIds.length || 1);
     const runners = Array.from({ length: concurrency }, async () => {
-      while (cursor < messageIds.length && !reconnectError) {
+      while (cursor < messageIds.length && !reconnectError && !supportRevokedError) {
         const messageId = messageIds[cursor++];
         try {
           await processMessage(messageId);
         } catch (error) {
+          if (error instanceof SupportSessionRevokedError) {
+            supportRevokedError = error;
+            return;
+          }
           if (isGmailReconnectRequiredError(error)) {
             reconnectError = error;
             return;
@@ -1416,8 +1488,10 @@ Deno.serve(async (request) => {
       }
     });
     await Promise.all(runners);
+    if (supportRevokedError) throw supportRevokedError;
     if (reconnectError) throw reconnectError;
 
+    await assertSupportSessionStillValid(service, supportAudit);
     const completedAt = new Date().toISOString();
     const { error: updateConnectionError } = await service
       .schema('RetificaPremium')
@@ -1450,24 +1524,78 @@ Deno.serve(async (request) => {
       });
     }
 
-    if (!updateConnectionError && supportAudit) {
-      await service
+    if (supportAudit) {
+      const { error: auditCompletionError } = await service
         .schema('RetificaPremium')
         .from('Logs_Acoes_Suporte')
         .insert({
           fk_sessao_suporte: supportAudit.supportSessionId,
           fk_actor_usuarios: supportAudit.actorUsuarioId,
           fk_target_usuarios: supportAudit.targetUsuarioId,
-          acao: 'gmail_scan_payables',
+          acao: updateConnectionError
+            ? 'gmail_scan_payables_completed_with_metadata_error'
+            : 'gmail_scan_payables_completed',
           entidade: 'Gmail_Connections',
           entidade_id: connection.id_gmail_connections,
-          descricao: `Busca Gmail em modo suporte: ${scanned} analisado(s), ${attachmentsFound} anexo(s), ${created} sugestão(ões), ${reconciled} reconciliação(ões), ${skipped} ignorado(s), ${errors.length} erro(s).`,
+          descricao: `Busca Gmail em modo suporte: ${scanned} analisado(s), ${attachmentsFound} anexo(s), ${created} sugestão(ões), ${reconciled} reconciliação(ões), ${skipped} ignorado(s), ${errors.length} erro(s); atualização de metadados ${updateConnectionError ? 'falhou' : 'concluída'}.`,
         });
+
+      if (auditCompletionError) {
+        console.error('[gmail-scan-payables] Falha ao auditar conclusão do suporte', {
+          sessionId: supportAudit.supportSessionId,
+          error: auditCompletionError.message,
+        });
+      }
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Erro desconhecido ao buscar Gmail.';
+    if (error instanceof SupportSessionRevokedError) {
+      if (supportAudit) {
+        const { error: auditError } = await service
+          .schema('RetificaPremium')
+          .from('Logs_Acoes_Suporte')
+          .insert({
+            fk_sessao_suporte: supportAudit.supportSessionId,
+            fk_actor_usuarios: supportAudit.actorUsuarioId,
+            fk_target_usuarios: supportAudit.targetUsuarioId,
+            acao: 'gmail_scan_payables_revoked',
+            entidade: 'Gmail_Connections',
+            entidade_id: connection.id_gmail_connections,
+            descricao: `Busca Gmail interrompida após revogação: ${scanned} analisado(s), ${created} sugestão(ões), ${reconciled} reconciliação(ões).`,
+          });
+        if (auditError) {
+          console.error('[gmail-scan-payables] Falha ao auditar revogação', {
+            sessionId: supportAudit.supportSessionId,
+            error: auditError.message,
+          });
+        }
+      }
+      return jsonResponse({ error: message }, 403, request);
+    }
+
     const failedAt = new Date().toISOString();
     const shouldReconnect = isGmailReconnectRequiredError(error);
+    if (supportAudit) {
+      const { error: auditFailureError } = await service
+        .schema('RetificaPremium')
+        .from('Logs_Acoes_Suporte')
+        .insert({
+          fk_sessao_suporte: supportAudit.supportSessionId,
+          fk_actor_usuarios: supportAudit.actorUsuarioId,
+          fk_target_usuarios: supportAudit.targetUsuarioId,
+          acao: 'gmail_scan_payables_failed',
+          entidade: 'Gmail_Connections',
+          entidade_id: connection.id_gmail_connections,
+          descricao: `Busca Gmail falhou após ${scanned} analisado(s), ${created} sugestão(ões) e ${reconciled} reconciliação(ões).`,
+        });
+      if (auditFailureError) {
+        console.error('[gmail-scan-payables] Falha ao auditar erro terminal', {
+          sessionId: supportAudit.supportSessionId,
+          error: auditFailureError.message,
+        });
+      }
+    }
+
     await service
       .schema('RetificaPremium')
       .from('Gmail_Connections')

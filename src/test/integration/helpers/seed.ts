@@ -12,6 +12,31 @@ export const TEST_PREFIX = '[INTEGRATION-TEST]';
  */
 export const TEST_CATEGORY_ID = 'b80ff39d-4da4-4553-8bc4-20a47fecd5ce';
 
+const AUTH_PAGE_SIZE = 1000;
+
+async function findAuthUserByEmail(email: string) {
+  const service = createServiceClient();
+  let page = 1;
+
+  while (true) {
+    const { data, error } = await service.auth.admin.listUsers({
+      page,
+      perPage: AUTH_PAGE_SIZE,
+    });
+
+    if (error) {
+      throw new Error(`[seed] Falha ao listar usuários do Auth: ${error.message}`);
+    }
+
+    const users = data.users ?? [];
+    const match = users.find((user) => user.email === email);
+    if (match) return match;
+    if (users.length < AUTH_PAGE_SIZE) return null;
+
+    page += 1;
+  }
+}
+
 async function deleteInternalUserRowsByEmail(email: string): Promise<void> {
   const service = createServiceClient();
 
@@ -57,10 +82,8 @@ async function deleteInternalUserRowsByEmail(email: string): Promise<void> {
 export async function ensureTestUser(email: string, password: string): Promise<string> {
   const service = createServiceClient();
 
-  // Verifica se usuário já existe em auth.users
-  const { data: list } = await service.auth.admin.listUsers({ perPage: 1000 });
-  const users = (list as { users?: Array<{ id: string; email?: string }> })?.users ?? [];
-  const existing = users.find((u) => u.email === email);
+  // Verifica todas as páginas para não duplicar nem perder usuário de teste.
+  const existing = await findAuthUserByEmail(email);
 
   let authId: string;
 
@@ -113,11 +136,17 @@ export async function deleteTestUser(email: string): Promise<void> {
 
   await deleteInternalUserRowsByEmail(email);
 
-  // Remove de auth.users
-  const { data: list } = await service.auth.admin.listUsers({ perPage: 1000 });
-  const users = (list as { users?: Array<{ id: string; email?: string }> })?.users ?? [];
-  const user = users.find((u) => u.email === email);
+  // Remove de auth.users e confirma o resultado para não deixar resíduos.
+  const user = await findAuthUserByEmail(email);
   if (user) {
-    await service.auth.admin.deleteUser(user.id);
+    const { error } = await service.auth.admin.deleteUser(user.id);
+    if (error) {
+      throw new Error(`[seed] Falha ao remover usuário do Auth: ${error.message}`);
+    }
+
+    const remainingUser = await findAuthUserByEmail(email);
+    if (remainingUser) {
+      throw new Error(`[seed] Usuário do Auth permaneceu após exclusão: ${email}`);
+    }
   }
 }

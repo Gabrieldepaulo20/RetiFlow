@@ -1,7 +1,7 @@
 import type { AppModuleKey, SupportImpersonationSession, SystemUser } from '@/types';
 import { getModulePermission, hasPermission } from '@/services/auth/permissions';
 import { DEFAULT_ROLE_MODULE_CONFIG, isRoleModuleEnabled, isUserModuleEnabled } from '@/services/auth/moduleAccess';
-import { isSuperAdmin } from '@/services/auth/superAdmin';
+import { isAdminMaster, isSuperAdmin } from '@/services/auth/superAdmin';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
@@ -88,13 +88,29 @@ export function canUserAccessModuleInContext(input: {
   supportSession?: SupportImpersonationSession | null;
   moduleKey: AppModuleKey;
 }) {
-  if (input.supportSession && isSuperAdmin(input.actorUser)) {
-    if (input.moduleKey === 'admin') {
-      return canUserAccessModule(input.actorUser, 'admin');
+  const hasMatchingSupportContext = Boolean(
+    input.supportSession
+    && input.actorUser
+    && input.operationalUser
+    && input.supportSession.actorUser.id === input.actorUser.id
+    && input.supportSession.targetUser.id === input.operationalUser.id
+    && (isSuperAdmin(input.actorUser) || isAdminMaster(input.actorUser)),
+  );
+
+  // A presença de uma sessão sem correspondência exata nunca pode cair para as
+  // permissões normais do alvo durante uma troca de identidade/escopo.
+  if (input.supportSession && !hasMatchingSupportContext) return false;
+
+  if (hasMatchingSupportContext) {
+    if (input.moduleKey === 'admin' || input.moduleKey === 'settings') {
+      // Evita misturar contexto administrativo/configurações do ator com dados
+      // operacionais do alvo. Para voltar ao Admin é obrigatório sair do suporte.
+      return false;
     }
 
-    // Em suporte, o Mega Master precisa conseguir abrir os módulos operacionais
-    // para diagnosticar cliente mesmo quando o perfil alvo está incompleto/restrito.
+    // Em suporte, o operador autorizado precisa abrir os módulos operacionais
+    // para diagnosticar o cliente mesmo quando o perfil alvo está incompleto.
+    // O backend continua sendo a autoridade para cada leitura/escrita de dados.
     return OPERATIONAL_MODULES.includes(input.moduleKey);
   }
 

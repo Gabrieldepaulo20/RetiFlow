@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { callRPC, extractDados } from '@/api/supabase/_base';
-import { SUPPORT_SESSION_STORAGE_KEY } from '@/services/auth/supportContext';
+import {
+  setActiveSupportSession,
+  SUPPORT_SESSION_STORAGE_KEY,
+} from '@/services/auth/supportContext';
 
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -19,12 +22,39 @@ vi.mock('@/lib/monitoring', () => ({
   logError: mocks.logError,
 }));
 
+function makeActiveSupportSession(reason = 'Atendimento de suporte validado') {
+  return {
+    id: '11111111-1111-4111-8111-111111111111',
+    reason,
+    startedAt: '2026-07-30T12:00:00.000Z',
+    expiresAt: null,
+    actorUser: {
+      id: 'actor-id',
+      email: 'gabrielwilliam208@gmail.com',
+      name: 'Gabriel',
+      role: 'ADMIN' as const,
+      isActive: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      moduleAccess: { admin: true },
+    },
+    targetUser: {
+      id: '22222222-2222-4222-8222-222222222222',
+      email: 'patricia@example.com',
+      name: 'Patricia',
+      role: 'RECEPCAO' as const,
+      isActive: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    },
+  };
+}
+
 describe('Supabase RPC base wrapper', () => {
   beforeEach(() => {
     mocks.rpc.mockReset();
     mocks.logError.mockReset();
     window.localStorage.clear();
     window.sessionStorage.clear();
+    setActiveSupportSession(null);
   });
 
   it('returns the standard envelope when the RPC succeeds', async () => {
@@ -73,13 +103,7 @@ describe('Supabase RPC base wrapper', () => {
   });
 
   it('uses the validated support-context RPC for contextual reads', async () => {
-    window.sessionStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify({
-      id: '11111111-1111-4111-8111-111111111111',
-      reason: 'validar cliente',
-      expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      actorUser: { id: 'actor-id', email: 'gabrielwilliam208@gmail.com', name: 'Gabriel' },
-      targetUser: { id: '22222222-2222-4222-8222-222222222222', email: 'patricia@example.com', name: 'Patricia' },
-    }));
+    setActiveSupportSession(makeActiveSupportSession('validar cliente'));
     mocks.rpc.mockResolvedValue({
       data: { status: 200, mensagem: 'ok', dados: [] },
       error: null,
@@ -94,14 +118,11 @@ describe('Supabase RPC base wrapper', () => {
     });
   });
 
-  it('restores support context from persistent storage after a page refresh', async () => {
-    window.localStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify({
-      id: '11111111-1111-4111-8111-111111111111',
-      reason: 'validar gmail',
-      expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      actorUser: { id: 'actor-id', email: 'gabrielwilliam208@gmail.com', name: 'Gabriel' },
-      targetUser: { id: '22222222-2222-4222-8222-222222222222', email: 'patricia@example.com', name: 'Patricia' },
-    }));
+  it('does not trust a persisted support candidate before server validation', async () => {
+    window.sessionStorage.setItem(
+      SUPPORT_SESSION_STORAGE_KEY,
+      JSON.stringify(makeActiveSupportSession('validar gmail')),
+    );
     mocks.rpc.mockResolvedValue({
       data: { status: 200, mensagem: 'ok', dados: { connected: false } },
       error: null,
@@ -109,20 +130,11 @@ describe('Supabase RPC base wrapper', () => {
 
     await callRPC('get_gmail_connection_status');
 
-    expect(mocks.rpc).toHaveBeenCalledWith('get_gmail_connection_status_contexto_suporte', {
-      p_contexto_usuario_id: '22222222-2222-4222-8222-222222222222',
-      p_sessao_suporte: '11111111-1111-4111-8111-111111111111',
-    });
+    expect(mocks.rpc).toHaveBeenCalledWith('get_gmail_connection_status', {});
   });
 
   it('uses the validated support-context RPC for monthly closings', async () => {
-    window.sessionStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify({
-      id: '11111111-1111-4111-8111-111111111111',
-      reason: 'validar fechamento',
-      expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      actorUser: { id: 'actor-id', email: 'gabrielwilliam208@gmail.com', name: 'Gabriel' },
-      targetUser: { id: '22222222-2222-4222-8222-222222222222', email: 'patricia@example.com', name: 'Patricia' },
-    }));
+    setActiveSupportSession(makeActiveSupportSession('validar fechamento'));
     mocks.rpc.mockResolvedValue({
       data: { status: 200, mensagem: 'ok', dados: [] },
       error: null,
@@ -138,13 +150,7 @@ describe('Supabase RPC base wrapper', () => {
   });
 
   it('uses audited support-context RPCs for payable writes', async () => {
-    window.sessionStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify({
-      id: '11111111-1111-4111-8111-111111111111',
-      reason: 'registrar conta',
-      expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      actorUser: { id: 'actor-id', email: 'gabrielwilliam208@gmail.com', name: 'Gabriel' },
-      targetUser: { id: '22222222-2222-4222-8222-222222222222', email: 'patricia@example.com', name: 'Patricia' },
-    }));
+    setActiveSupportSession(makeActiveSupportSession('registrar conta'));
     mocks.rpc.mockResolvedValue({
       data: { status: 200, mensagem: 'ok', id_contas_pagar: '33333333-3333-4333-8333-333333333333' },
       error: null,
@@ -168,13 +174,7 @@ describe('Supabase RPC base wrapper', () => {
   });
 
   it('uses audited support-context RPCs when renaming a payable', async () => {
-    window.sessionStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify({
-      id: '11111111-1111-4111-8111-111111111111',
-      reason: 'renomear conta',
-      expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      actorUser: { id: 'actor-id', email: 'gabrielwilliam208@gmail.com', name: 'Gabriel' },
-      targetUser: { id: '22222222-2222-4222-8222-222222222222', email: 'patricia@example.com', name: 'Patricia' },
-    }));
+    setActiveSupportSession(makeActiveSupportSession('renomear conta'));
     mocks.rpc.mockResolvedValue({
       data: { status: 200, mensagem: 'ok' },
       error: null,
@@ -194,13 +194,7 @@ describe('Supabase RPC base wrapper', () => {
   });
 
   it('uses audited support-context RPCs for email suggestion actions', async () => {
-    window.sessionStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify({
-      id: '11111111-1111-4111-8111-111111111111',
-      reason: 'aceitar sugestao',
-      expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      actorUser: { id: 'actor-id', email: 'gabrielwilliam208@gmail.com', name: 'Gabriel' },
-      targetUser: { id: '22222222-2222-4222-8222-222222222222', email: 'patricia@example.com', name: 'Patricia' },
-    }));
+    setActiveSupportSession(makeActiveSupportSession('aceitar sugestão'));
     mocks.rpc.mockResolvedValue({
       data: { status: 200, mensagem: 'ok', id_contas_pagar: '33333333-3333-4333-8333-333333333333' },
       error: null,
@@ -218,13 +212,7 @@ describe('Supabase RPC base wrapper', () => {
   });
 
   it('keeps unsupported writes blocked while a support context is active', async () => {
-    window.sessionStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify({
-      id: '11111111-1111-4111-8111-111111111111',
-      reason: 'validar cliente',
-      expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      actorUser: { id: 'actor-id', email: 'gabrielwilliam208@gmail.com', name: 'Gabriel' },
-      targetUser: { id: '22222222-2222-4222-8222-222222222222', email: 'patricia@example.com', name: 'Patricia' },
-    }));
+    setActiveSupportSession(makeActiveSupportSession('validar cliente'));
 
     // Fechamentos não têm variante de suporte e devem continuar bloqueados
     await expect(callRPC('insert_fechamento', { p_payload: {} })).rejects.toThrow(
@@ -234,13 +222,7 @@ describe('Supabase RPC base wrapper', () => {
   });
 
   it('uses audited support-context RPCs for nota and client writes', async () => {
-    window.sessionStorage.setItem(SUPPORT_SESSION_STORAGE_KEY, JSON.stringify({
-      id: '11111111-1111-4111-8111-111111111111',
-      reason: 'editar nota',
-      expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      actorUser: { id: 'actor-id', email: 'gabrielwilliam208@gmail.com', name: 'Gabriel' },
-      targetUser: { id: '22222222-2222-4222-8222-222222222222', email: 'patricia@example.com', name: 'Patricia' },
-    }));
+    setActiveSupportSession(makeActiveSupportSession('editar nota'));
     mocks.rpc.mockResolvedValue({
       data: { status: 200, mensagem: 'ok' },
       error: null,

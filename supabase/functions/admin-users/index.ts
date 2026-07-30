@@ -86,11 +86,16 @@ type ActionPayload =
       reason: string;
     }
   | {
+      action: 'validate_support_impersonation';
+      sessionId: string;
+      targetUserId: string;
+    }
+  | {
       action: 'end_support_impersonation';
       sessionId: string;
     }
   | {
-      action: 'get_user_presence';
+      action: 'get_support_targets' | 'get_user_presence';
     };
 
 const localDevOrigins = new Set([
@@ -691,17 +696,32 @@ async function getRequester(request: Request) {
   const { data: profiles, error: profileError } = await serviceClient
     .schema('RetificaPremium')
     .from('Usuarios')
-    .select('id_usuarios, status, acesso, email')
-    .eq('email', requesterEmail)
+    .select('id_usuarios, auth_id, status, acesso, email')
+    .eq('auth_id', authUserData.user.id)
     .limit(1);
 
   if (profileError) {
-    return { ok: false as const, response: jsonResponse({ error: 'Não foi possível validar o perfil interno do Super Admin.' }, 500, request) };
+    return { ok: false as const, response: jsonResponse({ error: 'Não foi possível validar o perfil interno do administrador.' }, 500, request) };
   }
 
-  const profile = profiles?.[0] as { id_usuarios?: string; status?: boolean; acesso?: string; email?: string } | undefined;
+  const profile = profiles?.[0] as {
+    id_usuarios?: string;
+    auth_id?: string;
+    status?: boolean;
+    acesso?: string;
+    email?: string;
+  } | undefined;
   if (!profile || profile.status === false || profile.acesso !== 'administrador') {
     return { ok: false as const, response: jsonResponse({ error: 'Ação restrita a administradores ativos.' }, 403, request) };
+  }
+  if (
+    profile.auth_id !== authUserData.user.id
+    || normalizeEmail(profile.email) !== requesterEmail
+  ) {
+    return {
+      ok: false as const,
+      response: jsonResponse({ error: 'Perfil interno não corresponde à identidade autenticada.' }, 403, request),
+    };
   }
 
   if (!requesterIsMegaMaster) {
@@ -725,6 +745,7 @@ async function getRequester(request: Request) {
     ok: true as const,
     serviceClient,
     requesterEmail,
+    requesterUserId: profile.id_usuarios as string,
     requesterIsMegaMaster,
     superAdminEmails,
   };
@@ -1005,6 +1026,17 @@ async function countSupportSessions(serviceClient: ReturnType<typeof createClien
   return count ?? 0;
 }
 
+async function countSupportAuditLogs(serviceClient: ReturnType<typeof createClient>, userId: string) {
+  const { count, error } = await serviceClient
+    .schema('RetificaPremium')
+    .from('Logs_Acoes_Suporte')
+    .select('*', { count: 'exact', head: true })
+    .or(`fk_actor_usuarios.eq.${userId},fk_target_usuarios.eq.${userId}`);
+
+  if (error) throw new Error(`Falha ao contar logs de auditoria do suporte: ${error.message}`);
+  return count ?? 0;
+}
+
 async function listPayablesOwnedByUser(serviceClient: ReturnType<typeof createClient>, userId: string) {
   const { data, error } = await serviceClient
     .schema('RetificaPremium')
@@ -1099,9 +1131,11 @@ async function buildDeletionReport(
 ): Promise<DeletionReport> {
   const payableIds = await listPayablesOwnedByUser(serviceClient, targetUser.id_usuarios);
   const payableAttachmentPaths = await listPayableAttachmentPaths(serviceClient, targetUser.id_usuarios, payableIds);
+  const supportAuditCount = await countSupportAuditLogs(serviceClient, targetUser.id_usuarios);
 
   const stepInputs: Array<Omit<DeletionStep, 'status'>> = [
     { key: 'validate', label: 'Validar Mega Master e proteção do usuário', count: 1 },
+    { key: 'support-audit', label: 'Preservar trilha de auditoria do suporte', count: supportAuditCount },
     { key: 'support-sessions', label: 'Remover sessões de suporte vinculadas', count: await countSupportSessions(serviceClient, targetUser.id_usuarios) },
     { key: 'gmail', label: 'Remover conexões, estados e mensagens do Gmail', count:
       (targetUser.auth_id ? await countByColumn(serviceClient, 'Gmail_Scanned_Messages', 'fk_auth_user', targetUser.auth_id) : 0)
@@ -1131,6 +1165,9 @@ async function buildDeletionReport(
     totalRecords,
     warnings: [
       'Clientes, O.S. e fechamentos sem vínculo direto de usuário não são removidos para evitar apagar dados compartilhados por engano.',
+      ...(supportAuditCount > 0
+        ? ['A exclusão permanente está bloqueada porque este usuário participa de uma trilha de auditoria do suporte. Inative a conta para preservar a rastreabilidade.']
+        : []),
       'A ação remove o usuário do Supabase Auth e não pode ser desfeita pelo sistema.',
     ],
   };
@@ -1161,12 +1198,17 @@ async function deleteUserCascade(
 ) {
   const payableIds = await listPayablesOwnedByUser(serviceClient, targetUser.id_usuarios);
   const attachmentPaths = await listPayableAttachmentPaths(serviceClient, targetUser.id_usuarios, payableIds);
+  const supportAuditCount = await countSupportAuditLogs(serviceClient, targetUser.id_usuarios);
 
-  if (attachmentPaths.length > 0) {
-    const { error } = await serviceClient.storage.from('contas-pagar').remove(attachmentPaths);
-    if (error) throw new Error(`Falha ao remover anexos do Storage: ${error.message}`);
+  if (supportAuditCount > 0) {
+    throw new Error(
+      'Exclusão bloqueada: este usuário participa da trilha de auditoria do suporte. Inative a conta para preservar a rastreabilidade.',
+    );
   }
 
+  // Remove primeiro as sessões no banco. Se uma auditoria concorrente tiver
+  // sido gravada após o gate acima, a FK bloqueia esta etapa antes de qualquer
+  // arquivo privado ser removido do Storage.
   const supportSessionsDelete = await serviceClient
     .schema('RetificaPremium')
     .from('Sessoes_Suporte')
@@ -1174,6 +1216,11 @@ async function deleteUserCascade(
     .or(`fk_actor_usuarios.eq.${targetUser.id_usuarios},fk_target_usuarios.eq.${targetUser.id_usuarios}`);
   if (supportSessionsDelete.error) {
     throw new Error(`Falha ao apagar sessões de suporte: ${supportSessionsDelete.error.message}`);
+  }
+
+  if (attachmentPaths.length > 0) {
+    const { error } = await serviceClient.storage.from('contas-pagar').remove(attachmentPaths);
+    if (error) throw new Error(`Falha ao remover anexos do Storage: ${error.message}`);
   }
 
   if (targetUser.auth_id) {
@@ -1231,7 +1278,11 @@ async function getInternalModuleUser(serviceClient: ReturnType<typeof createClie
   return data as { id_usuarios: string; email: string; acesso: string; status: boolean };
 }
 
-async function getSupportTargetUser(serviceClient: ReturnType<typeof createClient>, userId: string) {
+async function getSupportTargetUser(
+  serviceClient: ReturnType<typeof createClient>,
+  userId: string,
+  options: { includeAdminModule?: boolean } = {},
+) {
   const { data, error } = await serviceClient
     .schema('RetificaPremium')
     .from('Usuarios')
@@ -1269,7 +1320,7 @@ async function getSupportTargetUser(serviceClient: ReturnType<typeof createClien
         payables: moduleRow.contas_a_pagar === true,
         marketing: moduleRow.marketing === true,
         settings: moduleRow.configuracoes === true,
-        admin: false,
+        admin: options.includeAdminModule === true && moduleRow.admin === true,
       }
     : {};
 
@@ -1285,88 +1336,188 @@ async function getSupportTargetUser(serviceClient: ReturnType<typeof createClien
   };
 }
 
-async function getRequesterInternalUser(serviceClient: ReturnType<typeof createClient>, requesterEmail: string) {
-  const { data, error } = await serviceClient
-    .schema('RetificaPremium')
-    .from('Usuarios')
-    .select('id_usuarios')
-    .eq('email', requesterEmail)
-    .maybeSingle();
+type SupportRequester = {
+  serviceClient: ReturnType<typeof createClient>;
+  requesterEmail: string;
+  requesterUserId: string;
+  requesterIsMegaMaster: boolean;
+  superAdminEmails: Set<string>;
+};
 
-  if (error) throw new Error(`Falha ao carregar usuário solicitante: ${error.message}`);
-  if (!data?.id_usuarios) throw new Error('Usuário solicitante não encontrado.');
-  return getSupportTargetUser(serviceClient, data.id_usuarios as string);
+async function getRequesterInternalUser(
+  serviceClient: ReturnType<typeof createClient>,
+  requesterUserId: string,
+) {
+  return getSupportTargetUser(serviceClient, requesterUserId, { includeAdminModule: true });
 }
 
-async function startSupportImpersonation(
-  requester: {
-    serviceClient: ReturnType<typeof createClient>;
-    requesterEmail: string;
-    requesterIsMegaMaster: boolean;
-  },
+async function canAccessSupportTarget(
+  requester: SupportRequester,
   targetUserId: string,
-  reason: string,
 ) {
-  if (!requester.requesterIsMegaMaster) {
-    throw new Error('Somente o Mega Master autorizado pode iniciar modo suporte.');
+  const { data, error } = await requester.serviceClient
+    .schema('RetificaPremium')
+    .rpc('pode_acessar_suporte', {
+      p_actor_usuario_id: requester.requesterUserId,
+      p_target_usuario_id: targetUserId,
+    });
+
+  if (error) {
+    throw new Error(`Falha ao validar permissão de suporte: ${error.message}`);
   }
 
-  const actorUser = await getRequesterInternalUser(requester.serviceClient, requester.requesterEmail);
-  const targetUser = await getSupportTargetUser(requester.serviceClient, targetUserId);
+  return data === true;
+}
 
-  if (actorUser.id === targetUser.id) {
+async function getSupportTargetUserIds(requester: SupportRequester) {
+  const { data, error } = await requester.serviceClient
+    .schema('RetificaPremium')
+    .rpc('listar_alvos_suporte', {
+      p_actor_usuario_id: requester.requesterUserId,
+    });
+
+  if (error) {
+    throw new Error(`Falha ao carregar alvos de suporte: ${error.message}`);
+  }
+
+  const allowedIds = Array.from(new Set(
+    (data ?? [])
+      .map((row: { id_usuarios?: unknown }) => row.id_usuarios)
+      .filter((value: unknown): value is string => typeof value === 'string'),
+  ));
+  if (allowedIds.length === 0) return [];
+
+  const { data: targets, error: targetError } = await requester.serviceClient
+    .schema('RetificaPremium')
+    .from('Usuarios')
+    .select('id_usuarios,email')
+    .in('id_usuarios', allowedIds);
+  if (targetError) {
+    throw new Error(`Falha ao confirmar alvos de suporte: ${targetError.message}`);
+  }
+
+  return (targets ?? [])
+    .filter((target: { email?: string | null }) => (
+      !isMegaMasterEmail(target.email ?? '', requester.superAdminEmails)
+    ))
+    .map((target: { id_usuarios: string }) => target.id_usuarios);
+}
+
+function assertSupportTargetIsNotMegaMaster(
+  requester: SupportRequester,
+  targetUser: { email: string },
+) {
+  if (isMegaMasterEmail(targetUser.email, requester.superAdminEmails)) {
+    throw new Error('Contas Mega Master não podem ser abertas em modo suporte.');
+  }
+}
+
+async function assertSupportTargetAccess(
+  requester: SupportRequester,
+  targetUser: { id: string; email: string },
+) {
+  if (requester.requesterUserId === targetUser.id) {
     throw new Error('Não é necessário iniciar modo suporte para o próprio usuário.');
   }
 
-  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  assertSupportTargetIsNotMegaMaster(requester, targetUser);
+
+  if (!await canAccessSupportTarget(requester, targetUser.id)) {
+    throw new Error('Você não possui permissão de suporte para esta conta.');
+  }
+}
+
+async function startSupportImpersonation(
+  requester: SupportRequester,
+  targetUserId: string,
+  reason: string,
+) {
+  const actorUser = await getRequesterInternalUser(
+    requester.serviceClient,
+    requester.requesterUserId,
+  );
+  const targetUser = await getSupportTargetUser(requester.serviceClient, targetUserId);
+  await assertSupportTargetAccess(requester, targetUser);
+
   const { data, error } = await requester.serviceClient
     .schema('RetificaPremium')
-    .from('Sessoes_Suporte')
-    .insert({
-      fk_actor_usuarios: actorUser.id,
-      fk_target_usuarios: targetUser.id,
-      actor_email: actorUser.email,
-      target_email: targetUser.email,
-      motivo: reason,
-      expires_at: expiresAt,
-    })
-    .select('id_sessao_suporte, started_at, expires_at')
-    .single();
+    .rpc('iniciar_sessao_suporte', {
+      p_actor_usuario_id: actorUser.id,
+      p_target_usuario_id: targetUser.id,
+      p_motivo: reason,
+    });
 
-  if (error) throw new Error(`Falha ao registrar sessão de suporte: ${error.message}`);
+  if (error) {
+    throw new Error(`Falha ao registrar sessão de suporte: ${error.message}`);
+  }
+
+  const sessionRow = Array.isArray(data) ? data[0] : data;
+  if (!sessionRow?.id_sessao_suporte || !sessionRow.started_at) {
+    throw new Error('A sessão de suporte não foi retornada pelo banco.');
+  }
 
   return {
-    id: data.id_sessao_suporte as string,
+    id: sessionRow.id_sessao_suporte as string,
     actorUser,
     targetUser,
     reason,
-    startedAt: data.started_at as string,
-    expiresAt: data.expires_at as string,
+    startedAt: sessionRow.started_at as string,
+    expiresAt: null,
+  };
+}
+
+async function validateSupportImpersonation(
+  requester: SupportRequester,
+  sessionId: string,
+  targetUserId: string,
+) {
+  const actorUser = await getRequesterInternalUser(
+    requester.serviceClient,
+    requester.requesterUserId,
+  );
+  const { data, error } = await requester.serviceClient
+    .schema('RetificaPremium')
+    .rpc('obter_sessao_suporte_valida', {
+      p_sessao_suporte: sessionId,
+      p_actor_usuario_id: requester.requesterUserId,
+      p_target_usuario_id: targetUserId,
+    });
+
+  if (error) {
+    throw new Error(`Falha ao validar sessão de suporte: ${error.message}`);
+  }
+  const sessionRow = Array.isArray(data) ? data[0] : data;
+  if (!sessionRow?.id_sessao_suporte) return null;
+
+  const targetUser = await getSupportTargetUser(requester.serviceClient, targetUserId);
+  await assertSupportTargetAccess(requester, targetUser);
+
+  return {
+    id: sessionRow.id_sessao_suporte as string,
+    actorUser,
+    targetUser,
+    reason: sessionRow.motivo as string,
+    startedAt: sessionRow.started_at as string,
+    expiresAt: null,
   };
 }
 
 async function endSupportImpersonation(
-  requester: {
-    serviceClient: ReturnType<typeof createClient>;
-    requesterEmail: string;
-    requesterIsMegaMaster: boolean;
-  },
+  requester: SupportRequester,
   sessionId: string,
 ) {
-  if (!requester.requesterIsMegaMaster) {
-    throw new Error('Somente o Mega Master autorizado pode encerrar modo suporte.');
-  }
-
-  const actorUser = await getRequesterInternalUser(requester.serviceClient, requester.requesterEmail);
-  const { error } = await requester.serviceClient
+  const { data, error } = await requester.serviceClient
     .schema('RetificaPremium')
     .from('Sessoes_Suporte')
     .update({ ended_at: new Date().toISOString() })
     .eq('id_sessao_suporte', sessionId)
-    .eq('fk_actor_usuarios', actorUser.id)
-    .is('ended_at', null);
+    .eq('fk_actor_usuarios', requester.requesterUserId)
+    .is('ended_at', null)
+    .select('id_sessao_suporte')
+    .maybeSingle();
 
   if (error) throw new Error(`Falha ao encerrar sessão de suporte: ${error.message}`);
+  if (!data) throw new Error('Sessão de suporte já encerrada ou pertencente a outro operador.');
 }
 
 async function getUserPresence(serviceClient: ReturnType<typeof createClient>): Promise<UserPresence[]> {
@@ -1623,10 +1774,15 @@ Deno.serve(async (request) => {
       }, 200, request);
     }
 
-    if (payload.action === 'start_support_impersonation') {
-      const forbidden = requireMegaMaster(requester, request, 'Somente o Mega Master pode iniciar modo suporte.');
-      if (forbidden) return forbidden;
+    if (payload.action === 'get_support_targets') {
+      const supportTargetUserIds = await getSupportTargetUserIds(requester);
+      return jsonResponse({
+        mensagem: 'Alvos de suporte carregados.',
+        supportTargetUserIds,
+      }, 200, request);
+    }
 
+    if (payload.action === 'start_support_impersonation') {
       const targetUserId = assertUserId(payload.targetUserId);
       const reason = assertReason(payload.reason);
       const supportSession = await startSupportImpersonation(requester, targetUserId, reason);
@@ -1636,10 +1792,23 @@ Deno.serve(async (request) => {
       }, 200, request);
     }
 
-    if (payload.action === 'end_support_impersonation') {
-      const forbidden = requireMegaMaster(requester, request, 'Somente o Mega Master pode encerrar modo suporte.');
-      if (forbidden) return forbidden;
+    if (payload.action === 'validate_support_impersonation') {
+      const sessionId = assertSessionId(payload.sessionId);
+      const targetUserId = assertUserId(payload.targetUserId);
+      const supportSession = await validateSupportImpersonation(
+        requester,
+        sessionId,
+        targetUserId,
+      );
+      return jsonResponse({
+        mensagem: supportSession
+          ? 'Sessão de suporte validada.'
+          : 'Sessão de suporte inválida ou encerrada.',
+        supportSession,
+      }, 200, request);
+    }
 
+    if (payload.action === 'end_support_impersonation') {
       const sessionId = assertSessionId(payload.sessionId);
       await endSupportImpersonation(requester, sessionId);
       return jsonResponse({ mensagem: 'Modo suporte encerrado.' }, 200, request);

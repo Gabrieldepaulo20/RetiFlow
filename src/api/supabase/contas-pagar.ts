@@ -1,6 +1,6 @@
 import { callRPC } from './_base';
 import { supabase } from '@/lib/supabase';
-import { readStoredSupportContext } from '@/services/auth/supportContext';
+import { readActiveSupportContext } from '@/services/auth/supportContext';
 import { getPerfil } from './auth';
 import { buildPayableAttachmentStoragePath } from '@/services/storage/storagePaths';
 import { resolvePayableFileMimeType } from '@/services/domain/payableFiles';
@@ -187,7 +187,7 @@ async function removeContaPagarStorageAttachments(pathsOrUrls: string[]) {
 
   if (paths.length === 0) return;
 
-  if (readStoredSupportContext()) {
+  if (readActiveSupportContext()) {
     throw new Error(
       'Exclusão definitiva de conta com anexo em modo suporte exige ação auditada no backend. Entre no tenant dono da conta para apagar o anexo com segurança.',
     );
@@ -226,7 +226,7 @@ export async function uploadAnexoContaPagar(params: {
   contaPagarId: string;
   file: File;
 }) {
-  if (readStoredSupportContext()) {
+  if (readActiveSupportContext()) {
     throw new Error('[uploadAnexoContaPagar] Upload de anexos em modo suporte exige auditoria backend por ação.');
   }
 
@@ -253,7 +253,7 @@ export async function uploadAnexoContaPagar(params: {
 async function getAnexoContaPagarUrlViaFunction(params: {
   pathOrUrl: string;
   attachmentId?: string;
-  supportContext?: ReturnType<typeof readStoredSupportContext>;
+  supportContext?: ReturnType<typeof readActiveSupportContext>;
 }) {
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
   const accessToken = sessionData.session?.access_token;
@@ -291,7 +291,7 @@ export async function getAnexoContaPagarUrl(
     return pathOrUrl;
   }
 
-  const supportContext = readStoredSupportContext();
+  const supportContext = readActiveSupportContext();
   if (supportContext) {
     return getAnexoContaPagarUrlViaFunction({
       pathOrUrl,

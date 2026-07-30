@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { logError } from '@/lib/monitoring';
-import { readStoredSupportContext } from '@/services/auth/supportContext';
+import { readActiveSupportContext } from '@/services/auth/supportContext';
 
 /** Formato padrão retornado por todos os RPCs do schema RetificaPremium. */
 export interface RPCEnvelope<T = unknown> {
@@ -77,7 +77,7 @@ const SUPPORT_BLOCKED_WRITE_RPCS = new Set([
 ]);
 
 function withSupportContext(rpcName: string, params: Record<string, unknown>) {
-  const supportContext = readStoredSupportContext();
+  const supportContext = readActiveSupportContext();
 
   if (supportContext && SUPPORT_BLOCKED_WRITE_RPCS.has(rpcName)) {
     throw new Error(

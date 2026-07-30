@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Outlet, useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
@@ -52,7 +52,17 @@ const navItems = [
 ] as const;
 
 export default function AppLayout() {
-  const { user, realUser, operationalUser, isAdmin, isSupportImpersonating, endSupportImpersonation, logout, canAccessModule } = useAuth();
+  const {
+    user,
+    realUser,
+    operationalUser,
+    supportTargetUser,
+    isAdmin,
+    isSupportImpersonating,
+    endSupportImpersonation,
+    logout,
+    canAccessModule,
+  } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -66,6 +76,8 @@ export default function AppLayout() {
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
   const [supportLoading, setSupportLoading] = useState(false);
   const [supportSubmitting, setSupportSubmitting] = useState(false);
+  const [isEndingSupport, setIsEndingSupport] = useState(false);
+  const endingSupportRef = useRef(false);
 
   // ─── Must be before any conditional return (Rules of Hooks) ───
   const isKanbanRoute = location.pathname.startsWith('/kanban');
@@ -158,11 +170,25 @@ export default function AppLayout() {
   };
 
   const handleEndSupportMode = async () => {
-    await endSupportImpersonation();
-    toast({
-      title: 'Modo suporte encerrado',
-      description: 'Você voltou para sua conta master.',
-    });
+    if (endingSupportRef.current) return;
+    endingSupportRef.current = true;
+    setIsEndingSupport(true);
+    try {
+      await endSupportImpersonation();
+      toast({
+        title: 'Modo suporte encerrado',
+        description: 'Você voltou para sua conta administrativa.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Saída local concluída com aviso',
+        description: error instanceof Error ? error.message : 'O servidor não confirmou o encerramento.',
+        variant: 'destructive',
+      });
+    } finally {
+      endingSupportRef.current = false;
+      setIsEndingSupport(false);
+    }
     navigate('/admin/usuarios');
   };
 
@@ -340,8 +366,14 @@ export default function AppLayout() {
             ) : null}
             <DropdownMenuSeparator />
             {isSupportImpersonating ? (
-              <DropdownMenuItem onClick={() => void handleEndSupportMode()}>
-                <AlertCircle className="w-4 h-4 mr-2" /> Sair do suporte
+              <DropdownMenuItem
+                disabled={isEndingSupport}
+                onClick={() => void handleEndSupportMode()}
+              >
+                <AlertCircle className="w-4 h-4 mr-2" />
+                {isEndingSupport
+                  ? 'Encerrando suporte...'
+                  : `Sair do suporte de ${supportTargetUser?.name ?? 'cliente'}`}
               </DropdownMenuItem>
             ) : null}
             <DropdownMenuItem onClick={() => setSupportOpen(true)}>
@@ -429,8 +461,19 @@ export default function AppLayout() {
                 size="sm"
                 className="h-9 shrink-0 border-amber-300 bg-amber-50 px-3 text-amber-900 hover:bg-amber-100"
                 onClick={() => void handleEndSupportMode()}
+                title={`Suporte ativo em ${supportTargetUser?.name ?? 'cliente'}`}
+                disabled={isEndingSupport}
               >
-                Sair do suporte
+                <span className="max-w-32 truncate sm:hidden">
+                  {isEndingSupport
+                    ? 'Saindo...'
+                    : `Sair · ${supportTargetUser?.name ?? 'cliente'}`}
+                </span>
+                <span className="hidden max-w-52 truncate sm:inline">
+                  {isEndingSupport
+                    ? 'Encerrando suporte...'
+                    : `Suporte: ${supportTargetUser?.name ?? 'cliente'} · Sair`}
+                </span>
               </Button>
             ) : null}
             <Popover open={notifOpen} onOpenChange={handleOpenNotif}>
@@ -519,8 +562,14 @@ export default function AppLayout() {
               <DropdownMenuContent align="end">
                 <DropdownMenuItem className="text-muted-foreground text-xs" disabled>{user.email}</DropdownMenuItem>
                 {isSupportImpersonating ? (
-                  <DropdownMenuItem onClick={() => void handleEndSupportMode()}>
-                    <AlertCircle className="w-4 h-4 mr-2" /> Sair do suporte
+                  <DropdownMenuItem
+                    disabled={isEndingSupport}
+                    onClick={() => void handleEndSupportMode()}
+                  >
+                    <AlertCircle className="w-4 h-4 mr-2" />
+                    {isEndingSupport
+                      ? 'Encerrando suporte...'
+                      : `Sair do suporte de ${supportTargetUser?.name ?? 'cliente'}`}
                   </DropdownMenuItem>
                 ) : null}
                 {isAdminOperationalPortal ? (

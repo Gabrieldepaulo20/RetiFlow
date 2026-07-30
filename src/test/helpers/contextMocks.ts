@@ -20,6 +20,7 @@ export function makeAuthCtx(overrides: Partial<AuthCtx> = {}): AuthCtx {
     session: null,
     supportSession: null,
     isSupportImpersonating: false,
+    isSupportSessionValidating: false,
     isAuthLoading: false,
     profileError: null,
     isAuthenticated: false,

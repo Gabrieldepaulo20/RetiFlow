@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -30,7 +30,11 @@ import { saveUserModuleOverrides } from '@/services/auth/moduleAccess';
 import { callAdminUsersFunction } from '@/api/supabase/admin-users';
 import type { AdminUserDeletionReport, AdminUserPresence } from '@/api/supabase/admin-users';
 import { useAuth } from '@/contexts/AuthContext';
-import { isConfiguredSuperAdminEmail, isSuperAdmin as checkIsSuperAdmin } from '@/services/auth/superAdmin';
+import {
+  isAdminMaster,
+  isConfiguredSuperAdminEmail,
+  isSuperAdmin as checkIsSuperAdmin,
+} from '@/services/auth/superAdmin';
 import { normalizeEmail, onlyDigits, toTitleCasePtBr } from '@/services/domain/textNormalization';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -183,7 +187,53 @@ export default function AdminClients() {
   const isSuperAdmin = checkIsSuperAdmin(currentUser);
   const isCurrentUserMegaMaster = isSuperAdmin;
   const canUseSensitiveAdminActions = !IS_REAL_AUTH || isCurrentUserMegaMaster;
-  const isMegaMasterUser = (targetUser: SystemUser) => isConfiguredSuperAdminEmail(targetUser.email);
+  const isSupportOperator = isCurrentUserMegaMaster || isAdminMaster(currentUser);
+  const isMegaMasterUser = useCallback(
+    (targetUser: SystemUser) => isConfiguredSuperAdminEmail(targetUser.email),
+    [],
+  );
+  const supportTargetsQuery = useQuery({
+    queryKey: ['admin', 'support-targets', currentUser?.id],
+    queryFn: async () => {
+      const result = await callAdminUsersFunction({ action: 'get_support_targets' });
+      return result.supportTargetUserIds ?? [];
+    },
+    enabled: IS_REAL_AUTH && isSupportOperator,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+  });
+  const supportTargetIds = useMemo(() => {
+    if (!IS_REAL_AUTH) {
+      return new Set(
+        isCurrentUserMegaMaster
+          ? systemUsers
+            .filter((candidate) => candidate.id !== currentUser?.id && !isMegaMasterUser(candidate))
+            .map((candidate) => candidate.id)
+          : [],
+      );
+    }
+    return new Set(supportTargetsQuery.data ?? []);
+  }, [
+    currentUser?.id,
+    isCurrentUserMegaMaster,
+    isMegaMasterUser,
+    supportTargetsQuery.data,
+    systemUsers,
+  ]);
+  const canStartSupportForUser = useCallback(
+    (targetUser: SystemUser) =>
+      isSupportOperator
+      && targetUser.isActive
+      && targetUser.id !== currentUser?.id
+      && !isMegaMasterUser(targetUser)
+      && supportTargetIds.has(targetUser.id),
+    [currentUser?.id, isMegaMasterUser, isSupportOperator, supportTargetIds],
+  );
+  const scopedSupportTargets = useMemo(
+    () => systemUsers.filter((candidate) => canStartSupportForUser(candidate)),
+    [canStartSupportForUser, systemUsers],
+  );
   const { data: userPresence = [] } = useQuery({
     queryKey: ['admin', 'user-presence'],
     queryFn: async () => {
@@ -534,6 +584,16 @@ export default function AdminClients() {
   const handleStartSupportAccess = async () => {
     const targetUser = systemUsers.find((candidate) => candidate.id === showSupportAccessDialog);
     if (!targetUser) return;
+    if (!canStartSupportForUser(targetUser)) {
+      toast({
+        title: 'Acesso de suporte não autorizado',
+        description: 'Seu usuário não possui permissão para entrar nesta conta.',
+        variant: 'destructive',
+      });
+      setShowSupportAccessDialog(null);
+      setSupportReason('');
+      return;
+    }
 
     const reason = supportReason.trim();
     if (reason.length < 8) {
@@ -796,10 +856,48 @@ export default function AdminClients() {
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Ações administrativas restritas</AlertTitle>
           <AlertDescription>
-            Você pode consultar usuários, mas criar contas, resetar senhas, ativar/inativar e alterar módulos exige acesso administrativo.
+            Você pode consultar usuários, mas criar contas, resetar senhas, ativar/inativar e alterar módulos exige acesso de Mega Master.
           </AlertDescription>
         </Alert>
       ) : null}
+
+      {IS_REAL_AUTH && !isCurrentUserMegaMaster && scopedSupportTargets.length > 0 ? (
+        <Alert className="border-primary/25 bg-primary/5">
+          <Shield className="h-4 w-4 text-primary" />
+          <AlertTitle>Acesso de suporte liberado</AlertTitle>
+          <AlertDescription className="mt-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              Você pode entrar de forma auditada em{' '}
+              <strong>{scopedSupportTargets.map((target) => target.name).join(', ')}</strong>.
+              Essa permissão não libera ações de Mega Master.
+            </span>
+            {scopedSupportTargets.length === 1 ? (
+              <Button
+                type="button"
+                size="sm"
+                className="shrink-0 gap-2"
+                onClick={() => setShowSupportAccessDialog(scopedSupportTargets[0].id)}
+              >
+                <LogIn className="h-4 w-4" />
+                Entrar como suporte
+              </Button>
+            ) : null}
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {IS_REAL_AUTH
+        && !isCurrentUserMegaMaster
+        && isSupportOperator
+        && supportTargetsQuery.isError ? (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Não foi possível carregar o acesso de suporte</AlertTitle>
+            <AlertDescription>
+              Atualize a página. Nenhuma conta foi liberada sem a validação do servidor.
+            </AlertDescription>
+          </Alert>
+        ) : null}
 
       <div className={cn('grid grid-cols-1 gap-4 sm:grid-cols-2', isCurrentUserMegaMaster ? 'xl:grid-cols-4' : 'lg:grid-cols-3')}>
         {[
@@ -1003,23 +1101,6 @@ export default function AdminClients() {
                             </Tooltip>
                           ) : null}
 
-                          {isCurrentUserMegaMaster && !isMegaMasterUser(user) ? (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  disabled={isMutatingUser || !user.isActive}
-                                  onClick={() => setShowSupportAccessDialog(user.id)}
-                                >
-                                  <LogIn className="w-4 h-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Acessar em modo suporte</TooltipContent>
-                            </Tooltip>
-                          ) : null}
-
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
@@ -1053,6 +1134,24 @@ export default function AdminClients() {
                             </Tooltip>
                           ) : null}
                         </>
+                      ) : null}
+
+                      {canStartSupportForUser(user) ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-primary hover:text-primary"
+                              disabled={isMutatingUser}
+                              onClick={() => setShowSupportAccessDialog(user.id)}
+                              aria-label={`Acessar ${user.name} em modo suporte`}
+                            >
+                              <LogIn className="w-4 h-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Acessar em modo suporte</TooltipContent>
+                        </Tooltip>
                       ) : null}
 
                       <Button
@@ -1485,7 +1584,7 @@ export default function AdminClients() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <LogIn className="w-5 h-5" /> Acessar como cliente
+              <LogIn className="w-5 h-5" /> Entrar em modo suporte
             </DialogTitle>
           </DialogHeader>
           {showSupportAccessDialog && (() => {
@@ -1499,7 +1598,7 @@ export default function AdminClients() {
                   <AlertTriangle className="h-4 w-4" />
                   <AlertTitle>Modo suporte auditado</AlertTitle>
                   <AlertDescription>
-                    Você continuará autenticado como Mega Master, mas a interface carregará os módulos de {targetUser.name}. O acesso fica registrado para auditoria.
+                    Você continuará autenticado como operador administrativo, mas a interface carregará os dados e módulos operacionais de {targetUser.name}. O acesso fica registrado para auditoria.
                   </AlertDescription>
                 </Alert>
 

@@ -15,7 +15,20 @@ interface ProtectedRouteProps {
 }
 
 export default function ProtectedRoute({ moduleKey, allowedRoles, redirectTo, megaMasterOnly = false }: ProtectedRouteProps) {
-  const { authMode, isAuthenticated, canAccessModule, isAuthLoading, realUser, user, profileError, retryAuth, refreshProfile, isProfileFresh } = useAuth();
+  const {
+    authMode,
+    isAuthenticated,
+    canAccessModule,
+    isAuthLoading,
+    isSupportImpersonating,
+    isSupportSessionValidating,
+    realUser,
+    user,
+    profileError,
+    retryAuth,
+    refreshProfile,
+    isProfileFresh,
+  } = useAuth();
   const location = useLocation();
   const loginPath = moduleKey === 'admin' ? '/admin/login' : '/login';
   const accessCheckKey = useMemo(
@@ -24,7 +37,12 @@ export default function ProtectedRoute({ moduleKey, allowedRoles, redirectTo, me
   );
   const [verifiedAccessKey, setVerifiedAccessKey] = useState<string | null>(null);
   const [profileRecoveryAttempts, setProfileRecoveryAttempts] = useState(0);
-  const shouldRevalidateRoute = authMode === 'real' && isAuthenticated && Boolean(moduleKey) && !isAuthLoading && !profileError;
+  const shouldRevalidateRoute = authMode === 'real'
+    && isAuthenticated
+    && Boolean(moduleKey)
+    && !isAuthLoading
+    && !isSupportSessionValidating
+    && !profileError;
 
   useEffect(() => {
     if (!profileError) {
@@ -71,11 +89,13 @@ export default function ProtectedRoute({ moduleKey, allowedRoles, redirectTo, me
     };
   }, [accessCheckKey, isProfileFresh, refreshProfile, shouldRevalidateRoute]);
 
-  if (isAuthLoading) {
+  if (isAuthLoading || isSupportSessionValidating) {
     return (
       <LoadingScreen
-        description="Mantendo você exatamente na página atual."
-        label="Restaurando sessão"
+        description={isSupportSessionValidating
+          ? 'Confirmando no servidor o operador, a empresa e a sessão auditada.'
+          : 'Mantendo você exatamente na página atual.'}
+        label={isSupportSessionValidating ? 'Validando modo suporte' : 'Restaurando sessão'}
       />
     );
   }
@@ -133,7 +153,17 @@ export default function ProtectedRoute({ moduleKey, allowedRoles, redirectTo, me
   }
 
   if (moduleKey && !canAccessModule(moduleKey)) {
-    return <Navigate to="/acesso-negado" replace state={{ from: location.pathname, moduleKey }} />;
+    const supportSafeRedirect = isSupportImpersonating
+      && (moduleKey === 'admin' || moduleKey === 'settings')
+      ? '/dashboard'
+      : null;
+    return (
+      <Navigate
+        to={supportSafeRedirect ?? redirectTo ?? '/acesso-negado'}
+        replace
+        state={{ from: location.pathname, moduleKey }}
+      />
+    );
   }
 
   return <Outlet />;

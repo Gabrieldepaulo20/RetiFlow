@@ -1,6 +1,6 @@
 import { callRPC } from './_base';
 import { supabase } from '@/lib/supabase';
-import { readStoredSupportContext } from '@/services/auth/supportContext';
+import { readActiveSupportContext } from '@/services/auth/supportContext';
 
 export type GmailConnectionStatus = {
   connected: boolean;
@@ -38,7 +38,7 @@ async function invokeAuthed<T>(name: string, body?: Record<string, unknown>) {
     throw new Error('Configuração Supabase ausente no frontend.');
   }
 
-  const supportContext = readStoredSupportContext();
+  const supportContext = readActiveSupportContext();
   const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/${name}`, {
     method: 'POST',
     headers: {

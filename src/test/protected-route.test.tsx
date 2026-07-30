@@ -18,6 +18,7 @@ const authBase = {
   supportTargetUser: null,
   supportSession: null,
   isSupportImpersonating: false,
+  isSupportSessionValidating: false,
   startSupportImpersonation: vi.fn(),
   endSupportImpersonation: vi.fn(),
   completeMfaLogin: vi.fn(),
@@ -170,6 +171,33 @@ describe('ProtectedRoute', () => {
 
     expect(screen.getByText('Restaurando sessão')).toBeInTheDocument();
     expect(screen.queryByText('login-page')).not.toBeInTheDocument();
+  });
+
+  it('keeps protected data closed while a stored support session is validated', () => {
+    mockedUseAuth.mockReturnValue({
+      ...authBase,
+      realUser: adminUser,
+      authMode: 'real',
+      user: adminUser,
+      session: null,
+      isSupportSessionValidating: true,
+      isAuthLoading: false,
+      profileError: null,
+      isAuthenticated: true,
+      login: vi.fn(),
+      logout: vi.fn(),
+      retryAuth: vi.fn(),
+      refreshProfile: vi.fn().mockResolvedValue(true),
+      can: vi.fn(),
+      canAccessModule: vi.fn(() => true),
+      isAdmin: true,
+    });
+
+    renderProtectedRoute();
+
+    expect(screen.getByText('Validando modo suporte')).toBeInTheDocument();
+    expect(screen.queryByText('closing-page')).not.toBeInTheDocument();
+    expect(screen.queryByText('access-denied')).not.toBeInTheDocument();
   });
 
   it('redirects authenticated users without module access to the denied page', () => {
@@ -396,6 +424,42 @@ describe('ProtectedRoute', () => {
 
     expect(screen.getByText('dashboard-page')).toBeInTheDocument();
     expect(screen.queryByText('admin-page')).not.toBeInTheDocument();
+  });
+
+  it('redirects direct Admin navigation to the operational dashboard during support', () => {
+    mockedUseAuth.mockReturnValue({
+      ...authBase,
+      realUser: adminUser,
+      operationalUser: baseUser,
+      supportTargetUser: baseUser,
+      supportSession: {
+        id: 'support-session',
+        actorUser: adminUser,
+        targetUser: baseUser,
+        reason: 'Atendimento operacional autorizado',
+        startedAt: '2026-07-30T12:00:00.000Z',
+        expiresAt: null,
+      },
+      isSupportImpersonating: true,
+      authMode: 'development',
+      user: adminUser,
+      session: null,
+      isAuthLoading: false,
+      profileError: null,
+      isAuthenticated: true,
+      login: vi.fn(),
+      logout: vi.fn(),
+      retryAuth: vi.fn(),
+      refreshProfile: vi.fn().mockResolvedValue(true),
+      can: vi.fn(),
+      canAccessModule: vi.fn(() => false),
+      isAdmin: true,
+    });
+
+    renderAdminRoute();
+
+    expect(screen.getByText('dashboard-page')).toBeInTheDocument();
+    expect(screen.queryByText('access-denied')).not.toBeInTheDocument();
   });
 
   it('shows loading screen for admin route during auth hydration', () => {

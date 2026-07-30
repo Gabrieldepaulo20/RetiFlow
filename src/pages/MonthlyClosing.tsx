@@ -66,7 +66,7 @@ import {
 } from '@/services/domain/monthlyClosingDraft';
 import { PAYMENT_METHOD_LABELS, type IntakeNote, type NotePaymentStatus, type PaymentMethod } from '@/types';
 import { isBillableNoteStatus } from '@/services/domain/intakeNotes';
-import { readStoredSupportContext } from '@/services/auth/supportContext';
+import { readActiveSupportContext } from '@/services/auth/supportContext';
 import { FinancialValue } from '@/components/privacy/FinancialValue';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
@@ -661,7 +661,7 @@ export default function MonthlyClosing() {
     setLoadingPreview(true);
     try {
       const localClosingIdByNoteId = new Map(notes.map((note) => [note.id, note.closingId ?? null]));
-      const supportContextActive = Boolean(readStoredSupportContext());
+      const supportContextActive = Boolean(readActiveSupportContext());
       const notasFiltradas = IS_REAL_AUTH
         ? (await getNotasServico({
             p_fk_clientes: selClientId,
@@ -926,7 +926,7 @@ export default function MonthlyClosing() {
   const generateDraft = useCallback(async (draft: ClosingDraft) => {
     setGenerating(true);
     try {
-      if (isSupportImpersonating || readStoredSupportContext()) {
+      if (isSupportImpersonating || readActiveSupportContext()) {
         toast({
           title: 'Geração bloqueada em modo suporte',
           description: 'Você pode revisar o rascunho em suporte, mas a gravação do fechamento precisa ser feita na sessão real da Retífica Premium.',

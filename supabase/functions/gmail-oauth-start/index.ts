@@ -62,6 +62,7 @@ async function resolveTargetAuthUserId(params: {
   if (!params.supportContext?.sessionId && !params.supportContext?.targetUserId) {
     return {
       authUserId: params.actorAuthUserId,
+      actorUsuarioId: null as string | null,
       targetUsuarioId: null as string | null,
       supportSessionId: null as string | null,
     };
@@ -74,7 +75,7 @@ async function resolveTargetAuthUserId(params: {
   const { data: actor, error: actorError } = await params.service
     .schema('RetificaPremium')
     .from('Usuarios')
-    .select('id_usuarios,email,acesso,Modulos(admin)')
+    .select('id_usuarios,email,acesso,status,Modulos(admin)')
     .eq('auth_id', params.actorAuthUserId)
     .maybeSingle();
 
@@ -85,54 +86,39 @@ async function resolveTargetAuthUserId(params: {
   if (
     actorError
     || !actor
-    || String(actor.email ?? '').toLowerCase() !== 'gabrielwilliam208@gmail.com'
+    || actor.status !== true
     || String(actor.acesso ?? '') !== 'administrador'
     || !admin
   ) {
-    throw new Error('Somente o Mega Master pode conectar Gmail em modo suporte.');
+    throw new Error('Operador administrativo inválido para conectar Gmail em modo suporte.');
   }
 
-  const { data: session, error: sessionError } = await params.service
+  const { data: sessionIsValid, error: sessionValidationError } = await params.service
     .schema('RetificaPremium')
-    .from('Sessoes_Suporte')
-    .select('id_sessao_suporte')
-    .eq('id_sessao_suporte', params.supportContext.sessionId)
-    .eq('fk_actor_usuarios', actor.id_usuarios)
-    .eq('fk_target_usuarios', params.supportContext.targetUserId)
-    .is('ended_at', null)
-    .gt('expires_at', new Date().toISOString())
-    .maybeSingle();
+    .rpc('sessao_suporte_valida', {
+      p_sessao_suporte: params.supportContext.sessionId,
+      p_actor_usuario_id: actor.id_usuarios,
+      p_target_usuario_id: params.supportContext.targetUserId,
+    });
 
-  if (sessionError || !session) {
-    throw new Error('Sessão de suporte inválida ou expirada.');
+  if (sessionValidationError || sessionIsValid !== true) {
+    throw new Error('Sessão de suporte inválida ou encerrada.');
   }
 
   const { data: target, error: targetError } = await params.service
     .schema('RetificaPremium')
     .from('Usuarios')
-    .select('id_usuarios,auth_id')
+    .select('id_usuarios,auth_id,status')
     .eq('id_usuarios', params.supportContext.targetUserId)
     .maybeSingle();
 
-  if (targetError || !target?.auth_id) {
+  if (targetError || !target?.auth_id || target.status !== true) {
     throw new Error('Cliente alvo sem conta de autenticação para conectar Gmail.');
   }
 
-  await params.service
-    .schema('RetificaPremium')
-    .from('Logs_Acoes_Suporte')
-    .insert({
-      fk_actor_usuarios: actor.id_usuarios,
-      fk_target_usuarios: target.id_usuarios,
-      fk_sessao_suporte: params.supportContext.sessionId,
-      acao: 'gmail_oauth_start',
-      entidade: 'Gmail_OAuth_States',
-      entidade_id: null,
-      descricao: 'Conexão Gmail iniciada em modo suporte.',
-    });
-
   return {
     authUserId: target.auth_id as string,
+    actorUsuarioId: actor.id_usuarios as string,
     targetUsuarioId: target.id_usuarios as string,
     supportSessionId: params.supportContext.sessionId,
   };
@@ -173,25 +159,47 @@ Deno.serve(async (request) => {
 
   const state = crypto.randomUUID();
   const service = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
-  let targetAuthUserId = data.user.id;
+  let resolvedTarget: Awaited<ReturnType<typeof resolveTargetAuthUserId>>;
   try {
-    targetAuthUserId = (await resolveTargetAuthUserId({
+    resolvedTarget = await resolveTargetAuthUserId({
       service,
       actorAuthUserId: data.user.id,
       supportContext: requestBody.supportContext,
-    })).authUserId;
+    });
   } catch (error) {
     return jsonResponse({ error: error instanceof Error ? error.message : 'Contexto de suporte inválido.' }, 403, request);
   }
 
-  const { error: stateError } = await service
-    .schema('RetificaPremium')
-    .from('Gmail_OAuth_States')
-    .insert({
-      fk_auth_user: targetAuthUserId,
-      state,
-      expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-    });
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  let stateError: { message: string } | null = null;
+
+  if (
+    resolvedTarget.actorUsuarioId
+    && resolvedTarget.targetUsuarioId
+    && resolvedTarget.supportSessionId
+  ) {
+    const result = await service
+      .schema('RetificaPremium')
+      .rpc('criar_estado_oauth_suporte', {
+        p_actor_usuario_id: resolvedTarget.actorUsuarioId,
+        p_target_usuario_id: resolvedTarget.targetUsuarioId,
+        p_sessao_suporte: resolvedTarget.supportSessionId,
+        p_state: state,
+        p_expires_at: expiresAt,
+      });
+    stateError = result.error;
+  } else {
+    const result = await service
+      .schema('RetificaPremium')
+      .from('Gmail_OAuth_States')
+      .insert({
+        fk_auth_user: resolvedTarget.authUserId,
+        state,
+        expires_at: expiresAt,
+        flow_kind: 'self',
+      });
+    stateError = result.error;
+  }
 
   if (stateError) return jsonResponse({ error: `Falha ao iniciar conexão Google: ${stateError.message}` }, 500, request);
 

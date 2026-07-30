@@ -1,6 +1,6 @@
 import { callRPC, type RPCEnvelope } from './_base';
 import { supabase } from '@/lib/supabase';
-import { readStoredSupportContext } from '@/services/auth/supportContext';
+import { readActiveSupportContext } from '@/services/auth/supportContext';
 import type { ResolvedDocumentCustomization } from '@/services/domain/documentCustomization';
 
 const FECHAMENTOS_BUCKET = 'fechamentos';
@@ -199,7 +199,7 @@ function rpcMessage(rpcName: string, message: string) {
 }
 
 async function callMutationRPC(rpcName: string, params: Record<string, unknown>) {
-  if (readStoredSupportContext()) {
+  if (readActiveSupportContext()) {
     throw new Error(
       `[${rpcName}] Ações de escrita em modo suporte estão bloqueadas até a auditoria backend por ação estar ativa.`,
     );
@@ -321,7 +321,7 @@ export async function uploadFechamentoPDF(
   idFechamento: string,
   pdfBlob: Blob,
 ): Promise<string> {
-  if (readStoredSupportContext()) {
+  if (readActiveSupportContext()) {
     throw new Error('[uploadFechamentoPDF] Uploads em modo suporte estão bloqueados.');
   }
 
@@ -397,7 +397,7 @@ async function getFunctionErrorMessage(error: unknown) {
 async function getFechamentoPDFSignedUrlViaFunction(params: {
   pathOrUrl: string;
   fechamentoId?: string;
-  supportContext?: ReturnType<typeof readStoredSupportContext>;
+  supportContext?: ReturnType<typeof readActiveSupportContext>;
   expiresIn?: number;
   downloadFilename?: string | boolean;
 }) {
@@ -450,7 +450,7 @@ export async function getFechamentoPDFSignedUrl(
   }
 
   const expiresIn = options.expiresIn ?? DEFAULT_FECHAMENTO_PDF_SIGNED_URL_TTL;
-  const supportContext = readStoredSupportContext();
+  const supportContext = readActiveSupportContext();
   if (supportContext) {
     return getFechamentoPDFSignedUrlViaFunction({
       pathOrUrl: path,
