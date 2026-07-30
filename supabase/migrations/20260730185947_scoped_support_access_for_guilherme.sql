@@ -1,3 +1,4 @@
+-- Migration registrada em producao como 20260730185947.
 -- Acesso de suporte passa a ser uma permissão explícita, privada e revogável.
 -- Esta tabela NÃO concede perfil Mega Master nem autoriza ações administrativas:
 -- ela permite somente abrir um contexto operacional auditado para os alvos

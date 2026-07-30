@@ -1,3 +1,4 @@
+-- Migration registrada em producao como 20260730185959.
 -- Promove Guilherme a segundo Mega Master, mantendo a autoridade sincronizada
 -- com as allowlists das Edge Functions e do frontend.
 --
