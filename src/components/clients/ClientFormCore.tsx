@@ -24,6 +24,10 @@ import {
   validarCPF,
   validarCNPJ,
 } from '@/services/domain/customers';
+import {
+  MARKETING_CUSTOMER_TYPE_OPTIONS,
+  MARKETING_ORIGIN_OPTIONS,
+} from '@/services/domain/marketingAttribution';
 import { Loader2, Mail, MapPin, Phone, Save, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -52,6 +56,8 @@ const INITIAL_FORM: Omit<Client, 'id' | 'createdAt'> = {
   notes: '',
   isActive: true,
   marketingLeadCode: '',
+  marketingOrigin: undefined,
+  marketingCustomerType: 'UNKNOWN',
 };
 
 // ── Micro-components ─────────────────────────────────────────────────────────
@@ -158,6 +164,8 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
           notes: editingClient.notes,
           isActive: editingClient.isActive,
           marketingLeadCode: '',
+          marketingOrigin: undefined,
+          marketingCustomerType: 'UNKNOWN',
         }
       : INITIAL_FORM,
   );
@@ -597,6 +605,62 @@ export function ClientFormCore({ onSuccess, onCancel, editingClient }: ClientFor
           {/* ── OBSERVAÇÕES ── */}
           <div className="space-y-4 rounded-2xl border border-border/60 bg-card px-4 py-4 shadow-sm sm:px-5">
             <SectionLabel label="Observações" />
+
+            {!editingClient ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Como este cliente chegou?">
+                  <Select
+                    value={form.marketingOrigin ?? 'NOT_INFORMED'}
+                    onValueChange={(value) => setForm((current) => ({
+                      ...current,
+                      marketingOrigin: value === 'NOT_INFORMED'
+                        ? undefined
+                        : value as NonNullable<Client['marketingOrigin']>,
+                      marketingCustomerType: value === 'NOT_INFORMED'
+                        ? 'UNKNOWN'
+                        : current.marketingCustomerType,
+                    }))}
+                  >
+                    <SelectTrigger className={inputBase}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="NOT_INFORMED">Não informar agora</SelectItem>
+                      {MARKETING_ORIGIN_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    Marque somente quando o atendimento confirmar o resultado.
+                  </p>
+                </Field>
+
+                <Field label="Esse cliente já era cliente?">
+                  <Select
+                    value={form.marketingCustomerType ?? 'UNKNOWN'}
+                    onValueChange={(value) => set('marketingCustomerType', value as NonNullable<Client['marketingCustomerType']>)}
+                    disabled={!form.marketingOrigin}
+                  >
+                    <SelectTrigger className={inputBase}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MARKETING_CUSTOMER_TYPE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    Se não houver certeza, mantenha “Não sei informar”.
+                  </p>
+                </Field>
+              </div>
+            ) : null}
 
             <Field
               label="Código do contato do site"

@@ -146,6 +146,11 @@ function buildResumo(): MarketingResumo {
     business: {
       current: {
         identifiedClients: 2,
+        newClients: 1,
+        existingClients: 1,
+        unknownClients: 0,
+        confirmedCalls: 1,
+        confirmedArrivals: 1,
         approvedOrders: 1,
         approvedServices: 1_000,
         excludedProducts: 250,
@@ -153,6 +158,11 @@ function buildResumo(): MarketingResumo {
       },
       previous: {
         identifiedClients: 0,
+        newClients: 0,
+        existingClients: 0,
+        unknownClients: 0,
+        confirmedCalls: 0,
+        confirmedArrivals: 0,
         approvedOrders: 0,
         approvedServices: 0,
         excludedProducts: 0,
@@ -195,6 +205,11 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByText('WhatsApp no site')).toBeInTheDocument();
     expect(screen.getByText('50 de 50 cliques explicados')).toBeInTheDocument();
     expect(screen.getByText('1 atendida · 45s em média')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Do clique ao atendimento real' })).toBeInTheDocument();
+    expect(screen.getByText('Toques em Ligar')).toBeInTheDocument();
+    expect(screen.getByText('Chamadas registradas')).toBeInTheDocument();
+    expect(screen.getByText('Viraram clientes')).toBeInTheDocument();
+    expect(screen.getByText('Chegaram à retífica')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Detalhes de cada ligação' })).toBeInTheDocument();
     expect(screen.getByText('29/07/2026 às 10:03')).toBeInTheDocument();
     expect(screen.getByText('1min 05s')).toBeInTheDocument();
@@ -221,6 +236,10 @@ describe('organização do painel Crescimento', () => {
 
     expect(screen.getByText('Esta aba mostra somente o resultado comercial atribuído.')).toBeInTheDocument();
     expect(screen.getByText('Comissão gerada')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Quem realmente virou cliente?' })).toBeInTheDocument();
+    expect(screen.getByText('Clientes novos')).toBeInTheDocument();
+    expect(screen.getByText('Já eram clientes')).toBeInTheDocument();
+    expect(screen.getByText('Chegadas pela rota')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'O.S. que geraram comissão' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Google Ads' })).not.toBeInTheDocument();
     expect(screen.queryByText('Mídia paga')).not.toBeInTheDocument();

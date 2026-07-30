@@ -29,6 +29,8 @@ export interface NovoClientePayload {
   observacao?: string;
   nome_fantasia?: string;
   marketing_lead_code?: string;
+  marketing_origin?: Client['marketingOrigin'];
+  marketing_customer_type?: Client['marketingCustomerType'];
   endereco?: {
     cep: string; uf: string; estado: string; cidade: string;
     bairro: string; rua: string; numero: string;
@@ -66,6 +68,8 @@ export function clientToNovoClientePayload(client: Omit<Client, 'id' | 'createdA
     observacao:    client.notes || undefined,
     nome_fantasia: client.tradeName || undefined,
     marketing_lead_code: client.marketingLeadCode || undefined,
+    marketing_origin: client.marketingOrigin,
+    marketing_customer_type: client.marketingCustomerType,
   };
 
   if (client.cep || client.address || client.city) {
@@ -104,7 +108,12 @@ export async function getClienteDetalhes(idCliente: string) {
 }
 
 export async function novoCliente(payload: NovoClientePayload) {
-  const { marketing_lead_code: marketingLeadCode, ...clientPayload } = payload;
+  const {
+    marketing_lead_code: marketingLeadCode,
+    marketing_origin: marketingOrigin,
+    marketing_customer_type: marketingCustomerType,
+    ...clientPayload
+  } = payload;
   const env = await callRPC('novo_cliente', { p_payload: clientPayload });
   const clientId = env.id_cliente as string;
   if (marketingLeadCode) {
@@ -113,17 +122,36 @@ export async function novoCliente(payload: NovoClientePayload) {
       p_lead_code: marketingLeadCode,
     });
   }
+  if (marketingOrigin) {
+    await callRPC('record_marketing_client_origin', {
+      p_client_id: clientId,
+      p_origin: marketingOrigin,
+      p_customer_type: marketingCustomerType ?? 'UNKNOWN',
+    });
+  }
   return clientId;
 }
 
 export async function salvarClienteCompleto(payload: NovoClientePayload & { id_clientes?: string }) {
-  const { marketing_lead_code: marketingLeadCode, ...clientPayload } = payload;
+  const {
+    marketing_lead_code: marketingLeadCode,
+    marketing_origin: marketingOrigin,
+    marketing_customer_type: marketingCustomerType,
+    ...clientPayload
+  } = payload;
   const env = await callRPC('salvar_cliente_completo', { p_payload: clientPayload });
   const clientId = env.id_cliente as string;
   if (marketingLeadCode) {
     await callRPC('attribute_marketing_client_by_code', {
       p_client_id: clientId,
       p_lead_code: marketingLeadCode,
+    });
+  }
+  if (marketingOrigin) {
+    await callRPC('record_marketing_client_origin', {
+      p_client_id: clientId,
+      p_origin: marketingOrigin,
+      p_customer_type: marketingCustomerType ?? 'UNKNOWN',
     });
   }
   return clientId;

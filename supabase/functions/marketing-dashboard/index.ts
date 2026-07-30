@@ -1673,7 +1673,7 @@ async function loadPrivateMarketingData(
     }),
     loadTimeBoundRows(serviceClient, {
       table: 'Marketing_Client_Attributions',
-      select: 'id_marketing_client_attributions, fk_clientes, fk_marketing_leads, lead_code, channel, source, medium, campaign, attribution_method, attributed_at',
+      select: 'id_marketing_client_attributions, fk_clientes, fk_marketing_leads, lead_code, channel, source, medium, campaign, attribution_method, attributed_at, metadata',
       targetUserId,
       timestampColumn: 'attributed_at',
       idColumn: 'id_marketing_client_attributions',
@@ -1727,7 +1727,7 @@ async function loadPrivateMarketingData(
     serviceClient
       .schema('RetificaPremium')
       .from('Clientes')
-      .select('id_clientes, nome, documento')
+      .select('id_clientes, nome, documento, created_at')
       .eq('fk_criado_por', targetUserId)
       .order('nome', { ascending: true })
       .limit(1000),
@@ -1931,6 +1931,8 @@ function aggregateBusinessData(
   periodDays: number,
   attributions: JsonRecord[],
   commissions: JsonRecord[],
+  leads: JsonRecord[],
+  clients: JsonRecord[],
 ) {
   const range = getMarketingDateRange(periodDays);
   const startIso = toMarketingDayStartIso(range.startDate);
@@ -1941,13 +1943,43 @@ function aggregateBusinessData(
   const currentCommissions = commissions.filter((item) => inRange(item.approved_at, startIso, currentEndExclusiveIso));
   const previousCommissions = commissions.filter((item) => inRange(item.approved_at, previousStartIso, startIso));
 
-  const totals = (attributionItems: JsonRecord[], commissionItems: JsonRecord[]) => ({
-    identifiedClients: attributionItems.length,
-    approvedOrders: commissionItems.length,
-    approvedServices: round(commissionItems.reduce((sum, item) => sum + toNumber(item.services_snapshot), 0)),
-    excludedProducts: round(commissionItems.reduce((sum, item) => sum + toNumber(item.products_excluded_snapshot), 0)),
-    commission: round(commissionItems.reduce((sum, item) => sum + toNumber(item.commission_amount_snapshot), 0)),
-  });
+  const leadsById = new Map(leads.map((item) => [String(item.id_marketing_leads ?? ''), item]));
+  const clientsById = new Map(clients.map((item) => [String(item.id_clientes ?? ''), item]));
+  const getMetadata = (item: JsonRecord): JsonRecord => (
+    item.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata)
+      ? item.metadata as JsonRecord
+      : {}
+  );
+  const classifyCustomer = (item: JsonRecord) => {
+    const metadata = getMetadata(item);
+    const explicitType = String(metadata.customer_type ?? '').toUpperCase();
+    if (['NEW', 'EXISTING', 'UNKNOWN'].includes(explicitType)) return explicitType;
+
+    const lead = leadsById.get(String(item.fk_marketing_leads ?? ''));
+    const client = clientsById.get(String(item.fk_clientes ?? ''));
+    const leadOccurredAt = String(metadata.lead_occurred_at ?? lead?.occurred_at ?? '');
+    const clientCreatedAt = String(client?.created_at ?? '');
+    const leadTime = Date.parse(leadOccurredAt);
+    const clientTime = Date.parse(clientCreatedAt);
+    if (!Number.isFinite(leadTime) || !Number.isFinite(clientTime)) return 'UNKNOWN';
+    return clientTime < leadTime ? 'EXISTING' : 'NEW';
+  };
+
+  const totals = (attributionItems: JsonRecord[], commissionItems: JsonRecord[]) => {
+    const customerTypes = attributionItems.map(classifyCustomer);
+    return {
+      identifiedClients: attributionItems.length,
+      newClients: customerTypes.filter((type) => type === 'NEW').length,
+      existingClients: customerTypes.filter((type) => type === 'EXISTING').length,
+      unknownClients: customerTypes.filter((type) => type === 'UNKNOWN').length,
+      confirmedCalls: attributionItems.filter((item) => getMetadata(item).confirmed_call === true).length,
+      confirmedArrivals: attributionItems.filter((item) => getMetadata(item).confirmed_arrival === true).length,
+      approvedOrders: commissionItems.length,
+      approvedServices: round(commissionItems.reduce((sum, item) => sum + toNumber(item.services_snapshot), 0)),
+      excludedProducts: round(commissionItems.reduce((sum, item) => sum + toNumber(item.products_excluded_snapshot), 0)),
+      commission: round(commissionItems.reduce((sum, item) => sum + toNumber(item.commission_amount_snapshot), 0)),
+    };
+  };
 
   return {
     current: totals(currentAttributions, currentCommissions),
@@ -2266,7 +2298,13 @@ async function handleRequest(request: Request) {
         : loadBasicMarketingData(serviceClient, targetUserId, previousStartIso, currentEndExclusiveIso),
     ]);
     const internal = aggregateInternalData(periodDays, privateData.events, privateData.leads);
-    const business = aggregateBusinessData(periodDays, privateData.attributions, privateData.commissions);
+    const business = aggregateBusinessData(
+      periodDays,
+      privateData.attributions,
+      privateData.commissions,
+      privateData.leads,
+      privateData.clients,
+    );
     const paidCurrentEvents = internal.currentEvents.filter((event) =>
       isPaidMarketingItem(event) && !isTechnicalPaidTest(event)
     );

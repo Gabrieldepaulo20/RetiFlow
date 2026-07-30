@@ -88,8 +88,12 @@ const googleAdsHelp = {
   clicks: 'Total de cliques registrados pelo Google Ads. Inclui links do site, botão de ligar, localização, rotas e outros recursos do anúncio; não significa somente visitas ao site.',
   siteClicks: 'Cliques que apontaram para uma página do site, somando URL principal e sitelinks. Uma pessoa pode clicar mais de uma vez, e nem todo clique termina em uma sessão rastreada.',
   adCalls: 'Cliques no botão de ligação exibido pelo próprio anúncio. O clique pode apenas abrir o discador; chamadas efetivamente registradas aparecem separadamente.',
+  reportedCalls: 'Chamadas que o encaminhamento de chamadas do Google conseguiu registrar. Esse número pode ser menor que os toques em Ligar porque abrir o discador não garante que a pessoa completou a chamada.',
+  qualifiedCalls: 'Leitura analítica do Retiflow: chamadas atendidas com pelo menos 30 segundos. Esse limite não altera sozinho a configuração de conversão do Google Ads.',
+  confirmedCallClients: 'Clientes cadastrados cuja equipe confirmou que o contato começou por uma ligação do Google Ads.',
   locationClicks: 'Cliques para abrir a localização vinculada ao anúncio ou conhecer o endereço da empresa.',
   directionClicks: 'Cliques em pedir rota até a empresa.',
+  confirmedArrivals: 'Clientes cadastrados cuja equipe confirmou que a pessoa pediu a rota no Google e realmente chegou à retífica. O clique em rota sozinho não comprova presença física.',
   trackedPaidSessions: 'Sessões que chegaram ao site com identificação de mídia paga, como gclid ou google/cpc. Pode ser menor que os cliques por repetição, bloqueios de medição ou saída antes do carregamento.',
   paidWhatsappClicks: 'Cliques no WhatsApp feitos dentro do site por sessões identificadas como vindas dos anúncios. Eventos técnicos de pré-lançamento não entram.',
   paidPhoneClicks: 'Cliques no telefone feitos dentro do site por sessões identificadas como vindas dos anúncios. Não inclui o botão de ligar exibido diretamente no anúncio.',
@@ -410,6 +414,36 @@ function ClickBreakdownItem({
         </span>
       </div>
       <p className="mt-2 text-[11px] leading-relaxed opacity-70">{detail}</p>
+    </div>
+  );
+}
+
+function FunnelStep({
+  label,
+  value,
+  detail,
+  help,
+  icon: Icon,
+}: {
+  label: string;
+  value: number;
+  detail: string;
+  help: string;
+  icon: typeof Eye;
+}) {
+  return (
+    <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-3.5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-start gap-1">
+            <p className="text-[10px] font-bold uppercase leading-4 tracking-[0.1em] text-slate-500">{label}</p>
+            <HelpTip label={label} description={help} />
+          </div>
+          <p className="mt-1 text-2xl font-black leading-none text-slate-950">{formatNumber(value)}</p>
+        </div>
+        <Icon className="h-4 w-4 shrink-0 text-slate-700" aria-hidden="true" />
+      </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-slate-600">{detail}</p>
     </div>
   );
 }
@@ -1420,6 +1454,21 @@ export function ResultsTab({ resumo }: { resumo: MarketingResumo }) {
         </p>
       </div>
 
+      <section aria-label="Classificação dos clientes atribuídos" className="space-y-3">
+        <PanelHeading
+          eyebrow="Qualidade comercial"
+          title="Quem realmente virou cliente?"
+          description="A equipe confirma a origem no cadastro; quando houver telefone, e-mail ou código do site, o Retiflow continua fazendo o vínculo automático."
+        />
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+          <Metric label="Clientes novos" value={formatNumber(business?.newClients)} detail="Primeiro atendimento confirmado" help="Clientes marcados como novos no cadastro ou cujo primeiro contato digital aconteceu antes da criação no Retiflow." icon={UserCheck} current={business?.newClients} previous={previous?.newClients} accent="teal" />
+          <Metric label="Já eram clientes" value={formatNumber(business?.existingClients)} detail="Retorno de cliente conhecido" help="Pessoas que já eram clientes antes deste novo contato de marketing." icon={Users} current={business?.existingClients} previous={previous?.existingClients} accent="navy" />
+          <Metric label="Sem classificação" value={formatNumber(business?.unknownClients)} detail="A equipe ainda não confirmou" help="Clientes atribuídos cuja situação como novo ou antigo ainda não pôde ser comprovada." icon={CircleHelp} current={business?.unknownClients} previous={previous?.unknownClients} accent="violet" />
+          <Metric label="Clientes via ligação" value={formatNumber(business?.confirmedCalls)} detail="Ligação do anúncio confirmada" help={googleAdsHelp.confirmedCallClients} icon={PhoneCall} current={business?.confirmedCalls} previous={previous?.confirmedCalls} accent="gold" />
+          <Metric label="Chegadas pela rota" value={formatNumber(business?.confirmedArrivals)} detail="Presença confirmada na retífica" help={googleAdsHelp.confirmedArrivals} icon={MapPin} current={business?.confirmedArrivals} previous={previous?.confirmedArrivals} accent="rose" />
+        </div>
+      </section>
+
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <Metric
           label="Clientes identificados"
@@ -1642,6 +1691,11 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
   const directionClicks = clicksByType(['GET_DIRECTIONS']);
   const classifiedClicks = siteClicks + adCallClicks + locationClicks + directionClicks;
   const otherClicks = Math.max(0, current.clicks - classifiedClicks);
+  const qualifiedCalls = calls?.items?.filter(
+    (call) => call.status === 'RECEIVED' && call.durationSeconds >= 30,
+  ).length ?? 0;
+  const confirmedCallClients = resumo.business?.current.confirmedCalls ?? 0;
+  const confirmedArrivals = resumo.business?.current.confirmedArrivals ?? 0;
 
   if (!ads.financialAvailable) {
     return (
@@ -1819,6 +1873,35 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                     {formatNumber(calls.received)} {calls.received === 1 ? 'atendida' : 'atendidas'}, com maior duração de {formatDuration(calls.longestDurationSeconds)}.
                   </div>
                 ) : null}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="overflow-hidden rounded-2xl border-slate-200 bg-slate-50 shadow-sm">
+          <CardContent className="p-4 sm:p-5">
+            <PanelHeading
+              eyebrow="Funil de comprovação"
+              title="Do clique ao atendimento real"
+              description="O Google informa a interação; o telefone confirma a chamada; a equipe confirma no cadastro quando a pessoa virou cliente ou chegou à retífica."
+            />
+
+            <div className="mt-4">
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-600">Ligação</p>
+              <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-5">
+                <FunnelStep label="Toques em Ligar" value={adCallClicks} detail="Abriram o discador" help={googleAdsHelp.adCalls} icon={MousePointerClick} />
+                <FunnelStep label="Chamadas registradas" value={calls?.reported ?? 0} detail="A ligação foi realizada" help={googleAdsHelp.reportedCalls} icon={PhoneCall} />
+                <FunnelStep label="Atendidas" value={calls?.received ?? 0} detail="A retífica atendeu" help="Chamadas registradas pelo encaminhamento do Google com status de recebida." icon={CheckCircle2} />
+                <FunnelStep label="Qualificadas" value={qualifiedCalls} detail="Atendida por 30s ou mais" help={googleAdsHelp.qualifiedCalls} icon={Clock3} />
+                <FunnelStep label="Viraram clientes" value={confirmedCallClients} detail="Confirmado no cadastro" help={googleAdsHelp.confirmedCallClients} icon={UserCheck} />
+              </div>
+            </div>
+
+            <div className="mt-4 border-t border-slate-200 pt-4">
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-600">Rota</p>
+              <div className="grid grid-cols-2 gap-2.5 sm:max-w-2xl">
+                <FunnelStep label="Pedidos de rota" value={directionClicks} detail="Abriram como chegar" help={googleAdsHelp.directionClicks} icon={Navigation} />
+                <FunnelStep label="Chegaram à retífica" value={confirmedArrivals} detail="Confirmado no cadastro" help={googleAdsHelp.confirmedArrivals} icon={MapPin} />
               </div>
             </div>
           </CardContent>

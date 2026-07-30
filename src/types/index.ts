@@ -77,6 +77,15 @@ export interface LoginCredentials {
   password: string;
 }
 
+export type MarketingOrigin =
+  | 'GOOGLE_ADS_CALL'
+  | 'GOOGLE_ADS_ROUTE'
+  | 'GOOGLE_ADS_WHATSAPP'
+  | 'GOOGLE_ADS_FORM'
+  | 'GOOGLE_ADS_SITE';
+
+export type MarketingCustomerType = 'NEW' | 'EXISTING' | 'UNKNOWN';
+
 export interface Customer {
   id: string;
   name: string;
@@ -95,6 +104,10 @@ export interface Customer {
   isActive: boolean;
   /** Código RP-... opcional recebido no WhatsApp para atribuição de marketing. */
   marketingLeadCode?: string;
+  /** Origem confirmada pelo atendimento ao cadastrar um cliente. */
+  marketingOrigin?: MarketingOrigin;
+  /** Informa se o contato pago trouxe um cliente novo ou alguém que já era cliente. */
+  marketingCustomerType?: MarketingCustomerType;
   createdAt: string;
 }
 

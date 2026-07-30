@@ -22,6 +22,10 @@ import {
   validarCNPJ,
 } from '@/services/domain/customers';
 import {
+  MARKETING_CUSTOMER_TYPE_OPTIONS,
+  MARKETING_ORIGIN_OPTIONS,
+} from '@/services/domain/marketingAttribution';
+import {
   ArrowLeft,
   FileText,
   Loader2,
@@ -49,6 +53,8 @@ const INITIAL_FORM: Omit<Client, 'id' | 'createdAt'> = {
   notes: '',
   isActive: true,
   marketingLeadCode: '',
+  marketingOrigin: undefined,
+  marketingCustomerType: 'UNKNOWN',
 };
 
 function SectionCard({
@@ -491,6 +497,53 @@ export default function ClientForm() {
               title="Observacoes"
               description="Anotacoes curtas e objetivas para atendimento, faturamento ou logistica."
             >
+              <FieldBlock label="Como este cliente chegou?" meta="Confirmação do atendimento">
+                <Select
+                  value={form.marketingOrigin ?? 'NOT_INFORMED'}
+                  onValueChange={(value) => setForm((current) => ({
+                    ...current,
+                    marketingOrigin: value === 'NOT_INFORMED'
+                      ? undefined
+                      : value as NonNullable<Client['marketingOrigin']>,
+                    marketingCustomerType: value === 'NOT_INFORMED'
+                      ? 'UNKNOWN'
+                      : current.marketingCustomerType,
+                  }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NOT_INFORMED">Não informar agora</SelectItem>
+                    {MARKETING_ORIGIN_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Marque ligação apenas se ela foi atendida; marque rota apenas se a pessoa realmente chegou.
+                </p>
+              </FieldBlock>
+              <FieldBlock label="Esse cliente já era cliente?">
+                <Select
+                  value={form.marketingCustomerType ?? 'UNKNOWN'}
+                  onValueChange={(value) => setField('marketingCustomerType', value as NonNullable<Client['marketingCustomerType']>)}
+                  disabled={!form.marketingOrigin}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MARKETING_CUSTOMER_TYPE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FieldBlock>
               <FieldBlock label="Código do contato do site" meta="Opcional · WhatsApp">
                 <Input
                   value={form.marketingLeadCode || ''}

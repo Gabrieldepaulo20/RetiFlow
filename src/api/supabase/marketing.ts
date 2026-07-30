@@ -141,6 +141,11 @@ export interface MarketingClientOption {
 
 export interface MarketingBusinessTotals {
   identifiedClients: number;
+  newClients: number;
+  existingClients: number;
+  unknownClients: number;
+  confirmedCalls: number;
+  confirmedArrivals: number;
   approvedOrders: number;
   approvedServices: number;
   excludedProducts: number;
