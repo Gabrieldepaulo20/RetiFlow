@@ -33,6 +33,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import {
   isAdminMaster,
   isConfiguredSuperAdminEmail,
+  isOtherConfiguredSuperAdminEmail,
   isSuperAdmin as checkIsSuperAdmin,
 } from '@/services/auth/superAdmin';
 import { normalizeEmail, onlyDigits, toTitleCasePtBr } from '@/services/domain/textNormalization';
@@ -192,6 +193,11 @@ export default function AdminClients() {
     (targetUser: SystemUser) => isConfiguredSuperAdminEmail(targetUser.email),
     [],
   );
+  const isOtherMegaMasterUser = useCallback(
+    (targetUser: SystemUser) =>
+      isOtherConfiguredSuperAdminEmail(currentUser?.email, targetUser.email),
+    [currentUser?.email],
+  );
   const supportTargetsQuery = useQuery({
     queryKey: ['admin', 'support-targets', currentUser?.id],
     queryFn: async () => {
@@ -302,10 +308,10 @@ export default function AdminClients() {
       });
       return;
     }
-    if (IS_REAL_AUTH && !isCurrentUserMegaMaster && isMegaMasterUser(targetUser)) {
+    if (IS_REAL_AUTH && isOtherMegaMasterUser(targetUser)) {
       toast({
         title: 'Mega Master protegido',
-        description: 'Usuários Master não podem alterar o status do Mega Master.',
+        description: 'Um Mega Master não pode alterar o status de outro Mega Master.',
         variant: 'destructive',
       });
       return;
@@ -352,10 +358,10 @@ export default function AdminClients() {
       });
       return;
     }
-    if (IS_REAL_AUTH && !isCurrentUserMegaMaster && isMegaMasterUser(user)) {
+    if (IS_REAL_AUTH && isOtherMegaMasterUser(user)) {
       toast({
         title: 'Mega Master protegido',
-        description: 'Usuários Master não podem resetar a senha do Mega Master.',
+        description: 'Um Mega Master não pode resetar a senha de outro Mega Master.',
         variant: 'destructive',
       });
       return;
@@ -403,10 +409,10 @@ export default function AdminClients() {
       });
       return;
     }
-    if (IS_REAL_AUTH && !isCurrentUserMegaMaster && isMegaMasterUser(user)) {
+    if (IS_REAL_AUTH && isOtherMegaMasterUser(user)) {
       toast({
         title: 'Mega Master protegido',
-        description: 'Usuários Master não podem reenviar convite do Mega Master.',
+        description: 'Um Mega Master não pode reenviar o convite de outro Mega Master.',
         variant: 'destructive',
       });
       return;
@@ -751,10 +757,10 @@ export default function AdminClients() {
       });
       return;
     }
-    if (IS_REAL_AUTH && !isCurrentUserMegaMaster && isMegaMasterUser(user)) {
+    if (IS_REAL_AUTH && isOtherMegaMasterUser(user)) {
       toast({
         title: 'Mega Master protegido',
-        description: 'Usuários Master não podem alterar módulos do Mega Master.',
+        description: 'Um Mega Master não pode alterar os módulos de outro Mega Master.',
         variant: 'destructive',
       });
       return;
@@ -946,7 +952,7 @@ export default function AdminClients() {
           const activeModules = Object.values(modules).filter(Boolean).length;
           const isExpanded = expandedId === user.id;
           const isMutatingUser = pendingAction?.endsWith(user.id);
-          const isProtectedMegaMaster = IS_REAL_AUTH && !isCurrentUserMegaMaster && isMegaMasterUser(user);
+          const isProtectedMegaMaster = IS_REAL_AUTH && isOtherMegaMasterUser(user);
           const isInvitePending = isInvitePendingUser(user);
           const canResendInvite = canResendInviteUser(user);
           const presence = isCurrentUserMegaMaster ? presenceByUserId[user.id] : undefined;

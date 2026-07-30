@@ -43,7 +43,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { useSystemUsersQuery } from '@/hooks/useSystemUsersQuery';
 import { DEFAULT_ROLE_MODULE_CONFIG } from '@/services/auth/moduleAccess';
-import { isSuperAdmin as checkIsSuperAdmin } from '@/services/auth/superAdmin';
+import {
+  isOtherConfiguredSuperAdminEmail,
+  isSuperAdmin as checkIsSuperAdmin,
+} from '@/services/auth/superAdmin';
 import { normalizeEmail } from '@/services/domain/textNormalization';
 import type { AppModuleKey, SystemUser } from '@/types';
 
@@ -115,6 +118,18 @@ export default function SettingsPage() {
     () => systemUsers.find((candidate) => candidate.id === selectedModuleUserId) ?? null,
     [selectedModuleUserId, systemUsers],
   );
+  const selectedResetUser = useMemo(
+    () => systemUsers.find((candidate) => candidate.id === selectedResetUserId) ?? null,
+    [selectedResetUserId, systemUsers],
+  );
+  const selectedModuleUserIsProtected = isOtherConfiguredSuperAdminEmail(
+    user?.email,
+    selectedModuleUser?.email,
+  );
+  const selectedResetUserIsProtected = isOtherConfiguredSuperAdminEmail(
+    user?.email,
+    selectedResetUser?.email,
+  );
 
   const handleTabChange = (tab: string) => {
     const nextParams = new URLSearchParams(searchParams);
@@ -135,6 +150,14 @@ export default function SettingsPage() {
       toast({
         title: 'Ação restrita ao Super Admin',
         description: 'Apenas o Super Admin autorizado pode alterar módulos.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (selectedModuleUserIsProtected) {
+      toast({
+        title: 'Mega Master protegido',
+        description: 'Um Mega Master não pode alterar os módulos de outro Mega Master.',
         variant: 'destructive',
       });
       return;
@@ -170,9 +193,17 @@ export default function SettingsPage() {
   };
 
   const handleAdminPasswordReset = async () => {
-    const targetUser = systemUsers.find((candidate) => candidate.id === selectedResetUserId);
+    const targetUser = selectedResetUser;
     if (!targetUser) {
       toast({ title: 'Selecione um cliente/usuário', variant: 'destructive' });
+      return;
+    }
+    if (selectedResetUserIsProtected) {
+      toast({
+        title: 'Mega Master protegido',
+        description: 'Um Mega Master não pode resetar a senha de outro Mega Master.',
+        variant: 'destructive',
+      });
       return;
     }
     if (!isSuperAdmin) {
@@ -302,6 +333,7 @@ export default function SettingsPage() {
             moduleSavingKey={moduleSavingKey}
             isSuperAdmin={isSuperAdmin}
             currentUserId={user?.id}
+            selectedUserIsProtected={selectedModuleUserIsProtected}
             getModulesForUser={getModulesForUser}
             toggleModule={toggleModule}
           />
@@ -325,6 +357,7 @@ export default function SettingsPage() {
             resetConfirmationEmail={resetConfirmationEmail}
             setResetConfirmationEmail={setResetConfirmationEmail}
             resetSending={resetSending}
+            selectedUserIsProtected={selectedResetUserIsProtected}
             handleAdminPasswordReset={handleAdminPasswordReset}
           />
         </TabsContent>
@@ -346,6 +379,7 @@ interface ModulesPanelProps {
   moduleSavingKey: AppModuleKey | null;
   isSuperAdmin: boolean;
   currentUserId?: string;
+  selectedUserIsProtected: boolean;
   getModulesForUser: (targetUser: SystemUser) => Record<AppModuleKey, boolean>;
   toggleModule: (moduleKey: AppModuleKey) => Promise<void>;
 }
@@ -359,6 +393,7 @@ function ModulesPanel({
   moduleSavingKey,
   isSuperAdmin,
   currentUserId,
+  selectedUserIsProtected,
   getModulesForUser,
   toggleModule,
 }: ModulesPanelProps) {
@@ -440,7 +475,7 @@ function ModulesPanel({
                     {isSaving && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
                     <Switch
                       checked={isEnabled}
-                      disabled={!isSuperAdmin || isSaving || isAdminModuleLocked || isOwnAdminLock}
+                      disabled={!isSuperAdmin || isSaving || isAdminModuleLocked || isOwnAdminLock || selectedUserIsProtected}
                       onCheckedChange={() => void toggleModule(module.key)}
                       aria-label={`${isEnabled ? 'Desativar' : 'Ativar'} módulo ${module.label}`}
                     />
@@ -468,6 +503,7 @@ interface SecurityPanelProps {
   resetConfirmationEmail: string;
   setResetConfirmationEmail: (email: string) => void;
   resetSending: boolean;
+  selectedUserIsProtected: boolean;
   handleAdminPasswordReset: () => Promise<void>;
 }
 
@@ -480,6 +516,7 @@ function SecurityPanel({
   resetConfirmationEmail,
   setResetConfirmationEmail,
   resetSending,
+  selectedUserIsProtected,
   handleAdminPasswordReset,
 }: SecurityPanelProps) {
   return (
@@ -529,7 +566,12 @@ function SecurityPanel({
               />
             </div>
 
-            <Button variant="destructive" onClick={() => void handleAdminPasswordReset()} disabled={resetSending || !selectedResetUserId} className="w-full gap-2 sm:w-auto">
+            <Button
+              variant="destructive"
+              onClick={() => void handleAdminPasswordReset()}
+              disabled={resetSending || !selectedResetUserId || selectedUserIsProtected}
+              className="w-full gap-2 sm:w-auto"
+            >
               {resetSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
               Reenviar reset de senha
             </Button>

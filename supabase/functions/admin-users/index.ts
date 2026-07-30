@@ -1,4 +1,9 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import {
+  isMegaMasterEmail,
+  isOtherMegaMasterEmail,
+  parseMegaMasterEmails,
+} from '../_shared/mega-master.ts';
 
 type AppModuleKey =
   | 'dashboard'
@@ -147,11 +152,7 @@ function getConfiguredOrigins() {
 
 function getSuperAdminEmails() {
   const raw = Deno.env.get('SUPER_ADMIN_EMAILS') ?? Deno.env.get('SUPER_ADMIN_EMAIL') ?? '';
-  return new Set(raw.split(',').map((email) => email.trim().toLowerCase()).filter(Boolean));
-}
-
-function isMegaMasterEmail(email: string, superAdminEmails: Set<string>) {
-  return superAdminEmails.has(email.trim().toLowerCase());
+  return parseMegaMasterEmails(raw);
 }
 
 function getCorsHeaders(request: Request) {
@@ -1543,10 +1544,18 @@ async function getUserPresence(serviceClient: ReturnType<typeof createClient>): 
 }
 
 function isProtectedMegaMasterTarget(
-  requester: { requesterIsMegaMaster: boolean; superAdminEmails: Set<string> },
+  requester: {
+    requesterEmail: string;
+    requesterIsMegaMaster: boolean;
+    superAdminEmails: Set<string>;
+  },
   targetEmail: string,
 ) {
-  return !requester.requesterIsMegaMaster && isMegaMasterEmail(targetEmail, requester.superAdminEmails);
+  return isOtherMegaMasterEmail(
+    requester.requesterEmail,
+    targetEmail,
+    requester.superAdminEmails,
+  );
 }
 
 Deno.serve(async (request) => {
@@ -1639,7 +1648,7 @@ Deno.serve(async (request) => {
       const email = assertEmail(targetUser.email);
 
       if (isProtectedMegaMasterTarget(requester, email)) {
-        return jsonResponse({ error: 'Usuário Master não pode reenviar convite do Mega Master.' }, 403, request);
+        return jsonResponse({ error: 'Um Mega Master não pode reenviar o convite de outro Mega Master.' }, 403, request);
       }
 
       const name = targetUser.nome ?? email;
@@ -1678,7 +1687,7 @@ Deno.serve(async (request) => {
       const email = assertEmail(targetUser.email);
 
       if (isProtectedMegaMasterTarget(requester, email)) {
-        return jsonResponse({ error: 'Usuário Master não pode resetar senha do Mega Master.' }, 403, request);
+        return jsonResponse({ error: 'Um Mega Master não pode resetar a senha de outro Mega Master.' }, 403, request);
       }
 
       const confirmationEmail = optionalEmail(payload.confirmationEmail);
@@ -1739,7 +1748,7 @@ Deno.serve(async (request) => {
       const targetUser = await getInternalModuleUser(requester.serviceClient, userId);
 
       if (isProtectedMegaMasterTarget(requester, targetUser.email)) {
-        return jsonResponse({ error: 'Usuário Master não pode alterar módulos do Mega Master.' }, 403, request);
+        return jsonResponse({ error: 'Um Mega Master não pode alterar os módulos de outro Mega Master.' }, 403, request);
       }
 
       if (modules.admin === true && targetUser.acesso !== 'administrador') {
@@ -1879,7 +1888,7 @@ Deno.serve(async (request) => {
       const targetUser = await getInternalModuleUser(requester.serviceClient, userId);
 
       if (isProtectedMegaMasterTarget(requester, targetUser.email)) {
-        return jsonResponse({ error: 'Usuário Master não pode alterar status do Mega Master.' }, 403, request);
+        return jsonResponse({ error: 'Um Mega Master não pode alterar o status de outro Mega Master.' }, 403, request);
       }
 
       if (payload.action === 'deactivate_user' && targetUser.email.trim().toLowerCase() === requester.requesterEmail) {

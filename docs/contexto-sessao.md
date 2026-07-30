@@ -4,12 +4,16 @@ Atualizado em: 2026-07-30
 
 ---
 
-## Suporte Restrito Guilherme Para Retifica Premium - 2026-07-30
+## Guilherme Como Segundo Mega Master - 2026-07-30
 
 - O acesso de suporte deixou de depender de permissao implicita de administrador:
   - cada acesso exige uma permissao privada e revogavel entre o atendente e a empresa;
-  - Guilherme recebe somente o par `Guilherme -> Retifica Premium`;
-  - ele nao se torna Mega Master e nao recebe acesso de suporte a outras empresas.
+  - Gabriel e Guilherme sao os dois Mega Masters autorizados;
+  - ambos recebem escopo global de suporte, sem poder abrir a conta um do outro;
+  - um Mega Master nao pode resetar senha, reenviar convite, inativar, excluir ou alterar
+    os modulos do outro.
+- A allowlist precisa permanecer sincronizada no Amplify (`VITE_SUPER_ADMIN_EMAILS`), nas
+  Edge Functions (`SUPER_ADMIN_EMAILS`) e nos helpers privados do banco.
 - A autorizacao e validada no backend ao listar empresas, iniciar, revalidar e encerrar uma sessao.
   Sessoes perdem validade quando a permissao e revogada, o usuario e desativado, o modulo administrativo
   e removido ou o cadastro muda de escopo.

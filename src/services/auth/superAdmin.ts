@@ -16,6 +16,14 @@ export function isConfiguredSuperAdminEmail(email: string | null | undefined) {
   return getConfiguredSuperAdminEmails().includes(email.trim().toLowerCase());
 }
 
+export function isOtherConfiguredSuperAdminEmail(
+  requesterEmail: string | null | undefined,
+  targetEmail: string | null | undefined,
+) {
+  if (!targetEmail || !isConfiguredSuperAdminEmail(targetEmail)) return false;
+  return requesterEmail?.trim().toLowerCase() !== targetEmail.trim().toLowerCase();
+}
+
 export function isSuperAdmin(user: Pick<SystemUser, 'email' | 'role' | 'isActive'> | null | undefined) {
   if (!user || user.role !== 'ADMIN' || !user.isActive) return false;
   return isConfiguredSuperAdminEmail(user.email);

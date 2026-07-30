@@ -4,6 +4,7 @@ import {
   hasFullMarketingAccess,
   isAdminMaster,
   isConfiguredSuperAdminEmail,
+  isOtherConfiguredSuperAdminEmail,
   isSuperAdmin,
 } from '@/services/auth/superAdmin';
 
@@ -48,6 +49,37 @@ describe('super admin guard', () => {
     vi.stubEnv('VITE_SUPER_ADMIN_EMAILS', 'admin@example.com, outro@example.com');
     expect(getConfiguredSuperAdminEmails()).toEqual(['admin@example.com', 'outro@example.com']);
     expect(isConfiguredSuperAdminEmail(' ADMIN@example.com ')).toBe(true);
+  });
+
+  it('recognizes both configured Mega Masters and protects one from the other', () => {
+    vi.stubEnv(
+      'VITE_SUPER_ADMIN_EMAILS',
+      'gabrielwilliam208@gmail.com,guilhermehenriquedepaulo2@gmail.com',
+    );
+
+    for (const email of [
+      'gabrielwilliam208@gmail.com',
+      'guilhermehenriquedepaulo2@gmail.com',
+    ]) {
+      expect(isSuperAdmin({
+        email,
+        role: 'ADMIN',
+        isActive: true,
+      })).toBe(true);
+    }
+
+    expect(isOtherConfiguredSuperAdminEmail(
+      'gabrielwilliam208@gmail.com',
+      'guilhermehenriquedepaulo2@gmail.com',
+    )).toBe(true);
+    expect(isOtherConfiguredSuperAdminEmail(
+      'guilhermehenriquedepaulo2@gmail.com',
+      'guilhermehenriquedepaulo2@gmail.com',
+    )).toBe(false);
+    expect(isOtherConfiguredSuperAdminEmail(
+      'guilhermehenriquedepaulo2@gmail.com',
+      'cliente@example.com',
+    )).toBe(false);
   });
 
   it('allows only active admin with authorized email in configured list', () => {
