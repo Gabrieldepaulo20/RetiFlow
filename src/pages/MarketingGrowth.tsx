@@ -2657,7 +2657,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
   );
 }
 
-function QualityTab({ resumo }: { resumo: MarketingResumo }) {
+export function QualityTab({ resumo }: { resumo: MarketingResumo }) {
   const quality = resumo.quality;
   const [eventFilter, setEventFilter] = useState('todos');
   const filteredEvents = useMemo(() => {
@@ -2667,11 +2667,11 @@ function QualityTab({ resumo }: { resumo: MarketingResumo }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <Metric label="Último evento" value={quality?.lastEventAt ? formatDateTime(quality.lastEventAt).split(' ')[0] : 'Pendente'} detail={quality?.lastEventAt ? formatDateTime(quality.lastEventAt) : 'Nenhum evento direto'} icon={Activity} accent="teal" />
-        <Metric label="Falhas de alerta" value={formatNumber(quality?.alertFailures)} detail="Requerem revisão imediata" icon={AlertTriangle} accent={quality?.alertFailures ? 'rose' : 'navy'} />
-        <Metric label="Cliques repetidos" value={formatNumber(quality?.duplicatedClicks)} detail="Não entram no total único" icon={MousePointerClick} accent="gold" />
-        <Metric label="Contatos sem cliente" value={formatNumber(quality?.unlinkedLeads)} detail="Aguardando vínculo por código" icon={UserCheck} accent="violet" />
+      <div data-testid="quality-summary-grid" className="grid grid-cols-2 gap-2 lg:grid-cols-4 2xl:gap-3">
+        <Metric compact label="Último evento" value={quality?.lastEventAt ? formatDateTime(quality.lastEventAt).split(' ')[0] : 'Pendente'} detail={quality?.lastEventAt ? formatDateTime(quality.lastEventAt) : 'Nenhum evento direto'} icon={Activity} accent="teal" />
+        <Metric compact label="Falhas de alerta" value={formatNumber(quality?.alertFailures)} detail="Requerem revisão imediata" icon={AlertTriangle} accent={quality?.alertFailures ? 'rose' : 'navy'} />
+        <Metric compact label="Cliques repetidos" value={formatNumber(quality?.duplicatedClicks)} detail="Não entram no total único" icon={MousePointerClick} accent="gold" />
+        <Metric compact label="Contatos sem cliente" value={formatNumber(quality?.unlinkedLeads)} detail="Aguardando vínculo por código" icon={UserCheck} accent="violet" />
       </div>
 
       <Card className="rounded-2xl border-border/70 shadow-sm">
@@ -2681,7 +2681,7 @@ function QualityTab({ resumo }: { resumo: MarketingResumo }) {
             title="Integrações e defasagem real"
             description="Eventos internos são consultados a cada 5 minutos; GA4 e Search Console mantêm caches e atrasos próprios para proteger quotas e evitar falsa precisão."
           />
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
+          <div data-testid="quality-integrations-grid" className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4 2xl:gap-3">
             {resumo.integrations.map((integration) => (
               <IntegrationDetail key={integration.provider} integration={integration} />
             ))}
@@ -2761,23 +2761,21 @@ function IntegrationDetail({ integration }: { integration: MarketingIntegrationS
   const style = statusStyle[integration.status] ?? statusStyle.not_connected;
   const Icon = style.icon;
   return (
-    <div className="rounded-xl border bg-background p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-amber-300">
-            <Icon className={cn('h-4 w-4', integration.status === 'syncing' && 'motion-safe:animate-spin')} />
-          </span>
-          <div className="min-w-0">
-            <p className="font-semibold text-foreground">{providerLabels[integration.provider] ?? integration.provider}</p>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">{integration.accountName ?? 'Conta ainda não informada'}</p>
-          </div>
+    <div className="min-w-0 rounded-xl border bg-background p-3 lg:p-2.5 2xl:p-3">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-amber-300 lg:h-7 lg:w-7 lg:rounded-md 2xl:h-8 2xl:w-8 2xl:rounded-lg">
+          <Icon className={cn('h-4 w-4 lg:h-3.5 lg:w-3.5 2xl:h-4 2xl:w-4', integration.status === 'syncing' && 'motion-safe:animate-spin')} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs font-semibold text-foreground 2xl:text-sm">{providerLabels[integration.provider] ?? integration.provider}</p>
+          <p className="truncate text-[10px] leading-4 text-muted-foreground 2xl:text-xs">{integration.accountName ?? 'Conta ainda não informada'}</p>
         </div>
-        <Badge variant="outline" className={cn('shrink-0', style.className)}>{style.label}</Badge>
+        <Badge variant="outline" className={cn('shrink-0 px-1.5 py-0 text-[9px] 2xl:text-[10px]', style.className)}>{style.label}</Badge>
       </div>
-      <div className="mt-3 border-t pt-3 text-xs text-muted-foreground">
-        <p>{integration.freshness ?? 'Sem informação de atualização'}</p>
-        <p className="mt-1">Última leitura: {formatDateTime(integration.lastSyncAt)}</p>
-        {integration.lastError ? <p className="mt-2 text-amber-700">{integration.lastError}</p> : null}
+      <div className="mt-2 border-t pt-2 text-[10px] leading-4 text-muted-foreground 2xl:text-xs">
+        <p className="line-clamp-2">{integration.freshness ?? 'Sem informação de atualização'}</p>
+        <p className="mt-0.5 truncate">Leitura: {formatDateTime(integration.lastSyncAt)}</p>
+        {integration.lastError ? <p className="mt-1 line-clamp-2 text-amber-700">{integration.lastError}</p> : null}
       </div>
     </div>
   );

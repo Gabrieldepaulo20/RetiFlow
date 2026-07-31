@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { MarketingResumo } from '@/api/supabase/marketing';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { ContactsTab, GoogleAdsTab, OverviewTab, ResultsTab, SeoTab } from '@/pages/MarketingGrowth';
+import { ContactsTab, GoogleAdsTab, OverviewTab, QualityTab, ResultsTab, SeoTab } from '@/pages/MarketingGrowth';
 import { FinancialPrivacyProvider } from '@/contexts/FinancialPrivacyProvider';
 
 vi.mock('recharts', async () => {
@@ -443,5 +443,27 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByText('ChatGPT')).toBeInTheDocument();
     expect(screen.getByText('chatgpt.com / ai_referral')).toBeInTheDocument();
     expect(screen.getByText(/Uma IA pode citar a Retífica Premium sem gerar clique/i)).toBeInTheDocument();
+  });
+
+  it('mantém indicadores e fontes de Qualidade em linhas compactas no tablet', () => {
+    const resumo = buildResumo();
+    resumo.integrations = [
+      { provider: 'google_ads', status: 'connected', accountName: 'Retífica Premium', freshness: 'Cache de até 10 minutos', lastSyncAt: '2026-07-31T12:00:00.000Z' },
+      { provider: 'internal', status: 'connected', accountName: 'premiumretifica.com.br', freshness: 'Atualização a cada 5 minutos', lastSyncAt: '2026-07-31T12:00:00.000Z' },
+      { provider: 'search_console', status: 'connected', accountName: 'sc-domain:premiumretifica.com.br', freshness: 'Defasagem da própria fonte', lastSyncAt: '2026-07-31T12:00:00.000Z' },
+      { provider: 'ga4', status: 'connected', accountName: 'Retífica Premium', freshness: 'Cache de até 10 minutos', lastSyncAt: '2026-07-31T12:00:00.000Z' },
+    ];
+
+    renderWithTooltips(<QualityTab resumo={resumo} />);
+
+    const summaryGrid = screen.getByTestId('quality-summary-grid');
+    expect(summaryGrid).toHaveClass('grid-cols-2', 'lg:grid-cols-4', 'gap-2');
+    expect(summaryGrid.children).toHaveLength(4);
+    expect(summaryGrid.querySelectorAll('[class~="lg:p-2.5"]')).toHaveLength(4);
+
+    const integrationsGrid = screen.getByTestId('quality-integrations-grid');
+    expect(integrationsGrid).toHaveClass('grid-cols-2', 'lg:grid-cols-4', 'gap-2');
+    expect(integrationsGrid.children).toHaveLength(4);
+    expect(screen.getByRole('heading', { name: 'O que aconteceu no site' })).toBeInTheDocument();
   });
 });
