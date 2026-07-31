@@ -126,8 +126,15 @@ describe.skipIf(!envStatus.configured)('Crescimento — Master espelha a Retífi
       uniqueClicks: expect.any(Number),
       repeatedClicks: expect.any(Number),
       paidClicks: expect.any(Number),
+      organicClicks: expect.any(Number),
+      otherClicks: expect.any(Number),
       points: expect.any(Array),
     });
+    expect(
+      payload.dados.site.whatsapp.paidClicks
+      + payload.dados.site.whatsapp.organicClicks
+      + payload.dados.site.whatsapp.otherClicks,
+    ).toBe(payload.dados.site.whatsapp.uniqueClicks);
     expect(payload.dados.site.current.visits).toBeGreaterThan(0);
     expect(payload.dados.leads.total).toBeGreaterThan(0);
   });

@@ -114,6 +114,8 @@ function buildResumo(): MarketingResumo {
         uniqueClicks: 5,
         repeatedClicks: 1,
         paidClicks: 4,
+        organicClicks: 1,
+        otherClicks: 0,
         points: [
           {
             eventLabel: 'b2b_hero_whatsapp',
@@ -121,6 +123,8 @@ function buildResumo(): MarketingResumo {
             uniqueClicks: 4,
             repeatedClicks: 1,
             paidClicks: 4,
+            organicClicks: 0,
+            otherClicks: 0,
             lastClickedAt: '2026-07-29T10:00:00.000Z',
           },
           {
@@ -129,6 +133,8 @@ function buildResumo(): MarketingResumo {
             uniqueClicks: 1,
             repeatedClicks: 0,
             paidClicks: 0,
+            organicClicks: 1,
+            otherClicks: 0,
             lastClickedAt: '2026-07-28T10:00:00.000Z',
           },
         ],
@@ -311,16 +317,17 @@ describe('organização do painel Crescimento', () => {
   it('prioriza visitantes, WhatsApp, tempo e páginas no resumo', () => {
     renderWithTooltips(<OverviewTab resumo={buildResumo()} />);
 
-    expect(screen.getByText('Visitantes no site')).toBeInTheDocument();
-    expect(screen.getByText('WhatsApp no site · total')).toBeInTheDocument();
+    expect(screen.getByText('Visitantes · todas as origens')).toBeInTheDocument();
+    expect(screen.getByText('WhatsApp no site · todas as origens')).toBeInTheDocument();
     expect(screen.getByText('Tempo médio no site')).toBeInTheDocument();
     expect(screen.getByText('Páginas por visita')).toBeInTheDocument();
-    expect(screen.getByText('4 após anúncio · 1 outras origens')).toBeInTheDocument();
+    expect(screen.getByText('4 Google Ads · 1 SEO · 0 demais')).toBeInTheDocument();
     expect(screen.getByText('1min 30s')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'De onde veio o clique no WhatsApp?' })).toBeInTheDocument();
     expect(screen.getByText('WhatsApp do anúncio')).toBeInTheDocument();
     expect(screen.getByText('Site após anúncio')).toBeInTheDocument();
-    expect(screen.getByText('Site · outras origens')).toBeInTheDocument();
+    expect(screen.getByText('Site · SEO orgânico')).toBeInTheDocument();
+    expect(screen.getByText('Site · demais origens')).toBeInTheDocument();
     expect(screen.getByText('Perfil da Empresa')).toBeInTheDocument();
     expect(screen.getByText('Cliques no chat do Perfil da Empresa')).toBeInTheDocument();
   });
@@ -338,7 +345,7 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByText('Ligar no anúncio')).toBeInTheDocument();
     expect(screen.getByText('WhatsApp no site após anúncio')).toBeInTheDocument();
     expect(screen.getByText('Somente pessoas identificadas como vindas da mídia paga')).toBeInTheDocument();
-    expect(screen.getByText('1 de outras origens ficam no Resumo')).toBeInTheDocument();
+    expect(screen.getByText('1 SEO · 0 demais ficam no Resumo')).toBeInTheDocument();
     expect(screen.queryByText('WhatsApp dentro do site')).not.toBeInTheDocument();
     expect(screen.getByText('Onde visitantes dos anúncios clicaram no WhatsApp')).toBeInTheDocument();
     expect(screen.getByText('Topo da página B2B')).toBeInTheDocument();
@@ -380,6 +387,18 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByText('Acima')).toBeInTheDocument();
     expect(screen.getByText('Na média')).toBeInTheDocument();
     expect(screen.getByText('Abaixo')).toBeInTheDocument();
+  });
+
+  it('não inventa a parcela orgânica enquanto o backend antigo ainda não a classifica', () => {
+    const resumo = buildResumo();
+    delete resumo.site.whatsapp?.organicClicks;
+    delete resumo.site.whatsapp?.otherClicks;
+
+    renderWithTooltips(<OverviewTab resumo={resumo} />);
+
+    expect(screen.getByText('4 Google Ads · SEO aguardando atualização segura')).toBeInTheDocument();
+    expect(screen.getByText('Aguardando a classificação oficial da fonte')).toBeInTheDocument();
+    expect(screen.getByText('Sem estimar orgânico a partir do restante')).toBeInTheDocument();
   });
 
   it('mantém Resultado exclusivamente comercial, sem repetir o bloco de Google Ads', () => {

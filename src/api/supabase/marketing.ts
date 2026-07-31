@@ -62,12 +62,16 @@ export interface MarketingSiteWhatsappSummary {
   uniqueClicks: number;
   repeatedClicks: number;
   paidClicks: number;
+  organicClicks?: number;
+  otherClicks?: number;
   points: Array<{
     eventLabel: string;
     pagePath: string;
     uniqueClicks: number;
     repeatedClicks: number;
     paidClicks: number;
+    organicClicks?: number;
+    otherClicks?: number;
     lastClickedAt: string;
   }>;
 }

@@ -135,8 +135,8 @@ const googleAdsHelp = {
 } as const;
 
 const siteMetricHelp = {
-  visitors: 'Pessoas ativas identificadas pelo Google Analytics no período. Uma mesma pessoa pode iniciar mais de uma sessão.',
-  whatsapp: 'Cliques únicos rastreados no botão do WhatsApp. Repetições da mesma sessão são deduplicadas; o clique indica intenção, mas não confirma que a mensagem foi enviada.',
+  visitors: 'Pessoas ativas identificadas pelo Google Analytics no período, somando todas as origens. Uma mesma pessoa pode iniciar mais de uma sessão.',
+  whatsapp: 'Cliques únicos rastreados no botão do WhatsApp do site. Google Ads, SEO orgânico e demais origens são classificados separadamente; o clique não confirma mensagem enviada.',
   averageTime: 'Tempo médio de atividade por sessão informado pelo Google Analytics.',
   pagesPerVisit: 'Quantidade de páginas vistas dividida pelo total de sessões do período.',
 } as const;
@@ -352,6 +352,7 @@ function Metric({
   accent = 'navy',
   financial = false,
   financialDetail = false,
+  compact = false,
 }: {
   label: string;
   value: string;
@@ -363,6 +364,7 @@ function Metric({
   accent?: 'navy' | 'gold' | 'teal' | 'violet' | 'rose';
   financial?: boolean;
   financialDetail?: boolean;
+  compact?: boolean;
 }) {
   const delta = current === undefined || previous === undefined ? null : getDelta(current, previous);
   const accents = {
@@ -375,7 +377,7 @@ function Metric({
 
   return (
     <Card className="group h-full min-w-0 overflow-hidden rounded-2xl border-border/70 bg-card shadow-[0_8px_28px_-24px_rgba(15,23,42,0.55)] transition-transform duration-200 hover:-translate-y-0.5">
-      <CardContent className="min-w-0 p-3 sm:p-3.5">
+      <CardContent className={cn('min-w-0 p-3 sm:p-3.5', compact && 'lg:p-2.5 2xl:p-3.5')}>
         <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-start gap-1">
             <p className="min-w-0 text-[10px] font-bold uppercase leading-4 tracking-[0.1em] text-muted-foreground">{label}</p>
@@ -385,15 +387,19 @@ function Metric({
             <Icon className="h-4 w-4" />
           </div>
         </div>
-        <p className="mt-2 break-words text-xl font-bold leading-tight tracking-tight text-foreground sm:text-2xl">
+        <p className={cn(
+          'mt-2 break-words text-xl font-bold leading-tight tracking-tight text-foreground sm:text-2xl',
+          compact && 'lg:mt-1.5 lg:text-lg 2xl:mt-2 2xl:text-2xl',
+        )}>
           {financial ? <FinancialValue>{value}</FinancialValue> : value}
         </p>
-        <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
+        <p className={cn('mt-0.5 text-[11px] leading-4 text-muted-foreground', compact && 'lg:text-[10px] lg:leading-[0.875rem] 2xl:text-[11px] 2xl:leading-4')}>
           {financialDetail ? <FinancialValue>{detail}</FinancialValue> : detail}
         </p>
         {delta ? (
           <div className={cn(
             'mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold',
+            compact && 'lg:mt-1.5 lg:px-1.5 lg:text-[9px] 2xl:mt-2 2xl:px-2 2xl:text-[10px]',
             delta.muted
               ? 'border-slate-200 bg-slate-50 text-slate-500'
               : delta.positive
@@ -529,20 +535,40 @@ function ChartTooltip({
 }
 
 function getSiteWhatsappOriginCounts(resumo: MarketingResumo) {
-  const total = Math.max(
-    0,
+  const total = Math.max(0, Math.trunc(
     resumo.site.whatsapp?.uniqueClicks ?? resumo.site.current.whatsappClicks,
-  );
+  ));
   const reportedPaid = resumo.site.whatsapp?.paidClicks
     ?? resumo.campaigns.paidActions?.whatsappClicks
     ?? 0;
-  const paid = Math.min(total, Math.max(0, reportedPaid));
+  const paid = Math.min(total, Math.max(0, Math.trunc(reportedPaid)));
+  const reportedOrganic = resumo.site.whatsapp?.organicClicks;
+  const reportedOther = resumo.site.whatsapp?.otherClicks;
+  const organicValue = Number(reportedOrganic);
+  const otherValue = Number(reportedOther);
+  const hasCompleteClassification = Number.isInteger(organicValue)
+    && organicValue >= 0
+    && Number.isInteger(otherValue)
+    && otherValue >= 0
+    && paid + organicValue + otherValue === total;
+  const organic = hasCompleteClassification ? Math.max(0, Number(reportedOrganic)) : null;
+  const other = hasCompleteClassification ? Math.max(0, Number(reportedOther)) : null;
 
   return {
     total,
     paid,
-    other: Math.max(0, total - paid),
+    organic,
+    other,
+    classificationReady: hasCompleteClassification,
   };
+}
+
+function formatSiteWhatsappOriginDetail(origins: ReturnType<typeof getSiteWhatsappOriginCounts>) {
+  if (!origins.classificationReady) {
+    return `${formatNumber(origins.paid)} Google Ads · SEO aguardando atualização segura`;
+  }
+
+  return `${formatNumber(origins.paid)} Google Ads · ${formatNumber(origins.organic)} SEO · ${formatNumber(origins.other)} demais`;
 }
 
 function WhatsappOriginBreakdown({ resumo }: { resumo: MarketingResumo }) {
@@ -580,12 +606,24 @@ function WhatsappOriginBreakdown({ resumo }: { resumo: MarketingResumo }) {
       iconTone: 'bg-emerald-600 text-white',
     },
     {
-      label: 'Site · outras origens',
-      value: formatNumber(siteWhatsappOrigins.other),
-      detail: 'Busca orgânica, acesso direto, indicação ou outra origem não paga',
+      label: 'Site · SEO orgânico',
+      value: siteWhatsappOrigins.organic === null ? '—' : formatNumber(siteWhatsappOrigins.organic),
+      detail: siteWhatsappOrigins.classificationReady
+        ? 'Busca orgânica confirmada pela origem do site'
+        : 'Aguardando a classificação oficial da fonte',
       icon: Globe2,
       tone: 'border-teal-200 bg-teal-50 text-teal-950',
       iconTone: 'bg-teal-600 text-white',
+    },
+    {
+      label: 'Site · demais origens',
+      value: siteWhatsappOrigins.other === null ? '—' : formatNumber(siteWhatsappOrigins.other),
+      detail: siteWhatsappOrigins.classificationReady
+        ? 'Acesso direto, indicação, IA ou outra origem'
+        : 'Sem estimar orgânico a partir do restante',
+      icon: MousePointerClick,
+      tone: 'border-violet-200 bg-violet-50 text-violet-950',
+      iconTone: 'bg-violet-600 text-white',
     },
     {
       label: 'Perfil da Empresa',
@@ -603,9 +641,9 @@ function WhatsappOriginBreakdown({ resumo }: { resumo: MarketingResumo }) {
         <PanelHeading
           eyebrow="Origem do contato"
           title="De onde veio o clique no WhatsApp?"
-          description="Anúncio direto, site após anúncio, outras origens do site e Perfil da Empresa ficam separados. Clique não confirma mensagem enviada."
+          description="Google Ads, SEO orgânico, demais origens do site e Perfil da Empresa ficam separados. Clique não confirma mensagem enviada."
         />
-        <div className="mt-3 grid grid-cols-2 gap-2.5 md:grid-cols-4">
+        <div className="mt-3 grid grid-cols-2 gap-2.5 md:grid-cols-5">
           {items.map((item) => {
             const Icon = item.icon;
             return (
@@ -642,7 +680,7 @@ function BasicOverviewTab({ resumo }: { resumo: MarketingResumo }) {
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
         <Metric
-          label="Visitantes no site"
+          label="Visitantes · todas as origens"
           value={formatNumber(current.visits)}
           detail={`${formatNumber(current.sessions)} visitas no período`}
           help={siteMetricHelp.visitors}
@@ -652,13 +690,11 @@ function BasicOverviewTab({ resumo }: { resumo: MarketingResumo }) {
           accent="navy"
         />
         <Metric
-          label="WhatsApp no site · total"
+          label="WhatsApp no site · todas as origens"
           value={formatNumber(siteWhatsappOrigins.total)}
-          detail={`${formatNumber(siteWhatsappOrigins.paid)} após anúncio · ${formatNumber(siteWhatsappOrigins.other)} outras origens`}
+          detail={formatSiteWhatsappOriginDetail(siteWhatsappOrigins)}
           help={siteMetricHelp.whatsapp}
           icon={MessageCircle}
-          current={current.whatsappClicks}
-          previous={previous.whatsappClicks}
           accent="teal"
         />
         <Metric
@@ -747,7 +783,7 @@ function BasicOverviewTab({ resumo }: { resumo: MarketingResumo }) {
                   icon: MousePointerClick,
                   title: 'Cliques orgânicos',
                   value: search ? formatNumber(search.current.clicks) : 'Aguardando',
-                  detail: 'Visitas vindas da busca do Google',
+                  detail: 'Cliques nos resultados orgânicos do Google',
                 },
                 {
                   icon: MailCheck,
@@ -795,7 +831,7 @@ export function OverviewTab({ resumo }: { resumo: MarketingResumo }) {
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
         <Metric
-          label="Visitantes no site"
+          label="Visitantes · todas as origens"
           value={formatNumber(current.visits)}
           detail={`${formatNumber(current.sessions)} visitas no período`}
           help={siteMetricHelp.visitors}
@@ -805,13 +841,11 @@ export function OverviewTab({ resumo }: { resumo: MarketingResumo }) {
           accent="navy"
         />
         <Metric
-          label="WhatsApp no site · total"
+          label="WhatsApp no site · todas as origens"
           value={formatNumber(siteWhatsappOrigins.total)}
-          detail={`${formatNumber(siteWhatsappOrigins.paid)} após anúncio · ${formatNumber(siteWhatsappOrigins.other)} outras origens`}
+          detail={formatSiteWhatsappOriginDetail(siteWhatsappOrigins)}
           help={siteMetricHelp.whatsapp}
           icon={MessageCircle}
-          current={current.whatsappClicks}
-          previous={previous.whatsappClicks}
           accent="teal"
         />
         <Metric
@@ -1339,11 +1373,12 @@ function BasicContactsTab({ resumo }: { resumo: MarketingResumo }) {
   const current = resumo.site.current;
   const previous = resumo.site.previous;
   const forms = resumo.forms?.current;
+  const siteWhatsappOrigins = getSiteWhatsappOriginCounts(resumo);
   const channels = [
     {
-      label: 'WhatsApp',
-      description: 'Cliques únicos no botão do site',
-      value: current.whatsappClicks,
+      label: 'WhatsApp · todas as origens',
+      description: formatSiteWhatsappOriginDetail(siteWhatsappOrigins),
+      value: siteWhatsappOrigins.total,
       icon: MessageCircle,
       color: 'bg-emerald-500',
     },
@@ -1367,7 +1402,7 @@ function BasicContactsTab({ resumo }: { resumo: MarketingResumo }) {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <Metric label="Cliques no WhatsApp" value={formatNumber(current.whatsappClicks)} detail="Intenções de conversa" icon={MessageCircle} current={current.whatsappClicks} previous={previous.whatsappClicks} accent="teal" />
+        <Metric label="WhatsApp no site · todas as origens" value={formatNumber(siteWhatsappOrigins.total)} detail={formatSiteWhatsappOriginDetail(siteWhatsappOrigins)} help={siteMetricHelp.whatsapp} icon={MessageCircle} accent="teal" />
         <Metric label="Cliques no telefone" value={formatNumber(current.phoneClicks)} detail="Intenções de ligação" icon={PhoneCall} current={current.phoneClicks} previous={previous.phoneClicks} accent="navy" />
         <Metric label="Formulários iniciados" value={formatNumber(forms?.starts)} detail="Pessoas que começaram a preencher" icon={FileWarning} current={forms?.starts} previous={resumo.forms?.previous.starts} accent="violet" />
         <Metric label="Formulários enviados" value={formatNumber(forms?.submits)} detail="Envios concluídos no site" icon={MailCheck} current={forms?.submits} previous={resumo.forms?.previous.submits} accent="gold" />
@@ -1464,6 +1499,7 @@ function ContactsTab({
   canManageAttribution: boolean;
 }) {
   const forms = resumo.forms?.current;
+  const siteWhatsappOrigins = getSiteWhatsappOriginCounts(resumo);
   const [leadSearch, setLeadSearch] = useState('');
   const [selectedClients, setSelectedClients] = useState<Record<string, string>>({});
   const [linkingLeadId, setLinkingLeadId] = useState<string | null>(null);
@@ -1508,7 +1544,7 @@ function ContactsTab({
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <Metric label="WhatsApp único" value={formatNumber(resumo.site.current.whatsappClicks)} detail="Intenções de conversa" icon={MessageCircle} current={resumo.site.current.whatsappClicks} previous={resumo.site.previous.whatsappClicks} accent="teal" />
+        <Metric label="WhatsApp no site · todas as origens" value={formatNumber(siteWhatsappOrigins.total)} detail={formatSiteWhatsappOriginDetail(siteWhatsappOrigins)} help={siteMetricHelp.whatsapp} icon={MessageCircle} accent="teal" />
         <Metric label="Cliques no telefone" value={formatNumber(resumo.site.current.phoneClicks)} detail="Intenções de ligação" icon={PhoneCall} current={resumo.site.current.phoneClicks} previous={resumo.site.previous.phoneClicks} accent="navy" />
         <Metric label="Formulários iniciados" value={formatNumber(forms?.starts)} detail={`${formatNumber(forms?.submits)} enviados com sucesso`} icon={FileWarning} current={forms?.starts} previous={resumo.forms?.previous.starts} accent="gold" />
         <Metric label="Taxa de conclusão" value={formatPercent(forms?.completionRate)} detail={`${formatNumber(forms?.abandons)} abandonos detectados`} icon={MailCheck} accent="violet" />
@@ -2104,7 +2140,9 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
             help="Cliques únicos no WhatsApp dentro do site, limitados às sessões com identificador de anúncio ou origem Google paga. Não inclui busca orgânica, acesso direto, indicação ou IA."
             icon={ExternalLink}
             tone="teal"
-            footer={<span>{formatNumber(siteWhatsappOrigins.other)} de outras origens ficam no Resumo</span>}
+            footer={<span>{siteWhatsappOrigins.classificationReady
+              ? `${formatNumber(siteWhatsappOrigins.organic)} SEO · ${formatNumber(siteWhatsappOrigins.other)} demais ficam no Resumo`
+              : 'SEO e demais origens aguardam a classificação oficial'}</span>}
           />
         </div>
 
@@ -2174,12 +2212,12 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           description="Conversão aqui é uma ação configurada no Google Ads; não é comissão nem faturamento da O.S. As primárias orientam a campanha e o total também inclui ações secundárias."
         />
         <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-6 [&_.growth-metric-icon]:hidden 2xl:[&_.growth-metric-icon]:flex">
-          <Metric label="Conversões primárias" value={formatDecimal(current.conversions)} detail="Ações usadas na otimização" help={googleAdsHelp.conversions} icon={Target} current={current.conversions} previous={ads.previous?.conversions} accent="violet" />
-          <Metric label="Todas as conversões" value={formatDecimal(current.allConversions)} detail="Primárias + secundárias" help={googleAdsHelp.allConversions} icon={ListChecks} current={current.allConversions} previous={ads.previous?.allConversions} accent="navy" />
-          <Metric label="Taxa de conversão" value={formatPercent(current.conversionRate)} detail="Conversões ÷ cliques" help={googleAdsHelp.conversionRate} icon={ArrowUpRight} accent="teal" />
-          <Metric label="CPA" value={formatCurrency(current.cpl)} detail="Custo por conversão principal" help={googleAdsHelp.cpa} icon={BadgeDollarSign} accent="rose" financial />
-          <Metric label="Valor das conversões" value={formatCurrency(current.conversionValue)} detail={`${formatCurrency(current.valuePerConversion)} por conversão`} help={`${googleAdsHelp.conversionValue} ${googleAdsHelp.valuePerConversion}`} icon={Sparkles} accent="teal" financial financialDetail />
-          <Metric label="ROAS configurado" value={`${formatDecimal(current.roas)}x`} detail="Valor configurado ÷ investimento" help={googleAdsHelp.roas} icon={ArrowUpRight} accent="gold" />
+          <Metric compact label="Conversões primárias" value={formatDecimal(current.conversions)} detail="Ações usadas na otimização" help={googleAdsHelp.conversions} icon={Target} current={current.conversions} previous={ads.previous?.conversions} accent="violet" />
+          <Metric compact label="Todas as conversões" value={formatDecimal(current.allConversions)} detail="Primárias + secundárias" help={googleAdsHelp.allConversions} icon={ListChecks} current={current.allConversions} previous={ads.previous?.allConversions} accent="navy" />
+          <Metric compact label="Taxa de conversão" value={formatPercent(current.conversionRate)} detail="Conversões ÷ cliques" help={googleAdsHelp.conversionRate} icon={ArrowUpRight} accent="teal" />
+          <Metric compact label="CPA" value={formatCurrency(current.cpl)} detail="Custo por conversão principal" help={googleAdsHelp.cpa} icon={BadgeDollarSign} accent="rose" financial />
+          <Metric compact label="Valor das conversões" value={formatCurrency(current.conversionValue)} detail={`${formatCurrency(current.valuePerConversion)} por conversão`} help={`${googleAdsHelp.conversionValue} ${googleAdsHelp.valuePerConversion}`} icon={Sparkles} accent="teal" financial financialDetail />
+          <Metric compact label="ROAS configurado" value={`${formatDecimal(current.roas)}x`} detail="Valor configurado ÷ investimento" help={googleAdsHelp.roas} icon={ArrowUpRight} accent="gold" />
         </div>
       </section>
 
@@ -2190,12 +2228,12 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           description="Esses indicadores ajudam a decidir se o gargalo está no orçamento, na posição ou na qualidade do tráfego."
         />
         <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-6 [&_.growth-metric-icon]:hidden 2xl:[&_.growth-metric-icon]:flex">
-          <Metric label="Parcela de impressões" value={formatPercent(current.searchImpressionShare)} detail="Cobertura possível na Pesquisa" help={googleAdsHelp.searchImpressionShare} icon={Gauge} accent="navy" />
-          <Metric label="Perdida por orçamento" value={formatPercent(current.searchBudgetLostImpressionShare)} detail="Limitação de verba" help={googleAdsHelp.searchBudgetLostImpressionShare} icon={AlertTriangle} accent="rose" />
-          <Metric label="Perdida por classificação" value={formatPercent(current.searchRankLostImpressionShare)} detail="Lance, qualidade e relevância" help={googleAdsHelp.searchRankLostImpressionShare} icon={Search} accent="violet" />
-          <Metric label="Topo da página" value={formatPercent(current.searchTopImpressionShare)} detail="Acima dos resultados orgânicos" help={googleAdsHelp.searchTopImpressionShare} icon={ArrowUpRight} accent="teal" />
-          <Metric label="Primeira posição" value={formatPercent(current.searchAbsoluteTopImpressionShare)} detail="Topo absoluto da pesquisa" help={googleAdsHelp.searchAbsoluteTopImpressionShare} icon={Target} accent="gold" />
-          <Metric label="Cliques inválidos" value={formatNumber(current.invalidClicks)} detail={`${formatPercent(current.invalidClickRate)} dos cliques filtrados`} help={googleAdsHelp.invalidClicks} icon={ShieldCheck} accent="navy" />
+          <Metric compact label="Parcela de impressões" value={formatPercent(current.searchImpressionShare)} detail="Cobertura possível na Pesquisa" help={googleAdsHelp.searchImpressionShare} icon={Gauge} accent="navy" />
+          <Metric compact label="Perdida por orçamento" value={formatPercent(current.searchBudgetLostImpressionShare)} detail="Limitação de verba" help={googleAdsHelp.searchBudgetLostImpressionShare} icon={AlertTriangle} accent="rose" />
+          <Metric compact label="Perdida por classificação" value={formatPercent(current.searchRankLostImpressionShare)} detail="Lance, qualidade e relevância" help={googleAdsHelp.searchRankLostImpressionShare} icon={Search} accent="violet" />
+          <Metric compact label="Topo da página" value={formatPercent(current.searchTopImpressionShare)} detail="Acima dos resultados orgânicos" help={googleAdsHelp.searchTopImpressionShare} icon={ArrowUpRight} accent="teal" />
+          <Metric compact label="Primeira posição" value={formatPercent(current.searchAbsoluteTopImpressionShare)} detail="Topo absoluto da pesquisa" help={googleAdsHelp.searchAbsoluteTopImpressionShare} icon={Target} accent="gold" />
+          <Metric compact label="Cliques inválidos" value={formatNumber(current.invalidClicks)} detail={`${formatPercent(current.invalidClickRate)} dos cliques filtrados`} help={googleAdsHelp.invalidClicks} icon={ShieldCheck} accent="navy" />
         </div>
         <Card className="rounded-2xl border-border/70 shadow-sm">
           <CardContent className="p-4 sm:p-5">
@@ -2242,15 +2280,15 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
         </Card>
       </section>
 
-      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.7fr)]">
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(260px,0.45fr)]">
         <Card className="min-w-0 rounded-2xl border-border/70 shadow-sm">
-          <CardContent className="min-w-0 p-4 sm:p-6">
+          <CardContent className="min-w-0 p-4 sm:p-5 lg:p-4 2xl:p-6">
             <PanelHeading
               eyebrow="Evolução diária"
               title="Investimento, cliques e conversões"
               description="Dados oficiais do Google Ads, com cache de até 10 minutos."
             />
-            <div className="mt-5 h-[300px] min-w-0">
+            <div className="mt-4 h-[260px] min-w-0 2xl:mt-5 2xl:h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={ads.daily}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -2276,31 +2314,31 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border-border/70 bg-slate-950 text-white shadow-sm">
-          <CardContent className="p-5 sm:p-6">
+        <Card className="self-start rounded-2xl border-border/70 bg-slate-950 text-white shadow-sm">
+          <CardContent className="p-4 2xl:p-6">
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300">Conversão de cliente</p>
-            <h3 className="mt-1 text-xl font-bold">Retiflow → Google Ads</h3>
-            <p className="mt-2 text-sm leading-relaxed text-slate-400">
+            <h3 className="mt-1 text-lg font-bold 2xl:text-xl">Retiflow → Google Ads</h3>
+            <p className="mt-1.5 text-[11px] leading-4 text-slate-400 2xl:mt-2 2xl:text-sm 2xl:leading-relaxed">
               Cada cliente atribuído a um clique do anúncio entra numa fila privada e idempotente.
             </p>
-            <div className="mt-5 grid grid-cols-2 gap-2">
+            <div className="mt-3 grid grid-cols-2 gap-2 2xl:mt-5">
               {[
                 { label: 'Total', value: offline?.total ?? 0, help: googleAdsHelp.offlineTotal },
                 { label: 'Enviadas', value: offline?.uploaded ?? 0, help: googleAdsHelp.offlineUploaded },
                 { label: 'Na fila', value: (offline?.pending ?? 0) + (offline?.processing ?? 0), help: googleAdsHelp.offlinePending },
                 { label: 'Nova tentativa', value: offline?.retry ?? 0, help: googleAdsHelp.offlineRetry },
               ].map((item) => (
-                <div key={item.label} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                <div key={item.label} className="rounded-xl border border-white/10 bg-white/5 p-2.5 2xl:p-3">
                   <div className="flex items-start gap-1">
                     <p className="text-[10px] uppercase tracking-wider text-slate-500">{item.label}</p>
                     <HelpTip label={item.label} description={item.help} className="text-slate-500 hover:bg-white/10 hover:text-white focus-visible:ring-amber-300 focus-visible:ring-offset-slate-950" />
                   </div>
-                  <p className="mt-2 text-xl font-bold text-white">{formatNumber(Number(item.value))}</p>
+                  <p className="mt-1 text-lg font-bold text-white 2xl:mt-2 2xl:text-xl">{formatNumber(Number(item.value))}</p>
                 </div>
               ))}
             </div>
             <div className={cn(
-              'mt-3 rounded-xl border p-3 text-xs leading-relaxed',
+              'mt-2.5 rounded-xl border p-2.5 text-[11px] leading-4 2xl:mt-3 2xl:p-3 2xl:text-xs 2xl:leading-relaxed',
               offline?.failed
                 ? 'border-rose-300/30 bg-rose-300/10 text-rose-100'
                 : 'border-emerald-300/20 bg-emerald-300/10 text-emerald-100',
@@ -2309,7 +2347,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                 ? `${formatNumber(offline.failed)} envio(s) requerem revisão.`
                 : 'Nenhuma conversão com falha definitiva.'}
             </div>
-            <p className="mt-4 text-xs leading-relaxed text-slate-400">
+            <p className="mt-2.5 text-[10px] leading-4 text-slate-400 2xl:mt-4 2xl:text-xs 2xl:leading-relaxed">
               Telefone/e-mail fazem o vínculo automático. Conversas só pelo WhatsApp usam o código RP informado no cadastro.
             </p>
           </CardContent>
@@ -2317,14 +2355,14 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
       </div>
 
       <Card className="min-w-0 rounded-2xl border-border/70 shadow-sm">
-        <CardContent className="min-w-0 p-4 sm:p-6">
+        <CardContent className="min-w-0 p-4 sm:p-5 lg:p-4 2xl:p-6">
           <PanelHeading
             eyebrow="Jornada paga"
             title="Pessoas que entraram por anúncio"
             description="Sessões com GCLID/GBRAID/WBRAID ou origem Google CPC, sem expor o identificador bruto do clique."
           />
-          <div className="mt-5 w-full max-w-full overflow-auto rounded-xl border" role="region" aria-label="Visitantes vindos de anúncios" tabIndex={0}>
-            <table className="w-full min-w-[980px] text-left text-xs">
+          <div className="mt-3 w-full max-w-full overflow-auto rounded-xl border 2xl:mt-5" role="region" aria-label="Visitantes vindos de anúncios" tabIndex={0}>
+            <table className="w-full min-w-[820px] text-left text-xs 2xl:min-w-[980px]">
               <thead className="border-b bg-muted/70 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
                 <tr>
                   <AdsTableHead label="Última visita" />
@@ -2338,26 +2376,26 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
               <tbody className="divide-y">
                 {paidVisitors.map((visitor) => (
                   <tr key={`${visitor.visitorId}-${visitor.firstSeenAt}`}>
-                    <td className="px-3 py-3 text-muted-foreground">{formatDateTime(visitor.lastSeenAt)}</td>
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-2 text-muted-foreground 2xl:py-3">{formatDateTime(visitor.lastSeenAt)}</td>
+                    <td className="px-3 py-2 2xl:py-3">
                       <p className="font-semibold text-foreground">{visitor.leadName ?? `Sessão • ${visitor.visitorId}`}</p>
                       <p className="mt-0.5 text-[11px] text-muted-foreground">{visitor.leadContact ?? visitor.leadCode ?? visitor.clickIdType?.toUpperCase() ?? 'Google CPC'}</p>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-2 2xl:py-3">
                       <p className="font-medium text-foreground">{visitor.campaign ?? 'Campanha não informada'}</p>
                       <p className="text-[11px] text-muted-foreground">{visitor.source} / {visitor.medium}</p>
                     </td>
-                    <td className="max-w-[280px] truncate px-3 py-3 text-muted-foreground" title={visitor.landingPage}>{visitor.landingPage}</td>
-                    <td className="px-3 py-3 text-right">
+                    <td className="max-w-[240px] truncate px-3 py-2 text-muted-foreground 2xl:max-w-[280px] 2xl:py-3" title={visitor.landingPage}>{visitor.landingPage}</td>
+                    <td className="px-3 py-2 text-right 2xl:py-3">
                       <p className="font-semibold text-foreground">{formatNumber(visitor.eventCount)}</p>
                       <p className="text-[11px] text-muted-foreground">{formatNumber(visitor.actionCount)} ações</p>
                     </td>
-                    <td className="px-3 py-3">
-                      <Badge variant="outline" className={visitor.convertedClient
+                    <td className="px-3 py-2 2xl:py-3">
+                      <Badge variant="outline" className={cn('whitespace-nowrap', visitor.convertedClient
                         ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                         : visitor.actionCount
                           ? 'border-amber-200 bg-amber-50 text-amber-700'
-                          : 'border-slate-200 bg-slate-50 text-slate-600'}>
+                          : 'border-slate-200 bg-slate-50 text-slate-600')}>
                         {visitor.convertedClient ? 'Cliente cadastrado' : visitor.actionCount ? 'Demonstrou interesse' : 'Somente visitou'}
                       </Badge>
                     </td>
@@ -2374,16 +2412,18 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="campanhas" className="space-y-4">
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-muted/80 p-1 sm:grid-cols-4 2xl:grid-cols-7">
-          <TabsTrigger value="campanhas">Campanhas</TabsTrigger>
-          <TabsTrigger value="dispositivos">Dispositivos</TabsTrigger>
-          <TabsTrigger value="palavras">Palavras-chave</TabsTrigger>
-          <TabsTrigger value="pesquisas">Pesquisas</TabsTrigger>
-          <TabsTrigger value="paginas">Páginas</TabsTrigger>
-          <TabsTrigger value="horarios">Horários</TabsTrigger>
-          <TabsTrigger value="conversoes">Conversões</TabsTrigger>
-        </TabsList>
+      <Tabs defaultValue="campanhas" className="min-w-0 space-y-4">
+        <div className="w-full overflow-x-auto pb-1">
+          <TabsList className="grid h-auto w-full min-w-[720px] grid-cols-7 gap-1 rounded-xl bg-muted/80 p-1 md:min-w-0">
+            <TabsTrigger value="campanhas" className="whitespace-nowrap">Campanhas</TabsTrigger>
+            <TabsTrigger value="dispositivos" className="whitespace-nowrap">Dispositivos</TabsTrigger>
+            <TabsTrigger value="palavras" className="whitespace-nowrap">Palavras-chave</TabsTrigger>
+            <TabsTrigger value="pesquisas" className="whitespace-nowrap">Pesquisas</TabsTrigger>
+            <TabsTrigger value="paginas" className="whitespace-nowrap">Páginas</TabsTrigger>
+            <TabsTrigger value="horarios" className="whitespace-nowrap">Horários</TabsTrigger>
+            <TabsTrigger value="conversoes" className="whitespace-nowrap">Conversões</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="campanhas" className="space-y-4">
           <Card className="rounded-2xl border-border/70 shadow-sm">
@@ -2887,8 +2927,8 @@ export default function MarketingGrowth() {
         <header className="overflow-hidden rounded-[26px] bg-[#0b2035] text-white shadow-[0_18px_60px_-35px_rgba(2,15,28,0.85)]">
           <div className="relative px-4 pb-3 pt-4 sm:px-5 lg:px-6">
             <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-1/3 bg-[linear-gradient(135deg,transparent,rgba(240,180,77,0.10))] lg:block" />
-            <div className="relative flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div className="max-w-3xl">
+            <div className="relative grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+              <div className="min-w-0 max-w-3xl">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#f0b44d]">
                     {hasPrivateAccess ? 'Sala de controle da aquisição' : 'Acompanhamento do crescimento'}
@@ -2915,10 +2955,10 @@ export default function MarketingGrowth() {
                 </p>
               </div>
 
-              <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_auto] lg:self-center">
+              <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,190px)_auto] lg:self-center xl:grid-cols-[minmax(0,210px)_auto]">
                 {hasPrivateAccess && isCurrentUserMegaMaster ? (
                   <Select value={selectedUserId} onValueChange={setSelectedUserId} disabled={isLoadingUsers || !selectableUsers.length}>
-                    <SelectTrigger className="h-9 border-white/15 bg-white/5 text-white hover:bg-white/10 sm:w-[250px]">
+                    <SelectTrigger className="h-9 min-w-0 border-white/15 bg-white/5 text-white hover:bg-white/10">
                       <Users className="mr-2 h-4 w-4 text-amber-300" />
                       <SelectValue placeholder="Selecionar empresa" />
                     </SelectTrigger>
@@ -2927,7 +2967,7 @@ export default function MarketingGrowth() {
                     </SelectContent>
                   </Select>
                 ) : (
-                  <div className="flex h-9 items-center rounded-xl border border-white/15 bg-white/5 px-3 text-xs text-slate-200 sm:min-w-[250px]">
+                  <div className="flex h-9 min-w-0 items-center rounded-xl border border-white/15 bg-white/5 px-3 text-xs text-slate-200">
                     <Building2 className="mr-2 h-4 w-4 text-amber-300" />
                     <span className="truncate">
                       {hasPrivateAccess
@@ -2938,7 +2978,7 @@ export default function MarketingGrowth() {
                 )}
                 <Button
                   variant="outline"
-                  className="h-9 border-white/15 bg-white/5 px-3 text-white hover:bg-white/10 hover:text-white"
+                  className="h-9 shrink-0 border-white/15 bg-white/5 px-3 text-white hover:bg-white/10 hover:text-white"
                   onClick={() => void query.refetch()}
                   disabled={!queryEnabled || query.isFetching}
                 >
@@ -3028,8 +3068,8 @@ export default function MarketingGrowth() {
         {query.data ? (
           hasPrivateAccess ? (
             <Tabs defaultValue="visao" className="space-y-4">
-              <div className="pb-1">
-                <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-muted/80 p-1 sm:grid-cols-3 md:grid-cols-5">
+              <div className="w-full overflow-x-auto pb-1">
+                <TabsList className="grid h-auto min-w-[560px] grid-cols-5 gap-1 rounded-xl bg-muted/80 p-1 md:min-w-0">
                   <TabsTrigger value="visao">Resumo</TabsTrigger>
                   <TabsTrigger value="google">Google</TabsTrigger>
                   <TabsTrigger value="contatos">Contatos</TabsTrigger>

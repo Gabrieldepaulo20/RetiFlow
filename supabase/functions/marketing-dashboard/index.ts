@@ -7,6 +7,7 @@ import {
   toMarketingDayStartIso,
 } from '../_shared/marketing-date.ts';
 import { resolveMarketingActionMetricsSource } from '../_shared/marketing-sources.ts';
+import { classifyMarketingAttribution } from '../_shared/marketing-attribution.ts';
 
 type JsonRecord = Record<string, unknown>;
 function createServiceClient(supabaseUrl: string, serviceRoleKey: string) {
@@ -91,12 +92,16 @@ interface MarketingSiteWhatsappSummary {
   uniqueClicks: number;
   repeatedClicks: number;
   paidClicks: number;
+  organicClicks: number;
+  otherClicks: number;
   points: Array<{
     eventLabel: string;
     pagePath: string;
     uniqueClicks: number;
     repeatedClicks: number;
     paidClicks: number;
+    organicClicks: number;
+    otherClicks: number;
     lastClickedAt: string;
   }>;
 }
@@ -2159,6 +2164,7 @@ async function loadPrivateMarketingData(
         'anonymous_id',
         'page_path',
         'page_title',
+        'referrer',
         'source',
         'medium',
         'campaign',
@@ -2553,10 +2559,7 @@ function withoutGoogleClickIds(item: JsonRecord) {
 }
 
 function isPaidMarketingItem(item: JsonRecord) {
-  const source = String(item.source ?? '').toLowerCase();
-  const medium = String(item.medium ?? '').toLowerCase();
-  return Boolean(getClickIdType(item))
-    || (source === 'google' && ['cpc', 'ppc', 'paid'].includes(medium));
+  return classifyMarketingAttribution(item) === 'paid';
 }
 
 function isTechnicalPaidTest(item: JsonRecord) {
@@ -2572,9 +2575,11 @@ function buildSiteWhatsappSummary(events: JsonRecord[]): MarketingSiteWhatsappSu
   let uniqueClicks = 0;
   let repeatedClicks = 0;
   let paidClicks = 0;
+  let organicClicks = 0;
+  let otherClicks = 0;
 
   events
-    .filter((event) => event.event_type === 'whatsapp_click')
+    .filter((event) => event.event_type === 'whatsapp_click' && !isTechnicalPaidTest(event))
     .forEach((event) => {
       const metadata = (
         event.metadata
@@ -2586,7 +2591,7 @@ function buildSiteWhatsappSummary(events: JsonRecord[]): MarketingSiteWhatsappSu
         ?? 'nao_informado';
       const pagePath = asString(event.page_path, 800) ?? '/';
       const duplicateCount = Math.max(0, Math.trunc(toNumber(event.duplicate_count)));
-      const paid = isPaidMarketingItem(event) && !isTechnicalPaidTest(event);
+      const attribution = classifyMarketingAttribution(event);
       const occurredAt = asString(event.occurred_at, 80) ?? '';
       const key = `${eventLabel}\u0000${pagePath}`;
       const current = points.get(key) ?? {
@@ -2595,15 +2600,21 @@ function buildSiteWhatsappSummary(events: JsonRecord[]): MarketingSiteWhatsappSu
         uniqueClicks: 0,
         repeatedClicks: 0,
         paidClicks: 0,
+        organicClicks: 0,
+        otherClicks: 0,
         lastClickedAt: '',
       };
 
       uniqueClicks += 1;
       repeatedClicks += duplicateCount;
-      paidClicks += paid ? 1 : 0;
+      paidClicks += attribution === 'paid' ? 1 : 0;
+      organicClicks += attribution === 'organic' ? 1 : 0;
+      otherClicks += attribution === 'other' ? 1 : 0;
       current.uniqueClicks += 1;
       current.repeatedClicks += duplicateCount;
-      current.paidClicks += paid ? 1 : 0;
+      current.paidClicks += attribution === 'paid' ? 1 : 0;
+      current.organicClicks += attribution === 'organic' ? 1 : 0;
+      current.otherClicks += attribution === 'other' ? 1 : 0;
       current.lastClickedAt = occurredAt > current.lastClickedAt
         ? occurredAt
         : current.lastClickedAt;
@@ -2614,6 +2625,8 @@ function buildSiteWhatsappSummary(events: JsonRecord[]): MarketingSiteWhatsappSu
     uniqueClicks,
     repeatedClicks,
     paidClicks,
+    organicClicks,
+    otherClicks,
     points: Array.from(points.values())
       .sort((left, right) => right.lastClickedAt.localeCompare(left.lastClickedAt))
       .slice(0, 20),

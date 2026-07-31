@@ -4,20 +4,27 @@ Atualizado em: 2026-07-31
 
 ---
 
-## WhatsApp Do Site Separado Por Origem - 2026-07-31
+## WhatsApp Do Site Separado Entre Google Ads, SEO E Demais Origens - 2026-07-31
 
 - O card antigo `WhatsApp dentro do site` na aba Google Ads usava `uniqueClicks` como valor
   principal. Esse total somava sessões pagas e não pagas, embora o backend já entregasse
   `paidClicks` separado; por isso a apresentação era ambígua.
-- A aba Google Ads agora mostra somente `WhatsApp no site após anúncio`, calculado com `paidClicks`.
-  Cliques de busca orgânica, acesso direto, indicação, IA ou outra origem não paga ficam fora dessa
-  aba e aparecem separadamente no Resumo como `Site · outras origens`.
-- O Resumo mantém o total do site apenas com rótulo explícito e detalha, no próprio card, quantos
-  vieram após anúncio e quantos pertencem a outras origens. O quadro de origem agora tem quatro
-  caminhos independentes: botão do anúncio, site após anúncio, site por outras origens e Perfil da
-  Empresa.
-- Nenhuma migration, tabela, RLS ou Edge Function foi alterada: a correção usa os campos agregados
-  `uniqueClicks` e `paidClicks` que já existiam no contrato de `marketing-dashboard`.
+- A aba Google Ads mostra somente `WhatsApp no site após anúncio`, calculado com `paidClicks`.
+  O Resumo não chama mais todo o restante de orgânico: exibe `SEO orgânico` e `demais origens`
+  (acesso direto, indicação, IA ou outra fonte) como números independentes.
+- O contrato de `marketing-dashboard` passou a agregar `organicClicks` e `otherClicks`, além de
+  `uniqueClicks` e `paidClicks`. A classificação paga usa GCLID/GBRAID/WBRAID ou `google/cpc|ppc|paid`
+  e sempre tem prioridade; a classificação orgânica exige `medium=organic` ou referência de um
+  buscador conhecido sem sinal pago. O dashboard passou a carregar o `referrer` já existente, por
+  isso a correção também alcança eventos históricos. Eventos técnicos de pré-lançamento ficam fora.
+- A interface só apresenta SEO e demais origens quando a soma oficial fecha exatamente com o total.
+  Enquanto uma versão antiga da função estiver ativa, mostra `aguardando atualização da fonte` em
+  vez de estimar que todo clique não pago seja orgânico.
+- O quadro de origem tem cinco caminhos independentes: botão do anúncio, site após anúncio, site por
+  SEO, site por demais origens e Perfil da Empresa. O card geral é rotulado explicitamente como
+  `todas as origens` e não recebe comparação com um período anterior de fonte diferente.
+- Não houve migration, alteração de tabela, RLS ou policy. A mudança da Edge Function é aditiva e
+  precisa ser publicada junto do frontend; nesta etapa ela ainda está apenas no código local.
 
 ---
 
