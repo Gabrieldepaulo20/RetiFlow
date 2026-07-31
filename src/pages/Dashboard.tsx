@@ -374,7 +374,10 @@ export default function Dashboard() {
 
   const periodRevenue = financeiroResumo?.faturamentoCompetencia ?? periodDeliveredAmount;
   const periodCashPaid = financeiroResumo?.saidasPagas ?? periodPaidExpenses;
-  const periodOpenPayables = financeiroResumo?.aPagar ?? periodPayablesRemaining;
+  // Este KPI acompanha o mesmo conjunto de "Contas lançadas": somente contas
+  // cuja competência pertence ao período selecionado. O aPagar do resumo é uma
+  // posição acumulada até a data final e aparece separadamente no quadro de caixa.
+  const periodOpenPayables = periodPayablesRemaining;
   const periodProfit = financeiroResumo?.resultadoCompetencia
     ?? (periodDeliveredAmount - periodPayablesTotal);
   const periodProfitMargin = periodRevenue > 0 ? (periodProfit / periodRevenue) * 100 : null;
@@ -394,7 +397,8 @@ export default function Dashboard() {
         ? financeiroResumo.saldoAtual
         : financeiroResumo.resultadoPeriodo)
     : periodReceived - periodPaidExpenses;
-  // Posição em aberto (snapshot, não escopado ao período):
+  // Posição em aberto acumulada até a data final do filtro (não é apenas o que
+  // nasceu dentro do período):
   const legacyOpenReceivableAmount = useMemo(
     () => getReceivableNotes(notes).reduce((sum, note) => sum + note.totalAmount, 0),
     [notes],
@@ -631,7 +635,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-1.5 p-1.5 sm:gap-2 sm:p-2.5 md:grid-cols-4 xl:grid-cols-7 xl:p-3">
+          <div className="grid grid-cols-3 gap-1.5 p-1.5 sm:gap-2 sm:p-2.5 md:grid-cols-4 xl:p-3 2xl:grid-cols-7">
             <button
               type="button"
               onClick={() => navigate('/notas-entrada')}
@@ -885,14 +889,14 @@ export default function Dashboard() {
             <div className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
-                A receber <span className="text-[10px] opacity-60">(em aberto)</span>
+                A receber <span className="text-[10px] opacity-60">(em aberto até {format(selectedPeriod.end, 'dd/MM')})</span>
               </span>
               <span className="text-sm font-semibold tabular-nums text-foreground/80"><FinancialValue>R$ {fmtBRL(openReceivableAmount)}</FinancialValue></span>
             </div>
             <div className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Receipt className="h-3.5 w-3.5 text-red-500" />
-                A pagar <span className="text-[10px] opacity-60">(em aberto)</span>
+                A pagar <span className="text-[10px] opacity-60">(em aberto até {format(selectedPeriod.end, 'dd/MM')})</span>
               </span>
               <span className="text-sm font-semibold tabular-nums text-foreground/80"><FinancialValue>R$ {fmtBRL(openPayableAmount)}</FinancialValue></span>
             </div>

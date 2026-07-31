@@ -36,7 +36,6 @@ import {
   MapPin,
   MessageCircle,
   MousePointerClick,
-  Navigation,
   PhoneCall,
   RefreshCw,
   Search,
@@ -85,7 +84,7 @@ const periodOptions = [7, 10, 15, 20, 30, 40, 60, 90];
 const googleAdsHelp = {
   spend: 'Total cobrado pelo Google Ads no período selecionado. Pode existir atraso de processamento na fonte oficial.',
   impressions: 'Quantidade de vezes que os anúncios foram exibidos. A mesma pessoa pode gerar mais de uma impressão.',
-  clicks: 'Total de cliques registrados pelo Google Ads. Inclui links do site, botão de ligar, localização, rotas e outros recursos do anúncio; não significa somente visitas ao site.',
+  clicks: 'Total de cliques registrados pelo Google Ads. Inclui links do site, WhatsApp, botão de ligar e outros recursos do anúncio; não significa somente visitas ao site.',
   siteClicks: 'Cliques que apontaram para uma página do site, somando URL principal e sitelinks. Uma pessoa pode clicar mais de uma vez, e nem todo clique termina em uma sessão rastreada.',
   adWhatsappClicks: 'Cliques no botão de mensagem do próprio anúncio que abriram o WhatsApp. Esse número é separado de quem entrou no site e só depois clicou no WhatsApp.',
   adWhatsappAsset: 'Recurso de mensagem configurado no Google Ads. O status indica se o recurso está habilitado e apto a aparecer; zero cliques logo após a ativação é esperado.',
@@ -93,9 +92,6 @@ const googleAdsHelp = {
   reportedCalls: 'Chamadas que o encaminhamento de chamadas do Google conseguiu registrar. Esse número pode ser menor que os toques em Ligar porque abrir o discador não garante que a pessoa completou a chamada.',
   qualifiedCalls: 'Leitura analítica do Retiflow: chamadas atendidas com pelo menos 30 segundos. Esse limite não altera sozinho a configuração de conversão do Google Ads.',
   confirmedCallClients: 'Clientes cadastrados cuja equipe confirmou que o contato começou por uma ligação do Google Ads.',
-  locationClicks: 'Cliques para abrir a localização vinculada ao anúncio ou conhecer o endereço da empresa.',
-  directionClicks: 'Cliques em pedir rota até a empresa.',
-  confirmedArrivals: 'Clientes cadastrados cuja equipe confirmou que a pessoa pediu a rota no Google e realmente chegou à retífica. O clique em rota sozinho não comprova presença física.',
   trackedPaidSessions: 'Sessões que chegaram ao site com identificação de mídia paga, como gclid ou google/cpc. Pode ser menor que os cliques por repetição, bloqueios de medição ou saída antes do carregamento.',
   paidWhatsappClicks: 'Cliques no WhatsApp feitos dentro do site por sessões identificadas como vindas dos anúncios. Eventos técnicos de pré-lançamento não entram.',
   paidPhoneClicks: 'Cliques no telefone feitos dentro do site por sessões identificadas como vindas dos anúncios. Não inclui o botão de ligar exibido diretamente no anúncio.',
@@ -1701,12 +1697,11 @@ export function ResultsTab({ resumo }: { resumo: MarketingResumo }) {
           title="Quem realmente virou cliente?"
           description="A equipe confirma a origem no cadastro; quando houver telefone, e-mail ou código do site, o Retiflow continua fazendo o vínculo automático."
         />
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
           <Metric label="Clientes novos" value={formatNumber(business?.newClients)} detail="Primeiro atendimento confirmado" help="Clientes marcados como novos no cadastro ou cujo primeiro contato digital aconteceu antes da criação no Retiflow." icon={UserCheck} current={business?.newClients} previous={previous?.newClients} accent="teal" />
           <Metric label="Já eram clientes" value={formatNumber(business?.existingClients)} detail="Retorno de cliente conhecido" help="Pessoas que já eram clientes antes deste novo contato de marketing." icon={Users} current={business?.existingClients} previous={previous?.existingClients} accent="navy" />
           <Metric label="Sem classificação" value={formatNumber(business?.unknownClients)} detail="A equipe ainda não confirmou" help="Clientes atribuídos cuja situação como novo ou antigo ainda não pôde ser comprovada." icon={CircleHelp} current={business?.unknownClients} previous={previous?.unknownClients} accent="violet" />
           <Metric label="Clientes via ligação" value={formatNumber(business?.confirmedCalls)} detail="Ligação do anúncio confirmada" help={googleAdsHelp.confirmedCallClients} icon={PhoneCall} current={business?.confirmedCalls} previous={previous?.confirmedCalls} accent="gold" />
-          <Metric label="Chegadas pela rota" value={formatNumber(business?.confirmedArrivals)} detail="Presença confirmada na retífica" help={googleAdsHelp.confirmedArrivals} icon={MapPin} current={business?.confirmedArrivals} previous={previous?.confirmedArrivals} accent="rose" />
         </div>
       </section>
 
@@ -1955,20 +1950,15 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
   const adWhatsappClicks = clicksByType(['CLICK_TO_MESSAGE_THIRD_PARTY_CLICK']);
   const messageLandingClicks = clicksByType(['CLICK_TO_MESSAGE_LANDING_PAGE_CLICK']);
   const adCallClicks = clicksByType(['CALLS']);
-  const locationClicks = clicksByType(['LOCATION_EXPANSION']);
-  const directionClicks = clicksByType(['GET_DIRECTIONS']);
   const classifiedClicks = siteClicks
     + adWhatsappClicks
     + messageLandingClicks
-    + adCallClicks
-    + locationClicks
-    + directionClicks;
+    + adCallClicks;
   const otherClicks = Math.max(0, current.clicks - classifiedClicks);
   const qualifiedCalls = calls?.items?.filter(
     (call) => call.status === 'RECEIVED' && call.durationSeconds >= 30,
   ).length ?? 0;
   const confirmedCallClients = resumo.business?.current.confirmedCalls ?? 0;
-  const confirmedArrivals = resumo.business?.current.confirmedArrivals ?? 0;
 
   if (!ads.financialAvailable) {
     return (
@@ -2007,12 +1997,12 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
         <PanelHeading
           eyebrow="Alcance e custo"
           title="Quanto investimos e quantas interações tivemos?"
-          description="O total de cliques reúne site, ligação, localização, rotas e outros recursos do anúncio. A divisão exata aparece logo abaixo."
+          description="O total de cliques reúne site, WhatsApp, ligação e outras interações registradas pelo Google. A divisão principal aparece logo abaixo."
         />
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-5">
           <Metric label="Investimento" value={formatCurrency(current.spend)} detail="Custo oficial no período" help={googleAdsHelp.spend} icon={BadgeDollarSign} current={current.spend} previous={ads.previous?.spend} accent="navy" financial />
           <Metric label="Impressões" value={formatNumber(current.impressions)} detail="Exibições dos anúncios" help={googleAdsHelp.impressions} icon={Eye} current={current.impressions} previous={ads.previous?.impressions} accent="violet" />
-          <Metric label="Cliques totais" value={formatNumber(current.clicks)} detail="Site + WhatsApp + ligar + local + rotas" help={googleAdsHelp.clicks} icon={MousePointerClick} current={current.clicks} previous={ads.previous?.clicks} accent="teal" />
+          <Metric label="Cliques totais" value={formatNumber(current.clicks)} detail="Site + WhatsApp + ligar + outros" help={googleAdsHelp.clicks} icon={MousePointerClick} current={current.clicks} previous={ads.previous?.clicks} accent="teal" />
           <Metric label="CTR" value={formatPercent(current.ctr)} detail="Cliques ÷ impressões" help={googleAdsHelp.ctr} icon={Target} accent="violet" />
           <Metric label="CPC médio" value={formatCurrency(current.averageCpc)} detail="Custo médio por clique" help={googleAdsHelp.averageCpc} icon={Gauge} accent="gold" financial />
         </div>
@@ -2095,22 +2085,6 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                         icon={PhoneCall}
                         tone="amber"
                       />
-                      <ClickBreakdownItem
-                        label="Localização"
-                        value={locationClicks}
-                        detail="Abriram informações do endereço"
-                        help={googleAdsHelp.locationClicks}
-                        icon={MapPin}
-                        tone="slate"
-                      />
-                      <ClickBreakdownItem
-                        label="Pedir rota"
-                        value={directionClicks}
-                        detail="Solicitaram como chegar à retífica"
-                        help={googleAdsHelp.directionClicks}
-                        icon={Navigation}
-                        tone="violet"
-                      />
                     </div>
                     {otherClicks > 0 ? (
                       <div className="mt-3 flex items-center justify-between gap-4 rounded-xl border border-dashed border-slate-300 px-4 py-3 text-sm">
@@ -2140,7 +2114,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                 <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-700">Depois de entrar no site</p>
                 <h3 className="mt-1 text-base font-bold text-slate-950">Ações das visitas pagas</h3>
                 <p className="mt-1 text-xs leading-relaxed text-slate-600">
-                  Estes números não incluem ligar, localização ou rota feitos diretamente no anúncio.
+                  Estes números não incluem ações feitas diretamente no anúncio, como tocar em Ligar.
                 </p>
                 <div className="mt-4 rounded-2xl border border-emerald-300 bg-emerald-600 p-4 text-white shadow-sm">
                   <div className="flex items-start justify-between gap-3">
@@ -2279,14 +2253,6 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                 <FunnelStep label="Atendidas" value={calls?.received ?? 0} detail="A retífica atendeu" help="Chamadas registradas pelo encaminhamento do Google com status de recebida." icon={CheckCircle2} />
                 <FunnelStep label="Qualificadas" value={qualifiedCalls} detail="Atendida por 30s ou mais" help={googleAdsHelp.qualifiedCalls} icon={Clock3} />
                 <FunnelStep label="Viraram clientes" value={confirmedCallClients} detail="Confirmado no cadastro" help={googleAdsHelp.confirmedCallClients} icon={UserCheck} />
-              </div>
-            </div>
-
-            <div className="mt-4 border-t border-slate-200 pt-4">
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-600">Rota</p>
-              <div className="grid grid-cols-2 gap-2.5 sm:max-w-2xl">
-                <FunnelStep label="Pedidos de rota" value={directionClicks} detail="Abriram como chegar" help={googleAdsHelp.directionClicks} icon={Navigation} />
-                <FunnelStep label="Chegaram à retífica" value={confirmedArrivals} detail="Confirmado no cadastro" help={googleAdsHelp.confirmedArrivals} icon={MapPin} />
               </div>
             </div>
           </CardContent>

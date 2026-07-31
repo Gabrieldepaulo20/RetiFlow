@@ -290,7 +290,7 @@ export default function SettingsPage() {
       )}
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
-        <TabsList className="flex h-auto w-full flex-nowrap justify-start gap-1 overflow-x-auto pb-1">
+        <TabsList className="flex h-auto w-full flex-nowrap justify-start gap-1 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible lg:pb-0">
           <TabsTrigger value="empresa" className="shrink-0 gap-1.5"><Building2 className="h-4 w-4" /> Dados da empresa</TabsTrigger>
           <TabsTrigger value="aparencia" className="shrink-0 gap-1.5"><Palette className="h-4 w-4" /> Aparência</TabsTrigger>
           <TabsTrigger value="modelos" className="shrink-0 gap-1.5"><FileText className="h-4 w-4" /> Modelos</TabsTrigger>

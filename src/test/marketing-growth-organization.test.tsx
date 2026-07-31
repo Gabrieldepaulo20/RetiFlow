@@ -346,7 +346,8 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByText('WhatsApp dentro do site')).toBeInTheDocument();
     expect(screen.getByText('Chamadas registradas')).toBeInTheDocument();
     expect(screen.getByText('Viraram clientes')).toBeInTheDocument();
-    expect(screen.getByText('Chegaram à retífica')).toBeInTheDocument();
+    expect(screen.queryByText('Pedidos de rota')).not.toBeInTheDocument();
+    expect(screen.queryByText('Chegaram à retífica')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Detalhes de cada ligação' })).toBeInTheDocument();
     expect(screen.getByText('29/07/2026 às 10:03')).toBeInTheDocument();
     expect(screen.getByText('1min 05s')).toBeInTheDocument();
@@ -386,7 +387,8 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByRole('heading', { name: 'Quem realmente virou cliente?' })).toBeInTheDocument();
     expect(screen.getByText('Clientes novos')).toBeInTheDocument();
     expect(screen.getByText('Já eram clientes')).toBeInTheDocument();
-    expect(screen.getByText('Chegadas pela rota')).toBeInTheDocument();
+    expect(screen.getByText('Clientes via ligação')).toBeInTheDocument();
+    expect(screen.queryByText('Chegadas pela rota')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'O.S. que geraram comissão' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Google Ads' })).not.toBeInTheDocument();
     expect(screen.queryByText('Mídia paga')).not.toBeInTheDocument();
