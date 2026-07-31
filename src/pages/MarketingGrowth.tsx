@@ -383,8 +383,12 @@ function Metric({
             <p className="min-w-0 text-[10px] font-bold uppercase leading-4 tracking-[0.1em] text-muted-foreground">{label}</p>
             {help ? <HelpTip label={label} description={help} /> : null}
           </div>
-          <div className={cn('growth-metric-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg shadow-sm', accents[accent])}>
-            <Icon className="h-4 w-4" />
+          <div className={cn(
+            'growth-metric-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg shadow-sm',
+            compact && 'lg:h-7 lg:w-7 lg:rounded-md 2xl:h-8 2xl:w-8 2xl:rounded-lg',
+            accents[accent],
+          )}>
+            <Icon className={cn('h-4 w-4', compact && 'lg:h-3.5 lg:w-3.5 2xl:h-4 2xl:w-4')} />
           </div>
         </div>
         <p className={cn(
@@ -1489,7 +1493,7 @@ function BasicContactsTab({ resumo }: { resumo: MarketingResumo }) {
   );
 }
 
-function ContactsTab({
+export function ContactsTab({
   resumo,
   onLinked,
   canManageAttribution,
@@ -1543,11 +1547,11 @@ function ContactsTab({
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <Metric label="WhatsApp no site · todas as origens" value={formatNumber(siteWhatsappOrigins.total)} detail={formatSiteWhatsappOriginDetail(siteWhatsappOrigins)} help={siteMetricHelp.whatsapp} icon={MessageCircle} accent="teal" />
-        <Metric label="Cliques no telefone" value={formatNumber(resumo.site.current.phoneClicks)} detail="Intenções de ligação" icon={PhoneCall} current={resumo.site.current.phoneClicks} previous={resumo.site.previous.phoneClicks} accent="navy" />
-        <Metric label="Formulários iniciados" value={formatNumber(forms?.starts)} detail={`${formatNumber(forms?.submits)} enviados com sucesso`} icon={FileWarning} current={forms?.starts} previous={resumo.forms?.previous.starts} accent="gold" />
-        <Metric label="Taxa de conclusão" value={formatPercent(forms?.completionRate)} detail={`${formatNumber(forms?.abandons)} abandonos detectados`} icon={MailCheck} accent="violet" />
+      <div data-testid="contacts-summary-grid" className="grid grid-cols-2 gap-2 lg:grid-cols-4 2xl:gap-3">
+        <Metric compact label="WhatsApp no site · todas as origens" value={formatNumber(siteWhatsappOrigins.total)} detail={formatSiteWhatsappOriginDetail(siteWhatsappOrigins)} help={siteMetricHelp.whatsapp} icon={MessageCircle} accent="teal" />
+        <Metric compact label="Cliques no telefone" value={formatNumber(resumo.site.current.phoneClicks)} detail="Intenções de ligação" icon={PhoneCall} current={resumo.site.current.phoneClicks} previous={resumo.site.previous.phoneClicks} accent="navy" />
+        <Metric compact label="Formulários iniciados" value={formatNumber(forms?.starts)} detail={`${formatNumber(forms?.submits)} enviados com sucesso`} icon={FileWarning} current={forms?.starts} previous={resumo.forms?.previous.starts} accent="gold" />
+        <Metric compact label="Taxa de conclusão" value={formatPercent(forms?.completionRate)} detail={`${formatNumber(forms?.abandons)} abandonos detectados`} icon={MailCheck} accent="violet" />
       </div>
 
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">

@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { MarketingResumo } from '@/api/supabase/marketing';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { GoogleAdsTab, OverviewTab, ResultsTab, SeoTab } from '@/pages/MarketingGrowth';
+import { ContactsTab, GoogleAdsTab, OverviewTab, ResultsTab, SeoTab } from '@/pages/MarketingGrowth';
 import { FinancialPrivacyProvider } from '@/contexts/FinancialPrivacyProvider';
 
 vi.mock('recharts', async () => {
@@ -388,6 +388,17 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByText('Acima')).toBeInTheDocument();
     expect(screen.getByText('Na média')).toBeInTheDocument();
     expect(screen.getByText('Abaixo')).toBeInTheDocument();
+  });
+
+  it('mantém os quatro indicadores de Contatos compactos em uma linha no tablet', () => {
+    renderWithTooltips(
+      <ContactsTab resumo={buildResumo()} onLinked={vi.fn()} canManageAttribution={false} />,
+    );
+
+    const grid = screen.getByTestId('contacts-summary-grid');
+    expect(grid).toHaveClass('grid-cols-2', 'lg:grid-cols-4', 'gap-2');
+    expect(grid.children).toHaveLength(4);
+    expect(grid.querySelectorAll('[class~="lg:p-2.5"]')).toHaveLength(4);
   });
 
   it('não inventa a parcela orgânica enquanto o backend antigo ainda não a classifica', () => {
