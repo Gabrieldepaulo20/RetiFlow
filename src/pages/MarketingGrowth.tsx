@@ -1738,16 +1738,17 @@ export function ResultsTab({ resumo }: { resumo: MarketingResumo }) {
           title="Quem realmente virou cliente?"
           description="A equipe confirma a origem no cadastro; quando houver telefone, e-mail ou código do site, o Retiflow continua fazendo o vínculo automático."
         />
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-          <Metric label="Clientes novos" value={formatNumber(business?.newClients)} detail="Primeiro atendimento confirmado" help="Clientes marcados como novos no cadastro ou cujo primeiro contato digital aconteceu antes da criação no Retiflow." icon={UserCheck} current={business?.newClients} previous={previous?.newClients} accent="teal" />
-          <Metric label="Já eram clientes" value={formatNumber(business?.existingClients)} detail="Retorno de cliente conhecido" help="Pessoas que já eram clientes antes deste novo contato de marketing." icon={Users} current={business?.existingClients} previous={previous?.existingClients} accent="navy" />
-          <Metric label="Sem classificação" value={formatNumber(business?.unknownClients)} detail="A equipe ainda não confirmou" help="Clientes atribuídos cuja situação como novo ou antigo ainda não pôde ser comprovada." icon={CircleHelp} current={business?.unknownClients} previous={previous?.unknownClients} accent="violet" />
-          <Metric label="Clientes via ligação" value={formatNumber(business?.confirmedCalls)} detail="Ligação do anúncio confirmada" help={googleAdsHelp.confirmedCallClients} icon={PhoneCall} current={business?.confirmedCalls} previous={previous?.confirmedCalls} accent="gold" />
+        <div data-testid="results-client-grid" className="grid grid-cols-2 gap-2 lg:grid-cols-4 2xl:gap-3">
+          <Metric compact label="Clientes novos" value={formatNumber(business?.newClients)} detail="Primeiro atendimento confirmado" help="Clientes marcados como novos no cadastro ou cujo primeiro contato digital aconteceu antes da criação no Retiflow." icon={UserCheck} current={business?.newClients} previous={previous?.newClients} accent="teal" />
+          <Metric compact label="Já eram clientes" value={formatNumber(business?.existingClients)} detail="Retorno de cliente conhecido" help="Pessoas que já eram clientes antes deste novo contato de marketing." icon={Users} current={business?.existingClients} previous={previous?.existingClients} accent="navy" />
+          <Metric compact label="Sem classificação" value={formatNumber(business?.unknownClients)} detail="A equipe ainda não confirmou" help="Clientes atribuídos cuja situação como novo ou antigo ainda não pôde ser comprovada." icon={CircleHelp} current={business?.unknownClients} previous={previous?.unknownClients} accent="violet" />
+          <Metric compact label="Clientes via ligação" value={formatNumber(business?.confirmedCalls)} detail="Ligação do anúncio confirmada" help={googleAdsHelp.confirmedCallClients} icon={PhoneCall} current={business?.confirmedCalls} previous={previous?.confirmedCalls} accent="gold" />
         </div>
       </section>
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div data-testid="results-value-grid" className="grid grid-cols-2 gap-2 lg:grid-cols-4 2xl:gap-3">
         <Metric
+          compact
           label="Clientes identificados"
           value={formatNumber(business?.identifiedClients)}
           detail="Com origem comprovada na internet"
@@ -1758,6 +1759,7 @@ export function ResultsTab({ resumo }: { resumo: MarketingResumo }) {
           accent="violet"
         />
         <Metric
+          compact
           label="O.S. aprovadas"
           value={formatNumber(business?.approvedOrders)}
           detail="Snapshots financeiros congelados"
@@ -1768,6 +1770,7 @@ export function ResultsTab({ resumo }: { resumo: MarketingResumo }) {
           accent="navy"
         />
         <Metric
+          compact
           label="Serviços aprovados"
           value={formatCurrency(business?.approvedServices)}
           detail={`${formatCurrency(business?.excludedProducts)} em peças excluídas`}
@@ -1780,6 +1783,7 @@ export function ResultsTab({ resumo }: { resumo: MarketingResumo }) {
           financialDetail
         />
         <Metric
+          compact
           label="Comissão gerada"
           value={formatCurrency(business?.commission)}
           detail="Mantida no snapshot original"

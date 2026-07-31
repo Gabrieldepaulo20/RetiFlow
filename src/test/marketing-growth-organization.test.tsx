@@ -426,6 +426,14 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByRole('heading', { name: 'O.S. que geraram comissão' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Google Ads' })).not.toBeInTheDocument();
     expect(screen.queryByText('Mídia paga')).not.toBeInTheDocument();
+
+    const clientGrid = screen.getByTestId('results-client-grid');
+    const valueGrid = screen.getByTestId('results-value-grid');
+    for (const grid of [clientGrid, valueGrid]) {
+      expect(grid).toHaveClass('grid-cols-2', 'lg:grid-cols-4', 'gap-2');
+      expect(grid.children).toHaveLength(4);
+      expect(grid.querySelectorAll('[class~="lg:p-2.5"]')).toHaveLength(4);
+    }
   });
 
   it('separa tráfego confirmado por IA de menções sem clique', () => {
