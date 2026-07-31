@@ -112,6 +112,22 @@ describe.skipIf(!envStatus.configured)('Crescimento — Master espelha a Retífi
       phoneClicks: expect.any(Number),
       formSubmits: expect.any(Number),
     });
+    expect(payload.dados.campaigns.messageAssets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          provider: 'WHATSAPP',
+          phoneNumber: expect.any(String),
+          status: 'ENABLED',
+          primaryStatus: 'ELIGIBLE',
+        }),
+      ]),
+    );
+    expect(payload.dados.site.whatsapp).toMatchObject({
+      uniqueClicks: expect.any(Number),
+      repeatedClicks: expect.any(Number),
+      paidClicks: expect.any(Number),
+      points: expect.any(Array),
+    });
     expect(payload.dados.site.current.visits).toBeGreaterThan(0);
     expect(payload.dados.leads.total).toBeGreaterThan(0);
   });

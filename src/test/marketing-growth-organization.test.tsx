@@ -18,7 +18,7 @@ function buildResumo(): MarketingResumo {
   const adsTotals = {
     spend: 45,
     impressions: 1_000,
-    clicks: 50,
+    clicks: 55,
     leads: 4,
     conversions: 4,
     allConversions: 5,
@@ -110,6 +110,29 @@ function buildResumo(): MarketingResumo {
         ],
       },
       daily: [],
+      whatsapp: {
+        uniqueClicks: 5,
+        repeatedClicks: 1,
+        paidClicks: 4,
+        points: [
+          {
+            eventLabel: 'b2b_hero_whatsapp',
+            pagePath: '/b2b',
+            uniqueClicks: 4,
+            repeatedClicks: 1,
+            paidClicks: 4,
+            lastClickedAt: '2026-07-29T10:00:00.000Z',
+          },
+          {
+            eventLabel: 'contact_hero_whatsapp',
+            pagePath: '/contato',
+            uniqueClicks: 1,
+            repeatedClicks: 0,
+            paidClicks: 0,
+            lastClickedAt: '2026-07-28T10:00:00.000Z',
+          },
+        ],
+      },
     },
     campaigns: {
       current: adsTotals,
@@ -155,8 +178,29 @@ function buildResumo(): MarketingResumo {
         { type: 'URL_CLICKS', clicks: 18, interactions: 18, spend: 15 },
         { type: 'SITELINKS', clicks: 7, interactions: 7, spend: 6 },
         { type: 'CALLS', clicks: 10, interactions: 10, spend: 9 },
+        { type: 'CLICK_TO_MESSAGE_THIRD_PARTY_CLICK', clicks: 5, interactions: 5, spend: 4 },
         { type: 'LOCATION_EXPANSION', clicks: 9, interactions: 9, spend: 8 },
         { type: 'GET_DIRECTIONS', clicks: 6, interactions: 6, spend: 7 },
+      ],
+      messageAssets: [
+        {
+          id: 'message-asset-1',
+          name: 'WhatsApp do anúncio',
+          provider: 'WHATSAPP',
+          phoneNumber: '16993021998',
+          countryCode: 'BR',
+          callToAction: 'GET_QUOTE',
+          starterMessageConfigured: true,
+          level: 'CAMPAIGN',
+          campaignId: 'campaign-1',
+          campaign: 'Pesquisa regional',
+          status: 'ENABLED',
+          primaryStatus: 'ELIGIBLE',
+          impressions: 20,
+          clicks: 5,
+          spend: 4,
+          conversions: 0,
+        },
       ],
       calls: {
         reported: 2,
@@ -259,12 +303,19 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByRole('heading', { name: 'Quanto investimos e quantas interações tivemos?' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Para onde foram os cliques?' })).toBeInTheDocument();
     expect(screen.getByText('Links do site')).toBeInTheDocument();
+    expect(screen.getAllByText('WhatsApp direto no anúncio').length).toBeGreaterThan(0);
+    expect(screen.getByText('(16) 99302-1998')).toBeInTheDocument();
+    expect(screen.getByText('Apto a aparecer')).toBeInTheDocument();
     expect(screen.getByText('Ligar no anúncio')).toBeInTheDocument();
-    expect(screen.getByText('WhatsApp no site')).toBeInTheDocument();
-    expect(screen.getByText('50 de 50 cliques explicados')).toBeInTheDocument();
+    expect(screen.getAllByText('WhatsApp clicado no site').length).toBeGreaterThan(0);
+    expect(screen.getByText('Onde clicaram no WhatsApp do site')).toBeInTheDocument();
+    expect(screen.getByText('Topo da página B2B')).toBeInTheDocument();
+    expect(screen.getByText('55 de 55 cliques explicados')).toBeInTheDocument();
     expect(screen.getByText('1 atendida · 45s em média')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Do clique ao atendimento real' })).toBeInTheDocument();
     expect(screen.getByText('Toques em Ligar')).toBeInTheDocument();
+    expect(screen.getByText('WhatsApp no anúncio')).toBeInTheDocument();
+    expect(screen.getByText('WhatsApp dentro do site')).toBeInTheDocument();
     expect(screen.getByText('Chamadas registradas')).toBeInTheDocument();
     expect(screen.getByText('Viraram clientes')).toBeInTheDocument();
     expect(screen.getByText('Chegaram à retífica')).toBeInTheDocument();

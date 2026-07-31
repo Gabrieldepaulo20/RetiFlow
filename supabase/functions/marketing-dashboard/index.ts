@@ -87,6 +87,20 @@ interface MarketingAiTrafficSummary {
   engines: Array<MarketingSourceMetric & { aiEngine: string }>;
 }
 
+interface MarketingSiteWhatsappSummary {
+  uniqueClicks: number;
+  repeatedClicks: number;
+  paidClicks: number;
+  points: Array<{
+    eventLabel: string;
+    pagePath: string;
+    uniqueClicks: number;
+    repeatedClicks: number;
+    paidClicks: number;
+    lastClickedAt: string;
+  }>;
+}
+
 interface GoogleServiceAccount {
   client_email: string;
   private_key: string;
@@ -192,6 +206,27 @@ interface GoogleAdsApiResult {
     callerCountryCode?: string;
     callTrackingDisplayLocation?: string;
     type?: string;
+  };
+  asset?: {
+    id?: string;
+    name?: string;
+    type?: string;
+    businessMessageAsset?: {
+      messageProvider?: string;
+      starterMessage?: string;
+      callToAction?: {
+        callToActionSelection?: string;
+        callToActionDescription?: string;
+      };
+      whatsappInfo?: {
+        countryCode?: string;
+        phoneNumber?: string;
+      };
+    };
+  };
+  campaignAsset?: {
+    status?: string;
+    primaryStatus?: string;
   };
   conversionAction?: { id?: string; name?: string; category?: string; status?: string };
   metrics?: JsonRecord;
@@ -311,6 +346,24 @@ interface GoogleAdsSummary {
     allConversions: number;
     conversionValue: number;
     costPerConversion: number;
+  }>;
+  messageAssets: Array<{
+    id: string;
+    name: string;
+    provider: string;
+    phoneNumber: string | null;
+    countryCode: string | null;
+    callToAction: string;
+    starterMessageConfigured: boolean;
+    level: 'CAMPAIGN';
+    campaignId: string;
+    campaign: string;
+    status: string;
+    primaryStatus: string;
+    impressions: number;
+    clicks: number;
+    spend: number;
+    conversions: number;
   }>;
   syncedAt: string;
   accountId: string;
@@ -1374,6 +1427,43 @@ function googleAdsClickTypeQuery(startDate: string, endDate: string) {
   `;
 }
 
+function googleAdsCampaignMessageAssetQuery() {
+  return `
+    SELECT
+      campaign.id,
+      campaign.name,
+      campaign_asset.status,
+      campaign_asset.primary_status,
+      asset.id,
+      asset.name,
+      asset.type,
+      asset.business_message_asset.message_provider,
+      asset.business_message_asset.starter_message,
+      asset.business_message_asset.call_to_action.call_to_action_selection,
+      asset.business_message_asset.whatsapp_info.country_code,
+      asset.business_message_asset.whatsapp_info.phone_number
+    FROM campaign_asset
+    WHERE campaign_asset.field_type = 'BUSINESS_MESSAGE'
+      AND campaign_asset.status != 'REMOVED'
+  `;
+}
+
+function googleAdsCampaignMessageAssetPerformanceQuery(startDate: string, endDate: string) {
+  return `
+    SELECT
+      campaign.id,
+      asset.id,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.cost_micros,
+      metrics.conversions
+    FROM campaign_asset
+    WHERE campaign_asset.field_type = 'BUSINESS_MESSAGE'
+      AND campaign_asset.status != 'REMOVED'
+      AND segments.date BETWEEN '${startDate}' AND '${endDate}'
+  `;
+}
+
 function googleAdsCallViewQuery(startDate: string, endDate: string) {
   const endExclusiveDate = addMarketingDays(endDate, 1);
   return `
@@ -1552,6 +1642,8 @@ async function fetchGoogleAdsSummary(
     scheduleRows,
     conversionActionRows,
     conversionActionPerformanceRows,
+    campaignMessageAssetRows,
+    campaignMessageAssetPerformanceRows,
   ] = await Promise.all([
     runGoogleAdsQuery(credentials, accessToken, googleAdsCampaignQuery(range.startDate, range.endDate)),
     runGoogleAdsQuery(
@@ -1584,6 +1676,18 @@ async function fetchGoogleAdsSummary(
       credentials,
       accessToken,
       googleAdsConversionActionPerformanceQuery(range.startDate, range.endDate),
+    ),
+    runOptionalGoogleAdsQuery(
+      credentials,
+      accessToken,
+      googleAdsCampaignMessageAssetQuery(),
+      'campaign-message-assets',
+    ),
+    runOptionalGoogleAdsQuery(
+      credentials,
+      accessToken,
+      googleAdsCampaignMessageAssetPerformanceQuery(range.startDate, range.endDate),
+      'campaign-message-asset-performance',
     ),
   ]);
   const dailyByDate = new Map<string, GoogleAdsApiResult[]>();
@@ -1702,6 +1806,32 @@ async function fetchGoogleAdsSummary(
         allConversions: round(toNumber(performance?.metrics?.allConversions), 2),
         conversionValue: round(toNumber(performance?.metrics?.conversionsValue)),
         costPerConversion: 0,
+      };
+    }),
+    messageAssets: campaignMessageAssetRows.map((row) => {
+      const assetId = row.asset?.id ?? '';
+      const campaignId = row.campaign?.id ?? '';
+      const performance = campaignMessageAssetPerformanceRows.find((item) =>
+        item.asset?.id === assetId && item.campaign?.id === campaignId
+      );
+      const messageAsset = row.asset?.businessMessageAsset;
+      return {
+        id: assetId,
+        name: row.asset?.name ?? 'WhatsApp do anúncio',
+        provider: messageAsset?.messageProvider ?? 'UNKNOWN',
+        phoneNumber: messageAsset?.whatsappInfo?.phoneNumber ?? null,
+        countryCode: messageAsset?.whatsappInfo?.countryCode ?? null,
+        callToAction: messageAsset?.callToAction?.callToActionSelection ?? 'UNKNOWN',
+        starterMessageConfigured: Boolean(messageAsset?.starterMessage),
+        level: 'CAMPAIGN' as const,
+        campaignId,
+        campaign: row.campaign?.name ?? 'Campanha sem nome',
+        status: row.campaignAsset?.status ?? 'UNKNOWN',
+        primaryStatus: row.campaignAsset?.primaryStatus ?? 'UNKNOWN',
+        impressions: toNumber(performance?.metrics?.impressions),
+        clicks: toNumber(performance?.metrics?.clicks),
+        spend: round(toNumber(performance?.metrics?.costMicros) / 1_000_000),
+        conversions: round(toNumber(performance?.metrics?.conversions), 2),
       };
     }),
     syncedAt: new Date().toISOString(),
@@ -1907,6 +2037,7 @@ async function loadPrivateMarketingData(
         'duplicate_count',
         'deduplicated',
         'alert_status',
+        'metadata',
       ].join(','),
       targetUserId,
       timestampColumn: 'occurred_at',
@@ -2040,6 +2171,9 @@ async function loadBasicMarketingData(
         'page_title',
         'source',
         'medium',
+        'channel',
+        'duplicate_count',
+        'metadata',
       ].join(','),
       targetUserId,
       timestampColumn: 'occurred_at',
@@ -2294,6 +2428,59 @@ function isTechnicalPaidTest(item: JsonRecord) {
   return term === 'teste_pre_lancamento'
     || campaign === 'teste_pre_lancamento'
     || campaign.endsWith('_teste_pre_lancamento');
+}
+
+function buildSiteWhatsappSummary(events: JsonRecord[]): MarketingSiteWhatsappSummary {
+  const points = new Map<string, MarketingSiteWhatsappSummary['points'][number]>();
+  let uniqueClicks = 0;
+  let repeatedClicks = 0;
+  let paidClicks = 0;
+
+  events
+    .filter((event) => event.event_type === 'whatsapp_click')
+    .forEach((event) => {
+      const metadata = (
+        event.metadata
+        && typeof event.metadata === 'object'
+        && !Array.isArray(event.metadata)
+      ) ? event.metadata as JsonRecord : {};
+      const eventLabel = asString(metadata.eventLabel, 120)
+        ?? asString(metadata.event_label, 120)
+        ?? 'nao_informado';
+      const pagePath = asString(event.page_path, 800) ?? '/';
+      const duplicateCount = Math.max(0, Math.trunc(toNumber(event.duplicate_count)));
+      const paid = isPaidMarketingItem(event) && !isTechnicalPaidTest(event);
+      const occurredAt = asString(event.occurred_at, 80) ?? '';
+      const key = `${eventLabel}\u0000${pagePath}`;
+      const current = points.get(key) ?? {
+        eventLabel,
+        pagePath,
+        uniqueClicks: 0,
+        repeatedClicks: 0,
+        paidClicks: 0,
+        lastClickedAt: '',
+      };
+
+      uniqueClicks += 1;
+      repeatedClicks += duplicateCount;
+      paidClicks += paid ? 1 : 0;
+      current.uniqueClicks += 1;
+      current.repeatedClicks += duplicateCount;
+      current.paidClicks += paid ? 1 : 0;
+      current.lastClickedAt = occurredAt > current.lastClickedAt
+        ? occurredAt
+        : current.lastClickedAt;
+      points.set(key, current);
+    });
+
+  return {
+    uniqueClicks,
+    repeatedClicks,
+    paidClicks,
+    points: Array.from(points.values())
+      .sort((left, right) => right.lastClickedAt.localeCompare(left.lastClickedAt))
+      .slice(0, 20),
+  };
 }
 
 function getPaidVisitorKey(item: JsonRecord) {
@@ -2863,6 +3050,7 @@ async function handleRequest(request: Request) {
           site: {
             current: siteCurrent,
             previous: sitePrevious,
+            whatsapp: buildSiteWhatsappSummary(internal.currentEvents),
             pages: ga4?.pages ?? internal.pages,
             sources: siteSources,
             aiTraffic,
@@ -2903,6 +3091,7 @@ async function handleRequest(request: Request) {
             landingPages: [],
             schedule: [],
             clickTypes: googleAds?.clickTypes ?? [],
+            messageAssets: googleAds?.messageAssets ?? [],
             calls: googleAds?.calls
               ? { ...googleAds.calls, items: [] }
               : null,
@@ -2960,6 +3149,7 @@ async function handleRequest(request: Request) {
         site: {
           current: siteCurrent,
           previous: sitePrevious,
+          whatsapp: buildSiteWhatsappSummary(internal.currentEvents),
           pages: ga4?.pages ?? internal.pages,
           sources: siteSources,
           aiTraffic,
@@ -3010,6 +3200,7 @@ async function handleRequest(request: Request) {
           landingPages: googleAds?.landingPages ?? [],
           schedule: googleAds?.schedule ?? [],
           clickTypes: googleAds?.clickTypes ?? [],
+          messageAssets: googleAds?.messageAssets ?? [],
           calls: googleAds?.calls ?? null,
           conversionActions: googleAds?.conversionActions ?? [],
           paidActions,

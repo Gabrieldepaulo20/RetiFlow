@@ -58,6 +58,20 @@ export interface MarketingSiteTotals {
   conversionRate?: number;
 }
 
+export interface MarketingSiteWhatsappSummary {
+  uniqueClicks: number;
+  repeatedClicks: number;
+  paidClicks: number;
+  points: Array<{
+    eventLabel: string;
+    pagePath: string;
+    uniqueClicks: number;
+    repeatedClicks: number;
+    paidClicks: number;
+    lastClickedAt: string;
+  }>;
+}
+
 export interface MarketingPageMetric {
   path: string;
   title?: string | null;
@@ -274,6 +288,25 @@ export interface MarketingAdsClickTypeMetric {
   spend: number;
 }
 
+export interface MarketingAdsMessageAssetMetric {
+  id: string;
+  name: string;
+  provider: string;
+  phoneNumber: string | null;
+  countryCode: string | null;
+  callToAction: string;
+  starterMessageConfigured: boolean;
+  level: 'CAMPAIGN';
+  campaignId: string;
+  campaign: string;
+  status: string;
+  primaryStatus: string;
+  impressions: number;
+  clicks: number;
+  spend: number;
+  conversions: number;
+}
+
 export interface MarketingAdsCallSummary {
   reported: number;
   received: number;
@@ -368,6 +401,7 @@ export interface MarketingResumo {
   site: {
     current: MarketingSiteTotals;
     previous: Omit<MarketingSiteTotals, 'conversionRate'>;
+    whatsapp?: MarketingSiteWhatsappSummary;
     pages: MarketingPageMetric[];
     sources: MarketingSourceMetric[];
     aiTraffic?: MarketingAiTrafficSummary;
@@ -442,6 +476,7 @@ export interface MarketingResumo {
     landingPages?: MarketingAdsLandingPageMetric[];
     schedule?: MarketingAdsScheduleMetric[];
     clickTypes?: MarketingAdsClickTypeMetric[];
+    messageAssets?: MarketingAdsMessageAssetMetric[];
     calls?: MarketingAdsCallSummary | null;
     conversionActions?: MarketingAdsConversionActionMetric[];
     paidActions?: MarketingAdsPaidActionSummary;

@@ -87,6 +87,8 @@ const googleAdsHelp = {
   impressions: 'Quantidade de vezes que os anúncios foram exibidos. A mesma pessoa pode gerar mais de uma impressão.',
   clicks: 'Total de cliques registrados pelo Google Ads. Inclui links do site, botão de ligar, localização, rotas e outros recursos do anúncio; não significa somente visitas ao site.',
   siteClicks: 'Cliques que apontaram para uma página do site, somando URL principal e sitelinks. Uma pessoa pode clicar mais de uma vez, e nem todo clique termina em uma sessão rastreada.',
+  adWhatsappClicks: 'Cliques no botão de mensagem do próprio anúncio que abriram o WhatsApp. Esse número é separado de quem entrou no site e só depois clicou no WhatsApp.',
+  adWhatsappAsset: 'Recurso de mensagem configurado no Google Ads. O status indica se o recurso está habilitado e apto a aparecer; zero cliques logo após a ativação é esperado.',
   adCalls: 'Cliques no botão de ligação exibido pelo próprio anúncio. O clique pode apenas abrir o discador; chamadas efetivamente registradas aparecem separadamente.',
   reportedCalls: 'Chamadas que o encaminhamento de chamadas do Google conseguiu registrar. Esse número pode ser menor que os toques em Ligar porque abrir o discador não garante que a pessoa completou a chamada.',
   qualifiedCalls: 'Leitura analítica do Retiflow: chamadas atendidas com pelo menos 30 segundos. Esse limite não altera sozinho a configuração de conversão do Google Ads.',
@@ -225,6 +227,37 @@ function formatDuration(seconds: number | null | undefined) {
   const minutes = Math.floor(total / 60);
   const remainder = total % 60;
   return `${minutes}min ${remainder.toString().padStart(2, '0')}s`;
+}
+
+function formatWhatsappPhone(value: string | null | undefined, countryCode?: string | null) {
+  let digits = String(value ?? '').replace(/\D/g, '');
+  if (!digits) return 'Número não informado';
+  if (countryCode?.toUpperCase() === 'BR' && digits.startsWith('55') && digits.length >= 12) {
+    digits = digits.slice(2);
+  }
+  if (digits.length === 11) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  }
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+  return digits;
+}
+
+function formatWhatsappPointLabel(eventLabel: string, pagePath: string) {
+  const knownLabels: Record<string, string> = {
+    floating: 'Botão flutuante',
+    contact_hero_whatsapp: 'Topo da página Contato',
+    b2b_hero_whatsapp: 'Topo da página B2B',
+    whatsapp_footer_click: 'Rodapé do site',
+  };
+  if (knownLabels[eventLabel]) return knownLabels[eventLabel];
+  if (eventLabel === 'nao_informado') return `WhatsApp em ${pagePath}`;
+  return eventLabel
+    .replace(/^whatsapp_/, '')
+    .replace(/_whatsapp$/, '')
+    .replace(/_/g, ' ')
+    .replace(/^./, (letter) => letter.toUpperCase());
 }
 
 function formatGoogleAdsCallDateTime(value: string | null | undefined) {
@@ -1824,7 +1857,12 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
   const landingPages = ads.landingPages ?? [];
   const schedule = ads.schedule ?? [];
   const clickTypes = ads.clickTypes ?? [];
+  const messageAssets = ads.messageAssets ?? [];
+  const whatsappAsset = messageAssets.find((asset) =>
+    asset.provider === 'WHATSAPP' && asset.status === 'ENABLED'
+  ) ?? messageAssets[0];
   const paidActions = ads.paidActions;
+  const siteWhatsapp = resumo.site.whatsapp;
   const calls = ads.calls;
   const conversionActions = ads.conversionActions ?? [];
   const paidVisitors = ads.paidVisitors ?? [];
@@ -1834,10 +1872,17 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
   const mainUrlClicks = clicksByType(['URL_CLICKS']);
   const sitelinkClicks = clicksByType(['SITELINKS']);
   const siteClicks = mainUrlClicks + sitelinkClicks;
+  const adWhatsappClicks = clicksByType(['CLICK_TO_MESSAGE_THIRD_PARTY_CLICK']);
+  const messageLandingClicks = clicksByType(['CLICK_TO_MESSAGE_LANDING_PAGE_CLICK']);
   const adCallClicks = clicksByType(['CALLS']);
   const locationClicks = clicksByType(['LOCATION_EXPANSION']);
   const directionClicks = clicksByType(['GET_DIRECTIONS']);
-  const classifiedClicks = siteClicks + adCallClicks + locationClicks + directionClicks;
+  const classifiedClicks = siteClicks
+    + adWhatsappClicks
+    + messageLandingClicks
+    + adCallClicks
+    + locationClicks
+    + directionClicks;
   const otherClicks = Math.max(0, current.clicks - classifiedClicks);
   const qualifiedCalls = calls?.items?.filter(
     (call) => call.status === 'RECEIVED' && call.durationSeconds >= 30,
@@ -1887,7 +1932,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-5">
           <Metric label="Investimento" value={formatCurrency(current.spend)} detail="Custo oficial no período" help={googleAdsHelp.spend} icon={BadgeDollarSign} current={current.spend} previous={ads.previous?.spend} accent="navy" financial />
           <Metric label="Impressões" value={formatNumber(current.impressions)} detail="Exibições dos anúncios" help={googleAdsHelp.impressions} icon={Eye} current={current.impressions} previous={ads.previous?.impressions} accent="violet" />
-          <Metric label="Cliques totais" value={formatNumber(current.clicks)} detail="Site + ligar + local + rotas" help={googleAdsHelp.clicks} icon={MousePointerClick} current={current.clicks} previous={ads.previous?.clicks} accent="teal" />
+          <Metric label="Cliques totais" value={formatNumber(current.clicks)} detail="Site + WhatsApp + ligar + local + rotas" help={googleAdsHelp.clicks} icon={MousePointerClick} current={current.clicks} previous={ads.previous?.clicks} accent="teal" />
           <Metric label="CTR" value={formatPercent(current.ctr)} detail="Cliques ÷ impressões" help={googleAdsHelp.ctr} icon={Target} accent="violet" />
           <Metric label="CPC médio" value={formatCurrency(current.averageCpc)} detail="Custo médio por clique" help={googleAdsHelp.averageCpc} icon={Gauge} accent="gold" financial />
         </div>
@@ -1903,6 +1948,52 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           <CardContent className="p-0">
             <div className="grid min-w-0 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
               <div className="min-w-0 p-4 sm:p-5">
+                <div className="mb-3 rounded-2xl border border-emerald-300 bg-gradient-to-br from-emerald-50 to-white p-4 shadow-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-start gap-1">
+                        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-emerald-800">
+                          WhatsApp direto no anúncio
+                        </p>
+                        <HelpTip label="WhatsApp direto no anúncio" description={googleAdsHelp.adWhatsappClicks} className="text-emerald-700" />
+                      </div>
+                      <div className="mt-2 flex items-end gap-2">
+                        <p className="text-4xl font-black leading-none text-emerald-950">{formatNumber(adWhatsappClicks)}</p>
+                        <p className="pb-0.5 text-xs font-semibold text-emerald-800">cliques no botão</p>
+                      </div>
+                    </div>
+                    <Badge className={cn(
+                      'border',
+                      whatsappAsset?.primaryStatus === 'ELIGIBLE'
+                        ? 'border-emerald-300 bg-emerald-100 text-emerald-900 hover:bg-emerald-100'
+                        : 'border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-100',
+                    )}>
+                      {whatsappAsset?.primaryStatus === 'ELIGIBLE' ? 'Apto a aparecer' : 'Aguardando elegibilidade'}
+                    </Badge>
+                  </div>
+                  <div className="mt-3 grid gap-2 text-xs text-emerald-950 sm:grid-cols-2">
+                    <div className="rounded-xl bg-white/80 px-3 py-2.5">
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-700">WhatsApp de destino</p>
+                      <p className="mt-1 font-black">{formatWhatsappPhone(whatsappAsset?.phoneNumber, whatsappAsset?.countryCode)}</p>
+                    </div>
+                    <div className="min-w-0 rounded-xl bg-white/80 px-3 py-2.5">
+                      <div className="flex items-start gap-1">
+                        <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-700">Recurso do Google</p>
+                        <HelpTip label="Recurso do Google" description={googleAdsHelp.adWhatsappAsset} className="text-emerald-700" />
+                      </div>
+                      <p className="mt-1 truncate font-bold" title={whatsappAsset?.campaign}>
+                        {whatsappAsset
+                          ? `${whatsappAsset.campaign} · ${whatsappAsset.status === 'ENABLED' ? 'Ativo' : whatsappAsset.status}`
+                          : 'Ainda não identificado pela API'}
+                      </p>
+                    </div>
+                  </div>
+                  {messageLandingClicks > 0 ? (
+                    <p className="mt-2 text-[11px] text-emerald-800">
+                      Além disso, {formatNumber(messageLandingClicks)} clique(s) abriram a página intermediária do recurso.
+                    </p>
+                  ) : null}
+                </div>
                 {clickTypes.length ? (
                   <>
                     <div className="grid grid-cols-2 gap-3">
@@ -1971,6 +2062,33 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                 <p className="mt-1 text-xs leading-relaxed text-slate-600">
                   Estes números não incluem ligar, localização ou rota feitos diretamente no anúncio.
                 </p>
+                <div className="mt-4 rounded-2xl border border-emerald-300 bg-emerald-600 p-4 text-white shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-start gap-1">
+                        <p className="text-[10px] font-black uppercase tracking-[0.13em] text-emerald-100">
+                          WhatsApp clicado no site
+                        </p>
+                        <HelpTip
+                          label="WhatsApp clicado no site"
+                          description="Cliques únicos nos botões do site. O número maior mostra todo o site; a linha abaixo separa quantos vieram de visitas pagas."
+                          className="text-emerald-100 hover:bg-white/10 hover:text-white"
+                        />
+                      </div>
+                      <p className="mt-2 text-4xl font-black leading-none">
+                        {formatNumber(siteWhatsapp?.uniqueClicks ?? resumo.site.current.whatsappClicks)}
+                      </p>
+                    </div>
+                    <MessageCircle className="h-7 w-7 shrink-0 text-emerald-100" aria-hidden="true" />
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-emerald-50">
+                    <span><strong>{formatNumber(siteWhatsapp?.paidClicks ?? paidActions?.whatsappClicks)}</strong> vieram dos anúncios</span>
+                    <span><strong>{formatNumber(siteWhatsapp?.repeatedClicks)}</strong> repetições deduplicadas</span>
+                  </div>
+                  <p className="mt-2 text-[11px] text-emerald-100">
+                    Destino atual: {formatWhatsappPhone(whatsappAsset?.phoneNumber, whatsappAsset?.countryCode)}
+                  </p>
+                </div>
                 <div className="mt-4 grid grid-cols-2 gap-2.5">
                   {[
                     {
@@ -1978,12 +2096,6 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                       value: paidActions?.trackedSessions,
                       help: googleAdsHelp.trackedPaidSessions,
                       icon: Users,
-                    },
-                    {
-                      label: 'WhatsApp no site',
-                      value: paidActions?.whatsappClicks,
-                      help: googleAdsHelp.paidWhatsappClicks,
-                      icon: MessageCircle,
                     },
                     {
                       label: 'Telefone no site',
@@ -2015,6 +2127,31 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                     );
                   })}
                 </div>
+                {siteWhatsapp?.points.length ? (
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                      Onde clicaram no WhatsApp do site
+                    </p>
+                    <div className="mt-2 space-y-2">
+                      {siteWhatsapp.points.slice(0, 4).map((point) => (
+                        <div key={`${point.eventLabel}:${point.pagePath}`} className="flex items-center justify-between gap-3 text-xs">
+                          <div className="min-w-0">
+                            <p className="truncate font-semibold text-slate-800">
+                              {formatWhatsappPointLabel(point.eventLabel, point.pagePath)}
+                            </p>
+                            <p className="truncate text-[10px] text-slate-500">{point.pagePath}</p>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p className="font-black text-slate-950">{formatNumber(point.uniqueClicks)}</p>
+                            {point.paidClicks ? (
+                              <p className="text-[9px] font-semibold text-emerald-700">{formatNumber(point.paidClicks)} de anúncio</p>
+                            ) : null}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 {calls?.reported ? (
                   <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-xs leading-relaxed text-emerald-950">
                     <span className="font-bold">Ligação registrada pelo Google:</span>{' '}
@@ -2035,6 +2172,26 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
             />
 
             <div className="mt-4">
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-600">WhatsApp</p>
+              <div className="grid grid-cols-2 gap-2.5 sm:max-w-2xl">
+                <FunnelStep
+                  label="WhatsApp no anúncio"
+                  value={adWhatsappClicks}
+                  detail="Abriu direto no WhatsApp"
+                  help={googleAdsHelp.adWhatsappClicks}
+                  icon={MessageCircle}
+                />
+                <FunnelStep
+                  label="WhatsApp dentro do site"
+                  value={siteWhatsapp?.paidClicks ?? paidActions?.whatsappClicks ?? 0}
+                  detail="Veio do anúncio e clicou no site"
+                  help={googleAdsHelp.paidWhatsappClicks}
+                  icon={ExternalLink}
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 border-t border-slate-200 pt-4">
               <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-600">Ligação</p>
               <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-5">
                 <FunnelStep label="Toques em Ligar" value={adCallClicks} detail="Abriram o discador" help={googleAdsHelp.adCalls} icon={MousePointerClick} />
