@@ -1,5 +1,7 @@
 import type { MarketingResumo } from '@/api/supabase/marketing';
 import {
+  MARKETING_RESUMO_PRELOAD_PERIODS,
+  MARKETING_RESUMO_REFRESH_INTERVAL_MS,
   MARKETING_RESUMO_CACHE_TTL_MS,
   clearCachedMarketingResumo,
   getMarketingResumoCacheKey,
@@ -63,6 +65,12 @@ function buildResumo(periodDays = 30, targetUserId = 'cliente-1'): MarketingResu
 describe('marketing growth session cache', () => {
   beforeEach(() => {
     window.sessionStorage.clear();
+  });
+
+  it('keeps a five-minute cache and refresh cycle with the main periods preloaded', () => {
+    expect(MARKETING_RESUMO_CACHE_TTL_MS).toBe(5 * 60_000);
+    expect(MARKETING_RESUMO_REFRESH_INTERVAL_MS).toBe(MARKETING_RESUMO_CACHE_TTL_MS);
+    expect(MARKETING_RESUMO_PRELOAD_PERIODS).toEqual([1, 7, 30]);
   });
 
   it('stores and reads a fresh marketing summary for the same period and target', () => {

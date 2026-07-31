@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Area,
   Bar,
@@ -59,6 +59,7 @@ import {
 } from '@/api/supabase/marketing';
 import {
   MARKETING_RESUMO_CACHE_TTL_MS,
+  MARKETING_RESUMO_PRELOAD_PERIODS,
   MARKETING_RESUMO_REFRESH_INTERVAL_MS,
   readCachedMarketingResumo,
 } from '@/api/supabase/marketingCache';
@@ -79,7 +80,7 @@ import { FinancialValue } from '@/components/privacy/FinancialValue';
 import { useFinancialPrivacy } from '@/contexts/FinancialPrivacyContext';
 
 const RETIFICA_PREMIUM_EMAIL = 'retificapremium5@gmail.com';
-const periodOptions = [7, 10, 15, 20, 30, 40, 60, 90];
+const periodOptions = [1, 7, 10, 15, 20, 30, 40, 60, 90];
 
 const googleAdsHelp = {
   spend: 'Total cobrado pelo Google Ads no período selecionado. Pode existir atraso de processamento na fonte oficial.',
@@ -2765,6 +2766,7 @@ function normalizeCustomPeriod(value: string) {
 }
 
 export default function MarketingGrowth() {
+  const queryClient = useQueryClient();
   const { realUser, operationalUser, isSupportImpersonating, isAdmin } = useAuth();
   const hasPrivateAccess = hasFullMarketingAccess(realUser);
   const isCurrentUserMegaMaster = isSuperAdmin(realUser);
@@ -2830,6 +2832,20 @@ export default function MarketingGrowth() {
     retry: 1,
   });
 
+  useEffect(() => {
+    if (!queryEnabled || !requesterUserId) return;
+
+    const inactivePreloadPeriods = MARKETING_RESUMO_PRELOAD_PERIODS.filter((days) => days !== periodDays);
+    void Promise.all(inactivePreloadPeriods.map((days) => queryClient.prefetchQuery({
+      queryKey: getMarketingResumoQueryKey(days, targetUserId, requesterUserId),
+      queryFn: () => getMarketingResumo(days, targetUserId, requesterUserId),
+      staleTime: MARKETING_RESUMO_CACHE_TTL_MS,
+      gcTime: 60 * 60_000,
+    }))).catch(() => {
+      // O painel ativo continua funcional mesmo se um periodo secundario nao puder ser antecipado.
+    });
+  }, [periodDays, queryClient, queryEnabled, requesterUserId, targetUserId]);
+
   const applyCustomPeriod = () => {
     const normalized = normalizeCustomPeriod(customDays);
     setCustomDays(String(normalized));
@@ -2859,7 +2875,7 @@ export default function MarketingGrowth() {
                       <span className="absolute inline-flex h-full w-full rounded-full bg-teal-300 opacity-75 motion-safe:animate-ping" />
                       <span className="relative inline-flex h-2 w-2 rounded-full bg-teal-300" />
                     </span>
-                    Eventos internos · 5 min
+                    Atualização automática · 5 min
                   </Badge>
                 </div>
                 <h1 className="mt-2 font-display text-2xl font-bold tracking-tight sm:text-3xl">Crescimento</h1>
@@ -2923,7 +2939,7 @@ export default function MarketingGrowth() {
                     )}
                     aria-pressed={periodDays === days}
                   >
-                    {days} dias
+                    {days} {days === 1 ? 'dia' : 'dias'}
                   </Button>
                 ))}
               </div>

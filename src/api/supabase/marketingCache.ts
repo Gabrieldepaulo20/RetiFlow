@@ -2,6 +2,7 @@ import type { MarketingResumo } from './marketing';
 
 export const MARKETING_RESUMO_CACHE_TTL_MS = 5 * 60_000;
 export const MARKETING_RESUMO_REFRESH_INTERVAL_MS = 5 * 60_000;
+export const MARKETING_RESUMO_PRELOAD_PERIODS = [1, 7, 30] as const;
 
 const STORAGE_KEY_PREFIX = 'retiflow:marketing-growth:v4:';
 const STORAGE_KEY_FAMILY_PREFIX = 'retiflow:marketing-growth:';
