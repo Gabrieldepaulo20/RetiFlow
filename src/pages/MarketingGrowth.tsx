@@ -372,26 +372,26 @@ function Metric({
   };
 
   return (
-    <Card className="group min-w-0 overflow-hidden rounded-2xl border-border/70 bg-card shadow-[0_10px_35px_-28px_rgba(15,23,42,0.6)] transition-transform duration-200 hover:-translate-y-0.5">
-      <CardContent className="min-w-0 p-4">
-        <div className="flex items-start justify-between gap-3">
+    <Card className="group h-full min-w-0 overflow-hidden rounded-2xl border-border/70 bg-card shadow-[0_8px_28px_-24px_rgba(15,23,42,0.55)] transition-transform duration-200 hover:-translate-y-0.5">
+      <CardContent className="min-w-0 p-3 sm:p-3.5">
+        <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-start gap-1">
-            <p className="min-w-0 text-[11px] font-bold uppercase leading-4 tracking-[0.12em] text-muted-foreground">{label}</p>
+            <p className="min-w-0 text-[10px] font-bold uppercase leading-4 tracking-[0.1em] text-muted-foreground">{label}</p>
             {help ? <HelpTip label={label} description={help} /> : null}
           </div>
-          <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-xl shadow-sm', accents[accent])}>
+          <div className={cn('growth-metric-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg shadow-sm', accents[accent])}>
             <Icon className="h-4 w-4" />
           </div>
         </div>
-        <p className="mt-3 break-words text-2xl font-bold leading-tight tracking-tight text-foreground">
+        <p className="mt-2 break-words text-xl font-bold leading-tight tracking-tight text-foreground sm:text-2xl">
           {financial ? <FinancialValue>{value}</FinancialValue> : value}
         </p>
-        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+        <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
           {financialDetail ? <FinancialValue>{detail}</FinancialValue> : detail}
         </p>
         {delta ? (
           <div className={cn(
-            'mt-4 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold',
+            'mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold',
             delta.muted
               ? 'border-slate-200 bg-slate-50 text-slate-500'
               : delta.positive
@@ -403,7 +403,7 @@ function Metric({
               : delta.positive
                 ? <ArrowUpRight className="h-3.5 w-3.5" />
                 : <ArrowDownRight className="h-3.5 w-3.5" />}
-            {delta.label} <span className="hidden sm:inline">vs. período anterior</span>
+            {delta.label} <span className="hidden 2xl:inline">vs. período anterior</span>
           </div>
         ) : null}
       </CardContent>
@@ -418,66 +418,40 @@ function ClickBreakdownItem({
   help,
   icon: Icon,
   tone,
+  footer,
 }: {
   label: string;
   value: number;
   detail: string;
   help: string;
   icon: typeof Eye;
-  tone: 'slate' | 'teal' | 'amber' | 'violet';
+  tone: 'slate' | 'teal' | 'emerald' | 'amber' | 'violet';
+  footer?: ReactNode;
 }) {
   const tones = {
-    slate: 'border-slate-200 bg-slate-50 text-slate-950',
-    teal: 'border-teal-200 bg-teal-50 text-teal-950',
-    amber: 'border-amber-200 bg-amber-50 text-amber-950',
-    violet: 'border-violet-200 bg-violet-50 text-violet-950',
+    slate: 'border-slate-200 bg-gradient-to-b from-white to-slate-50 text-slate-950',
+    teal: 'border-teal-200 bg-gradient-to-b from-white to-teal-50 text-teal-950',
+    emerald: 'border-emerald-200 bg-gradient-to-b from-white to-emerald-50 text-emerald-950',
+    amber: 'border-amber-200 bg-gradient-to-b from-white to-amber-50 text-amber-950',
+    violet: 'border-violet-200 bg-gradient-to-b from-white to-violet-50 text-violet-950',
   };
 
   return (
-    <div className={cn('min-w-0 rounded-xl border p-3.5', tones[tone])}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-start gap-1">
-            <p className="text-[10px] font-bold uppercase leading-4 tracking-[0.12em] opacity-70">{label}</p>
-            <HelpTip label={label} description={help} className="text-current opacity-60 hover:text-current" />
-          </div>
-          <p className="mt-1 text-2xl font-black leading-none tracking-tight">{formatNumber(value)}</p>
-        </div>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/80 shadow-sm">
-          <Icon className="h-4 w-4" aria-hidden="true" />
-        </span>
-      </div>
-      <p className="mt-2 text-[11px] leading-relaxed opacity-70">{detail}</p>
-    </div>
-  );
-}
-
-function FunnelStep({
-  label,
-  value,
-  detail,
-  help,
-  icon: Icon,
-}: {
-  label: string;
-  value: number;
-  detail: string;
-  help: string;
-  icon: typeof Eye;
-}) {
-  return (
-    <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-3.5">
+    <div className={cn('min-w-0 rounded-2xl border p-3 shadow-[0_8px_24px_-22px_rgba(15,23,42,0.5)]', tones[tone])}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-start gap-1">
-            <p className="text-[10px] font-bold uppercase leading-4 tracking-[0.1em] text-slate-500">{label}</p>
-            <HelpTip label={label} description={help} />
+            <p className="text-[10px] font-bold uppercase leading-4 tracking-[0.1em] opacity-70">{label}</p>
+            <HelpTip label={label} description={help} className="text-current opacity-60 hover:text-current" />
           </div>
-          <p className="mt-1 text-2xl font-black leading-none text-slate-950">{formatNumber(value)}</p>
+          <p className="mt-1.5 text-2xl font-black leading-none tracking-tight">{formatNumber(value)}</p>
         </div>
-        <Icon className="h-4 w-4 shrink-0 text-slate-700" aria-hidden="true" />
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-current/10 bg-white/80 shadow-sm">
+          <Icon className="h-4 w-4" aria-hidden="true" />
+        </span>
       </div>
-      <p className="mt-2 text-[11px] leading-relaxed text-slate-600">{detail}</p>
+      <p className="mt-2 text-[11px] leading-4 opacity-75">{detail}</p>
+      {footer ? <div className="mt-2 border-t border-current/10 pt-2 text-[10px] leading-4">{footer}</div> : null}
     </div>
   );
 }
@@ -494,11 +468,11 @@ function PanelHeading({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
       <div>
         {eyebrow ? <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-700">{eyebrow}</p> : null}
         <h2 className="mt-1 text-lg font-bold tracking-tight text-foreground sm:text-xl">{title}</h2>
-        {description ? <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">{description}</p> : null}
+        {description ? <p className="mt-1 max-w-4xl text-xs leading-5 text-muted-foreground">{description}</p> : null}
       </div>
       {action}
     </div>
@@ -598,27 +572,27 @@ function WhatsappOriginBreakdown({ resumo }: { resumo: MarketingResumo }) {
 
   return (
     <Card className="rounded-2xl border-slate-200 shadow-sm">
-      <CardContent className="p-4 sm:p-5">
+      <CardContent className="p-3.5 sm:p-4">
         <PanelHeading
           eyebrow="Origem do contato"
           title="De onde veio o clique no WhatsApp?"
           description="As três origens ficam separadas. O clique mede intenção de contato; não confirma sozinho que a mensagem foi enviada."
         />
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <div className="mt-3 grid gap-2.5 md:grid-cols-3">
           {items.map((item) => {
             const Icon = item.icon;
             return (
-              <div key={item.label} className={cn('rounded-2xl border p-4', item.tone)}>
+              <div key={item.label} className={cn('rounded-xl border p-3', item.tone)}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-[0.12em]">{item.label}</p>
-                    <p className="mt-2 text-3xl font-black leading-none">{item.value}</p>
+                    <p className="mt-1.5 text-2xl font-black leading-none">{item.value}</p>
                   </div>
-                  <span className={cn('flex h-9 w-9 items-center justify-center rounded-xl', item.iconTone)}>
+                  <span className={cn('flex h-8 w-8 items-center justify-center rounded-lg', item.iconTone)}>
                     <Icon className="h-4 w-4" aria-hidden="true" />
                   </span>
                 </div>
-                <p className="mt-3 text-xs leading-relaxed opacity-80">{item.detail}</p>
+                <p className="mt-2 text-[11px] leading-4 opacity-80">{item.detail}</p>
               </div>
             );
           })}
@@ -1843,28 +1817,56 @@ const googleAdsCallStatus: Record<string, { label: string; className: string }> 
 
 function GoogleAdsCallDetails({
   calls,
+  adCallClicks,
+  confirmedCallClients,
 }: {
   calls: NonNullable<MarketingResumo['campaigns']['calls']>;
+  adCallClicks: number;
+  confirmedCallClients: number;
 }) {
   const items = calls.items ?? [];
   if (!items.length) return null;
+  const qualifiedCalls = items.filter(
+    (call) => call.status === 'RECEIVED' && call.durationSeconds >= 30,
+  ).length;
+  const summary = [
+    { label: 'Toques em Ligar', value: adCallClicks, help: googleAdsHelp.adCalls },
+    { label: 'Registradas', value: calls.reported, help: googleAdsHelp.reportedCalls },
+    { label: 'Atendidas', value: calls.received, help: 'Chamadas registradas pelo Google com status de recebida.' },
+    { label: 'Com 30s ou mais', value: qualifiedCalls, help: googleAdsHelp.qualifiedCalls },
+    { label: 'Viraram clientes', value: confirmedCallClients, help: googleAdsHelp.confirmedCallClients },
+  ];
 
   return (
     <Card className="overflow-hidden rounded-2xl border-slate-200 shadow-sm">
-      <CardContent className="p-4 sm:p-5">
+      <CardContent className="p-3.5 sm:p-4">
         <PanelHeading
           eyebrow="Chamadas reais"
           title="Detalhes de cada ligação"
           description="Horário, duração e atendimento informados pelo encaminhamento de chamadas do Google."
         />
 
-        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs leading-relaxed text-amber-950">
-          <span className="font-bold">Sobre quem ligou:</span>{' '}
-          a API oficial entrega país e DDD, mas não fornece nome nem telefone completo ao Retiflow.
-          Use o horário abaixo para conferir o identificador de chamadas do telefone ou PABX da retífica.
+        <div className="mt-3 grid grid-cols-2 overflow-hidden rounded-xl border border-slate-200 bg-slate-200 sm:grid-cols-5">
+          {summary.map((item) => (
+            <div key={item.label} className="min-w-0 bg-white px-3 py-2.5">
+              <div className="flex items-start gap-1">
+                <p className="text-[9px] font-bold uppercase leading-4 tracking-[0.08em] text-slate-500">{item.label}</p>
+                <HelpTip label={item.label} description={item.help} />
+              </div>
+              <p className="mt-0.5 text-lg font-black leading-none text-slate-950">{formatNumber(item.value)}</p>
+            </div>
+          ))}
         </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-4 text-amber-950">
+          <CircleHelp className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <p>
+            <span className="font-bold">Identificação:</span>{' '}
+            a API entrega país e DDD, mas não nome nem telefone completo. Confira o horário no telefone ou PABX da retífica.
+          </p>
+        </div>
+
+        <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
           {items.map((call) => {
             const status = googleAdsCallStatus[call.status] ?? googleAdsCallStatus.UNKNOWN;
             const endedAt = formatGoogleAdsCallEndTime(call.endedAt);
@@ -1883,33 +1885,35 @@ function GoogleAdsCallDetails({
                   : 'Origem não informada';
 
             return (
-              <article key={call.id} className="rounded-xl border border-slate-200 bg-white p-4">
-                <div className="flex items-start justify-between gap-3">
+              <article key={call.id} className="rounded-xl border border-slate-200 bg-white p-3">
+                <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Início da chamada</p>
-                    <p className="mt-1 text-sm font-bold text-slate-950">{formatGoogleAdsCallDateTime(call.startedAt)}</p>
+                    <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">Início da chamada</p>
+                    <p className="mt-0.5 text-xs font-bold text-slate-950">{formatGoogleAdsCallDateTime(call.startedAt)}</p>
                   </div>
-                  <Badge variant="outline" className={cn('shrink-0', status.className)}>
+                  <Badge variant="outline" className={cn('h-5 shrink-0 px-1.5 text-[9px]', status.className)}>
                     {status.label}
                   </Badge>
                 </div>
 
-                <div className="mt-4 grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3">
+                <dl className="mt-2.5 grid grid-cols-3 gap-2 border-t border-slate-100 pt-2.5">
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Duração</p>
-                    <p className="mt-1 text-xl font-black text-slate-950">{formatDuration(call.durationSeconds)}</p>
+                    <dt className="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">Duração</dt>
+                    <dd className="mt-0.5 text-sm font-black text-slate-950">{formatDuration(call.durationSeconds)}</dd>
                   </div>
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Término</p>
-                    <p className="mt-1 text-xl font-black text-slate-950">{endedAt ?? '—'}</p>
+                    <dt className="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">Término</dt>
+                    <dd className="mt-0.5 text-sm font-black text-slate-950">{endedAt ?? '—'}</dd>
                   </div>
-                </div>
+                  <div className="min-w-0">
+                    <dt className="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">Local</dt>
+                    <dd className="mt-0.5 truncate text-[11px] font-semibold text-slate-800" title={location}>{location}</dd>
+                  </div>
+                </dl>
 
-                <div className="mt-3 space-y-1.5 text-xs text-slate-600">
-                  <p><span className="font-semibold text-slate-800">Local:</span> {location || 'DDD indisponível'}</p>
-                  <p><span className="font-semibold text-slate-800">Origem:</span> {callOrigin}</p>
-                  <p><span className="font-semibold text-slate-800">Número:</span> não fornecido pela API do Google</p>
-                </div>
+                <p className="mt-2 truncate text-[10px] text-slate-600" title={callOrigin}>
+                  <span className="font-semibold text-slate-800">Origem:</span> {callOrigin}
+                </p>
               </article>
             );
           })}
@@ -1955,9 +1959,6 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
     + messageLandingClicks
     + adCallClicks;
   const otherClicks = Math.max(0, current.clicks - classifiedClicks);
-  const qualifiedCalls = calls?.items?.filter(
-    (call) => call.status === 'RECEIVED' && call.durationSeconds >= 30,
-  ).length ?? 0;
   const confirmedCallClients = resumo.business?.current.confirmedCalls ?? 0;
 
   if (!ads.financialAvailable) {
@@ -1972,17 +1973,17 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 text-white shadow-sm">
-        <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+        <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-3">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-400 text-slate-950">
-              <Target className="h-5 w-5" aria-hidden="true" />
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-400 text-slate-950">
+              <Target className="h-4 w-4" aria-hidden="true" />
             </span>
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300">Escopo da aba</p>
-              <h2 className="mt-1 text-xl font-bold">Somente desempenho dos anúncios</h2>
-              <p className="mt-1 max-w-3xl text-sm leading-relaxed text-slate-400">
+              <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-amber-300">Escopo da aba</p>
+              <h2 className="mt-0.5 text-base font-bold">Somente desempenho dos anúncios</h2>
+              <p className="mt-0.5 max-w-3xl text-[11px] leading-4 text-slate-400">
                 Aqui entram investimento, alcance, eficiência e conversões do Google Ads. O.S., serviços e comissão ficam somente em Resultado.
               </p>
             </div>
@@ -1999,7 +2000,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           title="Quanto investimos e quantas interações tivemos?"
           description="O total de cliques reúne site, WhatsApp, ligação e outras interações registradas pelo Google. A divisão principal aparece logo abaixo."
         />
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-5">
           <Metric label="Investimento" value={formatCurrency(current.spend)} detail="Custo oficial no período" help={googleAdsHelp.spend} icon={BadgeDollarSign} current={current.spend} previous={ads.previous?.spend} accent="navy" financial />
           <Metric label="Impressões" value={formatNumber(current.impressions)} detail="Exibições dos anúncios" help={googleAdsHelp.impressions} icon={Eye} current={current.impressions} previous={ads.previous?.impressions} accent="violet" />
           <Metric label="Cliques totais" value={formatNumber(current.clicks)} detail="Site + WhatsApp + ligar + outros" help={googleAdsHelp.clicks} icon={MousePointerClick} current={current.clicks} previous={ads.previous?.clicks} accent="teal" />
@@ -2008,256 +2009,132 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
         </div>
       </section>
 
-      <section aria-label="Divisão dos cliques dos anúncios" className="space-y-3">
+      <section aria-label="Divisão dos cliques dos anúncios" className="space-y-2.5">
         <PanelHeading
           eyebrow="Destino dos cliques"
           title="Para onde foram os cliques?"
-          description="A soma abaixo explica o total do Google Ads. Depois, mostramos separadamente o que aconteceu já dentro do site."
+          description="Os cliques do anúncio e os cliques feitos dentro do site ficam separados para não misturar etapas diferentes."
         />
-        <Card className="overflow-hidden rounded-2xl border-slate-200 shadow-sm">
-          <CardContent className="p-0">
-            <div className="grid min-w-0 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
-              <div className="min-w-0 p-4 sm:p-5">
-                <div className="mb-3 rounded-2xl border border-emerald-300 bg-gradient-to-br from-emerald-50 to-white p-4 shadow-sm">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-start gap-1">
-                        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-emerald-800">
-                          WhatsApp direto no anúncio
-                        </p>
-                        <HelpTip label="WhatsApp direto no anúncio" description={googleAdsHelp.adWhatsappClicks} className="text-emerald-700" />
-                      </div>
-                      <div className="mt-2 flex items-end gap-2">
-                        <p className="text-4xl font-black leading-none text-emerald-950">{formatNumber(adWhatsappClicks)}</p>
-                        <p className="pb-0.5 text-xs font-semibold text-emerald-800">cliques no botão</p>
-                      </div>
-                    </div>
+        <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+          {clickTypes.length ? (
+            <>
+              <ClickBreakdownItem
+                label="Links do site"
+                value={siteClicks}
+                detail={`${formatNumber(mainUrlClicks)} na URL principal + ${formatNumber(sitelinkClicks)} em sitelinks`}
+                help={googleAdsHelp.siteClicks}
+                icon={ExternalLink}
+                tone="slate"
+              />
+              <ClickBreakdownItem
+                label="WhatsApp do anúncio"
+                value={adWhatsappClicks}
+                detail={formatWhatsappPhone(whatsappAsset?.phoneNumber, whatsappAsset?.countryCode)}
+                help={googleAdsHelp.adWhatsappClicks}
+                icon={MessageCircle}
+                tone="emerald"
+                footer={(
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                     <Badge className={cn(
-                      'border',
+                      'h-5 border px-1.5 text-[9px]',
                       whatsappAsset?.primaryStatus === 'ELIGIBLE'
                         ? 'border-emerald-300 bg-emerald-100 text-emerald-900 hover:bg-emerald-100'
                         : 'border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-100',
                     )}>
                       {whatsappAsset?.primaryStatus === 'ELIGIBLE' ? 'Apto a aparecer' : 'Aguardando elegibilidade'}
                     </Badge>
-                  </div>
-                  <div className="mt-3 grid gap-2 text-xs text-emerald-950 sm:grid-cols-2">
-                    <div className="rounded-xl bg-white/80 px-3 py-2.5">
-                      <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-700">WhatsApp de destino</p>
-                      <p className="mt-1 font-black">{formatWhatsappPhone(whatsappAsset?.phoneNumber, whatsappAsset?.countryCode)}</p>
-                    </div>
-                    <div className="min-w-0 rounded-xl bg-white/80 px-3 py-2.5">
-                      <div className="flex items-start gap-1">
-                        <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-700">Recurso do Google</p>
-                        <HelpTip label="Recurso do Google" description={googleAdsHelp.adWhatsappAsset} className="text-emerald-700" />
-                      </div>
-                      <p className="mt-1 truncate font-bold" title={whatsappAsset?.campaign}>
-                        {whatsappAsset
-                          ? `${whatsappAsset.campaign} · ${whatsappAsset.status === 'ENABLED' ? 'Ativo' : whatsappAsset.status}`
-                          : 'Ainda não identificado pela API'}
-                      </p>
-                    </div>
-                  </div>
-                  {messageLandingClicks > 0 ? (
-                    <p className="mt-2 text-[11px] text-emerald-800">
-                      Além disso, {formatNumber(messageLandingClicks)} clique(s) abriram a página intermediária do recurso.
-                    </p>
-                  ) : null}
-                </div>
-                {clickTypes.length ? (
-                  <>
-                    <div className="grid grid-cols-2 gap-3">
-                      <ClickBreakdownItem
-                        label="Links do site"
-                        value={siteClicks}
-                        detail={`${formatNumber(mainUrlClicks)} na URL principal + ${formatNumber(sitelinkClicks)} em sitelinks`}
-                        help={googleAdsHelp.siteClicks}
-                        icon={ExternalLink}
-                        tone="teal"
-                      />
-                      <ClickBreakdownItem
-                        label="Ligar no anúncio"
-                        value={adCallClicks}
-                        detail={calls?.reported
-                          ? `${formatNumber(calls.received)} ${calls.received === 1 ? 'atendida' : 'atendidas'} · ${formatDuration(calls.averageDurationSeconds)} em média`
-                          : 'Abriram o discador pelo próprio anúncio'}
-                        help={googleAdsHelp.adCalls}
-                        icon={PhoneCall}
-                        tone="amber"
-                      />
-                    </div>
-                    {otherClicks > 0 ? (
-                      <div className="mt-3 flex items-center justify-between gap-4 rounded-xl border border-dashed border-slate-300 px-4 py-3 text-sm">
-                        <span className="font-semibold text-slate-700">Outros tipos de clique</span>
-                        <span className="text-lg font-black text-slate-950">{formatNumber(otherClicks)}</span>
-                      </div>
-                    ) : null}
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-950 px-4 py-3 text-white">
-                      <span className="text-xs font-semibold text-slate-300">Conferência da soma</span>
-                      <span className="text-sm font-bold">
-                        {formatNumber(classifiedClicks + otherClicks)} de {formatNumber(current.clicks)} cliques explicados
-                      </span>
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex min-h-48 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
-                    <div>
-                      <MousePointerClick className="mx-auto h-6 w-6 text-slate-500" aria-hidden="true" />
-                      <p className="mt-3 text-sm font-semibold text-slate-800">Detalhamento aguardando sincronização</p>
-                      <p className="mt-1 text-xs text-slate-500">O total continua correto; a divisão por destino chegará na próxima atualização do Google Ads.</p>
-                    </div>
+                    {messageLandingClicks > 0 ? <span>{formatNumber(messageLandingClicks)} na página intermediária</span> : null}
                   </div>
                 )}
+              />
+              <ClickBreakdownItem
+                label="Ligar no anúncio"
+                value={adCallClicks}
+                detail={calls?.reported
+                  ? `${formatNumber(calls.received)} ${calls.received === 1 ? 'atendida' : 'atendidas'} · ${formatDuration(calls.averageDurationSeconds)} em média`
+                  : 'Abriram o discador pelo próprio anúncio'}
+                help={googleAdsHelp.adCalls}
+                icon={PhoneCall}
+                tone="amber"
+              />
+            </>
+          ) : (
+            <div className="col-span-2 flex min-h-32 items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center lg:col-span-3">
+              <div>
+                <MousePointerClick className="mx-auto h-5 w-5 text-slate-500" aria-hidden="true" />
+                <p className="mt-2 text-sm font-semibold text-slate-800">Detalhamento aguardando sincronização</p>
+                <p className="mt-1 text-[11px] text-slate-500">O total continua correto; a divisão chegará na próxima atualização do Google Ads.</p>
               </div>
+            </div>
+          )}
+          <ClickBreakdownItem
+            label="WhatsApp dentro do site"
+            value={siteWhatsapp?.uniqueClicks ?? resumo.site.current.whatsappClicks}
+            detail={`${formatNumber(siteWhatsapp?.paidClicks ?? paidActions?.whatsappClicks)} vieram dos anúncios · ${formatNumber(siteWhatsapp?.repeatedClicks)} repetições removidas`}
+            help="Cliques únicos nos botões do site. Este total é separado do botão de WhatsApp exibido diretamente no anúncio."
+            icon={ExternalLink}
+            tone="teal"
+            footer={<span>Depois de a pessoa entrar no site</span>}
+          />
+        </div>
 
-              <div className="border-t border-slate-200 bg-slate-50 p-4 sm:p-5 lg:border-l lg:border-t-0">
-                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-700">Depois de entrar no site</p>
-                <h3 className="mt-1 text-base font-bold text-slate-950">Ações das visitas pagas</h3>
-                <p className="mt-1 text-xs leading-relaxed text-slate-600">
-                  Estes números não incluem ações feitas diretamente no anúncio, como tocar em Ligar.
-                </p>
-                <div className="mt-4 rounded-2xl border border-emerald-300 bg-emerald-600 p-4 text-white shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="flex items-start gap-1">
-                        <p className="text-[10px] font-black uppercase tracking-[0.13em] text-emerald-100">
-                          WhatsApp clicado no site
-                        </p>
-                        <HelpTip
-                          label="WhatsApp clicado no site"
-                          description="Cliques únicos nos botões do site. O número maior mostra todo o site; a linha abaixo separa quantos vieram de visitas pagas."
-                          className="text-emerald-100 hover:bg-white/10 hover:text-white"
-                        />
-                      </div>
-                      <p className="mt-2 text-4xl font-black leading-none">
-                        {formatNumber(siteWhatsapp?.uniqueClicks ?? resumo.site.current.whatsappClicks)}
-                      </p>
-                    </div>
-                    <MessageCircle className="h-7 w-7 shrink-0 text-emerald-100" aria-hidden="true" />
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+          {[
+            { label: 'Outros cliques', value: otherClicks, help: googleAdsHelp.clicks },
+            { label: 'Sessões pagas', value: paidActions?.trackedSessions, help: googleAdsHelp.trackedPaidSessions },
+            { label: 'Telefone no site', value: paidActions?.phoneClicks, help: googleAdsHelp.paidPhoneClicks },
+            { label: 'Formulários', value: paidActions?.formSubmits, help: googleAdsHelp.paidFormSubmits },
+          ].map((item) => (
+            <div key={item.label} className="flex min-w-0 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2">
+              <div className="flex min-w-0 items-center gap-1">
+                <span className="text-[9px] font-bold uppercase leading-3 tracking-[0.05em] text-slate-500">{item.label}</span>
+                <HelpTip label={item.label} description={item.help} />
+              </div>
+              <span className="shrink-0 text-sm font-black text-slate-950">
+                {item.value === undefined ? '—' : formatNumber(item.value)}
+              </span>
+            </div>
+          ))}
+          {clickTypes.length ? (
+            <div className="col-span-2 flex min-w-0 items-center justify-between gap-2 rounded-xl bg-slate-950 px-2.5 py-2 text-white sm:col-span-1">
+              <span className="text-[9px] font-semibold uppercase leading-3 tracking-[0.06em] text-slate-400">Soma explicada</span>
+              <span
+                className="shrink-0 text-xs font-bold"
+                aria-label={`${formatNumber(classifiedClicks + otherClicks)} de ${formatNumber(current.clicks)} cliques explicados`}
+              >
+                {formatNumber(classifiedClicks + otherClicks)} / {formatNumber(current.clicks)}
+              </span>
+            </div>
+          ) : null}
+        </div>
+
+        {siteWhatsapp?.points.length ? (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+            <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">Onde clicaram no WhatsApp do site</p>
+            <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-4">
+              {siteWhatsapp.points.slice(0, 4).map((point) => (
+                <div key={`${point.eventLabel}:${point.pagePath}`} className="flex min-w-0 items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-2 text-[11px]">
+                  <div className="min-w-0">
+                    <p className="line-clamp-2 text-[10px] font-semibold leading-3 text-slate-800">{formatWhatsappPointLabel(point.eventLabel, point.pagePath)}</p>
+                    <p className="truncate text-[9px] text-slate-500">{point.pagePath}</p>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-emerald-50">
-                    <span><strong>{formatNumber(siteWhatsapp?.paidClicks ?? paidActions?.whatsappClicks)}</strong> vieram dos anúncios</span>
-                    <span><strong>{formatNumber(siteWhatsapp?.repeatedClicks)}</strong> repetições deduplicadas</span>
+                  <div className="shrink-0 text-right">
+                    <p className="font-black text-slate-950">{formatNumber(point.uniqueClicks)}</p>
+                    {point.paidClicks ? <p className="text-[8px] font-semibold text-emerald-700">{formatNumber(point.paidClicks)} de anúncio</p> : null}
                   </div>
-                  <p className="mt-2 text-[11px] text-emerald-100">
-                    Destino atual: {formatWhatsappPhone(whatsappAsset?.phoneNumber, whatsappAsset?.countryCode)}
-                  </p>
                 </div>
-                <div className="mt-4 grid grid-cols-2 gap-2.5">
-                  {[
-                    {
-                      label: 'Sessões rastreadas',
-                      value: paidActions?.trackedSessions,
-                      help: googleAdsHelp.trackedPaidSessions,
-                      icon: Users,
-                    },
-                    {
-                      label: 'Telefone no site',
-                      value: paidActions?.phoneClicks,
-                      help: googleAdsHelp.paidPhoneClicks,
-                      icon: PhoneCall,
-                    },
-                    {
-                      label: 'Formulários',
-                      value: paidActions?.formSubmits,
-                      help: googleAdsHelp.paidFormSubmits,
-                      icon: MailCheck,
-                    },
-                  ].map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <div key={item.label} className="min-w-0 rounded-xl border border-slate-200 bg-white p-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex min-w-0 items-start gap-1">
-                            <p className="text-[10px] font-bold uppercase leading-4 tracking-[0.08em] text-slate-500">{item.label}</p>
-                            <HelpTip label={item.label} description={item.help} />
-                          </div>
-                          <Icon className="h-4 w-4 shrink-0 text-slate-700" aria-hidden="true" />
-                        </div>
-                        <p className="mt-2 text-xl font-black leading-none text-slate-950">
-                          {item.value === undefined ? '—' : formatNumber(item.value)}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
-                {siteWhatsapp?.points.length ? (
-                  <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                      Onde clicaram no WhatsApp do site
-                    </p>
-                    <div className="mt-2 space-y-2">
-                      {siteWhatsapp.points.slice(0, 4).map((point) => (
-                        <div key={`${point.eventLabel}:${point.pagePath}`} className="flex items-center justify-between gap-3 text-xs">
-                          <div className="min-w-0">
-                            <p className="truncate font-semibold text-slate-800">
-                              {formatWhatsappPointLabel(point.eventLabel, point.pagePath)}
-                            </p>
-                            <p className="truncate text-[10px] text-slate-500">{point.pagePath}</p>
-                          </div>
-                          <div className="shrink-0 text-right">
-                            <p className="font-black text-slate-950">{formatNumber(point.uniqueClicks)}</p>
-                            {point.paidClicks ? (
-                              <p className="text-[9px] font-semibold text-emerald-700">{formatNumber(point.paidClicks)} de anúncio</p>
-                            ) : null}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-                {calls?.reported ? (
-                  <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-xs leading-relaxed text-emerald-950">
-                    <span className="font-bold">Ligação registrada pelo Google:</span>{' '}
-                    {formatNumber(calls.received)} {calls.received === 1 ? 'atendida' : 'atendidas'}, com maior duração de {formatDuration(calls.longestDurationSeconds)}.
-                  </div>
-                ) : null}
-              </div>
+              ))}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        ) : null}
 
-        <Card className="overflow-hidden rounded-2xl border-slate-200 bg-slate-50 shadow-sm">
-          <CardContent className="p-4 sm:p-5">
-            <PanelHeading
-              eyebrow="Funil de comprovação"
-              title="Do clique ao atendimento real"
-              description="O Google informa a interação; o telefone confirma a chamada; a equipe confirma no cadastro quando a pessoa virou cliente ou chegou à retífica."
-            />
-
-            <div className="mt-4">
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-600">WhatsApp</p>
-              <div className="grid grid-cols-2 gap-2.5 sm:max-w-2xl">
-                <FunnelStep
-                  label="WhatsApp no anúncio"
-                  value={adWhatsappClicks}
-                  detail="Abriu direto no WhatsApp"
-                  help={googleAdsHelp.adWhatsappClicks}
-                  icon={MessageCircle}
-                />
-                <FunnelStep
-                  label="WhatsApp dentro do site"
-                  value={siteWhatsapp?.paidClicks ?? paidActions?.whatsappClicks ?? 0}
-                  detail="Veio do anúncio e clicou no site"
-                  help={googleAdsHelp.paidWhatsappClicks}
-                  icon={ExternalLink}
-                />
-              </div>
-            </div>
-
-            <div className="mt-4 border-t border-slate-200 pt-4">
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-600">Ligação</p>
-              <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-5">
-                <FunnelStep label="Toques em Ligar" value={adCallClicks} detail="Abriram o discador" help={googleAdsHelp.adCalls} icon={MousePointerClick} />
-                <FunnelStep label="Chamadas registradas" value={calls?.reported ?? 0} detail="A ligação foi realizada" help={googleAdsHelp.reportedCalls} icon={PhoneCall} />
-                <FunnelStep label="Atendidas" value={calls?.received ?? 0} detail="A retífica atendeu" help="Chamadas registradas pelo encaminhamento do Google com status de recebida." icon={CheckCircle2} />
-                <FunnelStep label="Qualificadas" value={qualifiedCalls} detail="Atendida por 30s ou mais" help={googleAdsHelp.qualifiedCalls} icon={Clock3} />
-                <FunnelStep label="Viraram clientes" value={confirmedCallClients} detail="Confirmado no cadastro" help={googleAdsHelp.confirmedCallClients} icon={UserCheck} />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        {calls ? <GoogleAdsCallDetails calls={calls} /> : null}
+        {calls ? (
+          <GoogleAdsCallDetails
+            calls={calls}
+            adCallClicks={adCallClicks}
+            confirmedCallClients={confirmedCallClients}
+          />
+        ) : null}
       </section>
 
       <section aria-label="Conversão e eficiência dos anúncios" className="space-y-3">
@@ -2266,7 +2143,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           title="Os cliques estão virando resultado?"
           description="Conversão aqui é uma ação configurada no Google Ads; não é comissão nem faturamento da O.S. As primárias orientam a campanha e o total também inclui ações secundárias."
         />
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-3 2xl:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-6 [&_.growth-metric-icon]:hidden 2xl:[&_.growth-metric-icon]:flex">
           <Metric label="Conversões primárias" value={formatDecimal(current.conversions)} detail="Ações usadas na otimização" help={googleAdsHelp.conversions} icon={Target} current={current.conversions} previous={ads.previous?.conversions} accent="violet" />
           <Metric label="Todas as conversões" value={formatDecimal(current.allConversions)} detail="Primárias + secundárias" help={googleAdsHelp.allConversions} icon={ListChecks} current={current.allConversions} previous={ads.previous?.allConversions} accent="navy" />
           <Metric label="Taxa de conversão" value={formatPercent(current.conversionRate)} detail="Conversões ÷ cliques" help={googleAdsHelp.conversionRate} icon={ArrowUpRight} accent="teal" />
@@ -2282,7 +2159,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           title="Onde estamos perdendo oportunidades?"
           description="Esses indicadores ajudam a decidir se o gargalo está no orçamento, na posição ou na qualidade do tráfego."
         />
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-3 2xl:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-6 [&_.growth-metric-icon]:hidden 2xl:[&_.growth-metric-icon]:flex">
           <Metric label="Parcela de impressões" value={formatPercent(current.searchImpressionShare)} detail="Cobertura possível na Pesquisa" help={googleAdsHelp.searchImpressionShare} icon={Gauge} accent="navy" />
           <Metric label="Perdida por orçamento" value={formatPercent(current.searchBudgetLostImpressionShare)} detail="Limitação de verba" help={googleAdsHelp.searchBudgetLostImpressionShare} icon={AlertTriangle} accent="rose" />
           <Metric label="Perdida por classificação" value={formatPercent(current.searchRankLostImpressionShare)} detail="Lance, qualidade e relevância" help={googleAdsHelp.searchRankLostImpressionShare} icon={Search} accent="violet" />
@@ -2871,12 +2748,12 @@ function EventRow({ event }: { event: MarketingEventItem }) {
 
 function LoadingDashboard() {
   return (
-    <div className="space-y-4">
-      <Skeleton className="h-[230px] rounded-3xl" />
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-[155px] rounded-2xl" />)}
+    <div className="space-y-3">
+      <Skeleton className="h-[160px] rounded-[26px]" />
+      <div className="grid grid-cols-2 gap-2.5 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-[122px] rounded-2xl" />)}
       </div>
-      <Skeleton className="h-[390px] rounded-2xl" />
+      <Skeleton className="h-[320px] rounded-2xl" />
     </div>
   );
 }
@@ -2961,13 +2838,16 @@ export default function MarketingGrowth() {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,hsl(var(--primary)/0.06),transparent_32%),hsl(var(--background))]">
-      <div className="mx-auto w-full max-w-[1580px] space-y-4 p-3 sm:space-y-5 md:p-6">
-        <header className="overflow-hidden rounded-3xl bg-slate-950 text-white shadow-[0_26px_80px_-45px_rgba(15,23,42,0.95)]">
-          <div className="relative p-5 sm:p-7">
-            <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full border border-amber-300/20 bg-amber-300/5" />
-            <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+      <div className="mx-auto w-full max-w-[1680px] space-y-3 p-3 sm:p-4 lg:p-5">
+        <header className="overflow-hidden rounded-[26px] bg-[#0b2035] text-white shadow-[0_18px_60px_-35px_rgba(2,15,28,0.85)]">
+          <div className="relative px-4 pb-3 pt-4 sm:px-5 lg:px-6">
+            <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-1/3 bg-[linear-gradient(135deg,transparent,rgba(240,180,77,0.10))] lg:block" />
+            <div className="relative flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="max-w-3xl">
                 <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#f0b44d]">
+                    {hasPrivateAccess ? 'Sala de controle da aquisição' : 'Acompanhamento do crescimento'}
+                  </p>
                   {!hasPrivateAccess ? (
                     <Badge className="gap-1.5 border-sky-300/20 bg-sky-300/10 text-sky-200 hover:bg-sky-300/10">
                       <Building2 className="h-3.5 w-3.5" />
@@ -2982,21 +2862,18 @@ export default function MarketingGrowth() {
                     Eventos internos · 5 min
                   </Badge>
                 </div>
-                <p className="mt-6 text-[10px] font-bold uppercase tracking-[0.25em] text-amber-300">
-                  {hasPrivateAccess ? 'Sala de controle da aquisição' : 'Acompanhamento do crescimento'}
-                </p>
-                <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">Crescimento</h1>
-                <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-400 sm:text-base">
+                <h1 className="mt-2 font-display text-2xl font-bold tracking-tight sm:text-3xl">Crescimento</h1>
+                <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-300 sm:text-sm">
                   {hasPrivateAccess
                     ? 'Impressão, visita, contato, cliente, O.S. e comissão no mesmo painel — com origem e disponibilidade de cada fonte explícitas.'
                     : 'Acompanhe como o site aparece no Google, recebe visitas e transforma interesse em contatos.'}
                 </p>
               </div>
 
-              <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_auto] xl:w-auto">
+              <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_auto] lg:self-center">
                 {hasPrivateAccess && isCurrentUserMegaMaster ? (
                   <Select value={selectedUserId} onValueChange={setSelectedUserId} disabled={isLoadingUsers || !selectableUsers.length}>
-                    <SelectTrigger className="h-11 border-white/15 bg-white/5 text-white hover:bg-white/10 sm:w-[280px]">
+                    <SelectTrigger className="h-9 border-white/15 bg-white/5 text-white hover:bg-white/10 sm:w-[250px]">
                       <Users className="mr-2 h-4 w-4 text-amber-300" />
                       <SelectValue placeholder="Selecionar empresa" />
                     </SelectTrigger>
@@ -3005,7 +2882,7 @@ export default function MarketingGrowth() {
                     </SelectContent>
                   </Select>
                 ) : (
-                  <div className="flex h-11 items-center rounded-xl border border-white/15 bg-white/5 px-4 text-sm text-slate-200 sm:min-w-[280px]">
+                  <div className="flex h-9 items-center rounded-xl border border-white/15 bg-white/5 px-3 text-xs text-slate-200 sm:min-w-[250px]">
                     <Building2 className="mr-2 h-4 w-4 text-amber-300" />
                     <span className="truncate">
                       {hasPrivateAccess
@@ -3016,7 +2893,7 @@ export default function MarketingGrowth() {
                 )}
                 <Button
                   variant="outline"
-                  className="h-11 border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+                  className="h-9 border-white/15 bg-white/5 px-3 text-white hover:bg-white/10 hover:text-white"
                   onClick={() => void query.refetch()}
                   disabled={!queryEnabled || query.isFetching}
                 >
@@ -3027,9 +2904,9 @@ export default function MarketingGrowth() {
             </div>
           </div>
 
-          <div className="border-t border-white/10 bg-white/[0.035] px-5 py-4 sm:px-7">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-wrap gap-2">
+          <div className="border-t border-white/10 bg-white/[0.035] px-4 py-2 sm:px-5 lg:px-6">
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap gap-1.5">
                 {periodOptions.map((days) => (
                   <Button
                     key={days}
@@ -3041,7 +2918,7 @@ export default function MarketingGrowth() {
                       setCustomDays(String(days));
                     }}
                     className={cn(
-                      'h-8 rounded-full px-3 text-xs text-slate-400 hover:bg-white/10 hover:text-white',
+                      'h-7 rounded-full px-2.5 text-[11px] text-slate-400 hover:bg-white/10 hover:text-white',
                       periodDays === days && 'bg-amber-300 text-slate-950 hover:bg-amber-300 hover:text-slate-950',
                     )}
                     aria-pressed={periodDays === days}
@@ -3061,10 +2938,10 @@ export default function MarketingGrowth() {
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') applyCustomPeriod();
                   }}
-                  className="h-8 w-20 border-white/15 bg-white/5 text-center text-xs text-white"
+                  className="h-7 w-20 border-white/15 bg-white/5 text-center text-[11px] text-white"
                   aria-label="Quantidade personalizada de dias"
                 />
-                <Button type="button" size="sm" variant="secondary" className="h-8" onClick={applyCustomPeriod}>
+                <Button type="button" size="sm" variant="secondary" className="h-7 px-2.5 text-[11px]" onClick={applyCustomPeriod}>
                   Aplicar
                 </Button>
               </div>
@@ -3105,9 +2982,9 @@ export default function MarketingGrowth() {
 
         {query.data ? (
           hasPrivateAccess ? (
-            <Tabs defaultValue="visao" className="space-y-5">
+            <Tabs defaultValue="visao" className="space-y-4">
               <div className="pb-1">
-                <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-muted/80 p-1 sm:grid-cols-3 xl:grid-cols-5">
+                <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-muted/80 p-1 sm:grid-cols-3 lg:grid-cols-5">
                   <TabsTrigger value="visao">Resumo</TabsTrigger>
                   <TabsTrigger value="google">Google</TabsTrigger>
                   <TabsTrigger value="contatos">Contatos</TabsTrigger>
@@ -3137,7 +3014,7 @@ export default function MarketingGrowth() {
               <TabsContent value="qualidade"><QualityTab resumo={query.data} /></TabsContent>
             </Tabs>
           ) : (
-            <Tabs defaultValue="resumo" className="space-y-5">
+            <Tabs defaultValue="resumo" className="space-y-4">
               <div className="pb-1">
                 <TabsList className="grid h-auto w-full grid-cols-3 gap-1 rounded-xl bg-muted/80 p-1">
                   <TabsTrigger value="resumo">Resumo</TabsTrigger>
