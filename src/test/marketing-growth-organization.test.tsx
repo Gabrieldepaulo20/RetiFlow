@@ -335,7 +335,8 @@ describe('organização do painel Crescimento', () => {
   it('mantém a aba Google Ads focada somente em mídia paga e explica seus KPIs', async () => {
     renderWithTooltips(<GoogleAdsTab resumo={buildResumo()} />);
 
-    expect(screen.getByRole('heading', { name: 'Somente desempenho dos anúncios' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Somente desempenho dos anúncios' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Escopo da aba')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Quanto investimos e quantas interações tivemos?' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Para onde foram os cliques?' })).toBeInTheDocument();
     expect(screen.getByText('Links do site')).toBeInTheDocument();

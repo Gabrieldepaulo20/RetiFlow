@@ -2040,26 +2040,6 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
 
   return (
     <div className="space-y-4">
-      <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 text-white shadow-sm">
-        <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-400 text-slate-950">
-              <Target className="h-4 w-4" aria-hidden="true" />
-            </span>
-            <div>
-              <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-amber-300">Escopo da aba</p>
-              <h2 className="mt-0.5 text-base font-bold">Somente desempenho dos anúncios</h2>
-              <p className="mt-0.5 max-w-3xl text-[11px] leading-4 text-slate-400">
-                Aqui entram investimento, alcance, eficiência e conversões do Google Ads. O.S., serviços e comissão ficam somente em Resultado.
-              </p>
-            </div>
-          </div>
-          <Badge variant="outline" className="w-fit border-emerald-300/30 bg-emerald-300/10 text-emerald-200">
-            Dados oficiais · até 10 min de cache
-          </Badge>
-        </div>
-      </div>
-
       <section aria-label="Alcance e custo dos anúncios" className="space-y-3">
         <PanelHeading
           eyebrow="Alcance e custo"
