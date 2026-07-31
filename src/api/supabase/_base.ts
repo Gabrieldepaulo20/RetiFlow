@@ -63,6 +63,8 @@ const SUPPORT_CONTEXT_RPC_MAP: Record<string, string> = {
 };
 
 const SUPPORT_BLOCKED_WRITE_RPCS = new Set([
+  // Sem variante de contexto, o log seria atribuído ao Mega Master em vez da empresa atendida.
+  'insert_log',
   // Central Financeiro — suporte é estritamente somente leitura
   'registrar_recebimento_nota',
   'registrar_recebimento_fechamento',
@@ -157,6 +159,39 @@ export async function callRPC<T = unknown>(
   }
 
   return envelope;
+}
+
+/**
+ * Chama um RPC do Supabase que não retorna o envelope padrão (funções
+ * PL/pgSQL `returns void`, ex.: `insert_log`). Passa pelo mesmo
+ * remapeamento/bloqueio de modo suporte que `callRPC()` (SUPPORT_CONTEXT_RPC_MAP
+ * / SUPPORT_BLOCKED_WRITE_RPCS), mas sem exigir `{status, mensagem, dados}` na
+ * resposta — usar só para RPCs cujo contrato de backend é `void`. Mesmo
+ * espírito da exceção isolada já existente em `fechamentos.ts` (`callMutationRPC`),
+ * centralizada aqui para não duplicar a lógica de contexto de suporte.
+ */
+export async function callVoidRPC(
+  rpcName: string,
+  params?: Record<string, unknown>,
+): Promise<void> {
+  const contextualCall = withSupportContext(rpcName, params ?? {});
+  const { data, error } = await supabase.schema('RetificaPremium').rpc(contextualCall.rpcName, contextualCall.params);
+
+  if (error) {
+    const err = new Error(`[${contextualCall.rpcName}] ${error.message}`);
+    logError(err, contextualCall.rpcName);
+    throw err;
+  }
+
+  if (data === null || data === undefined || typeof data !== 'object') return;
+
+  const envelope = data as Partial<RPCEnvelope>;
+  if (envelope.status === undefined) return;
+  if (envelope.status !== 200) {
+    const err = new Error(`[${contextualCall.rpcName}] ${envelope.mensagem ?? 'Erro desconhecido.'}`);
+    logError(err, contextualCall.rpcName);
+    throw err;
+  }
 }
 
 /**

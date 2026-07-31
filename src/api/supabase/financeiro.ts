@@ -11,6 +11,26 @@ import { callRPC, extractDados, type RPCEnvelope } from './_base';
 const FINANCEIRO_BUCKET = 'financeiro-comprovantes';
 const DEFAULT_SIGNED_URL_TTL = 60 * 10;
 
+/**
+ * Central Financeiro não tem dado mock local (diferente de notas/clientes/contas a pagar no
+ * DataContext, que servem seed local quando VITE_AUTH_MODE !== 'real'). Sem este guard, as
+ * telas caem em 401 "permission denied" do Supabase real — o que a UI então trata como se
+ * fosse instabilidade de rede/RPC não publicada, uma mensagem enganosa. Este erro identifica
+ * a causa real para quem consome a API poder mostrar um aviso correto.
+ */
+export class FinanceiroMockModeUnsupportedError extends Error {
+  constructor() {
+    super('Central Financeiro requer VITE_AUTH_MODE=real — não há dado local para modo mock.');
+    this.name = 'FinanceiroMockModeUnsupportedError';
+  }
+}
+
+function assertRealAuthForFinanceiro() {
+  // Lido a cada chamada (não cacheado em const de módulo) para que testes possam alternar o
+  // modo com `vi.stubEnv` sem precisar de `vi.resetModules()` + import dinâmico.
+  if (import.meta.env.VITE_AUTH_MODE !== 'real') throw new FinanceiroMockModeUnsupportedError();
+}
+
 export type FinanceiroModo = 'CAIXA' | 'PREVISTO' | 'COMPETENCIA';
 export type FinanceiroDirecao = 'ENTRADA' | 'SAIDA';
 export type FinanceiroStatus = 'PENDENTE' | 'PARCIAL' | 'PAGO' | 'CANCELADO' | 'REVISAR';
@@ -482,11 +502,13 @@ function adaptOperacaoResultado(envelope: RPCEnvelope<unknown>): FinanceiroOpera
 }
 
 export async function getFinanceiroResumo(params: FinanceiroPeriodoParams) {
+  assertRealAuthForFinanceiro();
   const env = await callRPC<unknown>('get_financeiro_resumo', { ...params });
   return adaptFinanceiroResumo(extractDados(env, 'get_financeiro_resumo'));
 }
 
 export async function getFinanceiroLancamentos(params: FinanceiroLancamentosParams) {
+  assertRealAuthForFinanceiro();
   const env = await callRPC<unknown[]>('get_financeiro_lancamentos', { ...params });
   return {
     dados: adaptList(env.dados, adaptFinanceiroLancamento),
@@ -504,6 +526,7 @@ export async function getAllFinanceiroLancamentos(
 }
 
 export async function getFinanceiroExtrato(params: FinanceiroExtratoParams) {
+  assertRealAuthForFinanceiro();
   const env = await callRPC<unknown[]>('get_financeiro_extrato', params);
   return {
     dados: adaptList(env.dados, adaptFinanceiroMovimento),
@@ -521,16 +544,19 @@ export async function getAllFinanceiroExtrato(
 }
 
 export async function getFinanceiroContas(params?: { p_incluir_inativas?: boolean }) {
+  assertRealAuthForFinanceiro();
   const env = await callRPC<unknown[]>('get_financeiro_contas', params);
   return adaptList(env.dados, adaptFinanceiroConta);
 }
 
 export async function getCategoriasEntradas(params?: { p_incluir_inativas?: boolean }) {
+  assertRealAuthForFinanceiro();
   const env = await callRPC<unknown[]>('get_categorias_entradas', params);
   return adaptList(env.dados, adaptCategoriaEntrada);
 }
 
 export async function getFinanceiroModelosRecorrentes(params?: FinanceiroModelosRecorrentesParams) {
+  assertRealAuthForFinanceiro();
   const env = await callRPC<unknown[]>(
     'get_financeiro_modelos_recorrentes',
     params ? { ...params } : undefined,

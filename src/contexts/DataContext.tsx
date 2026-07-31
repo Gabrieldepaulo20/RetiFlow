@@ -1,4 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   AccountPayable,
   ActivityLog,
@@ -335,6 +336,7 @@ async function resolveFinanceAccountId(explicitAccountId?: string) {
 }
 
 export function DataProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const { operationalUser, isAuthLoading, isSupportSessionValidating } = useAuth();
   const activeUserId = IS_REAL_AUTH && !isSupportSessionValidating
     ? operationalUser?.id ?? null
@@ -966,6 +968,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         idempotencyKey: attempt.key,
       });
       completeFinancialIdempotencyAttempt(attempt);
+      void queryClient.invalidateQueries({ queryKey: ['financeiro'] });
       const totalReceived = result.valorRealizado ?? Number((alreadyReceived + amount).toFixed(2));
       const paymentStatus = result.status === 'PAGO' || totalReceived >= note.totalAmount
         ? 'PAGO'
@@ -997,7 +1000,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       `${note.number} — ${amount < remaining ? 'recebimento parcial' : 'recebimento'} registrado`,
       id,
     );
-  }, [addActivity, bumpDataVersion, notes]);
+  }, [addActivity, bumpDataVersion, notes, queryClient]);
 
   const estornarRecebimentoNota = useCallback(async (
     id: string,
@@ -1025,6 +1028,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         idempotencyKey: attempt.key,
       });
       completeFinancialIdempotencyAttempt(attempt);
+      void queryClient.invalidateQueries({ queryKey: ['financeiro'] });
     }
     setNotes((previous) => previous.map((candidate) => (
       candidate.id === id
@@ -1033,7 +1037,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     )));
     bumpDataVersion();
     addActivity(`${note.number} — recebimento estornado`, id);
-  }, [addActivity, bumpDataVersion, notes]);
+  }, [addActivity, bumpDataVersion, notes, queryClient]);
 
   const createPurchaseNote = useCallback(async (parentId: string): Promise<IntakeNote> => {
     const parentNote = notes.find((note) => note.id === parentId);
@@ -1202,6 +1206,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           });
           completeFinancialIdempotencyAttempt(attempt);
           assertActiveSupportScopeUnchanged(operationScope);
+          void queryClient.invalidateQueries({ queryKey: ['financeiro'] });
         }
       } catch (err) {
         console.error('[addPayable]', err);
@@ -1216,7 +1221,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     bumpDataVersion();
     addActivity(`Conta a pagar criada: ${newPayable.title}`);
     return newPayable;
-  }, [addActivity, bumpDataVersion, refreshEmailSuggestions]);
+  }, [addActivity, bumpDataVersion, refreshEmailSuggestions, queryClient]);
 
   const updatePayable = useCallback(async (id: string, data: Partial<AccountPayable>) => {
     // status e paidAt são campos CONTROLADOS pelo servidor: só mudam via
@@ -1266,6 +1271,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               idempotencyKey: attempt.key,
             });
             completeFinancialIdempotencyAttempt(attempt);
+            void queryClient.invalidateQueries({ queryKey: ['financeiro'] });
             // Servidor é a fonte da verdade do status pós-pagamento (PARCIAL vs PAGO).
             if (result.status) serverStatus = result.status as PayableStatus;
           }
@@ -1304,7 +1310,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ),
     );
     bumpDataVersion();
-  }, [bumpDataVersion, payableById]);
+  }, [bumpDataVersion, payableById, queryClient]);
 
   /** Classifica a classe contábil (DRE) de uma categoria. Otimista + reverte em erro. */
   const updateCategoriaClasse = useCallback(async (id: string, classe: PayableCategoryClass) => {

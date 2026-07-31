@@ -82,6 +82,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { todayLocalISODate } from '@/lib/dates';
 import { useToast } from '@/hooks/use-toast';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
 import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
@@ -203,7 +204,7 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
   const [showPDF, setShowPDF] = useState(false);
   const [isChangingStatus, setIsChangingStatus] = useState(false);
   const [recebForma, setRecebForma] = useState<PaymentMethod>('PIX');
-  const [recebData, setRecebData] = useState(() => new Date().toISOString().slice(0, 10));
+  const [recebData, setRecebData] = useState(() => todayLocalISODate());
 
   const note = noteOverride ?? (noteId ? getNote(noteId) : undefined);
   const client = clientOverride ?? (note ? getClient(note.clientId) : undefined);

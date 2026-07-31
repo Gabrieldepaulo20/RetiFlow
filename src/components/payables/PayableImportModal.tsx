@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useData } from '@/contexts/DataContext';
 import { cn } from '@/lib/utils';
+import { todayLocalISODate } from '@/lib/dates';
 import {
   buildMeaningfulPayableTitle,
   buildPayableHistoryDescription,
@@ -378,7 +379,7 @@ export default function PayableImportModal({
     }
     const date = isValidISODate(draft.dueDate)
       ? draft.dueDate
-      : new Date().toISOString().slice(0, 10);
+      : todayLocalISODate();
     const fallbackCategory = entryCategories.find((category) => category.ativa) ?? entryCategories[0];
     const entryCategoryId = entryCategories.some((category) => category.id === draft.entryCategoryId)
       ? draft.entryCategoryId
@@ -440,7 +441,7 @@ export default function PayableImportModal({
 
     const dueDate = isValidISODate(draft.dueDate)
       ? draft.dueDate
-      : new Date().toISOString().slice(0, 10);
+      : todayLocalISODate();
     const issueDate = isValidISODate(draft.issueDate) ? draft.issueDate : undefined;
     const categoryId = payableCategories.some((category) => category.id === draft.categoryId)
       ? draft.categoryId

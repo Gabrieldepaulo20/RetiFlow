@@ -4,6 +4,116 @@ Atualizado em: 2026-07-31
 
 ---
 
+## Correcoes Da Auditoria Completa - 2026-07-31 (segunda passada, apos o relatorio)
+
+- Usuario pediu pra atacar direto: #1 (double-count), #3/#4 (Dashboard silencioso + mock no
+  Financeiro), #7/#8/#9 (bugs pequenos) e limpeza de codigo morto. Tudo abaixo foi implementado e
+  validado nesta sessao (typecheck + lint + `npm test -- --run` 636 testes + build, todos verdes).
+  Nada foi commitado — diff fica pra revisao do usuario. Doc completo com todo o antes/depois:
+  `docs/auditoria-completa-2026-07-31.md` (secao "Status pos-fix" no topo).
+- **#1 corrigido apos revisao:** o grafico de 6 meses e o resultado anual passaram a consultar
+  `get_financeiro_resumo` por competencia, a mesma fonte oficial do Financeiro. Isso inclui o valor
+  liquido dos Fechamentos, parcelas recebidas antes do fechamento, recebiveis manuais e receitas
+  avulsas com impacto na DRE. A primeira proposta de recompor Fechamentos no frontend foi descartada
+  porque nao representava com precisao periodos personalizados nem todos os tipos de receita.
+- **#3 corrigido:** Dashboard agora mostra banner amarelo quando `financeiroResumo` ou a lista de
+  Fechamentos falham (`financeiroResumoError`/`closingBucketsError`), em vez de cair pra 0 em
+  silencio. `legacyOpenReceivableAmount`/`legacyOpenPayableAmount` (fallback) agora filtram por
+  `selectedRange.endTime` — o rotulo "em aberto até dd/mm" deixa de mentir no fallback.
+- **#4 corrigido:** `financeiro.ts` ganhou `assertRealAuthForFinanceiro()` (novo
+  `FinanceiroMockModeUnsupportedError`) nas 6 funcoes de leitura que batiam direto no Supabase real
+  mesmo em modo mock. `Financeiro.tsx` detecta esse erro especifico e mostra "Central Financeiro
+  indisponivel no modo demo" em vez do banner generico de RPC. Guard le `import.meta.env` a cada
+  chamada (nao cacheia em const de modulo) pra testes poderem alternar com `vi.stubEnv` sem
+  `resetModules`.
+- **#7 corrigido:** `DataContext.tsx` ganhou `useQueryClient()` + `invalidateQueries(['financeiro'])`
+  apos `registrarRecebimentoNota`, `estornarRecebimentoNota`, `addPayable` (pago na criacao) e
+  `updatePayable` (pagamento). KPIs do Financeiro nao ficam mais ate 30s desatualizados nesses fluxos.
+- **#8 corrigido:** nova `todayLocalISODate()` em `src/lib/dates.ts` (usa
+  `getFullYear/getMonth/getDate` locais, nunca `toISOString()`), substituindo o padrao
+  `new Date().toISOString().slice(0,10)` como default de "hoje" em `PayableImportModal.tsx`,
+  `NoteDetailModal.tsx`, `IntakeNoteDetail.tsx`, `MonthlyClosing.tsx` (4 pontos) e
+  `PayableQuickForm.tsx` (2 pontos). Teste de regressao com fake timers simulando 23h50 BR em
+  `src/test/dates.test.ts`.
+- **#9 corrigido:** `insert_log` agora passa por um wrapper dedicado (`callVoidRPC` em `_base.ts`,
+  novo — `insert_log` retorna `void`, sem envelope, por isso nao usa o `callRPC` padrao) em vez de
+  chamar `supabase.rpc` direto. Como ainda nao existe variante `_contexto_suporte`, a chamada fica
+  bloqueada nessa sessao para nao atribuir o log ao Mega Master errado; a atividade principal nao
+  falha porque esse log complementar ja e disparado de forma assíncrona e tolerante a erro.
+- **Limpeza executada:** removidos `src/api/index.ts`, `src/api/supabase/index.ts`,
+  `src/api/supabase/faturas.ts` (residuo de Nota Fiscal), `src/components/NavLink.tsx`,
+  `src/components/ui/use-toast.ts` (shim), 18 componentes shadcn/ui sem import (`chart.tsx`,
+  `sidebar.tsx`, etc.) e as deps `@hookform/resolvers`/`@tailwindcss/typography` do `package.json`
+  (lockfile regenerado). `react-hook-form` tambem foi removido depois que seu unico consumidor,
+  `components/ui/form.tsx`, saiu, junto das dependencias diretas usadas somente pelos componentes
+  removidos (`cmdk`, `embla-carousel-react`, `input-otp`, `react-resizable-panels` e Radix equivalentes).
+  `useOperationalQueries`/`useNotesData`/`useCustomersData` intocados (possivel scaffold de migracao,
+  fora do escopo desta limpeza).
+- **Nao tocado nesta rodada (decisao consciente, ver doc completo pra motivo):** achado #2 (cap de
+  5.000 registros — precisa saber volume real de producao antes de agir) e achado #5/#6 (RPCs de
+  suporte sem remap `get_categorias_conta_pagar`/`get_usuarios`, e nenhuma migration/RPC nova foi
+  criada — exige plano+aprovacao por tocar backend, fora do que pode ser feito sem autorizacao).
+- Proximo passo: usuario revisa `git diff`/`git status` e decide o que commitar; achados #2/#5/#6
+  ficam pra quando houver decisao de prioridade + acesso pra consultar volume real de producao.
+
+---
+
+## Auditoria Completa (Bugs, Codigo Morto, Performance, Responsividade, Calculos) - 2026-07-31
+
+- Pedido: revisao completa do sistema. Relatorio integral em
+  `docs/auditoria-completa-2026-07-31.md` (leitura de codigo por 4 agentes independentes + teste
+  visual ao vivo em tablet/mobile com app local em `VITE_AUTH_MODE=mock`, sem tocar dado real).
+  Nenhuma edicao de codigo, migration, RLS ou policy foi feita nesta rodada — so leitura e relatorio.
+- **Achados de alto risco (resumo, detalhe completo no doc):**
+  1. Double-count de receita: KPI "Faturamento real"/DRE excluem notas que entraram num Fechamento
+     (usa valor liquido), mas o grafico "Faturamento — 6 meses" e o card "Resultado Anual" somam
+     `totalAmount` bruto por nota sem checar `note.closingId` (`Dashboard.tsx:294-312,375,483-488`).
+     Duas areas da mesma tela mostram receita diferente todo mes com fechamento com desconto.
+  2. Cap de 5.000 registros em `getDashboardResumo` (`DataContext.tsx:455`) sem aviso na UI quando
+     `total > limite` — corta os registros mais antigos silenciosamente se o tenant crescer.
+  3. **Confirmado ao vivo:** quando a RPC financeira falha, `Financeiro.tsx` mostra banner de erro
+     claro, mas `Dashboard.tsx:229-248` cai num catch silencioso (`setFinanceiroResumo(null)`) e
+     mostra R$0,00 sem aviso — e o rotulo "(em aberto até dd/mm)" fica errado nesse fallback porque
+     `legacyOpenReceivableAmount`/`legacyOpenPayableAmount` (`:402-413`/`:892-901`) nao filtram por
+     data nesse caminho.
+  4. **Confirmado ao vivo:** `src/api/supabase/financeiro.ts` nao respeita `VITE_AUTH_MODE=mock`
+     (sem checagem `IS_REAL_AUTH`, diferente do resto do `DataContext`) — todo dev/demo local do
+     Financeiro bate direto no Supabase de producao e falha com 401.
+  5. Modo suporte: alem do `get_categorias_conta_pagar` ja documentado, `get_usuarios` (Configuracoes
+     → Usuarios) tambem nao tem variante `*_contexto_suporte` — sessao de suporte pode ver/alterar
+     usuario errado. Padrao "escrita remapeada, leitura irmã esquecida" ja se repetiu duas vezes no
+     `SUPPORT_CONTEXT_RPC_MAP` (`_base.ts`) — vale auditar o mapa inteiro.
+  6. Residuo de Nota Fiscal ainda importavel: `src/api/supabase/faturas.ts` + barrel
+     `src/api/supabase/index.ts`, sem consumidor mas funcional — contra a regra do AGENTS.md.
+- **Achados de medio risco:** KPIs do Financeiro ficam ate 30s desatualizados apos pagamento pelo
+  fluxo padrao (falta `invalidateQueries(['financeiro'])` em `DataContext`); bug de fuso horario
+  "hoje local vs UTC" (`toISOString().slice(0,10)`) reaparece como default de data em 6+ formularios
+  de escrita (`PayableImportModal`, `NoteDetailModal`, `IntakeNoteDetail`, `MonthlyClosing`,
+  `PayableQuickForm`) — mesma causa-raiz corrigida uma vez, mas o helper `src/lib/dates.ts` nunca
+  cobriu geracao de "hoje", so formatacao; `insert_log` fora do `callRPC` (grava identidade errada em
+  modo suporte); Kanban no mobile ainda com scroll horizontal apertado (pendencia antiga, CONFIRMADO
+  ainda presente); formatacao de moeda BRL duplicada em ~10 arquivos sem helper central.
+- **Verificado e OK:** build limpo (vendor chunks isolados, sem leak de `xlsx`/`recharts`/
+  `@react-pdf/renderer`), todas as 22 paginas lazy-loaded, sem N+1 em `src/api/supabase/*`, polling
+  do Crescimento (5 min) correto e pausa em background, `DataContext`/`Dashboard` bem memoizados. O
+  gate `role === 'ADMIN'` no botao "Estornar recebimento" foi mantido: o backend aceita outros
+  perfis com modulo Financeiro, mas ampliar essa permissao de produto sem decisao explicita seria
+  arriscado. Dialogs financeiros/payables (diff de hoje, tablet/mobile) testados visual e
+  funcionalmente em 834px e 390px — header/footer fixos, corpo rolavel, sem clipping, sem scroll
+  horizontal indevido; fix pode ser finalizado.
+- **Codigo morto / limpeza (baixo risco, doc completo tem lista):** barrels `api/index.ts` e
+  `api/supabase/index.ts` sem consumidor, `NavLink.tsx`, `use-toast.ts` shim, ~18 componentes
+  shadcn/ui sem import (`chart.tsx` 303 linhas, `sidebar.tsx` 638 linhas), layer
+  `useOperationalQueries`/`useNotesData`/`useCustomersData` abandonada (zero uso), deps
+  `@hookform/resolvers`/`@tailwindcss/typography` sem uso confirmado.
+- Nao verificavel por leitura estatica/teste local: volume real de notas/contas em producao (pra
+  saber se o cap de 5.000 e risco iminente), comportamento do polling sob sessao longa real,
+  jank de re-render sob volume alto (precisa profiling com dado real).
+- Proximo passo: usuario vai priorizar quais achados corrigir primeiro; ordem sugerida no doc
+  completo (`docs/auditoria-completa-2026-07-31.md`, secao "Recomendacao de ordem de ataque").
+
+---
+
 ## Importacao Financeira Com IA - Entrada E Saida - 2026-07-31
 
 - O atalho `Importar com IA` voltou para a barra principal do Financeiro e para a aba Entradas.

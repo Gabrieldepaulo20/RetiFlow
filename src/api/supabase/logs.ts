@@ -1,6 +1,4 @@
-import { callRPC } from './_base';
-import { supabase } from '@/lib/supabase';
-import { logError } from '@/lib/monitoring';
+import { callRPC, callVoidRPC } from './_base';
 
 export interface LogAtividade {
   id_log: number;
@@ -30,11 +28,8 @@ export async function insertLog(params: {
   p_descricao: string;
   p_fk_usuarios?: string;
 }) {
-  const { error } = await supabase.schema('RetificaPremium').rpc('insert_log', params);
-
-  if (error) {
-    const err = new Error(`[insert_log] ${error.message}`);
-    logError(err, 'insert_log');
-    throw err;
-  }
+  // `insert_log` é `returns void` no backend (sem envelope {status, mensagem, dados}),
+  // por isso usa callVoidRPC em vez de callRPC — mas ainda passa pelo mesmo
+  // remapeamento/bloqueio de modo suporte central em `_base.ts`.
+  await callVoidRPC('insert_log', params);
 }

@@ -47,6 +47,10 @@ import {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 type DashboardRangePreset = 'month' | `year-${number}` | 'custom';
+type HistoricalRevenueSnapshot = {
+  monthly: Record<string, number>;
+  yearly: number | null;
+};
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
 const BAR_COLORS: Partial<Record<NoteStatus, string>> = {
@@ -156,6 +160,9 @@ export default function Dashboard() {
   const [customStartDate, setCustomStartDate] = useState(() => format(startOfMonth(new Date()), 'yyyy-MM-dd'));
   const [customEndDate, setCustomEndDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [financeiroResumo, setFinanceiroResumo] = useState<FinanceiroResumo | null>(null);
+  const [financeiroResumoError, setFinanceiroResumoError] = useState(false);
+  const [historicalRevenue, setHistoricalRevenue] = useState<HistoricalRevenueSnapshot | null>(null);
+  const [historicalRevenueError, setHistoricalRevenueError] = useState(false);
 
   const now = useMemo(() => new Date(), []);
   const availableFinancialYears = useMemo(() => {
@@ -229,6 +236,8 @@ export default function Dashboard() {
   useEffect(() => {
     if (!IS_REAL_AUTH) return;
     let active = true;
+    setFinanceiroResumo(null);
+    setFinanceiroResumoError(false);
 
     getFinanceiroResumo({
       p_data_inicio: format(selectedPeriod.start, 'yyyy-MM-dd'),
@@ -239,13 +248,67 @@ export default function Dashboard() {
         if (active) setFinanceiroResumo(resumo);
       })
       .catch(() => {
-        if (active) setFinanceiroResumo(null);
+        // Sem resumo real: os KPIs caem para os cálculos locais (ver periodRevenue/
+        // periodReceived/openReceivableAmount abaixo). A UI precisa avisar — não pode
+        // mostrar esses valores aproximados como se fossem o resumo confiável do backend.
+        if (active) {
+          setFinanceiroResumo(null);
+          setFinanceiroResumoError(true);
+        }
       });
 
     return () => {
       active = false;
     };
   }, [selectedPeriod.end, selectedPeriod.start]);
+
+  useEffect(() => {
+    if (!IS_REAL_AUTH) return;
+    let active = true;
+    setHistoricalRevenueError(false);
+
+    const months = Array.from({ length: 6 }, (_, index) => subMonths(now, 5 - index));
+    const currentYear = now.getFullYear();
+    const currentDayEnd = endOfDay(now);
+    const requests = [
+      ...months.map((month) => getFinanceiroResumo({
+        p_data_inicio: format(startOfMonth(month), 'yyyy-MM-dd'),
+        p_data_fim: format(
+          endOfMonth(month).getTime() > currentDayEnd.getTime() ? currentDayEnd : endOfMonth(month),
+          'yyyy-MM-dd',
+        ),
+        p_modo: 'COMPETENCIA',
+      })),
+      getFinanceiroResumo({
+        p_data_inicio: `${currentYear}-01-01`,
+        p_data_fim: format(currentDayEnd, 'yyyy-MM-dd'),
+        p_modo: 'COMPETENCIA',
+      }),
+    ];
+
+    void Promise.allSettled(requests).then((results) => {
+      if (!active) return;
+      const monthly: Record<string, number> = {};
+      months.forEach((month, index) => {
+        const result = results[index];
+        if (result?.status === 'fulfilled') {
+          monthly[format(month, 'yyyy-MM')] = result.value.faturamentoCompetencia;
+        }
+      });
+      const yearlyResult = results[months.length];
+      setHistoricalRevenue({
+        monthly,
+        yearly: yearlyResult?.status === 'fulfilled'
+          ? yearlyResult.value.faturamentoCompetencia
+          : null,
+      });
+      setHistoricalRevenueError(results.some((result) => result.status === 'rejected'));
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [now]);
   const isInSelectedCalendarPeriod = useCallback((value?: string | null) => {
     const time = toComparableTime(value);
     return Number.isFinite(time) && time >= selectedRange.startTime && time <= selectedRange.endTime;
@@ -296,12 +359,16 @@ export default function Dashboard() {
       const d = subMonths(now, 5 - i);
       const start = startOfMonth(d).getTime();
       const end = endOfMonth(d).getTime();
-      const valor = revenueRecognizedNotes
-        .filter(n => {
-          const t = toComparableTime(getDashboardRevenueDate(n));
-          return t >= start && t <= end;
+      const localFallback = revenueRecognizedNotes
+        .filter((note) => {
+          const time = toComparableTime(getDashboardRevenueDate(note));
+          return time >= start && time <= end;
         })
-        .reduce((sum, n) => sum + n.totalAmount, 0);
+        .reduce((sum, note) => sum + note.totalAmount, 0);
+      // O resumo oficial inclui Fechamentos líquidos, recebíveis manuais e receitas avulsas
+      // com a mesma regra do Financeiro. O cálculo local só aparece como fallback sinalizado.
+      const valor = historicalRevenue?.monthly[format(d, 'yyyy-MM')] ?? localFallback;
+      // Count é informativo (nº de O.S.), não valor financeiro — mantém a contagem bruta.
       const count = revenueRecognizedNotes
         .filter(n => {
           const t = toComparableTime(getDashboardRevenueDate(n));
@@ -309,7 +376,7 @@ export default function Dashboard() {
         }).length;
       return { month: format(d, 'MMM', { locale: ptBR }), valor, count };
     });
-  }, [revenueRecognizedNotes, now]);
+  }, [historicalRevenue, revenueRecognizedNotes, now]);
 
   const activePayables = useMemo(
     () => payables.filter((payable) => payable.deletedAt == null),
@@ -398,16 +465,22 @@ export default function Dashboard() {
         : financeiroResumo.resultadoPeriodo)
     : periodReceived - periodPaidExpenses;
   // Posição em aberto acumulada até a data final do filtro (não é apenas o que
-  // nasceu dentro do período):
+  // nasceu dentro do período) — fallback usado só quando financeiroResumo falha
+  // (ver financeiroResumoError). Precisa respeitar o mesmo corte "até {selectedPeriod.end}"
+  // que o rótulo na tela promete, senão mostra posição aberta atual etiquetada como se
+  // fosse a de uma data passada.
   const legacyOpenReceivableAmount = useMemo(
-    () => getReceivableNotes(notes).reduce((sum, note) => sum + note.totalAmount, 0),
-    [notes],
+    () => getReceivableNotes(notes)
+      .filter((note) => toComparableTime(getDashboardRevenueDate(note)) <= selectedRange.endTime)
+      .reduce((sum, note) => sum + note.totalAmount, 0),
+    [notes, selectedRange.endTime],
   );
   const legacyOpenPayableAmount = useMemo(
     () => activePayables
       .filter((payable) => payable.status !== 'PAGO' && payable.status !== 'CANCELADO')
+      .filter((payable) => toComparableTime(payable.competencyDate ?? payable.dueDate ?? payable.createdAt) <= selectedRange.endTime)
       .reduce((sum, payable) => sum + Math.max(0, payable.finalAmount - (payable.paidAmount ?? 0)), 0),
-    [activePayables],
+    [activePayables, selectedRange.endTime],
   );
   const openReceivableAmount = financeiroResumo?.aReceber ?? legacyOpenReceivableAmount;
   const openPayableAmount = financeiroResumo?.aPagar ?? legacyOpenPayableAmount;
@@ -481,10 +554,13 @@ export default function Dashboard() {
   const endYear = new Date(currentYear, 11, 31, 23, 59, 59).getTime();
 
   const yearlyRevenue = useMemo(
-    () => revenueRecognizedNotes
-      .filter(n => { const t = toComparableTime(getDashboardRevenueDate(n)); return t >= startYear && t <= endYear; })
-      .reduce((s, n) => s + n.totalAmount, 0),
-    [revenueRecognizedNotes, startYear, endYear],
+    () => historicalRevenue?.yearly ?? revenueRecognizedNotes
+      .filter((note) => {
+        const time = toComparableTime(getDashboardRevenueDate(note));
+        return time >= startYear && time <= endYear;
+      })
+      .reduce((sum, note) => sum + note.totalAmount, 0),
+    [historicalRevenue, revenueRecognizedNotes, startYear, endYear],
   );
 
   const yearlyCreatedNotes = useMemo(
@@ -634,6 +710,21 @@ export default function Dashboard() {
               ) : null}
             </div>
           </div>
+
+          {(financeiroResumoError || historicalRevenueError) && (
+            <div className="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <p>
+                {financeiroResumoError
+                  ? 'Não foi possível carregar o resumo financeiro do servidor agora — os valores abaixo são uma estimativa local, calculada a partir das O.S. e contas já carregadas, e podem não bater com o Financeiro. '
+                  : ''}
+                {historicalRevenueError
+                  ? 'Parte do histórico financeiro não carregou — os meses afetados e o resultado anual usam uma estimativa local de O.S. e podem não incluir descontos de Fechamentos ou receitas avulsas. '
+                  : ''}
+                Atualize a página para tentar novamente.
+              </p>
+            </div>
+          )}
 
           <div className="grid grid-cols-3 gap-1.5 p-1.5 sm:gap-2 sm:p-2.5 md:grid-cols-4 xl:p-3 2xl:grid-cols-7">
             <button

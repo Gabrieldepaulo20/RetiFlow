@@ -39,6 +39,7 @@ import {
   getFinanceiroContas,
   getFinanceiroResumo,
   inativarModeloRecorrente,
+  FinanceiroMockModeUnsupportedError,
   type FinanceiroLancamento,
   type FinanceiroModeloRecorrente,
   type FinanceiroModo,
@@ -253,14 +254,20 @@ export default function Financeiro() {
   const launches = launchesQuery.data?.dados ?? EMPTY_LAUNCHES;
   const movements = extratoQuery.data?.dados ?? EMPTY_MOVEMENTS;
   const modelos = modelosQuery.data?.dados ?? [];
-  const hasQueryError = [
+  const failedQueries = [
     contasQuery,
     categoriasQuery,
     resumoQuery,
     launchesQuery,
     extratoQuery,
     modelosQuery,
-  ].some((query) => query.isError);
+  ].filter((query) => query.isError);
+  const hasQueryError = failedQueries.length > 0;
+  // Modo mock/demo não tem dado local para a Central Financeiro (ver FinanceiroMockModeUnsupportedError)
+  // — nesse caso a causa não é RPC não publicada nem instabilidade de rede, é o modo de auth.
+  const isMockModeUnsupported = failedQueries.some(
+    (query) => query.error instanceof FinanceiroMockModeUnsupportedError,
+  );
 
   const filteredLaunches = useMemo(() => {
     const normalized = search.trim().toLocaleLowerCase('pt-BR');
@@ -660,7 +667,16 @@ export default function Financeiro() {
         </Alert>
       ) : null}
 
-      {hasQueryError ? (
+      {hasQueryError && isMockModeUnsupported ? (
+        <Alert variant="destructive">
+          <CircleAlert className="h-4 w-4" />
+          <AlertTitle>Central Financeiro indisponível no modo demo</AlertTitle>
+          <AlertDescription>
+            Este ambiente está em modo mock (<code>VITE_AUTH_MODE=mock</code>), que não tem dado local
+            para o Financeiro. Use <code>VITE_AUTH_MODE=real</code> com Supabase para testar esta tela.
+          </AlertDescription>
+        </Alert>
+      ) : hasQueryError ? (
         <Alert variant="destructive">
           <CircleAlert className="h-4 w-4" />
           <AlertTitle>Parte da central não carregou</AlertTitle>

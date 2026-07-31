@@ -26,3 +26,17 @@ export function formatDateTimeShortBR(value: string | null | undefined): string 
     }) ?? null
   );
 }
+
+/**
+ * `YYYY-MM-DD` do dia LOCAL (fuso do navegador), para usar como default de
+ * "hoje" em formulários de escrita. Nunca usar `new Date().toISOString().slice(0, 10)`
+ * para esse fim: em `America/Sao_Paulo` (UTC-3), entre ~21h e 23h59 esse cálculo já
+ * cruzou a meia-noite em UTC e devolve o dia seguinte.
+ */
+export function todayLocalISODate(): string {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}

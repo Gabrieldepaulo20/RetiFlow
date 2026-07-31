@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { callRPC, extractDados } from '@/api/supabase/_base';
+import { callRPC, callVoidRPC, extractDados } from '@/api/supabase/_base';
 import {
   setActiveSupportSession,
   SUPPORT_SESSION_STORAGE_KEY,
@@ -100,6 +100,13 @@ describe('Supabase RPC base wrapper', () => {
 
     await expect(callRPC('insert_algo')).rejects.toThrow('[insert_algo] Não autenticado');
     expect(mocks.logError).toHaveBeenCalledOnce();
+  });
+
+  it('accepts a successful void RPC response', async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: null });
+
+    await expect(callVoidRPC('insert_log', { p_acao: 'UI_ACTIVITY' })).resolves.toBeUndefined();
+    expect(mocks.rpc).toHaveBeenCalledWith('insert_log', { p_acao: 'UI_ACTIVITY' });
   });
 
   it('uses the validated support-context RPC for contextual reads', async () => {
@@ -216,6 +223,15 @@ describe('Supabase RPC base wrapper', () => {
 
     // Fechamentos não têm variante de suporte e devem continuar bloqueados
     await expect(callRPC('insert_fechamento', { p_payload: {} })).rejects.toThrow(
+      'Ações de escrita em modo suporte estão bloqueadas',
+    );
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it('blocks insert_log in support mode instead of attributing it to the Mega Master', async () => {
+    setActiveSupportSession(makeActiveSupportSession('auditar atividade'));
+
+    await expect(callVoidRPC('insert_log', { p_acao: 'UI_ACTIVITY' })).rejects.toThrow(
       'Ações de escrita em modo suporte estão bloqueadas',
     );
     expect(mocks.rpc).not.toHaveBeenCalled();

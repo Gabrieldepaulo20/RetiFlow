@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { formatDateBR } from '@/lib/dates';
+import { formatDateBR, todayLocalISODate } from '@/lib/dates';
 import { ClosingHtmlPreview } from '@/components/closing/ClosingHtmlPreview';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { createPdfPreviewWindow, downloadPdfBlob, downloadPdfUrl, openPdfInBrowser } from '@/lib/printPdf';
@@ -318,13 +318,13 @@ export default function MonthlyClosing() {
   const [sharingId, setSharingId] = useState<string | null>(null);
   // Pagamento do fechamento (B2B): marcar pago + cascata.
   const [payFechamento, setPayFechamento] = useState<FechamentoListItem | null>(null);
-  const [payData, setPayData] = useState(() => new Date().toISOString().slice(0, 10));
+  const [payData, setPayData] = useState(() => todayLocalISODate());
   const [payForma, setPayForma] = useState<PaymentMethod>('PIX');
   const [payAmount, setPayAmount] = useState('');
   const [payBusy, setPayBusy] = useState(false);
   // Marcar uma O.S. do rascunho como já paga (sai do total do fechamento).
   const [payNota, setPayNota] = useState<PreviewNote | null>(null);
-  const [payNotaData, setPayNotaData] = useState(() => new Date().toISOString().slice(0, 10));
+  const [payNotaData, setPayNotaData] = useState(() => todayLocalISODate());
   const [payNotaForma, setPayNotaForma] = useState<PaymentMethod>('PIX');
   const [payNotaBusy, setPayNotaBusy] = useState(false);
   // Fechamento gerado com o painel de descontos aberto (consulta visual).
@@ -1807,7 +1807,7 @@ export default function MonthlyClosing() {
                             size="sm"
                             onClick={() => {
                               setPayForma('PIX');
-                              setPayData(new Date().toISOString().slice(0, 10));
+                              setPayData(todayLocalISODate());
                               setPayAmount(valorEmAberto.toFixed(2));
                               setPayFechamento(f);
                             }}
@@ -1940,7 +1940,7 @@ export default function MonthlyClosing() {
                               variant="outline"
                               size="sm"
                               className="h-8 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
-                              onClick={() => { setPayNotaForma('PIX'); setPayNotaData(new Date().toISOString().slice(0, 10)); setPayNota(nota); }}
+                              onClick={() => { setPayNotaForma('PIX'); setPayNotaData(todayLocalISODate()); setPayNota(nota); }}
                             >
                               <Wallet className="mr-1.5 h-3.5 w-3.5" /> {isPartial ? 'Quitar saldo' : 'Marcar paga'}
                             </Button>

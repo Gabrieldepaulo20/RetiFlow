@@ -9,6 +9,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Switch } from '@/components/ui/switch';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
+import { todayLocalISODate } from '@/lib/dates';
 import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { ChevronDown, Paperclip, ReceiptText, Save, Sparkles } from 'lucide-react';
@@ -129,7 +130,7 @@ export default function PayableQuickForm({
     dueDate: initialValues?.dueDate ?? '',
     amount: initialValues?.amount ?? '',
     initialStatus: initialValues?.initialStatus ?? 'PENDENTE',
-    paidAt: initialValues?.paidAt ?? new Date().toISOString().slice(0, 10),
+    paidAt: initialValues?.paidAt ?? todayLocalISODate(),
     paidAmount: initialValues?.paidAmount ?? '',
     paymentMethod: initialValues?.paymentMethod ?? 'PIX',
     recurrence: initialValues?.recurrence ?? 'NENHUMA',
@@ -257,7 +258,7 @@ export default function PayableQuickForm({
         categoryId: form.categoryId,
         docNumber: normalizeWhitespace(form.docNumber) || undefined,
         dueDate: form.dueDate,
-        issueDate: new Date().toISOString().slice(0, 10),
+        issueDate: todayLocalISODate(),
         originalAmount,
         finalAmount: resolvedAmount,
         status: isPaid ? 'PAGO' : 'PENDENTE',

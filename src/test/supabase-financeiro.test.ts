@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   adaptFinanceiroLancamento,
   adaptFinanceiroMovimento,
@@ -123,6 +123,9 @@ describe('Supabase Financeiro adapters', () => {
 
 describe('Supabase Financeiro RPCs', () => {
   beforeEach(() => {
+    // Central Financeiro exige VITE_AUTH_MODE=real (ver FinanceiroMockModeUnsupportedError);
+    // o padrão do vitest.config.ts é 'mock', então estas RPCs precisam do stub aqui.
+    vi.stubEnv('VITE_AUTH_MODE', 'real');
     setActiveSupportSession(null);
     window.localStorage.clear();
     window.sessionStorage.clear();
@@ -145,6 +148,10 @@ describe('Supabase Financeiro RPCs', () => {
       data: { session: { access_token: 'access-token-test' } },
       error: null,
     });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it('adapta o resumo financeiro sem expor o envelope do banco', async () => {
@@ -733,5 +740,15 @@ describe('Supabase Financeiro RPCs', () => {
         Authorization: 'Bearer access-token-test',
       },
     });
+  });
+
+  it('bloqueia leitura em modo mock com um erro identificável, sem chamar o RPC', async () => {
+    vi.stubEnv('VITE_AUTH_MODE', 'mock');
+
+    await expect(getFinanceiroResumo({
+      p_data_inicio: '2026-06-01',
+      p_data_fim: '2026-06-30',
+    })).rejects.toThrow('Central Financeiro requer VITE_AUTH_MODE=real');
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 });

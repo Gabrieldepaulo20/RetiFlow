@@ -19,6 +19,7 @@ import { getNextNoteWorkflowStatus, getPreviousNoteWorkflowStatus, isBillableNot
 import { ArrowLeft, Eye, Printer, Share2, ChevronRight, ChevronLeft, Paperclip, Ban, Trash2, XCircle, Link2, Wallet, RotateCcw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { todayLocalISODate } from '@/lib/dates';
 import { buildWhatsAppUrl, openExternalUrl } from '@/lib/browserShare';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
 import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
@@ -41,7 +42,7 @@ export default function IntakeNoteDetail() {
   const [realDetalhes, setRealDetalhes] = useState<NotaServicoDetalhes | null>(null);
   const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
   const [recebForma, setRecebForma] = useState<PaymentMethod>('PIX');
-  const [recebData, setRecebData] = useState(() => new Date().toISOString().slice(0, 10));
+  const [recebData, setRecebData] = useState(() => todayLocalISODate());
 
   useEffect(() => {
     if (!IS_REAL_AUTH || !id) return;
