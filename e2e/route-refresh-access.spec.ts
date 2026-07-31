@@ -36,7 +36,7 @@ test.describe('Route refresh sentinels', () => {
       ['/clientes', 'Clientes'],
       ['/notas-entrada', 'Notas de Entrada'],
       ['/kanban', 'Produção'],
-      ['/contas-a-pagar', 'Contas a Pagar'],
+      ['/financeiro', 'Financeiro'],
       ['/fechamento', 'Fechamento Mensal'],
     ] as const) {
       await expectRouteSurvivesRefresh(page, path, heading);

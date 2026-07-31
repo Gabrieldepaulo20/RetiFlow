@@ -22,7 +22,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { AccountPayable, PaymentMethod, PAYABLE_STATUS_COLORS, PAYABLE_STATUS_LABELS, PAYMENT_METHOD_LABELS, RECURRENCE_TYPE_LABELS } from '@/types';
-import { buildPayableHistoryDescription, calculatePayableFinalAmount, calculatePayableRemainingBalance, canCancelPayable, canEditPayable, canRegisterPayment, formatPayableDueDateLabel, generatePayableDuplicateKey, getContextualQuestion, getDueDateUrgencyLevel, getPayableDisplayStatus, groupPayables, isPayableEditRestricted, isPayableOverdue, type ContextualActionKind, type PayableGroupBy } from '@/services/domain/payables';
+import { buildPayableHistoryDescription, calculatePayableFinalAmount, calculatePayableRemainingBalance, canCancelPayable, canDeletePayable, canEditPayable, canRegisterPayment, formatPayableDueDateLabel, generatePayableDuplicateKey, getContextualQuestion, getDueDateUrgencyLevel, getPayableDisplayStatus, groupPayables, isPayableEditRestricted, isPayableOverdue, type ContextualActionKind, type PayableGroupBy } from '@/services/domain/payables';
 import { calculatePayablesCashFlowSummary } from '@/services/domain/payablesCashFlow';
 import { getGmailOAuthFeedback } from '@/services/domain/gmailOAuth';
 import {
@@ -104,14 +104,19 @@ function DueDateLabel({ payable }: { payable: AccountPayable }) {
 
 type PageView = 'contas' | 'sugestoes';
 
-export default function ContasAPagar() {
+type ContasAPagarProps = {
+  embedded?: boolean;
+  readOnly?: boolean;
+};
+
+export default function ContasAPagar({ embedded = false, readOnly = false }: ContasAPagarProps) {
   const { payables, payableCategories, updatePayable, addPayable, addPayableHistoryEntry, emailSuggestions } = usePayablesData();
   const { user, isSupportImpersonating } = useAuth();
   const { financialValuesHidden } = useFinancialPrivacy();
   // Sugestões em modo suporte: a leitura é escopada à empresa via
   // get_sugestoes_email_contexto_suporte e as ações usam RPCs de escrita
   // auditadas por contexto. Gmail/scan continuam ocultos no componente.
-  const suggestionsEnabled = true;
+  const suggestionsEnabled = !readOnly;
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [pageView, setPageView] = useState<PageView>(() => searchParams.get('view') === 'sugestoes' ? 'sugestoes' : 'contas');
@@ -130,6 +135,7 @@ export default function ContasAPagar() {
   const [selectedPayableId, setSelectedPayableId] = useState<string | null>(null);
   const [paymentAmountInput, setPaymentAmountInput] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('PIX');
+  const [paymentDate, setPaymentDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [paymentNotes, setPaymentNotes] = useState('');
   const [editTitle, setEditTitle] = useState('');
   const [editCategoryId, setEditCategoryId] = useState('');
@@ -423,6 +429,7 @@ export default function ContasAPagar() {
     setSelectedPayableId(null);
     setPaymentAmountInput('');
     setPaymentMethod('PIX');
+    setPaymentDate(format(new Date(), 'yyyy-MM-dd'));
     setPaymentNotes('');
     setEditTitle('');
     setEditCategoryId('');
@@ -442,14 +449,17 @@ export default function ContasAPagar() {
   }
 
   function openPayment(payable: AccountPayable) {
+    if (readOnly) return;
     setSelectedPayableId(payable.id);
     setPaymentAmountInput(calculatePayableRemainingBalance(payable).toFixed(2).replace('.', ','));
     setPaymentMethod(payable.paymentMethod ?? 'PIX');
+    setPaymentDate(format(new Date(), 'yyyy-MM-dd'));
     setPaymentNotes(payable.paymentNotes ?? '');
     setDialogMode('payment');
   }
 
   function openEdit(payable: AccountPayable) {
+    if (readOnly) return;
     setSelectedPayableId(payable.id);
     setEditTitle(payable.title);
     setEditCategoryId(payable.categoryId);
@@ -478,6 +488,7 @@ export default function ContasAPagar() {
   }
 
   function handleContextualAction(payableId: string, action: ContextualActionKind) {
+    if (readOnly) return;
     const payable = payables.find((item) => item.id === payableId);
     if (!payable) return;
     if (action === 'mark_paid') {
@@ -490,6 +501,7 @@ export default function ContasAPagar() {
   }
 
   async function handleDuplicate(payable: AccountPayable) {
+    if (readOnly) return;
     try {
       const created = await addPayable({
         title: `${payable.title} (cópia)`,
@@ -528,12 +540,20 @@ export default function ContasAPagar() {
   }
 
   async function handleSubmitPayment() {
-    if (!selectedPayable) return;
+    if (readOnly || !selectedPayable) return;
     const paymentResult = parsePositiveNumber(paymentAmountInput, { allowZero: false, fieldLabel: 'valor pago' });
     const paymentValue = paymentResult.value ?? 0;
     const remaining = calculatePayableRemainingBalance(selectedPayable);
     if (paymentResult.error) {
       toast({ title: 'Informe um valor válido', description: paymentResult.error, variant: 'destructive' });
+      return;
+    }
+    if (!paymentDate || Number.isNaN(new Date(`${paymentDate}T12:00:00`).getTime())) {
+      toast({ title: 'Informe a data do pagamento', description: 'Selecione uma data válida para registrar a saída.', variant: 'destructive' });
+      return;
+    }
+    if (paymentDate > format(new Date(), 'yyyy-MM-dd')) {
+      toast({ title: 'Data futura não permitida', description: 'A data do pagamento não pode estar no futuro.', variant: 'destructive' });
       return;
     }
     const nextPaidAmount = Number(((selectedPayable.paidAmount ?? 0) + paymentValue).toFixed(2));
@@ -542,7 +562,7 @@ export default function ContasAPagar() {
       await updatePayable(selectedPayable.id, {
         status: settled ? 'PAGO' : 'PARCIAL',
         paidAmount: nextPaidAmount,
-        paidAt: new Date().toISOString(),
+        paidAt: new Date(`${paymentDate}T12:00:00`).toISOString(),
         paidWith: paymentMethod,
         paymentNotes: normalizeWhitespace(paymentNotes) || undefined,
       });
@@ -560,6 +580,7 @@ export default function ContasAPagar() {
   }
 
   async function handleSubmitEdit() {
+    if (readOnly) return;
     const normalizedTitle = normalizeCommonBusinessTermsPtBr(toTitleCasePtBr(editTitle));
     const normalizedSupplierName = normalizeCommonBusinessTermsPtBr(toTitleCasePtBr(editSupplierName));
     const normalizedDocNumber = normalizeWhitespace(editDocNumber);
@@ -607,7 +628,7 @@ export default function ContasAPagar() {
   }
 
   async function handleCancelSelectedPayable() {
-    if (!selectedPayable) return;
+    if (readOnly || !selectedPayable || !canCancelPayable(selectedPayable)) return;
     try {
       await updatePayable(selectedPayable.id, { status: 'CANCELADO' });
       addPayableHistoryEntry(buildPayableHistoryDescription({ payableId: selectedPayable.id, action: 'CANCELLED', userId: user?.id ?? 'user-2' }));
@@ -624,7 +645,7 @@ export default function ContasAPagar() {
   }
 
   async function handleDeleteSelectedPayable() {
-    if (!selectedPayable) return;
+    if (readOnly || !selectedPayable || !canDeletePayable(selectedPayable)) return;
     try {
       await updatePayable(selectedPayable.id, { deletedAt: new Date().toISOString() });
       addPayableHistoryEntry(buildPayableHistoryDescription({ payableId: selectedPayable.id, action: 'DELETED', userId: user?.id ?? 'user-2' }));
@@ -648,12 +669,16 @@ export default function ContasAPagar() {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuItem onClick={() => updateRouteModal('details', payable.id)}><FileText className="mr-2 h-4 w-4" />Ver detalhes</DropdownMenuItem>
-          {canRegisterPayment(payable) ? <DropdownMenuItem onClick={() => openPayment(payable)}><Wallet className="mr-2 h-4 w-4" />Registrar pagamento</DropdownMenuItem> : null}
-          {canEditPayable(payable) ? <DropdownMenuItem onClick={() => openEdit(payable)}><Pencil className="mr-2 h-4 w-4" />Editar</DropdownMenuItem> : null}
-          <DropdownMenuItem onClick={() => handleDuplicate(payable)}><Copy className="mr-2 h-4 w-4" />Duplicar</DropdownMenuItem>
-          {canCancelPayable(payable) ? <DropdownMenuItem onClick={() => { setSelectedPayableId(payable.id); setDialogMode('cancel'); }}><XCircle className="mr-2 h-4 w-4" />Cancelar</DropdownMenuItem> : null}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => { setSelectedPayableId(payable.id); setDialogMode('delete'); }}><Trash2 className="mr-2 h-4 w-4" />Excluir</DropdownMenuItem>
+          {!readOnly && canRegisterPayment(payable) ? <DropdownMenuItem onClick={() => openPayment(payable)}><Wallet className="mr-2 h-4 w-4" />Registrar pagamento</DropdownMenuItem> : null}
+          {!readOnly && canEditPayable(payable) ? <DropdownMenuItem onClick={() => openEdit(payable)}><Pencil className="mr-2 h-4 w-4" />Editar</DropdownMenuItem> : null}
+          {!readOnly ? <DropdownMenuItem onClick={() => handleDuplicate(payable)}><Copy className="mr-2 h-4 w-4" />Duplicar</DropdownMenuItem> : null}
+          {!readOnly && canCancelPayable(payable) ? <DropdownMenuItem onClick={() => { setSelectedPayableId(payable.id); setDialogMode('cancel'); }}><XCircle className="mr-2 h-4 w-4" />Cancelar</DropdownMenuItem> : null}
+          {!readOnly && canDeletePayable(payable) ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => { setSelectedPayableId(payable.id); setDialogMode('delete'); }}><Trash2 className="mr-2 h-4 w-4" />Excluir</DropdownMenuItem>
+            </>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
     );
@@ -707,7 +732,9 @@ export default function ContasAPagar() {
           ? 'text-muted-foreground line-through decoration-2 decoration-muted-foreground/40'
           : 'text-foreground';
 
-    const primaryAction = canRegisterPayment(payable)
+    const primaryAction = readOnly
+      ? null
+      : canRegisterPayment(payable)
       ? { label: 'Pagar', title: 'Registrar pagamento', onClick: () => openPayment(payable) }
       : canEditPayable(payable)
         ? { label: 'Editar', title: 'Editar conta', onClick: () => openEdit(payable) }
@@ -852,7 +879,7 @@ export default function ContasAPagar() {
             <div className="shrink-0">{renderActions(payable)}</div>
           </div>
           </div>
-          {contextualQuestion && !dismissedQuestions.has(payable.id) ? (
+          {!readOnly && contextualQuestion && !dismissedQuestions.has(payable.id) ? (
             <div className="px-2.5 pb-2.5">
               <ContextualQuestionBanner
                 question={contextualQuestion}
@@ -871,7 +898,7 @@ export default function ContasAPagar() {
     <>
       <div className="space-y-2 overflow-x-hidden sm:space-y-3">
         <h1 className="sr-only">Contas a Pagar</h1>
-        <div className="-mt-5 sm:-mt-7 lg:-mt-9">
+        <div className={cn(!embedded && '-mt-5 sm:-mt-7 lg:-mt-9')}>
           <div className="relative flex flex-col gap-2 sm:min-h-11 sm:flex-row sm:items-center sm:justify-center">
             <div className="flex justify-center">
               <Tabs value={effectiveView} onValueChange={(value) => updatePageView(value as PageView)}>
@@ -894,7 +921,7 @@ export default function ContasAPagar() {
                 </TabsList>
               </Tabs>
             </div>
-            {effectiveView === 'contas' ? (
+            {effectiveView === 'contas' && !readOnly ? (
               <div className="grid w-full grid-cols-2 gap-2 lg:absolute lg:right-0 lg:top-0 lg:w-auto lg:flex lg:flex-wrap">
                 <Button variant="outline" onClick={() => updateRouteModal('import')} className="min-w-0 px-3 text-sm"><Sparkles className="mr-1.5 h-4 w-4 sm:mr-2" />Importar com IA</Button>
                 <Button onClick={() => updateRouteModal('new')} className="min-w-0 px-3 shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30"><PlusCircle className="mr-1.5 h-4 w-4 sm:mr-2" />Nova Conta</Button>
@@ -926,7 +953,7 @@ export default function ContasAPagar() {
           briefing={activeBriefing}
           briefingLoading={isGenerating}
           onOpenDetails={(id) => updateRouteModal('details', id)}
-          onRefreshBriefing={() => generateBriefing(briefingPayload)}
+          onRefreshBriefing={readOnly ? undefined : () => generateBriefing(briefingPayload)}
           prefersReducedMotion={prefersReducedMotion}
         />
 
@@ -1065,19 +1092,26 @@ export default function ContasAPagar() {
         </></ErrorBoundary> : null}
       </div>
 
-      <PayableCreateModal open={routeModal === 'new'} onOpenChange={(open) => { if (!open) updateRouteModal(); }} onSaved={(payable) => updateRouteModal('details', payable.id)} />
-      <PayableImportModal open={routeModal === 'import'} onOpenChange={(open) => { if (!open) updateRouteModal(); }} onCreated={(payable) => updateRouteModal('details', payable.id)} />
-      <PayableDetailsModal open={routeModal === 'details' && !!routeDetailsId} payableId={routeDetailsId} onOpenChange={(open) => { if (!open) updateRouteModal(); }} onRequestEdit={(payable) => { updateRouteModal(); openEdit(payable); }} onRequestPayment={(payable) => { updateRouteModal(); openPayment(payable); }} />
+      <PayableCreateModal open={!readOnly && routeModal === 'new'} onOpenChange={(open) => { if (!open) updateRouteModal(); }} onSaved={(payable) => updateRouteModal('details', payable.id)} />
+      <PayableImportModal open={!readOnly && routeModal === 'import'} onOpenChange={(open) => { if (!open) updateRouteModal(); }} onCreated={(payable) => updateRouteModal('details', payable.id)} />
+      <PayableDetailsModal
+        open={routeModal === 'details' && !!routeDetailsId}
+        payableId={routeDetailsId}
+        readOnly={readOnly}
+        onOpenChange={(open) => { if (!open) updateRouteModal(); }}
+        onRequestEdit={readOnly ? undefined : (payable) => { updateRouteModal(); openEdit(payable); }}
+        onRequestPayment={readOnly ? undefined : (payable) => { updateRouteModal(); openPayment(payable); }}
+      />
 
-      <Dialog open={dialogMode === 'payment'} onOpenChange={(open) => !open && resetDialogs()}>
+      <Dialog open={!readOnly && dialogMode === 'payment'} onOpenChange={(open) => !open && resetDialogs()}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>Registrar pagamento</DialogTitle><DialogDescription>Popup rápido para pagamento total ou parcial.</DialogDescription></DialogHeader>
-          {selectedPayable ? <div className="space-y-4"><div className="rounded-xl border border-border/60 bg-muted/20 p-4 text-sm"><p className="font-medium">{selectedPayable.title}</p><p className="mt-1 text-muted-foreground">Saldo em aberto: <FinancialValue>{fmtBRL(calculatePayableRemainingBalance(selectedPayable))}</FinancialValue></p></div><div className="space-y-2"><Label>Valor pago</Label><Input value={paymentAmountInput} onChange={(event) => setPaymentAmountInput(normalizeDecimalInputDraft(event.target.value))} placeholder="0,00" /></div><div className="space-y-2"><Label>Forma de pagamento</Label><Select value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as PaymentMethod)}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Observações</Label><Textarea value={paymentNotes} onChange={(event) => setPaymentNotes(event.target.value)} onBlur={() => setPaymentNotes(normalizeWhitespace(paymentNotes))} rows={4} placeholder="Ex.: pagamento feito via PIX do caixa do dia" /></div></div> : null}
+          {selectedPayable ? <div className="space-y-4"><div className="rounded-xl border border-border/60 bg-muted/20 p-4 text-sm"><p className="font-medium">{selectedPayable.title}</p><p className="mt-1 text-muted-foreground">Saldo em aberto: <FinancialValue>{fmtBRL(calculatePayableRemainingBalance(selectedPayable))}</FinancialValue></p></div><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Valor pago</Label><Input value={paymentAmountInput} onChange={(event) => setPaymentAmountInput(normalizeDecimalInputDraft(event.target.value))} placeholder="0,00" /></div><div className="space-y-2"><Label>Data do pagamento</Label><Input type="date" value={paymentDate} max={format(new Date(), 'yyyy-MM-dd')} onChange={(event) => setPaymentDate(event.target.value)} /></div></div><div className="space-y-2"><Label>Forma de pagamento</Label><Select value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as PaymentMethod)}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Observações</Label><Textarea value={paymentNotes} onChange={(event) => setPaymentNotes(event.target.value)} onBlur={() => setPaymentNotes(normalizeWhitespace(paymentNotes))} rows={4} placeholder="Ex.: pagamento feito via PIX do caixa do dia" /></div></div> : null}
           <DialogFooter><Button variant="outline" onClick={resetDialogs}>Cancelar</Button><Button onClick={() => void handleSubmitPayment()}>Salvar pagamento</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={dialogMode === 'edit'} onOpenChange={(open) => !open && resetDialogs()}>
+      <Dialog open={!readOnly && dialogMode === 'edit'} onOpenChange={(open) => !open && resetDialogs()}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Editar conta</DialogTitle>
@@ -1111,11 +1145,11 @@ export default function ContasAPagar() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={dialogMode === 'cancel'} onOpenChange={(open) => !open && resetDialogs()}>
+      <Dialog open={!readOnly && dialogMode === 'cancel'} onOpenChange={(open) => !open && resetDialogs()}>
         <DialogContent className="max-w-md"><DialogHeader><DialogTitle>Cancelar conta</DialogTitle><DialogDescription>Ela sai do fluxo ativo, mas continua no histórico.</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={resetDialogs}>Voltar</Button><Button variant="secondary" onClick={() => void handleCancelSelectedPayable()}>Confirmar cancelamento</Button></DialogFooter></DialogContent>
       </Dialog>
 
-      <Dialog open={dialogMode === 'delete'} onOpenChange={(open) => !open && resetDialogs()}>
+      <Dialog open={!readOnly && dialogMode === 'delete'} onOpenChange={(open) => !open && resetDialogs()}>
         <DialogContent className="max-w-md"><DialogHeader><DialogTitle>Excluir conta definitivamente</DialogTitle><DialogDescription>A conta e os anexos salvos no Supabase serão apagados. Esta ação não pode ser desfeita.</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={resetDialogs}>Cancelar</Button><Button variant="destructive" onClick={() => void handleDeleteSelectedPayable()}>Confirmar exclusão</Button></DialogFooter></DialogContent>
       </Dialog>
     </>

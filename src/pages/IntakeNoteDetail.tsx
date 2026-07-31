@@ -266,9 +266,17 @@ export default function IntakeNoteDetail() {
                   <AlertDialogCancel>Voltar</AlertDialogCancel>
                   <AlertDialogAction
                     className="bg-emerald-600 text-white hover:bg-emerald-700"
-                    onClick={() => {
-                      registrarRecebimentoNota(note.id, { paidWith: recebForma, paidAt: new Date(`${recebData}T12:00:00`).toISOString() });
-                      toast({ title: `${note.number} recebida`, description: `Pagamento via ${PAYMENT_METHOD_LABELS[recebForma]} registrado.` });
+                    onClick={async () => {
+                      try {
+                        await registrarRecebimentoNota(note.id, { paidWith: recebForma, paidAt: new Date(`${recebData}T12:00:00`).toISOString() });
+                        toast({ title: `${note.number} recebida`, description: `Pagamento via ${PAYMENT_METHOD_LABELS[recebForma]} registrado.` });
+                      } catch (error) {
+                        toast({
+                          title: 'Não foi possível registrar o recebimento',
+                          description: error instanceof Error ? error.message : 'Tente novamente.',
+                          variant: 'destructive',
+                        });
+                      }
                     }}
                   >
                     Confirmar recebimento
@@ -296,9 +304,17 @@ export default function IntakeNoteDetail() {
                 <AlertDialogFooter>
                   <AlertDialogCancel>Voltar</AlertDialogCancel>
                   <AlertDialogAction
-                    onClick={() => {
-                      estornarRecebimentoNota(note.id);
-                      toast({ title: `${note.number} estornada`, description: 'Recebimento revertido para pendente.' });
+                    onClick={async () => {
+                      try {
+                        await estornarRecebimentoNota(note.id);
+                        toast({ title: `${note.number} estornada`, description: 'Recebimento revertido para pendente.' });
+                      } catch (error) {
+                        toast({
+                          title: 'Não foi possível estornar o recebimento',
+                          description: error instanceof Error ? error.message : 'Tente novamente.',
+                          variant: 'destructive',
+                        });
+                      }
                     }}
                   >
                     Confirmar estorno

@@ -11,6 +11,7 @@ import type {
   IntakeNote,
   IntakeService,
   PayableCategory,
+  PayableCategoryClass,
   PayableEntrySource,
   PaymentMethod,
   RecurrenceType,
@@ -124,12 +125,18 @@ function dashboardContaToPayable(row: ContaPagar): AccountPayable {
 }
 
 function dashboardCategoriaToPayableCategory(cat: Categoria): PayableCategory {
+  const validClasses: PayableCategoryClass[] = ['CUSTO', 'DESPESA', 'IMPOSTO', 'FINANCEIRO'];
+  const classe = validClasses.includes(cat.classe as PayableCategoryClass)
+    ? cat.classe as PayableCategoryClass
+    : undefined;
+
   return {
     id: cat.id_categorias,
     name: cat.nome,
     color: cat.cor,
     icon: cat.icone,
     isActive: cat.ativo,
+    classe,
     createdAt: cat.created_at,
   };
 }

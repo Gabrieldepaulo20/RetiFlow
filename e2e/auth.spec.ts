@@ -101,7 +101,7 @@ test.describe('Auth — login and access control', () => {
       ['/clientes', 'Clientes'],
       ['/notas-entrada', 'Notas de Entrada'],
       ['/kanban', 'Produção'],
-      ['/contas-a-pagar', 'Contas a Pagar'],
+      ['/financeiro', 'Financeiro'],
     ] as const) {
       await page.goto(path);
       await expect(page).toHaveURL(path);

@@ -22,18 +22,28 @@ export interface FechamentoNota {
   veiculo: string;
   placa: string | null;
   itens: FechamentoItem[];
+  /** Valor integral da O.S. antes de considerar recebimentos anteriores. */
+  valor_total_os?: number;
+  /** Parte recebida antes deste fechamento. */
+  valor_recebido?: number;
+  /** Saldo da O.S. que pode entrar neste fechamento. */
+  saldo_aberto?: number;
   total_original: number;
   desconto_nota: number;
   total_com_desconto: number;
 }
 
-/** O.S. do período que já foi recebida fora do fechamento (informativa: não soma no total a pagar). */
+/** Parcela da O.S. já recebida fora do fechamento (informativa: não soma novamente no total a pagar). */
 export interface FechamentoRecebida {
   id: string;
   os: string;
   veiculo: string;
   placa: string | null;
+  /** Compatibilidade contábil: representa somente o valor já recebido. */
   total: number;
+  valor_recebido?: number;
+  total_os?: number;
+  saldo_aberto?: number;
   pago_em: string | null;
 }
 
@@ -44,9 +54,9 @@ export interface FechamentoDadosJson {
   notas: FechamentoNota[];
   total_original: number;
   total_com_desconto: number;
-  /** O.S. já recebidas no período (mostradas no documento, fora do total a pagar). */
+  /** Partes já recebidas no período (mostradas no documento, fora do total a pagar). */
   recebidas?: FechamentoRecebida[];
-  /** Soma das O.S. já recebidas no período. */
+  /** Soma das parcelas já recebidas no período. */
   total_ja_recebido?: number;
 }
 
@@ -58,7 +68,9 @@ export interface FechamentoListItem {
   label: string;
   valor_total: number;
   /** Pagamento do fechamento (B2B): pendente até o cliente quitar o lote. */
-  status_pagamento?: 'PENDENTE' | 'PAGO';
+  status_pagamento?: 'PENDENTE' | 'PARCIAL' | 'PAGO';
+  valor_recebido?: number | string | null;
+  valorRecebido?: number;
   pago_em?: string | null;
   pago_com?: string | null;
   versao: number;
@@ -133,13 +145,23 @@ function normalizeFechamentoNota(value: unknown): FechamentoNota | null {
   const itens = Array.isArray(value.itens)
     ? value.itens.map(normalizeFechamentoItem).filter((item): item is FechamentoItem => item !== null)
     : [];
+  const totalOriginal = Math.max(0, asNumber(value.total_original));
+  const valorRecebido = Math.max(0, asNumber(value.valor_recebido));
+  const valorTotalOs = Math.max(
+    totalOriginal + valorRecebido,
+    asNumber(value.valor_total_os, totalOriginal + valorRecebido),
+  );
+  const saldoAberto = Math.max(0, asNumber(value.saldo_aberto, totalOriginal));
   return {
     id,
     os: asString(value.os, 'O.S. sem número'),
     veiculo: asString(value.veiculo, 'Veículo não informado'),
     placa: typeof value.placa === 'string' && value.placa.trim() ? value.placa : null,
     itens,
-    total_original: asNumber(value.total_original),
+    valor_total_os: valorTotalOs,
+    valor_recebido: Math.min(valorTotalOs, valorRecebido),
+    saldo_aberto: Math.min(valorTotalOs, saldoAberto),
+    total_original: totalOriginal,
     desconto_nota: asNumber(value.desconto_nota),
     total_com_desconto: asNumber(value.total_com_desconto),
   };
@@ -149,12 +171,21 @@ function normalizeFechamentoRecebida(value: unknown): FechamentoRecebida | null 
   if (!isRecord(value)) return null;
   const id = asString(value.id, '');
   if (!id) return null;
+  const valorRecebido = Math.max(0, asNumber(value.valor_recebido, asNumber(value.total)));
+  const saldoAberto = Math.max(0, asNumber(value.saldo_aberto));
+  const totalOs = Math.max(
+    valorRecebido + saldoAberto,
+    asNumber(value.total_os, valorRecebido + saldoAberto),
+  );
   return {
     id,
     os: asString(value.os, 'O.S. sem número'),
     veiculo: asString(value.veiculo, 'Veículo não informado'),
     placa: typeof value.placa === 'string' && value.placa.trim() ? value.placa : null,
-    total: asNumber(value.total),
+    total: Math.min(totalOs, valorRecebido),
+    valor_recebido: Math.min(totalOs, valorRecebido),
+    total_os: totalOs,
+    saldo_aberto: Math.min(totalOs, saldoAberto),
     pago_em: typeof value.pago_em === 'string' ? value.pago_em : null,
   };
 }
@@ -232,6 +263,14 @@ export async function getFechamentos(params?: {
   const env = await callRPC('get_fechamentos', params);
   const dados = ((env.dados ?? []) as FechamentoListItem[]).map((item) => ({
     ...item,
+    status_pagamento:
+      item.status_pagamento === 'PAGO'
+        ? 'PAGO' as const
+        : item.status_pagamento === 'PARCIAL'
+          ? 'PARCIAL' as const
+          : 'PENDENTE' as const,
+    valor_recebido: asNumber(item.valor_recebido ?? item.valorRecebido, 0),
+    valorRecebido: asNumber(item.valor_recebido ?? item.valorRecebido, 0),
     dados_json: normalizeFechamentoDadosJson(item.dados_json),
   }));
   return { dados, total: env.total ?? 0 };

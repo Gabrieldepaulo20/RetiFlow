@@ -13,6 +13,7 @@ export const loadMonthlyClosingPage = () => import('@/pages/MonthlyClosing');
 export const loadMarketingGrowthPage = () => import('@/pages/MarketingGrowth');
 export const loadSettingsPage = () => import('@/pages/Settings');
 export const loadContasAPagarPage = () => import('@/pages/ContasAPagar');
+export const loadFinanceiroPage = () => import('@/pages/Financeiro');
 export const loadContaPagarFormPage = () => import('@/pages/ContaPagarForm');
 export const loadImportarContaPagarPage = () => import('@/pages/ImportarContaPagar');
 export const loadAdminDashboardPage = () => import('@/pages/admin/AdminDashboard');
@@ -55,7 +56,8 @@ const routeLoaderEntries: RouteLoaderEntry[] = [
   { matches: (pathname) => pathname === '/kanban', load: loadKanbanPage },
   { matches: (pathname) => pathname === '/fechamento', load: loadMonthlyClosingPage },
   { matches: (pathname) => pathname === '/crescimento', load: loadMarketingGrowthPage },
-  { matches: (pathname) => pathname === '/contas-a-pagar', load: loadContasAPagarPage },
+  { matches: (pathname) => pathname === '/financeiro', load: loadFinanceiroPage },
+  { matches: (pathname) => pathname === '/contas-a-pagar', load: loadFinanceiroPage },
   { matches: (pathname) => pathname === '/contas-a-pagar/nova', load: loadContaPagarFormPage },
   { matches: (pathname) => pathname === '/contas-a-pagar/importar', load: loadImportarContaPagarPage },
   { matches: (pathname) => pathname === '/configuracoes', load: loadSettingsPage },

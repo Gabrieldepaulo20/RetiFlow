@@ -27,9 +27,9 @@ test.describe('Navigation — authenticated routes', () => {
     await expect(page.getByRole('heading', { name: 'Fechamento Mensal' })).toBeVisible();
   });
 
-  test('navigates to Contas a Pagar', async ({ page }) => {
-    await page.goto('/contas-a-pagar');
-    await expect(page.getByRole('heading', { name: 'Contas a Pagar' })).toBeVisible();
+  test('navigates to Financeiro', async ({ page }) => {
+    await page.goto('/financeiro');
+    await expect(page.getByRole('heading', { name: 'Financeiro' })).toBeVisible();
   });
 
   test('unknown route shows 404 page', async ({ page }) => {

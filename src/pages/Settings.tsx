@@ -58,7 +58,7 @@ const MODULE_DEFS: { key: AppModuleKey; label: string; description: string; icon
   { key: 'notes', label: 'Notas de Entrada', description: 'Ordens de serviço, edição, preview e PDF.', icon: FileText },
   { key: 'kanban', label: 'Kanban', description: 'Acompanhamento da produção por status.', icon: KanbanSquare },
   { key: 'closing', label: 'Fechamento', description: 'Geração de fechamento mensal.', icon: Calendar },
-  { key: 'payables', label: 'Contas a Pagar', description: 'Financeiro, anexos e importação com IA.', icon: Wallet },
+  { key: 'payables', label: 'Financeiro', description: 'Central financeira, saídas, anexos e importação com IA.', icon: Wallet },
   { key: 'marketing', label: 'Crescimento', description: 'Site, leads e campanhas por tenant.', icon: TrendingUp },
   { key: 'settings', label: 'Configurações', description: 'Ajustes e prévias do sistema.', icon: SettingsIcon },
   { key: 'admin', label: 'Admin', description: 'Usuários e permissões administrativas.', icon: Shield },

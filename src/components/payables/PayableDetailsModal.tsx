@@ -46,6 +46,7 @@ const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 type PayableDetailsModalProps = {
   open: boolean;
   payableId?: string | null;
+  readOnly?: boolean;
   onOpenChange: (open: boolean) => void;
   onRequestPayment?: (payable: AccountPayable) => void;
   onRequestEdit?: (payable: AccountPayable) => void;
@@ -70,6 +71,7 @@ function inferAttachmentType(filename: string): PayableAttachmentFileType {
 export default function PayableDetailsModal({
   open,
   payableId,
+  readOnly = false,
   onOpenChange,
   onRequestPayment,
   onRequestEdit,
@@ -126,7 +128,7 @@ export default function PayableDetailsModal({
     setEditingAttachmentId(null);
     setAttachmentNameDraft('');
     setAttachmentNameOverrides({});
-  }, [open, payableIdForReset, payableTitleForReset]);
+  }, [open, payableIdForReset, payableTitleForReset, readOnly]);
 
   useEffect(() => {
     if (!open || !resolvedId || !IS_REAL_AUTH) {
@@ -202,7 +204,7 @@ export default function PayableDetailsModal({
     : (payable.paymentNotes ?? null);
 
   async function handleRenamePayableTitle() {
-    if (!payable) return;
+    if (readOnly || !payable) return;
     const nextTitle = normalizeCommonBusinessTermsPtBr(toTitleCasePtBr(titleDraft));
     if (!nextTitle) {
       toast({ title: 'Nome inválido', description: 'Informe um nome para a conta.', variant: 'destructive' });
@@ -230,12 +232,13 @@ export default function PayableDetailsModal({
   }
 
   function startAttachmentRename(attachmentId: string, currentName: string) {
+    if (readOnly) return;
     setEditingAttachmentId(attachmentId);
     setAttachmentNameDraft(currentName);
   }
 
   async function handleRenameAttachment(attachmentId: string, currentName: string) {
-    if (!payable) return;
+    if (readOnly || !payable) return;
     const nextName = normalizeAttachmentDisplayName(attachmentNameDraft, currentName);
     if (nextName === currentName) {
       setEditingAttachmentId(null);
@@ -279,7 +282,7 @@ export default function PayableDetailsModal({
   }
 
   async function handleAttachmentFile(file: File) {
-    if (!payable) return;
+    if (readOnly || !payable) return;
     setUploadingAttachment(true);
     try {
       const type = inferAttachmentType(file.name);
@@ -371,7 +374,7 @@ export default function PayableDetailsModal({
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-medium text-muted-foreground">Nome da conta</p>
-                      {renamingTitle ? (
+                      {!readOnly && renamingTitle ? (
                         <Input
                           value={titleDraft}
                           onChange={(event) => setTitleDraft(event.target.value)}
@@ -388,7 +391,7 @@ export default function PayableDetailsModal({
                         <p className="mt-1 truncate text-sm font-semibold">{payable.title}</p>
                       )}
                     </div>
-                    {renamingTitle ? (
+                    {!readOnly && renamingTitle ? (
                       <div className="flex shrink-0 gap-2">
                         <Button size="sm" onClick={() => void handleRenamePayableTitle()} disabled={savingTitle}>
                           {savingTitle ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
@@ -398,12 +401,12 @@ export default function PayableDetailsModal({
                           Cancelar
                         </Button>
                       </div>
-                    ) : (
+                    ) : !readOnly ? (
                       <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setRenamingTitle(true)}>
                         <Pencil className="h-3.5 w-3.5" />
                         Renomear
                       </Button>
-                    )}
+                    ) : null}
                   </div>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2 text-sm">
@@ -517,7 +520,7 @@ export default function PayableDetailsModal({
                     <Paperclip className="h-4 w-4 text-primary" />
                     <p className="text-sm font-semibold">Anexos e comprovantes</p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  {!readOnly ? <div className="flex items-center gap-2">
                     {loadingDetalhes && IS_REAL_AUTH ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
                     <input
                       ref={attachmentInputRef}
@@ -540,14 +543,14 @@ export default function PayableDetailsModal({
                       {uploadingAttachment ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlusCircle className="h-3.5 w-3.5" />}
                       Adicionar
                     </Button>
-                  </div>
+                  </div> : null}
                 </div>
                 {displayAttachments.length > 0 ? (
                   <div className="space-y-2.5">
                     {displayAttachments.map((attachment) => (
                       <div key={attachment.id} className="flex flex-col gap-3 rounded-2xl border border-border/60 p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
                         <div className="min-w-0 flex-1">
-                          {editingAttachmentId === attachment.id ? (
+                          {!readOnly && editingAttachmentId === attachment.id ? (
                             <Input
                               value={attachmentNameDraft}
                               onChange={(event) => setAttachmentNameDraft(event.target.value)}
@@ -567,7 +570,7 @@ export default function PayableDetailsModal({
                           <p className="mt-1 text-xs text-muted-foreground">{attachment.type} • {format(parseISO(attachment.createdAt), 'dd/MM/yyyy HH:mm')}</p>
                         </div>
                         <div className="flex shrink-0 flex-wrap gap-2">
-                          {editingAttachmentId === attachment.id ? (
+                          {!readOnly && editingAttachmentId === attachment.id ? (
                             <>
                               <Button
                                 variant="outline"
@@ -592,15 +595,17 @@ export default function PayableDetailsModal({
                             </>
                           ) : (
                             <>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="gap-1.5"
-                                onClick={() => startAttachmentRename(attachment.id, attachment.filename)}
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                                Renomear
-                              </Button>
+                              {!readOnly ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-1.5"
+                                  onClick={() => startAttachmentRename(attachment.id, attachment.filename)}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                  Renomear
+                                </Button>
+                              ) : null}
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -621,7 +626,9 @@ export default function PayableDetailsModal({
                   <div className="rounded-2xl border border-dashed border-border/60 p-4 text-sm text-muted-foreground">
                     {loadingDetalhes && IS_REAL_AUTH
                       ? 'Carregando anexos...'
-                      : 'Ainda não há anexo nessa conta. Use o botão "Adicionar" para vincular PDF, imagem ou DOCX.'}
+                      : readOnly
+                        ? 'Ainda não há anexo nessa conta.'
+                        : 'Ainda não há anexo nessa conta. Use o botão "Adicionar" para vincular PDF, imagem ou DOCX.'}
                   </div>
                 )}
               </CardContent>
@@ -657,10 +664,10 @@ export default function PayableDetailsModal({
 
           <div className="space-y-4">
             <div className="flex flex-col gap-2">
-              {canEditPayable(payable) ? (
+              {!readOnly && canEditPayable(payable) ? (
                 <Button variant="outline" onClick={() => onRequestEdit?.(payable)}>Editar dados</Button>
               ) : null}
-              {canRegisterPayment(payable) ? <Button onClick={() => onRequestPayment?.(payable)}>Registrar pagamento</Button> : null}
+              {!readOnly && canRegisterPayment(payable) ? <Button onClick={() => onRequestPayment?.(payable)}>Registrar pagamento</Button> : null}
               <Button variant="outline" onClick={() => onOpenChange(false)}>Fechar</Button>
             </div>
           </div>

@@ -28,6 +28,7 @@ export interface NotaServico {
   finalizado_em: string | null;
   fk_fechamentos?: string | null;
   payment_status?: string | null;
+  valor_recebido?: number | string | null;
   pago_em?: string | null;
   pago_com?: string | null;
   cliente: { id: string; nome: string };
@@ -401,12 +402,19 @@ export function supabaseToIntakeNote(row: NotaServico): IntakeNote {
   const extra = row as unknown as {
     fk_fechamentos?: string | null;
     payment_status?: string;
+    valor_recebido?: number | string | null;
     pago_em?: string | null;
     pago_com?: string | null;
     contato_nome?: string | null;
     contato_telefone?: string | null;
   };
-  const paymentStatus: NotePaymentStatus = extra.payment_status === 'PAGO' ? 'PAGO' : 'PENDENTE';
+  const paymentStatus: NotePaymentStatus =
+    extra.payment_status === 'PAGO'
+      ? 'PAGO'
+      : extra.payment_status === 'PARCIAL'
+        ? 'PARCIAL'
+        : 'PENDENTE';
+  const parsedValorRecebido = Number(extra.valor_recebido ?? row.valor_recebido ?? 0);
   return {
     id:               row.id_notas_servico,
     number:           row.os,
@@ -432,6 +440,7 @@ export function supabaseToIntakeNote(row: NotaServico): IntakeNote {
     totalAmount:      row.total,
     finalizedAt:      row.finalizado_em ?? undefined,
     paymentStatus,
+    valorRecebido:    Number.isFinite(parsedValorRecebido) ? parsedValorRecebido : 0,
     paidAt:           extra.pago_em ?? undefined,
     paidWith:         toPaymentMethod(extra.pago_com),
     pdfUrl:           row.pdf_url ?? undefined,

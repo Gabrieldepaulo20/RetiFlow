@@ -59,7 +59,7 @@ const ALL_MODULES: { key: AppModuleKey; label: string }[] = [
   { key: 'notes', label: 'Notas de Entrada' },
   { key: 'kanban', label: 'Kanban' },
   { key: 'closing', label: 'Fechamento' },
-  { key: 'payables', label: 'Contas a Pagar' },
+  { key: 'payables', label: 'Financeiro' },
   { key: 'marketing', label: 'Crescimento' },
   { key: 'settings', label: 'Configurações' },
   { key: 'admin', label: 'Admin' },

@@ -55,12 +55,17 @@ import {
   getContasPagar,
   insertContaPagar,
   updateContaPagar,
-  registrarPagamento,
   cancelarContaPagar,
   excluirContaPagar,
   type ContaPagar,
   type InsertContaPagarPayload,
 } from '@/api/supabase/contas-pagar';
+import {
+  estornarRecebimentoNota as estornarRecebimentoNotaFinanceiro,
+  getFinanceiroContas,
+  registrarPagamentoConta as registrarPagamentoContaFinanceiro,
+  registrarRecebimentoNota as registrarRecebimentoNotaFinanceiro,
+} from '@/api/supabase/financeiro';
 import { getCategorias, updateCategoria, type Categoria } from '@/api/supabase/categorias';
 import { getFornecedores, type Fornecedor } from '@/api/supabase/fornecedores';
 import { insertLog } from '@/api/supabase/logs';
@@ -77,6 +82,10 @@ import { dashboardResumoToDomainData, getDashboardResumo, getServicosResumo } fr
 import { buildMeaningfulPayableTitle } from '@/services/domain/payables';
 import { sanitizeClientInput } from '@/services/domain/customers';
 import { DEFAULT_NOTE_DEADLINE_DAYS } from '@/services/domain/textNormalization';
+import {
+  acquireFinancialIdempotencyAttempt,
+  completeFinancialIdempotencyAttempt,
+} from '@/services/domain/financialIdempotency';
 import {
   assertActiveSupportScopeUnchanged,
   captureActiveSupportScope,
@@ -220,8 +229,17 @@ interface DataCtx {
   updateNote: (id: string, d: Partial<IntakeNote>, itens?: NotaItemDB[]) => Promise<void>;
   getNote: (id: string) => IntakeNote | undefined;
   updateNoteStatus: (id: string, status: NoteStatus) => Promise<void>;
-  registrarRecebimentoNota: (id: string, opts: { paidWith?: PaymentMethod; paidAt?: string }) => void;
-  estornarRecebimentoNota: (id: string) => void;
+  registrarRecebimentoNota: (
+    id: string,
+    opts: {
+      paidWith?: PaymentMethod;
+      paidAt?: string;
+      amount?: number;
+      accountId?: string;
+      observations?: string;
+    },
+  ) => Promise<void>;
+  estornarRecebimentoNota: (id: string, motivo?: string) => Promise<void>;
   createPurchaseNote: (parentNoteId: string) => Promise<IntakeNote>;
   getChildNotes: (parentNoteId: string) => IntakeNote[];
 
@@ -304,6 +322,17 @@ type OperationalData = Pick<DataCtx,
 const OperationalCtx = createContext<OperationalData | null>(null);
 
 const uid = () => generateId();
+
+async function resolveFinanceAccountId(explicitAccountId?: string) {
+  if (explicitAccountId) return explicitAccountId;
+  const accounts = await getFinanceiroContas();
+  const account = accounts.find((candidate) => candidate.ativa && candidate.padrao)
+    ?? accounts.find((candidate) => candidate.ativa);
+  if (!account) {
+    throw new Error('Nenhuma conta financeira ativa foi encontrada.');
+  }
+  return account.id;
+}
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const { operationalUser, isAuthLoading, isSupportSessionValidating } = useAuth();
@@ -887,42 +916,123 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [addActivity, bumpDataVersion, notes]);
 
-  const registrarRecebimentoNota = useCallback((id: string, opts: { paidWith?: PaymentMethod; paidAt?: string }) => {
+  const registrarRecebimentoNota = useCallback(async (
+    id: string,
+    opts: {
+      paidWith?: PaymentMethod;
+      paidAt?: string;
+      amount?: number;
+      accountId?: string;
+      observations?: string;
+    },
+  ) => {
     const paidAt = opts.paidAt ?? new Date().toISOString();
-    const previousNotes = notes;
     const note = notes.find((candidate) => candidate.id === id);
-    if (!note) return;
+    if (!note) {
+      throw new Error('O.S. não encontrada.');
+    }
 
-    setNotes((previous) => previous.map((n) => (n.id === id ? applyNotePayment(n, { paidWith: opts.paidWith, paidAt }) : n)));
-    bumpDataVersion();
-    addActivity(`${note.number} — recebimento registrado`, id);
+    const alreadyReceived = note.valorRecebido ?? (note.paymentStatus === 'PAGO' ? note.totalAmount : 0);
+    const remaining = Math.max(0, Number((note.totalAmount - alreadyReceived).toFixed(2)));
+    const amount = Number((opts.amount ?? remaining).toFixed(2));
+    if (amount <= 0) {
+      throw new Error('Esta O.S. não possui saldo em aberto.');
+    }
+    if (amount > remaining) {
+      throw new Error(`O valor informado supera o saldo em aberto de R$ ${remaining.toFixed(2)}.`);
+    }
 
     if (IS_REAL_AUTH) {
-      updateNotaServicoDB({ id_notas_servico: id, payment_status: 'PAGO', pago_em: paidAt, pago_com: opts.paidWith }).catch(() => {
-        setNotes(previousNotes);
-        bumpDataVersion();
-        toast({ title: 'Erro ao registrar recebimento', description: 'Mudança revertida. Tente novamente.', variant: 'destructive' });
+      const accountId = await resolveFinanceAccountId(opts.accountId);
+      const attempt = acquireFinancialIdempotencyAttempt({
+        operation: 'receber-os',
+        entityId: id,
+        fingerprint: {
+          alreadyReceived,
+          amount,
+          paidAt: opts.paidAt ?? null,
+          accountId,
+          paidWith: opts.paidWith ?? null,
+          observations: opts.observations ?? null,
+        },
       });
+      const result = await registrarRecebimentoNotaFinanceiro({
+        notaId: id,
+        valor: amount,
+        dataEfetiva: paidAt,
+        contaId: accountId,
+        formaPagamento: opts.paidWith,
+        observacoes: opts.observations,
+        idempotencyKey: attempt.key,
+      });
+      completeFinancialIdempotencyAttempt(attempt);
+      const totalReceived = result.valorRealizado ?? Number((alreadyReceived + amount).toFixed(2));
+      const paymentStatus = result.status === 'PAGO' || totalReceived >= note.totalAmount
+        ? 'PAGO'
+        : 'PARCIAL';
+      setNotes((previous) => previous.map((candidate) => (
+        candidate.id === id
+          ? {
+              ...candidate,
+              paymentStatus,
+              valorRecebido: totalReceived,
+              paidAt,
+              paidWith: opts.paidWith,
+              updatedAt: new Date().toISOString(),
+            }
+          : candidate
+      )));
+    } else {
+      setNotes((previous) => previous.map((candidate) => (
+        candidate.id === id
+          ? {
+              ...applyNotePayment(candidate, { paidWith: opts.paidWith, paidAt }),
+              valorRecebido: candidate.totalAmount,
+            }
+          : candidate
+      )));
     }
+    bumpDataVersion();
+    addActivity(
+      `${note.number} — ${amount < remaining ? 'recebimento parcial' : 'recebimento'} registrado`,
+      id,
+    );
   }, [addActivity, bumpDataVersion, notes]);
 
-  const estornarRecebimentoNota = useCallback((id: string) => {
+  const estornarRecebimentoNota = useCallback(async (
+    id: string,
+    motivo = 'Correção de recebimento lançada pelo usuário',
+  ) => {
     const changedAt = new Date().toISOString();
-    const previousNotes = notes;
     const note = notes.find((candidate) => candidate.id === id);
-    if (!note) return;
-
-    setNotes((previous) => previous.map((n) => (n.id === id ? revertNotePayment(n, changedAt) : n)));
-    bumpDataVersion();
-    addActivity(`${note.number} — recebimento estornado`, id);
+    if (!note) {
+      throw new Error('O.S. não encontrada.');
+    }
 
     if (IS_REAL_AUTH) {
-      updateNotaServicoDB({ id_notas_servico: id, payment_status: 'PENDENTE', pago_em: null, pago_com: null }).catch(() => {
-        setNotes(previousNotes);
-        bumpDataVersion();
-        toast({ title: 'Erro ao estornar recebimento', description: 'Mudança revertida. Tente novamente.', variant: 'destructive' });
+      const attempt = acquireFinancialIdempotencyAttempt({
+        operation: 'estornar-os',
+        entityId: id,
+        fingerprint: {
+          received: note.valorRecebido ?? (note.paymentStatus === 'PAGO' ? note.totalAmount : 0),
+          motivo,
+        },
       });
+      await estornarRecebimentoNotaFinanceiro({
+        notaId: id,
+        motivo,
+        dataEfetiva: changedAt,
+        idempotencyKey: attempt.key,
+      });
+      completeFinancialIdempotencyAttempt(attempt);
     }
+    setNotes((previous) => previous.map((candidate) => (
+      candidate.id === id
+        ? { ...revertNotePayment(candidate, changedAt), valorRecebido: 0 }
+        : candidate
+    )));
+    bumpDataVersion();
+    addActivity(`${note.number} — recebimento estornado`, id);
   }, [addActivity, bumpDataVersion, notes]);
 
   const createPurchaseNote = useCallback(async (parentId: string): Promise<IntakeNote> => {
@@ -1068,11 +1178,29 @@ export function DataProvider({ children }: { children: ReactNode }) {
         newPayable.id = dbId;
         assertActiveSupportScopeUnchanged(operationScope);
         if (newPayable.status === 'PAGO' && newPayable.paidAmount) {
-          await registrarPagamento({
-            p_id_contas_pagar: dbId,
-            p_valor_pago: newPayable.paidAmount,
-            p_pago_com: newPayable.paidWith,
+          const accountId = await resolveFinanceAccountId();
+          const attempt = acquireFinancialIdempotencyAttempt({
+            operation: 'pagar-conta',
+            entityId: dbId,
+            fingerprint: {
+              alreadyPaid: 0,
+              amount: newPayable.paidAmount,
+              paidAt: newPayable.paidAt ?? null,
+              accountId,
+              paidWith: newPayable.paidWith ?? null,
+              observations: newPayable.paymentNotes ?? null,
+            },
           });
+          await registrarPagamentoContaFinanceiro({
+            contaPagarId: dbId,
+            valor: newPayable.paidAmount,
+            dataEfetiva: newPayable.paidAt ?? now,
+            contaId: accountId,
+            formaPagamento: newPayable.paidWith,
+            observacoes: newPayable.paymentNotes,
+            idempotencyKey: attempt.key,
+          });
+          completeFinancialIdempotencyAttempt(attempt);
           assertActiveSupportScopeUnchanged(operationScope);
         }
       } catch (err) {
@@ -1115,14 +1243,31 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const prevPaid = current?.paidAmount ?? 0;
           const increment = Number((data.paidAmount - prevPaid).toFixed(2));
           if (increment > 0) {
-            const novoStatus = await registrarPagamento({
-              p_id_contas_pagar: id,
-              p_valor_pago: increment,
-              p_pago_com: data.paidWith,
-              p_observacoes_pagamento: data.paymentNotes,
+            const accountId = await resolveFinanceAccountId();
+            const attempt = acquireFinancialIdempotencyAttempt({
+              operation: 'pagar-conta',
+              entityId: id,
+              fingerprint: {
+                alreadyPaid: prevPaid,
+                amount: increment,
+                paidAt: data.paidAt ?? null,
+                accountId,
+                paidWith: data.paidWith ?? null,
+                observations: data.paymentNotes ?? null,
+              },
             });
+            const result = await registrarPagamentoContaFinanceiro({
+              contaPagarId: id,
+              valor: increment,
+              dataEfetiva: data.paidAt ?? new Date().toISOString(),
+              contaId: accountId,
+              formaPagamento: data.paidWith,
+              observacoes: data.paymentNotes,
+              idempotencyKey: attempt.key,
+            });
+            completeFinancialIdempotencyAttempt(attempt);
             // Servidor é a fonte da verdade do status pós-pagamento (PARCIAL vs PAGO).
-            if (novoStatus) serverStatus = novoStatus as PayableStatus;
+            if (result.status) serverStatus = result.status as PayableStatus;
           }
         } else {
           const payload: Partial<InsertContaPagarPayload> = {};

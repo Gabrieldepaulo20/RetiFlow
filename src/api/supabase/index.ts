@@ -22,3 +22,4 @@ export * from './catalogo';
 export * from './logs';
 export * from './modelos';
 export * from './documentos';
+export * from './financeiro';

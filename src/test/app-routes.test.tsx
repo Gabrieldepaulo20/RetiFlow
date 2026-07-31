@@ -98,7 +98,7 @@ describe('App routes', () => {
     ['/notas-entrada/n1', async () => screen.findByRole('heading', { name: 'OS-1' })],
     ['/kanban', async () => screen.findByRole('heading', { name: 'Produção' })],
     ['/fechamento', async () => screen.findByRole('heading', { name: 'Fechamento Mensal' })],
-    ['/contas-a-pagar', async () => screen.findByRole('heading', { name: 'Contas a Pagar' })],
+    ['/financeiro', async () => screen.findByRole('heading', { name: 'Financeiro' })],
   ])('renders operational route %s', async (path, findElement) => {
     authenticateAs('FINANCEIRO');
     renderAt(path);
@@ -141,10 +141,24 @@ describe('App routes', () => {
     authenticateAs('FINANCEIRO');
     renderAt(path);
     await waitFor(() => {
-      expect(window.location.pathname).toBe('/contas-a-pagar');
+      expect(window.location.pathname).toBe('/financeiro');
       expect(window.location.search).toContain(search);
+      expect(window.location.search).toContain('tab=saidas');
     });
     expect(await screen.findByRole('heading', { name: modalTitle })).toBeInTheDocument();
+  });
+
+  it('preserves legacy payable query parameters when redirecting to Financeiro', async () => {
+    authenticateAs('FINANCEIRO');
+    renderAt('/contas-a-pagar?status=pendente&origem=manual');
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/financeiro');
+      expect(window.location.search).toContain('status=pendente');
+      expect(window.location.search).toContain('origem=manual');
+      expect(window.location.search).toContain('tab=saidas');
+    });
+    expect(await screen.findByRole('heading', { name: 'Contas a Pagar' })).toBeInTheDocument();
   });
 
   it('blocks /configuracoes for financeiro when the module is disabled for that role', async () => {

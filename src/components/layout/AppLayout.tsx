@@ -46,7 +46,7 @@ const navItems = [
   { label: 'Notas de Entrada', icon: FileText, path: '/notas-entrada', moduleKey: 'notes' },
   { label: 'Kanban', icon: KanbanSquare, path: '/kanban', moduleKey: 'kanban' },
   { label: 'Fechamento', icon: Calendar, path: '/fechamento', moduleKey: 'closing' },
-  { label: 'Contas a Pagar', icon: Wallet, path: '/contas-a-pagar', moduleKey: 'payables' },
+  { label: 'Financeiro', icon: Wallet, path: '/financeiro', moduleKey: 'payables' },
   { label: 'Crescimento', icon: TrendingUp, path: '/crescimento', moduleKey: 'marketing' },
   { label: 'Configurações', icon: Settings, path: '/configuracoes', moduleKey: 'settings' },
 ] as const;

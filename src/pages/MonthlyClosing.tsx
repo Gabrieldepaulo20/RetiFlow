@@ -31,13 +31,16 @@ import {
   uploadFechamentoPDF,
   getFechamentoPDFSignedUrl,
   buildFechamentoDocumentSnapshotParams,
-  marcarFechamentoPago,
-  estornarFechamentoPago,
   normalizeFechamentoDadosJson,
   type FechamentoListItem,
   type FechamentoDadosJson,
   type FechamentoNota,
 } from '@/api/supabase/fechamentos';
+import {
+  estornarRecebimentoFechamento,
+  getFinanceiroContas,
+  registrarRecebimentoFechamento,
+} from '@/api/supabase/financeiro';
 import { getNotasServico, mapStatusNome } from '@/api/supabase/notas';
 import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 import {
@@ -58,12 +61,18 @@ import {
   computeDraftTotals,
   getDraftNotes,
   getIncludedDraftNotes,
+  getPreviewNoteOpenAmount,
+  getPreviewNoteReceivedAmount,
   getPreviewItems,
   recalcItemSubtotal,
   recalcNoteTotal,
   type ClosingDraft,
   type PreviewNote,
 } from '@/services/domain/monthlyClosingDraft';
+import {
+  acquireFinancialIdempotencyAttempt,
+  completeFinancialIdempotencyAttempt,
+} from '@/services/domain/financialIdempotency';
 import { PAYMENT_METHOD_LABELS, type IntakeNote, type NotePaymentStatus, type PaymentMethod } from '@/types';
 import { isBillableNoteStatus } from '@/services/domain/intakeNotes';
 import { readActiveSupportContext } from '@/services/auth/supportContext';
@@ -98,6 +107,22 @@ const toMoney = (value: number) =>
 
 const pctBR = (value: number) =>
   `${(Number.isFinite(value) ? value : 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
+
+const getClosingReceivedAmount = (closing: FechamentoListItem) => Math.min(
+  Math.max(0, asNumber(closing.valor_total)),
+  Math.max(0, asNumber(closing.valor_recebido ?? closing.valorRecebido)),
+);
+
+const getClosingOpenAmount = (closing: FechamentoListItem) =>
+  Math.max(0, Number((asNumber(closing.valor_total) - getClosingReceivedAmount(closing)).toFixed(2)));
+
+async function resolveClosingFinanceAccountId() {
+  const accounts = await getFinanceiroContas();
+  const account = accounts.find((candidate) => candidate.ativa && candidate.padrao)
+    ?? accounts.find((candidate) => candidate.ativa);
+  if (!account) throw new Error('Nenhuma conta financeira ativa foi encontrada.');
+  return account.id;
+}
 
 const createDraftId = () =>
   `draft-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -148,7 +173,19 @@ const normalizePreviewNote = (value: unknown): PreviewNote | null => {
     placa: typeof value.placa === 'string' && value.placa.trim() ? value.placa : null,
     total,
     updatedAt: asString(value.updatedAt, new Date().toISOString()),
-    paymentStatus: value.paymentStatus === 'PAGO' ? 'PAGO' : 'PENDENTE',
+    paymentStatus:
+      value.paymentStatus === 'PAGO'
+        ? 'PAGO'
+        : value.paymentStatus === 'PARCIAL'
+          ? 'PARCIAL'
+          : 'PENDENTE',
+    valorRecebido: Math.max(
+      0,
+      Math.min(
+        total,
+        value.paymentStatus === 'PAGO' ? total : asNumber(value.valorRecebido),
+      ),
+    ),
     pagoEm: typeof value.pagoEm === 'string' ? value.pagoEm : null,
     itens: itens.length > 0 ? itens : [{
       id: `${id}-fallback`,
@@ -182,7 +219,7 @@ const normalizeClosingDraft = (value: unknown, fallbackMonth: string, fallbackYe
   const periodMode: MonthlyClosingDateMode = value.periodMode === 'custom' ? 'custom' : 'month';
   const includedNoteIds = Array.isArray(value.includedNoteIds)
     ? value.includedNoteIds.filter((noteId): noteId is string => typeof noteId === 'string')
-    : notes.filter((note) => note.paymentStatus !== 'PAGO').map((note) => note.id);
+    : notes.filter((note) => getPreviewNoteOpenAmount(note) > 0).map((note) => note.id);
 
   return {
     id,
@@ -283,11 +320,13 @@ export default function MonthlyClosing() {
   const [payFechamento, setPayFechamento] = useState<FechamentoListItem | null>(null);
   const [payData, setPayData] = useState(() => new Date().toISOString().slice(0, 10));
   const [payForma, setPayForma] = useState<PaymentMethod>('PIX');
+  const [payAmount, setPayAmount] = useState('');
   const [payBusy, setPayBusy] = useState(false);
   // Marcar uma O.S. do rascunho como já paga (sai do total do fechamento).
   const [payNota, setPayNota] = useState<PreviewNote | null>(null);
   const [payNotaData, setPayNotaData] = useState(() => new Date().toISOString().slice(0, 10));
   const [payNotaForma, setPayNotaForma] = useState<PaymentMethod>('PIX');
+  const [payNotaBusy, setPayNotaBusy] = useState(false);
   // Fechamento gerado com o painel de descontos aberto (consulta visual).
   const [descontosAbertos, setDescontosAbertos] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<ClosingDraft[]>([]);
@@ -472,7 +511,10 @@ export default function MonthlyClosing() {
     setSelYear(safeDraft.year);
     setPreviewNotes(safeDraft.notes);
     setDescontos(safeDraft.discounts);
-    setIncludedNoteIds(safeDraft.includedNoteIds ?? safeDraft.notes.filter((note) => note.paymentStatus !== 'PAGO').map((note) => note.id));
+    setIncludedNoteIds(
+      safeDraft.includedNoteIds
+      ?? safeDraft.notes.filter((note) => getPreviewNoteOpenAmount(note) > 0).map((note) => note.id),
+    );
     setEditingItems({});
   }, [defaultCustomEndDate, defaultCustomStartDate, defaultMonth, defaultYear, scopedClientIdSet, toast]);
 
@@ -686,7 +728,14 @@ export default function MonthlyClosing() {
             plate: typeof note.veiculo?.placa === 'string' && note.veiculo.placa.trim() ? note.veiculo.placa : null,
             totalAmount: asNumber(note.total),
             updatedAt: asString(note.created_at, new Date().toISOString()),
-            paymentStatus: (note.payment_status === 'PAGO' ? 'PAGO' : 'PENDENTE') as NotePaymentStatus,
+            paymentStatus: (
+              note.payment_status === 'PAGO'
+                ? 'PAGO'
+                : note.payment_status === 'PARCIAL'
+                  ? 'PARCIAL'
+                  : 'PENDENTE'
+            ) as NotePaymentStatus,
+            valorRecebido: asNumber(note.valor_recebido),
             pagoEm: note.pago_em ?? null,
           }))
         : notes.filter((n) => {
@@ -702,6 +751,7 @@ export default function MonthlyClosing() {
             totalAmount: note.totalAmount,
             updatedAt: getClosingCompetenceDate(note),
             paymentStatus: note.paymentStatus,
+            valorRecebido: asNumber(note.valorRecebido),
             pagoEm: note.paidAt ?? null,
           }));
 
@@ -731,6 +781,9 @@ export default function MonthlyClosing() {
           total: nota.totalAmount,
           updatedAt: nota.updatedAt,
           paymentStatus: nota.paymentStatus,
+          valorRecebido: nota.paymentStatus === 'PAGO'
+            ? nota.totalAmount
+            : Math.min(nota.totalAmount, Math.max(0, nota.valorRecebido)),
           pagoEm: nota.pagoEm,
           itens: itensServico.length > 0
             ? itensServico.map((i, index) => {
@@ -752,7 +805,7 @@ export default function MonthlyClosing() {
 
       setPreviewNotes(resultado);
       setDescontos({});
-      setIncludedNoteIds(resultado.filter((note) => note.paymentStatus !== 'PAGO').map((note) => note.id));
+      setIncludedNoteIds(resultado.filter((note) => getPreviewNoteOpenAmount(note) > 0).map((note) => note.id));
       setEditingItems({});
       const draftClient = clients.find((entry) => entry.id === selClientId);
       const periodLabel = selectedPeriodRange.label;
@@ -769,7 +822,7 @@ export default function MonthlyClosing() {
         year: selectedPeriodRange.year,
         periodLabel,
         notes: resultado,
-        includedNoteIds: resultado.filter((note) => note.paymentStatus !== 'PAGO').map((note) => note.id),
+        includedNoteIds: resultado.filter((note) => getPreviewNoteOpenAmount(note) > 0).map((note) => note.id),
         discounts: {},
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -793,17 +846,30 @@ export default function MonthlyClosing() {
   /* ── Computed totals ── */
   const totals = useMemo(() => {
     const included = new Set(includedNoteIds);
-    return safePreviewNotes.filter((note) => included.has(note.id)).map((n) => {
+    return safePreviewNotes
+      .filter((note) => included.has(note.id) && getPreviewNoteOpenAmount(note) > 0)
+      .map((n) => {
       const disc = clampPercent(descontos[n.id] ?? 0);
-      return { id: n.id, totalBruto: n.total, totalComDesconto: n.total * (1 - disc / 100) };
-    });
+      const openAmount = getPreviewNoteOpenAmount(n);
+      return {
+        id: n.id,
+        totalBruto: openAmount,
+        totalComDesconto: openAmount * (1 - disc / 100),
+      };
+      });
   }, [safePreviewNotes, descontos, includedNoteIds]);
 
   const grandTotal = useMemo(() => totals.reduce((a, b) => a + b.totalComDesconto, 0), [totals]);
   const grandTotalOriginal = useMemo(() => totals.reduce((a, n) => a + n.totalBruto, 0), [totals]);
-  // O.S. já recebidas no período (informativas, fora do total a pagar).
-  const receivedNotes = useMemo(() => safePreviewNotes.filter((note) => note.paymentStatus === 'PAGO'), [safePreviewNotes]);
-  const receivedTotal = useMemo(() => receivedNotes.reduce((sum, note) => sum + note.total, 0), [receivedNotes]);
+  // Partes já recebidas no período (inclusive parcial), fora do total a pagar.
+  const receivedNotes = useMemo(
+    () => safePreviewNotes.filter((note) => getPreviewNoteReceivedAmount(note) > 0),
+    [safePreviewNotes],
+  );
+  const receivedTotal = useMemo(
+    () => receivedNotes.reduce((sum, note) => sum + getPreviewNoteReceivedAmount(note), 0),
+    [receivedNotes],
+  );
   const includedNotesCount = totals.length;
   const modalPreviewDados = useMemo(
     () => {
@@ -826,10 +892,13 @@ export default function MonthlyClosing() {
   // Resumo financeiro dos fechamentos gerados (interface, não altera o PDF).
   const resumoFechamentos = useMemo(() => {
     const faturado = fechamentos.reduce((sum, f) => sum + (f.valor_total ?? 0), 0);
-    const recebido = fechamentos
-      .filter((f) => f.status_pagamento === 'PAGO')
-      .reduce((sum, f) => sum + (f.valor_total ?? 0), 0);
-    return { total: fechamentos.length, faturado, recebido, aReceber: faturado - recebido };
+    const recebido = fechamentos.reduce((sum, f) => sum + getClosingReceivedAmount(f), 0);
+    return {
+      total: fechamentos.length,
+      faturado,
+      recebido,
+      aReceber: Math.max(0, faturado - recebido),
+    };
   }, [fechamentos]);
 
   // Lista de fechamentos após busca/filtro/ordenação.
@@ -900,26 +969,54 @@ export default function MonthlyClosing() {
 
   // Marca a O.S. do rascunho como já recebida: registra o recebimento na nota
   // (via DataContext) e reflete localmente para ela sair do total do fechamento.
-  const confirmMarcarNotaPaga = useCallback(() => {
+  const confirmMarcarNotaPaga = useCallback(async () => {
     if (!payNota) return;
     const paidAt = new Date(`${payNotaData}T12:00:00`).toISOString();
-    registrarRecebimentoNota(payNota.id, { paidWith: payNotaForma, paidAt });
-    setPreviewNotes((current) => current.map((note) => (
-      note.id === payNota.id ? { ...note, paymentStatus: 'PAGO', pagoEm: paidAt } : note
-    )));
-    setIncludedNoteIds((current) => current.filter((id) => id !== payNota.id));
-    toast({ title: 'O.S. marcada como recebida', description: `${payNota.os} saiu do total do fechamento e ficou como já recebida.` });
-    setPayNota(null);
+    setPayNotaBusy(true);
+    try {
+      await registrarRecebimentoNota(payNota.id, { paidWith: payNotaForma, paidAt });
+      setPreviewNotes((current) => current.map((note) => (
+        note.id === payNota.id
+          ? {
+              ...note,
+              paymentStatus: 'PAGO',
+              valorRecebido: note.total,
+              pagoEm: paidAt,
+            }
+          : note
+      )));
+      setIncludedNoteIds((current) => current.filter((id) => id !== payNota.id));
+      toast({ title: 'O.S. marcada como recebida', description: `${payNota.os} saiu do total do fechamento e ficou como já recebida.` });
+      setPayNota(null);
+    } catch (error) {
+      toast({
+        title: 'Não foi possível registrar o recebimento',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setPayNotaBusy(false);
+    }
   }, [payNota, payNotaData, payNotaForma, registrarRecebimentoNota, toast]);
 
   // Desfaz o recebimento de uma O.S. dentro do rascunho (estorno) e a devolve ao total.
-  const desfazerNotaPaga = useCallback((note: PreviewNote) => {
-    estornarRecebimentoNota(note.id);
-    setPreviewNotes((current) => current.map((n) => (
-      n.id === note.id ? { ...n, paymentStatus: 'PENDENTE', pagoEm: null } : n
-    )));
-    setIncludedNoteIds((current) => (current.includes(note.id) ? current : [...current, note.id]));
-    toast({ title: 'Recebimento desfeito', description: `${note.os} voltou para o total do fechamento.` });
+  const desfazerNotaPaga = useCallback(async (note: PreviewNote) => {
+    try {
+      await estornarRecebimentoNota(note.id, 'Correção no rascunho do fechamento');
+      setPreviewNotes((current) => current.map((n) => (
+        n.id === note.id
+          ? { ...n, paymentStatus: 'PENDENTE', valorRecebido: 0, pagoEm: null }
+          : n
+      )));
+      setIncludedNoteIds((current) => (current.includes(note.id) ? current : [...current, note.id]));
+      toast({ title: 'Recebimento desfeito', description: `${note.os} voltou para o total do fechamento.` });
+    } catch (error) {
+      toast({
+        title: 'Não foi possível estornar',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    }
   }, [estornarRecebimentoNota, toast]);
 
   /* ── Gerar fechamento ── */
@@ -1087,13 +1184,51 @@ export default function MonthlyClosing() {
 
   const handleMarcarPago = useCallback(async () => {
     if (!payFechamento) return;
+    const currentReceived = getClosingReceivedAmount(payFechamento);
+    const openAmount = getClosingOpenAmount(payFechamento);
+    const amount = Number(payAmount.replace(',', '.'));
+    if (!Number.isFinite(amount) || amount <= 0 || amount > openAmount + 0.004) {
+      toast({
+        title: 'Valor de recebimento inválido',
+        description: `Informe um valor entre R$ 0,01 e R$ ${toMoney(openAmount)}.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setPayBusy(true);
     try {
-      await marcarFechamentoPago(payFechamento.id_fechamentos, {
-        pagoEm: new Date(`${payData}T12:00:00`).toISOString(),
-        pagoCom: payForma,
+      const paidAt = new Date(`${payData}T12:00:00`).toISOString();
+      const accountId = await resolveClosingFinanceAccountId();
+      const roundedAmount = Number(amount.toFixed(2));
+      const attempt = acquireFinancialIdempotencyAttempt({
+        operation: 'receber-fechamento',
+        entityId: payFechamento.id_fechamentos,
+        fingerprint: {
+          alreadyReceived: currentReceived,
+          amount: roundedAmount,
+          paidAt: payData,
+          accountId,
+          paidWith: payForma,
+        },
       });
-      toast({ title: 'Fechamento pago', description: 'As O.S. pendentes deste fechamento foram marcadas como pagas.' });
+      const result = await registrarRecebimentoFechamento({
+        fechamentoId: payFechamento.id_fechamentos,
+        valor: roundedAmount,
+        dataEfetiva: paidAt,
+        contaId: accountId,
+        formaPagamento: payForma,
+        idempotencyKey: attempt.key,
+      });
+      completeFinancialIdempotencyAttempt(attempt);
+      const fullyPaid = result.status === 'PAGO'
+        || (result.valorAberto !== null && result.valorAberto <= 0.004);
+      toast({
+        title: fullyPaid ? 'Fechamento quitado' : 'Recebimento parcial registrado',
+        description: fullyPaid
+          ? 'O fechamento não possui mais saldo em aberto.'
+          : `Restam R$ ${toMoney(result.valorAberto ?? Math.max(0, openAmount - roundedAmount))} em aberto.`,
+      });
       setPayFechamento(null);
       await loadFechamentos();
     } catch (err) {
@@ -1101,12 +1236,30 @@ export default function MonthlyClosing() {
     } finally {
       setPayBusy(false);
     }
-  }, [payFechamento, payData, payForma, toast, loadFechamentos]);
+  }, [payAmount, payFechamento, payData, payForma, toast, loadFechamentos]);
 
   const handleEstornarFechamento = useCallback(async (fechamento: FechamentoListItem) => {
     try {
-      await estornarFechamentoPago(fechamento.id_fechamentos);
-      toast({ title: 'Pagamento estornado', description: 'O fechamento voltou para pendente e as O.S. pagas por ele foram revertidas.' });
+      const motivo = 'Correção de recebimento do fechamento';
+      const attempt = acquireFinancialIdempotencyAttempt({
+        operation: 'estornar-fechamento',
+        entityId: fechamento.id_fechamentos,
+        fingerprint: {
+          received: getClosingReceivedAmount(fechamento),
+          motivo,
+        },
+      });
+      await estornarRecebimentoFechamento({
+        fechamentoId: fechamento.id_fechamentos,
+        motivo,
+        dataEfetiva: new Date().toISOString(),
+        idempotencyKey: attempt.key,
+      });
+      completeFinancialIdempotencyAttempt(attempt);
+      toast({
+        title: 'Recebimento estornado',
+        description: 'Os recebimentos financeiros deste fechamento foram revertidos.',
+      });
       await loadFechamentos();
     } catch (err) {
       toast({ title: 'Erro ao estornar', description: err instanceof Error ? err.message : 'Tente novamente.', variant: 'destructive' });
@@ -1541,6 +1694,9 @@ export default function MonthlyClosing() {
               const palette = PALETTE[idx % PALETTE.length];
               const initials = (f.cliente?.nome ?? 'SEM CLIENTE').slice(0, 2).toUpperCase();
               const isPago = f.status_pagamento === 'PAGO';
+              const valorRecebido = getClosingReceivedAmount(f);
+              const valorEmAberto = getClosingOpenAmount(f);
+              const isParcial = !isPago && valorRecebido > 0;
               // Consulta visual dos descontos aplicados por O.S. (a partir do snapshot imutável).
               const notasFechamento = Array.isArray(f.dados_json?.notas) ? f.dados_json.notas : [];
               const notasComDesconto = notasFechamento.filter((n) => (n.total_original - n.total_com_desconto) > 0.005);
@@ -1557,9 +1713,16 @@ export default function MonthlyClosing() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-semibold text-sm truncate">{f.cliente?.nome ?? '—'}</p>
                           <Badge variant="secondary" className="text-xs">{f.periodo}</Badge>
-                          <Badge className={cn('text-xs gap-1', isPago ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700')}>
+                          <Badge className={cn(
+                            'text-xs gap-1',
+                            isPago
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : isParcial
+                                ? 'bg-blue-100 text-blue-700'
+                                : 'bg-amber-100 text-amber-700',
+                          )}>
                             {isPago ? <CheckCircle2 className="w-3 h-3" /> : <Wallet className="w-3 h-3" />}
-                            {isPago ? 'Pago' : 'A receber'}
+                            {isPago ? 'Pago' : isParcial ? 'Parcial' : 'A receber'}
                           </Badge>
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5">
@@ -1569,9 +1732,11 @@ export default function MonthlyClosing() {
                           </span>
                           {f.total_downloads > 0 && ` · ${f.total_downloads} download${f.total_downloads > 1 ? 's' : ''}`}
                         </p>
-                        {isPago && f.pago_em && (
-                          <p className="mt-0.5 text-xs text-emerald-700">
-                            Recebido em {formatDateBR(f.pago_em) ?? 'data não registrada'}
+                        {valorRecebido > 0 && (
+                          <p className={cn('mt-0.5 text-xs', isPago ? 'text-emerald-700' : 'text-blue-700')}>
+                            Recebido: <FinancialValue>R$ {toMoney(valorRecebido)}</FinancialValue>
+                            {!isPago && <> · Em aberto: <FinancialValue>R$ {toMoney(valorEmAberto)}</FinancialValue></>}
+                            {f.pago_em ? ` · ${formatDateBR(f.pago_em) ?? 'data não registrada'}` : ''}
                             {f.pago_com ? ` · ${PAYMENT_METHOD_LABELS[f.pago_com as PaymentMethod] ?? f.pago_com}` : ''}
                           </p>
                         )}
@@ -1637,17 +1802,23 @@ export default function MonthlyClosing() {
                             ? <RefreshCcw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
                             : <MessageCircle className="w-3.5 h-3.5 mr-1.5" />} WhatsApp
                         </Button>
-                        {!isPago ? (
+                        {!isPago && valorEmAberto > 0 ? (
                           <Button
                             size="sm"
-                            onClick={() => { setPayForma('PIX'); setPayData(new Date().toISOString().slice(0, 10)); setPayFechamento(f); }}
+                            onClick={() => {
+                              setPayForma('PIX');
+                              setPayData(new Date().toISOString().slice(0, 10));
+                              setPayAmount(valorEmAberto.toFixed(2));
+                              setPayFechamento(f);
+                            }}
                             disabled={isSupportImpersonating}
                             title={isSupportImpersonating ? 'Indisponível em modo suporte' : undefined}
                             className="col-span-2 justify-center bg-emerald-600 text-white hover:bg-emerald-700 sm:col-span-1 sm:flex-none"
                           >
-                            <Wallet className="w-3.5 h-3.5 mr-1.5" /> Marcar pago
+                            <Wallet className="w-3.5 h-3.5 mr-1.5" /> Registrar recebimento
                           </Button>
-                        ) : user?.role === 'ADMIN' ? (
+                        ) : null}
+                        {valorRecebido > 0 && user?.role === 'ADMIN' ? (
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button size="sm" variant="outline" disabled={isSupportImpersonating} className="col-span-2 justify-center sm:col-span-1 sm:flex-none">
@@ -1656,10 +1827,10 @@ export default function MonthlyClosing() {
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>Estornar pagamento de {f.periodo}?</AlertDialogTitle>
+                                <AlertDialogTitle>Estornar recebimentos de {f.periodo}?</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  O fechamento volta para "A receber" e as O.S. que foram pagas por ele voltam para pendente.
-                                  Use apenas para corrigir um lançamento.
+                                  Todos os recebimentos financeiros vinculados a este fechamento serão revertidos.
+                                  Use somente para corrigir lançamentos.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
@@ -1703,16 +1874,19 @@ export default function MonthlyClosing() {
                 <div className="p-4 sm:p-5 space-y-4">
                 {safePreviewNotes.map((nota) => {
                   const disc = clampPercent(descontos[nota.id] ?? 0);
-                  const totalComDesc = nota.total * (1 - disc / 100);
+                  const valorRecebidoNota = getPreviewNoteReceivedAmount(nota);
+                  const saldoAbertoNota = getPreviewNoteOpenAmount(nota);
+                  const totalComDesc = saldoAbertoNota * (1 - disc / 100);
                   const editing = editingItems[nota.id] ?? true;
-                  const isPaid = nota.paymentStatus === 'PAGO';
+                  const isPaid = saldoAbertoNota <= 0;
+                  const isPartial = !isPaid && valorRecebidoNota > 0;
                   const included = !isPaid && includedNoteIds.includes(nota.id);
                   const itens = getPreviewItems(nota);
                   const itensBruto = itens.reduce((sum, item) => (
                     sum + (Math.max(0, item.quantidade) * Math.max(0, item.preco_unitario))
                   ), 0);
                   const descontoItens = Math.max(0, itensBruto - nota.total);
-                  const descontoFinalOs = Math.max(0, nota.total - totalComDesc);
+                  const descontoFinalOs = Math.max(0, saldoAbertoNota - totalComDesc);
                   return (
                     <Card key={nota.id} className={cn('overflow-hidden border-border/70 transition', !included && 'opacity-70', isPaid && 'bg-muted/30')}>
                       <div className="bg-muted/40 border-b border-border/50 px-4 py-3 flex items-center justify-between gap-3">
@@ -1736,6 +1910,11 @@ export default function MonthlyClosing() {
                               </Badge>
                             ) : (
                               <>
+                                {isPartial && (
+                                  <Badge className="bg-blue-100 text-blue-700 text-[10px]">
+                                    Parcial · R$ {toMoney(valorRecebidoNota)} recebido
+                                  </Badge>
+                                )}
                                 <Badge variant="outline" className="text-[10px]">Editável</Badge>
                                 <Badge className={cn('text-[10px]', included ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>
                                   {included ? 'Entra no fechamento' : 'Fora deste fechamento'}
@@ -1763,7 +1942,7 @@ export default function MonthlyClosing() {
                               className="h-8 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
                               onClick={() => { setPayNotaForma('PIX'); setPayNotaData(new Date().toISOString().slice(0, 10)); setPayNota(nota); }}
                             >
-                              <Wallet className="mr-1.5 h-3.5 w-3.5" /> Marcar paga
+                              <Wallet className="mr-1.5 h-3.5 w-3.5" /> {isPartial ? 'Quitar saldo' : 'Marcar paga'}
                             </Button>
                           )}
                           {!isPaid && (
@@ -1773,8 +1952,13 @@ export default function MonthlyClosing() {
                             </Button>
                           )}
                           <div className="text-right">
-                            <p className="text-[11px] text-muted-foreground">Total O.S.</p>
+                            <p className="text-[11px] text-muted-foreground">{isPartial ? 'Saldo a fechar' : 'Total O.S.'}</p>
                             <p className="font-bold text-primary text-sm"><FinancialValue>R$ {toMoney(totalComDesc)}</FinancialValue></p>
+                            {isPartial && (
+                              <p className="text-[10px] text-blue-700">
+                                O.S. <FinancialValue>R$ {toMoney(nota.total)}</FinancialValue>
+                              </p>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1887,8 +2071,8 @@ export default function MonthlyClosing() {
                       )}
                       {receivedNotes.length > 0 && (
                         <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-                          Já recebido no período: <span className="font-semibold"><FinancialValue>R$ {toMoney(receivedTotal)}</FinancialValue></span>
-                          {' '}({receivedNotes.length} O.S. — não somadas no total)
+                          Recebimentos anteriores: <span className="font-semibold"><FinancialValue>R$ {toMoney(receivedTotal)}</FinancialValue></span>
+                          {' '}({receivedNotes.length} O.S. — somente os saldos abertos entram acima)
                         </div>
                       )}
                     </div>
@@ -1967,17 +2151,33 @@ export default function MonthlyClosing() {
         </DialogContent>
       </Dialog>
 
-      {/* Marcar fechamento como pago (cascata para as O.S. pendentes do fechamento) */}
+      {/* Recebimento do fechamento (integral ou parcial). */}
       <Dialog open={!!payFechamento} onOpenChange={(open) => { if (!open) setPayFechamento(null); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Marcar fechamento como pago</DialogTitle>
+            <DialogTitle>Registrar recebimento do fechamento</DialogTitle>
             <DialogDescription>
-              {payFechamento?.cliente?.nome ?? 'Cliente'} · {payFechamento?.periodo ?? ''} — <FinancialValue>R$ {(payFechamento?.valor_total ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</FinancialValue>.
-              As O.S. pendentes deste fechamento serão marcadas como pagas.
+              {payFechamento?.cliente?.nome ?? 'Cliente'} · {payFechamento?.periodo ?? ''}.
+              Total <FinancialValue>R$ {toMoney(payFechamento?.valor_total ?? 0)}</FinancialValue>
+              {' '}· recebido <FinancialValue>R$ {toMoney(payFechamento ? getClosingReceivedAmount(payFechamento) : 0)}</FinancialValue>
+              {' '}· em aberto <FinancialValue>R$ {toMoney(payFechamento ? getClosingOpenAmount(payFechamento) : 0)}</FinancialValue>.
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5 sm:col-span-2">
+              <label className="text-xs font-medium text-muted-foreground">Valor recebido agora</label>
+              <Input
+                type="number"
+                min="0.01"
+                step="0.01"
+                max={payFechamento ? getClosingOpenAmount(payFechamento) : undefined}
+                value={payAmount}
+                onChange={(event) => setPayAmount(event.target.value)}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Pode ser parcial. O restante continuará claramente em aberto.
+              </p>
+            </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">Forma de pagamento</label>
               <Select value={payForma} onValueChange={(v) => setPayForma(v as PaymentMethod)}>
@@ -1998,7 +2198,7 @@ export default function MonthlyClosing() {
             <Button variant="outline" onClick={() => setPayFechamento(null)} disabled={payBusy}>Cancelar</Button>
             <Button onClick={() => void handleMarcarPago()} disabled={payBusy} className="bg-emerald-600 text-white hover:bg-emerald-700">
               {payBusy ? <RefreshCcw className="w-4 h-4 mr-2 animate-spin" /> : <Wallet className="w-4 h-4 mr-2" />}
-              Confirmar pagamento
+              Registrar recebimento
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2010,8 +2210,8 @@ export default function MonthlyClosing() {
           <DialogHeader>
             <DialogTitle>Marcar O.S. como já paga</DialogTitle>
             <DialogDescription>
-              {payNota?.os ?? ''}{payNota?.veiculo ? ` · ${payNota.veiculo}` : ''} — <FinancialValue>R$ {toMoney(payNota?.total ?? 0)}</FinancialValue>.
-              Ela sai do total deste fechamento e passa a constar como já recebida no período.
+              {payNota?.os ?? ''}{payNota?.veiculo ? ` · ${payNota.veiculo}` : ''} — saldo de <FinancialValue>R$ {toMoney(payNota ? getPreviewNoteOpenAmount(payNota) : 0)}</FinancialValue>.
+              O saldo sai do total deste fechamento e o valor integral recebido fica auditável no período.
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -2032,9 +2232,9 @@ export default function MonthlyClosing() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPayNota(null)}>Cancelar</Button>
-            <Button onClick={confirmMarcarNotaPaga} className="bg-emerald-600 text-white hover:bg-emerald-700">
-              <Wallet className="w-4 h-4 mr-2" />
+            <Button variant="outline" onClick={() => setPayNota(null)} disabled={payNotaBusy}>Cancelar</Button>
+            <Button onClick={() => void confirmMarcarNotaPaga()} disabled={payNotaBusy} className="bg-emerald-600 text-white hover:bg-emerald-700">
+              {payNotaBusy ? <RefreshCcw className="w-4 h-4 mr-2 animate-spin" /> : <Wallet className="w-4 h-4 mr-2" />}
               Confirmar recebimento
             </Button>
           </DialogFooter>

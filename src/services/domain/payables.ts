@@ -170,10 +170,14 @@ export function isPayableEditRestricted(payable: AccountPayable): boolean {
 
 /**
  * True se a conta pode ser excluída (exclusão lógica).
- * Toda conta não excluída pode ser deletada — a distinção é na confirmação.
+ * Contas com movimentação financeira são preservadas para manter a auditoria.
  */
 export function canDeletePayable(payable: AccountPayable): boolean {
-  return payable.deletedAt == null;
+  return (
+    payable.deletedAt == null &&
+    payable.status !== 'PAGO' &&
+    payable.status !== 'PARCIAL'
+  );
 }
 
 /**
@@ -198,12 +202,13 @@ export function canRegisterPayment(payable: AccountPayable): boolean {
 
 /**
  * True se a conta pode ser cancelada.
- * Não faz sentido cancelar o que já está pago ou já foi cancelado.
+ * Não faz sentido cancelar o que já teve pagamento, total ou parcial.
  */
 export function canCancelPayable(payable: AccountPayable): boolean {
   return (
     payable.deletedAt == null &&
     payable.status !== 'PAGO' &&
+    payable.status !== 'PARCIAL' &&
     payable.status !== 'CANCELADO'
   );
 }

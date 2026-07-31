@@ -177,6 +177,8 @@ export function ClosingPDFTemplate({
           const temDesconto = nota.desconto_nota > 0;
           const isContinuation = chunkIndex > 0;
           const isLastChunk = chunkIndex === chunksTotal - 1;
+          const previousReceipt = Math.max(0, nota.valor_recebido ?? 0);
+          const hasPreviousReceipt = previousReceipt > 0;
           return (
             <View key={`${nota.id}-${chunkIndex}`} style={s.osBlock} wrap={false}>
               {/* OS header */}
@@ -216,24 +218,36 @@ export function ClosingPDFTemplate({
 
               {/* OS totals */}
               {isLastChunk ? (
-                <View style={s.osFoot}>
-                  {temDesconto && (
-                    <>
-                      <View style={s.footGroupFirst}>
-                        <Text style={s.footLabel}>Subtotal:</Text>
-                        <Text style={s.footValue}>R$ {brl(nota.total_original)}</Text>
-                      </View>
-                      <View style={s.footGroup}>
-                        <Text style={s.footLabel}>Desconto ({pct(nota.desconto_nota)}):</Text>
-                        <Text style={s.footValue}>-R$ {brl(nota.total_original * nota.desconto_nota / 100)}</Text>
-                      </View>
-                    </>
+                <>
+                  {hasPreviousReceipt && (
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, paddingHorizontal: 10, backgroundColor: '#eff6ff', borderTopWidth: 0.5, borderTopColor: '#bfdbfe' }}>
+                      <Text style={{ fontSize: 7.5, color: '#1d4ed8' }}>
+                        Total O.S.: R$ {brl(nota.valor_total_os ?? nota.total_original + previousReceipt)}
+                      </Text>
+                      <Text style={{ fontSize: 7.5, color: '#1d4ed8' }}>
+                        Já recebido: R$ {brl(previousReceipt)} · saldo: R$ {brl(nota.saldo_aberto ?? nota.total_original)}
+                      </Text>
+                    </View>
                   )}
-                  <View style={temDesconto ? s.footGroup : s.footGroupFirst}>
-                    <Text style={{ ...s.footLabel, fontWeight: 700 }}>Total:</Text>
-                    <Text style={{ ...s.footTotal, color: effectiveAccent }}>R$ {brl(nota.total_com_desconto)}</Text>
+                  <View style={s.osFoot}>
+                    {temDesconto && (
+                      <>
+                        <View style={s.footGroupFirst}>
+                          <Text style={s.footLabel}>{hasPreviousReceipt ? 'Saldo antes do desconto:' : 'Subtotal:'}</Text>
+                          <Text style={s.footValue}>R$ {brl(nota.total_original)}</Text>
+                        </View>
+                        <View style={s.footGroup}>
+                          <Text style={s.footLabel}>Desconto ({pct(nota.desconto_nota)}):</Text>
+                          <Text style={s.footValue}>-R$ {brl(nota.total_original * nota.desconto_nota / 100)}</Text>
+                        </View>
+                      </>
+                    )}
+                    <View style={temDesconto ? s.footGroup : s.footGroupFirst}>
+                      <Text style={{ ...s.footLabel, fontWeight: 700 }}>{hasPreviousReceipt ? 'Saldo desta O.S.:' : 'Total:'}</Text>
+                      <Text style={{ ...s.footTotal, color: effectiveAccent }}>R$ {brl(nota.total_com_desconto)}</Text>
+                    </View>
                   </View>
-                </View>
+                </>
               ) : (
                 <Text style={s.continuesFoot}>Continua na próxima seção...</Text>
               )}
@@ -245,14 +259,16 @@ export function ClosingPDFTemplate({
         {recebidas.length > 0 && (
           <View style={{ marginTop: 10, padding: 8, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 4, backgroundColor: '#f8fafc' }}>
             <Text style={{ fontSize: 8, color: '#555', marginBottom: 4 }}>
-              Já recebido no período (não incluso no total a pagar):
+              Recebimentos anteriores (não cobrados novamente):
             </Text>
             {recebidas.map((r) => (
               <View key={r.id} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
                 <Text style={{ fontSize: 8, color: '#555' }}>
-                  O.S. {r.os}{r.veiculo ? ` · ${r.veiculo}` : ''}{r.pago_em ? ` · pago em ${new Date(r.pago_em).toLocaleDateString('pt-BR')}` : ''}
+                  O.S. {r.os}{r.veiculo ? ` · ${r.veiculo}` : ''}
+                  {r.pago_em ? ` · recebido em ${new Date(r.pago_em).toLocaleDateString('pt-BR')}` : ''}
+                  {(r.saldo_aberto ?? 0) > 0 ? ` · saldo R$ ${brl(r.saldo_aberto ?? 0)} incluído acima` : ''}
                 </Text>
-                <Text style={{ fontSize: 8, color: '#16a34a' }}>R$ {brl(r.total)}</Text>
+                <Text style={{ fontSize: 8, color: '#16a34a' }}>R$ {brl(r.valor_recebido ?? r.total)}</Text>
               </View>
             ))}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 3, borderTopWidth: 1, borderColor: '#e5e7eb', paddingTop: 3 }}>

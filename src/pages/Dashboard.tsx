@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '@/contexts/DataContext';
@@ -39,10 +39,15 @@ import { computeDRE, sumPayablesByClass } from '@/services/domain/dre';
 import { SectionEmptyState, SectionErrorState } from '@/components/ui/section-state';
 import { FinancialValue } from '@/components/privacy/FinancialValue';
 import { useFinancialPrivacy } from '@/contexts/FinancialPrivacyContext';
+import {
+  getFinanceiroResumo,
+  type FinanceiroResumo,
+} from '@/api/supabase/financeiro';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 type DashboardRangePreset = 'month' | `year-${number}` | 'custom';
+const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
 const BAR_COLORS: Partial<Record<NoteStatus, string>> = {
   ABERTO: 'hsl(var(--info))',
@@ -150,6 +155,7 @@ export default function Dashboard() {
   const [rangePreset, setRangePreset] = useState<DashboardRangePreset>('month');
   const [customStartDate, setCustomStartDate] = useState(() => format(startOfMonth(new Date()), 'yyyy-MM-dd'));
   const [customEndDate, setCustomEndDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+  const [financeiroResumo, setFinanceiroResumo] = useState<FinanceiroResumo | null>(null);
 
   const now = useMemo(() => new Date(), []);
   const availableFinancialYears = useMemo(() => {
@@ -219,6 +225,27 @@ export default function Dashboard() {
     () => clampDashboardAccountingRange(selectedRange),
     [selectedRange],
   );
+
+  useEffect(() => {
+    if (!IS_REAL_AUTH) return;
+    let active = true;
+
+    getFinanceiroResumo({
+      p_data_inicio: format(selectedPeriod.start, 'yyyy-MM-dd'),
+      p_data_fim: format(selectedPeriod.end, 'yyyy-MM-dd'),
+      p_modo: 'CAIXA',
+    })
+      .then((resumo) => {
+        if (active) setFinanceiroResumo(resumo);
+      })
+      .catch(() => {
+        if (active) setFinanceiroResumo(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedPeriod.end, selectedPeriod.start]);
   const isInSelectedCalendarPeriod = useCallback((value?: string | null) => {
     const time = toComparableTime(value);
     return Number.isFinite(time) && time >= selectedRange.startTime && time <= selectedRange.endTime;
@@ -345,30 +372,41 @@ export default function Dashboard() {
     [periodPaidPayables],
   );
 
-  const periodProfit = periodDeliveredAmount - periodPaidExpenses;
-  const periodProfitMargin = periodDeliveredAmount > 0 ? (periodProfit / periodDeliveredAmount) * 100 : null;
+  const periodRevenue = financeiroResumo?.faturamentoCompetencia ?? periodDeliveredAmount;
+  const periodCashPaid = financeiroResumo?.saidasPagas ?? periodPaidExpenses;
+  const periodOpenPayables = financeiroResumo?.aPagar ?? periodPayablesRemaining;
+  const periodProfit = financeiroResumo?.resultadoCompetencia
+    ?? (periodDeliveredAmount - periodPayablesTotal);
+  const periodProfitMargin = periodRevenue > 0 ? (periodProfit / periodRevenue) * 100 : null;
 
   // ── Caixa (regime de caixa: dinheiro que entrou/saiu de fato) ────────────
   const periodReceivedNotes = useMemo(
     () => getReceivedNotesInRange(notes, selectedAccountingRange),
     [notes, selectedAccountingRange],
   );
-  const periodReceived = useMemo(
+  const legacyPeriodReceived = useMemo(
     () => periodReceivedNotes.reduce((sum, note) => sum + note.totalAmount, 0),
     [periodReceivedNotes],
   );
-  const cashBalance = periodReceived - periodPaidExpenses;
+  const periodReceived = financeiroResumo?.entradasRecebidas ?? legacyPeriodReceived;
+  const cashBalance = financeiroResumo
+    ? (financeiroResumo.saldoInicialInformado
+        ? financeiroResumo.saldoAtual
+        : financeiroResumo.resultadoPeriodo)
+    : periodReceived - periodPaidExpenses;
   // Posição em aberto (snapshot, não escopado ao período):
-  const openReceivableAmount = useMemo(
+  const legacyOpenReceivableAmount = useMemo(
     () => getReceivableNotes(notes).reduce((sum, note) => sum + note.totalAmount, 0),
     [notes],
   );
-  const openPayableAmount = useMemo(
+  const legacyOpenPayableAmount = useMemo(
     () => activePayables
       .filter((payable) => payable.status !== 'PAGO' && payable.status !== 'CANCELADO')
       .reduce((sum, payable) => sum + Math.max(0, payable.finalAmount - (payable.paidAmount ?? 0)), 0),
     [activePayables],
   );
+  const openReceivableAmount = financeiroResumo?.aReceber ?? legacyOpenReceivableAmount;
+  const openPayableAmount = financeiroResumo?.aPagar ?? legacyOpenPayableAmount;
 
   // ── DRE (regime de competência) ──────────────────────────────────────────
   // Receita = faturamento por entrega no período; saídas = contas por competência,
@@ -381,7 +419,13 @@ export default function Dashboard() {
     () => sumPayablesByClass(periodPayables, (id) => categoryClasseById.get(id)),
     [periodPayables, categoryClasseById],
   );
-  const dre = useMemo(() => computeDRE(periodDeliveredAmount, dreSums), [periodDeliveredAmount, dreSums]);
+  const dre = useMemo(() => computeDRE(periodRevenue, dreSums), [periodRevenue, dreSums]);
+  const dreClassifiedExpenses = dre.impostos + dre.custos + dre.despesas + dre.financeiro;
+  const dreReconciliationAdjustment = financeiroResumo
+    ? Number((financeiroResumo.despesasCompetencia - dreClassifiedExpenses).toFixed(2))
+    : 0;
+  const dreFinalResult = financeiroResumo?.resultadoCompetencia ?? dre.lucroLiquido;
+  const dreFinalMargin = periodRevenue > 0 ? (dreFinalResult / periodRevenue) * 100 : null;
 
   const periodFinancialData = useMemo(() => {
     if (selectedRange.startTime > selectedRange.endTime) {
@@ -619,16 +663,23 @@ export default function Dashboard() {
                 <div className="min-w-0">
                   <p className={financialMetricLabelClass}>
                     Faturamento real
-                    <InlineInfo label="Receita por competência: soma das O.S. faturáveis pela data de entrega/finalização (fato gerador). O.S. legadas, anteriores a 01/06/2026, usam o prazo, porque foram finalizadas em lote na migração. O pagamento posterior não muda o mês." />
+                    <InlineInfo label="Receita por competência conciliada na Central Financeiro: fechamentos entram uma única vez pelo líquido; O.S. filhas não duplicam faturamento; receitas manuais só entram quando marcadas para DRE." />
                   </p>
-                  <p className={cn(financialMetricValueClass, 'text-emerald-700')}><FinancialValue>R$ {fmtBRL(periodDeliveredAmount)}</FinancialValue></p>
+                  <p className={cn(financialMetricValueClass, 'text-emerald-700')}><FinancialValue>R$ {fmtBRL(periodRevenue)}</FinancialValue></p>
                 </div>
                 <div className={cn(financialMetricIconClass, 'bg-emerald-50 text-emerald-700')}>
                   <CheckCircle2 className="h-4 w-4" />
                 </div>
               </div>
               <p className="mt-1.5 hidden text-[11px] leading-snug text-muted-foreground">
-                {periodDeliveredNotes.length} O.S. faturável{periodDeliveredNotes.length !== 1 ? 'eis' : ''} no período · total geral <FinancialValue>R$ {fmtBRL(totalRevenue)}</FinancialValue>
+                {financeiroResumo ? (
+                  'Total conciliado com a Central Financeiro'
+                ) : (
+                  <>
+                    {periodDeliveredNotes.length} O.S. faturável{periodDeliveredNotes.length !== 1 ? 'eis' : ''} no período · total geral{' '}
+                    <FinancialValue>R$ {fmtBRL(totalRevenue)}</FinancialValue>
+                  </>
+                )}
               </p>
             </button>
 
@@ -656,7 +707,7 @@ export default function Dashboard() {
 
             <button
               type="button"
-              onClick={() => navigate('/contas-a-pagar')}
+              onClick={() => navigate('/financeiro?tab=saidas')}
               className={cn(financialMetricButtonClass, 'hover:border-orange-200 hover:bg-orange-50/50')}
             >
               <div className="flex items-start justify-between gap-2">
@@ -678,7 +729,7 @@ export default function Dashboard() {
 
             <button
               type="button"
-              onClick={() => navigate('/contas-a-pagar')}
+              onClick={() => navigate('/financeiro?tab=saidas')}
               className={cn(financialMetricButtonClass, 'hover:border-red-200 hover:bg-red-50/50')}
             >
               <div className="flex items-start justify-between gap-2">
@@ -687,7 +738,7 @@ export default function Dashboard() {
                     Contas pagas
                     <InlineInfo label={`Saída de caixa: soma das contas marcadas como pagas ou parciais, usando a data real do pagamento dentro do período e nunca antes de ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
                   </p>
-                  <p className={cn(financialMetricValueClass, 'text-red-600')}><FinancialValue>R$ {fmtBRL(periodPaidExpenses)}</FinancialValue></p>
+                  <p className={cn(financialMetricValueClass, 'text-red-600')}><FinancialValue>R$ {fmtBRL(periodCashPaid)}</FinancialValue></p>
                 </div>
                 <div className={cn(financialMetricIconClass, 'bg-red-50 text-red-600')}>
                   <Landmark className="h-4 w-4" />
@@ -700,7 +751,7 @@ export default function Dashboard() {
 
             <button
               type="button"
-              onClick={() => navigate('/contas-a-pagar?status=pendente')}
+              onClick={() => navigate('/financeiro?tab=saidas&status=pendente')}
               className={cn(financialMetricButtonClass, 'hover:border-amber-200 hover:bg-amber-50/50')}
             >
               <div className="flex items-start justify-between gap-2">
@@ -709,7 +760,7 @@ export default function Dashboard() {
                     Falta pagar
                     <InlineInfo label="Saldo ainda aberto das contas lançadas no período. Contas parciais entram somente com o valor restante." />
                   </p>
-                  <p className={cn(financialMetricValueClass, 'text-amber-700')}><FinancialValue>R$ {fmtBRL(periodPayablesRemaining)}</FinancialValue></p>
+                  <p className={cn(financialMetricValueClass, 'text-amber-700')}><FinancialValue>R$ {fmtBRL(periodOpenPayables)}</FinancialValue></p>
                 </div>
                 <div className={cn(financialMetricIconClass, 'bg-amber-50 text-amber-700')}>
                   <Landmark className="h-4 w-4" />
@@ -730,7 +781,7 @@ export default function Dashboard() {
                 <div className="min-w-0">
                   <p className={financialMetricLabelClass}>
                     Lucro do período
-                    <InlineInfo label={`Cálculo: faturamento real (por entrega da O.S.) menos contas pagas no mesmo período. Contas pagas usam a data real de pagamento e a base a partir de ${DASHBOARD_ACCOUNTING_START_LABEL}.`} />
+                    <InlineInfo label="Resultado por competência: faturamento líquido do período menos todas as despesas da mesma competência. Usa a mesma fonte da Central Financeiro e não mistura caixa com DRE." />
                   </p>
                   <p className={cn(financialMetricValueClass, periodProfit >= 0 ? 'text-primary' : 'text-red-700')}>
                     <FinancialValue>R$ {fmtBRLFull(periodProfit)}</FinancialValue>
@@ -741,7 +792,7 @@ export default function Dashboard() {
                 </div>
               </div>
               <p className="mt-1.5 hidden text-[11px] leading-snug text-muted-foreground">
-                Faturamento real - contas pagas{periodProfitMargin !== null ? ` · margem ${periodProfitMargin.toFixed(1)}%` : ''}
+                Faturamento - despesas por competência{periodProfitMargin !== null ? ` · margem ${periodProfitMargin.toFixed(1)}%` : ''}
               </p>
             </div>
           </div>
@@ -821,10 +872,12 @@ export default function Dashboard() {
             </div>
             <div className="rounded-xl bg-red-50/60 p-2.5 sm:p-3">
               <p className="text-[10px] font-medium uppercase tracking-wide text-red-700/70">Pago</p>
-              <p className="mt-1 text-base font-display font-bold tabular-nums text-red-700 sm:text-xl"><FinancialValue>R$ {fmtBRLFull(periodPaidExpenses)}</FinancialValue></p>
+              <p className="mt-1 text-base font-display font-bold tabular-nums text-red-700 sm:text-xl"><FinancialValue>R$ {fmtBRLFull(periodCashPaid)}</FinancialValue></p>
             </div>
             <div className={cn('rounded-xl p-2.5 sm:p-3', cashBalance >= 0 ? 'bg-primary/5' : 'bg-red-50/60')}>
-              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Saldo</p>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                {financeiroResumo && !financeiroResumo.saldoInicialInformado ? 'Resultado' : 'Saldo'}
+              </p>
               <p className={cn('mt-1 text-base font-display font-bold tabular-nums sm:text-xl', cashBalance >= 0 ? 'text-primary' : 'text-red-700')}><FinancialValue>R$ {fmtBRLFull(cashBalance)}</FinancialValue></p>
             </div>
           </div>
@@ -861,9 +914,9 @@ export default function Dashboard() {
               </h2>
               <p className="text-[11px] text-muted-foreground">{selectedPeriod.label} · por competência</p>
             </div>
-            {dre.margemLiquida !== null ? (
+            {dreFinalMargin !== null ? (
               <span className="ml-auto shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
-                margem líq. {dre.margemLiquida.toFixed(1)}%
+                margem líq. {dreFinalMargin.toFixed(1)}%
               </span>
             ) : null}
           </div>
@@ -877,7 +930,14 @@ export default function Dashboard() {
             <DRERow label="(−) Despesas operacionais" amount={dre.despesas} deduction />
             <DRERow label="= Resultado operacional" amount={dre.resultadoOperacional} subtotal />
             <DRERow label="(−) Despesas financeiras" amount={dre.financeiro} deduction />
-            <DRERow label="= Lucro líquido" amount={dre.lucroLiquido} final />
+            {Math.abs(dreReconciliationAdjustment) >= 0.01 ? (
+              <DRERow
+                label="(±) Conciliação com a Central Financeiro"
+                amount={dreReconciliationAdjustment}
+                deduction={dreReconciliationAdjustment > 0}
+              />
+            ) : null}
+            <DRERow label="= Lucro líquido" amount={dreFinalResult} final />
           </div>
 
           {dre.naoClassificado > 0 ? (

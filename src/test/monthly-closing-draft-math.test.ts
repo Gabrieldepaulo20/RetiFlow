@@ -5,6 +5,8 @@ import {
   clampPercent,
   computeDraftTotals,
   getIncludedDraftNotes,
+  getPreviewNoteOpenAmount,
+  getPreviewNoteReceivedAmount,
   recalcItemSubtotal,
   recalcNoteTotal,
   roundMoney,
@@ -19,6 +21,7 @@ const makeNote = (overrides: Partial<PreviewNote> & { id: string }): PreviewNote
   total: 100,
   updatedAt: '2026-07-01T10:00:00Z',
   paymentStatus: 'PENDENTE',
+  valorRecebido: 0,
   pagoEm: null,
   itens: [
     {
@@ -126,6 +129,27 @@ describe('computeDraftTotals', () => {
     });
     expect(computeDraftTotals(draft).totalComDesconto).toBe(90);
   });
+
+  it('cobra somente o saldo aberto de O.S. parcialmente recebida', () => {
+    const partial = makeNote({
+      id: 'parcial',
+      total: 500,
+      paymentStatus: 'PARCIAL',
+      valorRecebido: 175,
+    });
+    const draft = makeDraft({
+      notes: [partial],
+      discounts: { parcial: 10 },
+    });
+
+    expect(getPreviewNoteReceivedAmount(partial)).toBe(175);
+    expect(getPreviewNoteOpenAmount(partial)).toBe(325);
+    expect(getIncludedDraftNotes(draft).map((note) => note.id)).toEqual(['parcial']);
+    expect(computeDraftTotals(draft)).toEqual({
+      totalOriginal: 325,
+      totalComDesconto: 292.5,
+    });
+  });
 });
 
 describe('buildDadosFromDraft', () => {
@@ -191,5 +215,41 @@ describe('buildDadosFromDraft', () => {
     expect(dados.notas[0].itens[0].subtotal).toBe(90);
     expect(dados.notas[0].total_original).toBe(90);
     expect(dados.notas[0].total_com_desconto).toBe(90);
+  });
+
+  it('preserva no snapshot a parcela recebida e inclui só o saldo aberto', () => {
+    const draft = makeDraft({
+      notes: [
+        makeNote({
+          id: 'parcial',
+          total: 500,
+          paymentStatus: 'PARCIAL',
+          valorRecebido: 175,
+          pagoEm: '2026-06-15T12:00:00Z',
+        }),
+      ],
+    });
+
+    const dados = buildDadosFromDraft(draft);
+
+    expect(dados.notas).toHaveLength(1);
+    expect(dados.notas[0]).toMatchObject({
+      id: 'parcial',
+      valor_total_os: 500,
+      valor_recebido: 175,
+      saldo_aberto: 325,
+      total_original: 325,
+      total_com_desconto: 325,
+    });
+    expect(dados.recebidas).toEqual([
+      expect.objectContaining({
+        id: 'parcial',
+        total: 175,
+        valor_recebido: 175,
+        total_os: 500,
+        saldo_aberto: 325,
+      }),
+    ]);
+    expect(dados.total_ja_recebido).toBe(175);
   });
 });

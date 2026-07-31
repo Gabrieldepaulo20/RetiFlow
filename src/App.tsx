@@ -1,6 +1,6 @@
 import { lazy, ReactNode, Suspense, useEffect, useRef } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Toaster } from '@/components/ui/toaster';
 import { Toaster as Sonner } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -21,10 +21,10 @@ import {
   loadClientDetailPage,
   loadClientFormPage,
   loadClientsPage,
-  loadContasAPagarPage,
   loadContaPagarFormPage,
   loadImportarContaPagarPage,
   loadDashboardPage,
+  loadFinanceiroPage,
   loadIntakeNoteDetailPage,
   loadIntakeNoteFormPage,
   loadIntakeNotesPage,
@@ -50,7 +50,7 @@ const IntakeNoteDetail = lazy(loadIntakeNoteDetailPage);
 const Kanban = lazy(loadKanbanPage);
 const MonthlyClosing = lazy(loadMonthlyClosingPage);
 const MarketingGrowth = lazy(loadMarketingGrowthPage);
-const ContasAPagar = lazy(loadContasAPagarPage);
+const Financeiro = lazy(loadFinanceiroPage);
 const ContaPagarForm = lazy(loadContaPagarFormPage);
 const ImportarContaPagar = lazy(loadImportarContaPagarPage);
 const SettingsPage = lazy(loadSettingsPage);
@@ -71,6 +71,24 @@ function PageFallback() {
 
 function SuspendedPage({ children }: { children: ReactNode }) {
   return <Suspense fallback={<PageFallback />}>{children}</Suspense>;
+}
+
+function LegacyPayablesRedirect() {
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  searchParams.set('tab', 'saidas');
+  const search = searchParams.toString();
+
+  return (
+    <Navigate
+      to={{
+        pathname: '/financeiro',
+        search: search ? `?${search}` : '',
+        hash: location.hash,
+      }}
+      replace
+    />
+  );
 }
 
 function ScopeBoundDataProvider({ children }: { children: ReactNode }) {
@@ -190,7 +208,8 @@ const App = () => (
                       <Route path="/crescimento" element={<SuspendedPage><MarketingGrowth /></SuspendedPage>} />
                     </Route>
                     <Route element={<ProtectedRoute moduleKey="payables" />}>
-                      <Route path="/contas-a-pagar" element={<SuspendedPage><ContasAPagar /></SuspendedPage>} />
+                      <Route path="/financeiro" element={<SuspendedPage><Financeiro /></SuspendedPage>} />
+                      <Route path="/contas-a-pagar" element={<LegacyPayablesRedirect />} />
                       <Route path="/contas-a-pagar/nova" element={<SuspendedPage><ContaPagarForm /></SuspendedPage>} />
                       <Route path="/contas-a-pagar/importar" element={<SuspendedPage><ImportarContaPagar /></SuspendedPage>} />
                     </Route>

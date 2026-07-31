@@ -24,6 +24,14 @@ const SUPPORT_CONTEXT_RPC_MAP: Record<string, string> = {
   get_fechamentos: 'get_fechamentos_contexto_suporte',
   get_sugestoes_email: 'get_sugestoes_email_contexto_suporte',
   get_gmail_connection_status: 'get_gmail_connection_status_contexto_suporte',
+  // Leituras — Central Financeiro
+  get_financeiro_resumo: 'get_financeiro_resumo_contexto_suporte',
+  get_financeiro_lancamentos: 'get_financeiro_lancamentos_contexto_suporte',
+  get_financeiro_extrato: 'get_financeiro_extrato_contexto_suporte',
+  get_financeiro_contas: 'get_financeiro_contas_contexto_suporte',
+  get_categorias_entradas: 'get_categorias_entradas_contexto_suporte',
+  get_financeiro_modelos_recorrentes: 'get_financeiro_modelos_recorrentes_contexto_suporte',
+  get_financeiro_anexos: 'get_financeiro_anexos_contexto_suporte',
   // Escritas — Contas a Pagar
   aceitar_sugestao_email: 'aceitar_sugestao_email_contexto_suporte',
   reconciliar_sugestoes_email: 'reconciliar_sugestoes_email_contexto_suporte',
@@ -55,6 +63,22 @@ const SUPPORT_CONTEXT_RPC_MAP: Record<string, string> = {
 };
 
 const SUPPORT_BLOCKED_WRITE_RPCS = new Set([
+  // Central Financeiro — suporte é estritamente somente leitura
+  'registrar_recebimento_nota',
+  'registrar_recebimento_fechamento',
+  'estornar_recebimento_nota',
+  'estornar_recebimento_fechamento',
+  'registrar_pagamento_conta',
+  'criar_recebivel_manual',
+  'criar_movimento_manual',
+  'estornar_movimento_financeiro',
+  'transferir_contas_financeiras',
+  'salvar_conta_financeira',
+  'salvar_categoria_entrada',
+  'salvar_modelo_recorrente',
+  'inativar_modelo_recorrente',
+  'gerar_contas_recorrentes',
+  'insert_financeiro_anexo',
   // Faturas e fechamentos — sem variante de suporte
   'cancelar_fatura',
   'insert_fatura',

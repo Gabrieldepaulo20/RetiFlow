@@ -266,7 +266,21 @@ describe('supabaseToIntakeNote — campos de pagamento', () => {
   it('trata ausência dos campos de pagamento (variante de suporte) como PENDENTE sem paidWith', () => {
     const note = supabaseToIntakeNote(baseRow);
     expect(note.paymentStatus).toBe('PENDENTE');
+    expect(note.valorRecebido).toBe(0);
     expect(note.paidWith).toBeUndefined();
     expect(note.paidAt).toBeUndefined();
+  });
+
+  it('preserva recebimento parcial e valor recebido retornados pelo financeiro', () => {
+    const note = supabaseToIntakeNote({
+      ...baseRow,
+      payment_status: 'PARCIAL',
+      valor_recebido: '40.50',
+      pago_com: 'PIX',
+    } as NotaServico);
+
+    expect(note.paymentStatus).toBe('PARCIAL');
+    expect(note.valorRecebido).toBe(40.5);
+    expect(note.paidWith).toBe('PIX');
   });
 });

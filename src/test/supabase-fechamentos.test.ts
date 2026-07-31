@@ -150,6 +150,32 @@ describe('Fechamentos Supabase mutations', () => {
     expect(result.dados[0]?.dados_json?.total_com_desconto).toBe(100);
   });
 
+  it('normalizes partial payment status and received amount from closings', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        status: 200,
+        total: 1,
+        dados: [{
+          id_fechamentos: 'fechamento-parcial',
+          periodo: 'Julho 2026',
+          label: 'Fechamento Julho',
+          valor_total: 1000,
+          status_pagamento: 'PARCIAL',
+          valor_recebido: '350.50',
+          dados_json: null,
+          cliente: { id: 'cliente-1', nome: 'Cliente A' },
+        }],
+      },
+      error: null,
+    });
+
+    const result = await getFechamentos();
+
+    expect(result.dados[0]?.status_pagamento).toBe('PARCIAL');
+    expect(result.dados[0]?.valor_recebido).toBe(350.5);
+    expect(result.dados[0]?.valorRecebido).toBe(350.5);
+  });
+
   it('keeps closing previews safe when dados_json is malformed', () => {
     const normalized = normalizeFechamentoDadosJson({
       cliente: null,
@@ -164,6 +190,48 @@ describe('Fechamentos Supabase mutations', () => {
     expect(normalized?.recebidas).toEqual([]);
     expect(normalized?.total_original).toBe(0);
     expect(normalized?.total_com_desconto).toBe(50);
+  });
+
+  it('preserves partial receipt audit fields in the closing snapshot', () => {
+    const normalized = normalizeFechamentoDadosJson({
+      periodo: 'Julho 2026',
+      cliente: { id: 'cliente-1', nome: 'Cliente A' },
+      notas: [{
+        id: 'nota-1',
+        os: 'OS-1',
+        veiculo: 'Gol',
+        itens: [],
+        valor_total_os: '500',
+        valor_recebido: '175',
+        saldo_aberto: '325',
+        total_original: '325',
+        desconto_nota: 0,
+        total_com_desconto: '325',
+      }],
+      recebidas: [{
+        id: 'nota-1',
+        os: 'OS-1',
+        veiculo: 'Gol',
+        total: '175',
+        valor_recebido: '175',
+        total_os: '500',
+        saldo_aberto: '325',
+      }],
+    });
+
+    expect(normalized?.notas[0]).toMatchObject({
+      valor_total_os: 500,
+      valor_recebido: 175,
+      saldo_aberto: 325,
+      total_original: 325,
+    });
+    expect(normalized?.recebidas?.[0]).toMatchObject({
+      total: 175,
+      valor_recebido: 175,
+      total_os: 500,
+      saldo_aberto: 325,
+    });
+    expect(normalized?.total_ja_recebido).toBe(175);
   });
 
   it('creates a signed URL directly for stored closing PDFs', async () => {

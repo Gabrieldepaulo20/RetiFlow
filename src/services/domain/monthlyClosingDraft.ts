@@ -26,6 +26,8 @@ export interface PreviewNote {
   updatedAt: string;
   /** Eixo financeiro: se já foi recebida (fora do total do fechamento) ou pendente. */
   paymentStatus: NotePaymentStatus;
+  /** Total já recebido antes da geração deste fechamento. */
+  valorRecebido: number;
   pagoEm: string | null;
   itens: PreviewItem[];
 }
@@ -67,12 +69,27 @@ export const canDiscountPreviewItem = (item: Pick<PreviewItem, 'quantidade' | 'p
 export const recalcNoteTotal = (items: PreviewItem[]) =>
   items.reduce((sum, item) => sum + recalcItemSubtotal(item), 0);
 
-/** O.S. já recebida (paga) no período — informativa, nunca entra no total do fechamento. */
-export const isReceivedNote = (note: Pick<PreviewNote, 'paymentStatus'>) => note.paymentStatus === 'PAGO';
+export const getPreviewNoteReceivedAmount = (
+  note: Pick<PreviewNote, 'paymentStatus' | 'total' | 'valorRecebido'>,
+) => {
+  const total = roundMoney(Math.max(0, Number(note.total) || 0));
+  if (note.paymentStatus === 'PAGO') return total;
+  const received = Number(note.valorRecebido);
+  return roundMoney(Math.min(total, Math.max(0, Number.isFinite(received) ? received : 0)));
+};
+
+export const getPreviewNoteOpenAmount = (
+  note: Pick<PreviewNote, 'paymentStatus' | 'total' | 'valorRecebido'>,
+) => roundMoney(Math.max(0, roundMoney(note.total) - getPreviewNoteReceivedAmount(note)));
+
+/** O.S. integralmente recebida — informativa, nunca entra no total do fechamento. */
+export const isReceivedNote = (
+  note: Pick<PreviewNote, 'paymentStatus' | 'total' | 'valorRecebido'>,
+) => getPreviewNoteOpenAmount(note) <= 0;
 
 export const getReceivedDraftNotes = (draft: Pick<ClosingDraft, 'notes'>) => (
   Array.isArray(draft.notes) ? draft.notes : []
-).filter(isReceivedNote);
+).filter((note) => getPreviewNoteReceivedAmount(note) > 0);
 
 export const getDraftNotes = (draft: Pick<ClosingDraft, 'notes'>) =>
   Array.isArray(draft.notes) ? draft.notes : [];
@@ -85,8 +102,9 @@ export const getIncludedDraftNotes = (draft: Pick<ClosingDraft, 'notes' | 'inclu
   const base = draft.includedNoteIds
     ? notes.filter((note) => new Set(draft.includedNoteIds).has(note.id))
     : notes;
-  // Notas já recebidas nunca entram no total/cascata do fechamento (só informativas).
-  return base.filter((note) => !isReceivedNote(note));
+  // Uma O.S. parcial entra apenas pelo saldo aberto; a parte recebida fica no
+  // snapshot informativo para a receita não desaparecer do razão/DRE.
+  return base.filter((note) => getPreviewNoteOpenAmount(note) > 0);
 };
 
 /** Desconto por O.S. sempre clampado 0–100, mesmo que o estado vivo traga valor fora da faixa. */
@@ -94,14 +112,14 @@ const getNoteDiscountPercent = (draft: Pick<ClosingDraft, 'discounts'>, noteId: 
   clampPercent(draft.discounts[noteId] ?? 0);
 
 const noteTotalComDesconto = (draft: Pick<ClosingDraft, 'discounts'>, note: PreviewNote) =>
-  roundMoney(note.total * (1 - getNoteDiscountPercent(draft, note.id) / 100));
+  roundMoney(getPreviewNoteOpenAmount(note) * (1 - getNoteDiscountPercent(draft, note.id) / 100));
 
 export const computeDraftTotals = (draft: Pick<ClosingDraft, 'notes' | 'discounts' | 'includedNoteIds'>) => {
   const includedNotes = getIncludedDraftNotes(draft);
   // Totais consolidados somam os valores por O.S. já arredondados em centavos,
   // garantindo que a soma exibida no PDF bata exatamente com os itens listados.
   const totalOriginal = roundMoney(
-    includedNotes.reduce((sum, note) => sum + roundMoney(note.total), 0),
+    includedNotes.reduce((sum, note) => sum + getPreviewNoteOpenAmount(note), 0),
   );
   const totalComDesconto = roundMoney(
     includedNotes.reduce((sum, note) => sum + noteTotalComDesconto(draft, note), 0),
@@ -115,28 +133,44 @@ export const buildDadosFromDraft = (draft: ClosingDraft): FechamentoDadosJson =>
     gerado_em: new Date().toISOString(),
     periodo: draft.periodLabel,
     cliente: { id: draft.clientId, nome: draft.clientName },
-    notas: getIncludedDraftNotes(draft).map((note) => ({
-      id: note.id,
-      os: note.os,
-      veiculo: note.veiculo,
-      placa: note.placa,
-      itens: getPreviewItems(note),
-      total_original: roundMoney(note.total),
-      desconto_nota: getNoteDiscountPercent(draft, note.id),
-      total_com_desconto: noteTotalComDesconto(draft, note),
-    })),
+    notas: getIncludedDraftNotes(draft).map((note) => {
+      const valorRecebido = getPreviewNoteReceivedAmount(note);
+      const saldoAberto = getPreviewNoteOpenAmount(note);
+      return {
+        id: note.id,
+        os: note.os,
+        veiculo: note.veiculo,
+        placa: note.placa,
+        itens: getPreviewItems(note),
+        valor_total_os: roundMoney(note.total),
+        valor_recebido: valorRecebido,
+        saldo_aberto: saldoAberto,
+        total_original: saldoAberto,
+        desconto_nota: getNoteDiscountPercent(draft, note.id),
+        total_com_desconto: noteTotalComDesconto(draft, note),
+      };
+    }),
     total_original: totals.totalOriginal,
     total_com_desconto: totals.totalComDesconto,
-    recebidas: getReceivedDraftNotes(draft).map((note) => ({
-      id: note.id,
-      os: note.os,
-      veiculo: note.veiculo,
-      placa: note.placa,
-      total: roundMoney(note.total),
-      pago_em: note.pagoEm,
-    })),
+    recebidas: getReceivedDraftNotes(draft).map((note) => {
+      const valorRecebido = getPreviewNoteReceivedAmount(note);
+      return {
+        id: note.id,
+        os: note.os,
+        veiculo: note.veiculo,
+        placa: note.placa,
+        total: valorRecebido,
+        valor_recebido: valorRecebido,
+        total_os: roundMoney(note.total),
+        saldo_aberto: getPreviewNoteOpenAmount(note),
+        pago_em: note.pagoEm,
+      };
+    }),
     total_ja_recebido: roundMoney(
-      getReceivedDraftNotes(draft).reduce((sum, note) => sum + roundMoney(note.total), 0),
+      getReceivedDraftNotes(draft).reduce(
+        (sum, note) => sum + getPreviewNoteReceivedAmount(note),
+        0,
+      ),
     ),
   };
 };

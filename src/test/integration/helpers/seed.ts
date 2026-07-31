@@ -53,6 +53,97 @@ async function deleteInternalUserRowsByEmail(email: string): Promise<void> {
   const ids = (users ?? []).map((user) => user.id_usuarios as string);
   if (ids.length === 0) return;
 
+  const { data: payables, error: payablesError } = await service
+    .schema('RetificaPremium')
+    .from('Contas_Pagar')
+    .select('id_contas_pagar')
+    .in('fk_criado_por', ids);
+
+  if (payablesError) {
+    throw new Error(`[seed] Falha ao localizar contas do usuário de teste: ${payablesError.message}`);
+  }
+
+  const payableIds = (payables ?? []).map((payable) => payable.id_contas_pagar as string);
+
+  const { error: attachmentsError } = await service
+    .schema('RetificaPremium')
+    .from('Financeiro_Anexos')
+    .delete()
+    .in('fk_criado_por', ids);
+
+  if (attachmentsError) {
+    throw new Error(`[seed] Falha ao remover anexos financeiros de teste: ${attachmentsError.message}`);
+  }
+
+  if (payableIds.length > 0) {
+    const { error: payableMovementsError } = await service
+      .schema('RetificaPremium')
+      .from('Financeiro_Movimentos')
+      .delete()
+      .in('fk_contas_pagar', payableIds);
+
+    if (payableMovementsError) {
+      throw new Error(`[seed] Falha ao remover movimentos das contas de teste: ${payableMovementsError.message}`);
+    }
+  }
+
+  const { error: movementsError } = await service
+    .schema('RetificaPremium')
+    .from('Financeiro_Movimentos')
+    .delete()
+    .in('fk_criado_por', ids);
+
+  if (movementsError) {
+    throw new Error(`[seed] Falha ao remover movimentos financeiros de teste: ${movementsError.message}`);
+  }
+
+  if (payableIds.length > 0) {
+    const { error: resetPayablesError } = await service
+      .schema('RetificaPremium')
+      .from('Contas_Pagar')
+      .update({
+        valor_pago: 0,
+        status: 'PENDENTE',
+        pago_em: null,
+        pago_com: null,
+        observacoes_pagamento: null,
+      })
+      .in('id_contas_pagar', payableIds);
+
+    if (resetPayablesError) {
+      throw new Error(`[seed] Falha ao neutralizar pagamentos de teste: ${resetPayablesError.message}`);
+    }
+
+    const { error: deletePayablesError } = await service
+      .schema('RetificaPremium')
+      .from('Contas_Pagar')
+      .delete()
+      .in('id_contas_pagar', payableIds);
+
+    if (deletePayablesError) {
+      throw new Error(`[seed] Falha ao remover contas a pagar de teste: ${deletePayablesError.message}`);
+    }
+  }
+
+  const financialTables = [
+    'Financeiro_Modelos_Recorrentes',
+    'Financeiro_Recebiveis_Manuais',
+    'Categorias_Entradas',
+    'Financeiro_Contas',
+  ] as const;
+
+  for (const table of financialTables) {
+    const { error } = await service
+      .schema('RetificaPremium')
+      .from(table)
+      .delete()
+      .in('fk_criado_por', ids);
+
+    if (error) {
+      throw new Error(`[seed] Falha ao remover ${table} do usuário de teste: ${error.message}`);
+    }
+  }
+
   const { error: modulesError } = await service
     .schema('RetificaPremium')
     .from('Modulos')

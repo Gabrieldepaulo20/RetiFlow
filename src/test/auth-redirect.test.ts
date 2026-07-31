@@ -54,7 +54,7 @@ describe('auth default redirect', () => {
     expect(getDefaultRedirect(makeUser('FINANCEIRO', {
       dashboard: false,
       payables: true,
-    }))).toBe('/contas-a-pagar');
+    }))).toBe('/financeiro');
   });
 
   it('uses the next allowed operational module for recepcao when dashboard is disabled', () => {
@@ -82,7 +82,7 @@ describe('auth default redirect', () => {
     });
 
     expect(canUserAccessModule(user, 'payables')).toBe(true);
-    expect(getDefaultRedirect(user)).toBe('/contas-a-pagar');
+    expect(getDefaultRedirect(user)).toBe('/financeiro');
   });
 
   it('blocks users when explicit DB module access disables every available module', () => {

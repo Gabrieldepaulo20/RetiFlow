@@ -30,7 +30,7 @@ export type NoteType = 'SERVICO' | 'COMPRA';
 export type NoteStatus = 'ABERTO' | 'EM_ANALISE' | 'ORCAMENTO' | 'APROVADO' | 'EM_EXECUCAO' | 'AGUARDANDO_COMPRA' | 'PRONTA' | 'ENTREGUE' | 'RECUSADO' | 'SEM_CONSERTO' | 'EXCLUIDA';
 
 /** Eixo financeiro da nota — independente do status de fluxo. */
-export type NotePaymentStatus = 'PENDENTE' | 'PAGO';
+export type NotePaymentStatus = 'PENDENTE' | 'PARCIAL' | 'PAGO';
 
 export type DocType = 'CPF' | 'CNPJ';
 export type AttachmentType = 'PHOTO' | 'PDF' | 'XML' | 'OTHER';
@@ -146,6 +146,8 @@ export interface IntakeNote {
   finalizedAt?: string;
   /** Eixo financeiro — recebimento do cliente, separado do status de fluxo. */
   paymentStatus: NotePaymentStatus;
+  /** Soma confirmada dos recebimentos financeiros vinculados à O.S. */
+  valorRecebido?: number;
   paidAt?: string;
   paidWith?: PaymentMethod;
   updatedAt: string;
@@ -284,11 +286,13 @@ export const STATUS_CUSTOMER_LABELS: Record<NoteStatus, string> = {
 
 export const PAYMENT_STATUS_LABELS: Record<NotePaymentStatus, string> = {
   PENDENTE: 'A receber',
+  PARCIAL: 'Recebido parcialmente',
   PAGO: 'Pago',
 };
 
 export const PAYMENT_STATUS_COLORS: Record<NotePaymentStatus, string> = {
   PENDENTE: 'bg-amber-100 text-amber-800',
+  PARCIAL: 'bg-orange-100 text-orange-800',
   PAGO: 'bg-success text-success-foreground',
 };
 

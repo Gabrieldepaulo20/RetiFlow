@@ -92,6 +92,8 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
             const isContinuation = chunkIndex > 0;
             const isLastChunk = chunkIndex === chunksTotal - 1;
             const hasDiscount = nota.desconto_nota > 0;
+            const previousReceipt = Math.max(0, nota.valor_recebido ?? 0);
+            const hasPreviousReceipt = previousReceipt > 0;
 
             return (
               <section
@@ -144,15 +146,27 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
                 </div>
 
                 {isLastChunk ? (
-                  <div className="flex flex-wrap items-center justify-end gap-x-5 gap-y-1 border-t border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-                    {hasDiscount && (
-                      <>
-                        <p><span className="text-slate-500">Subtotal:</span> <FinancialValue>R$ {brl(nota.total_original)}</FinancialValue></p>
-                        <p><span className="text-slate-500">Desconto:</span> {pct(nota.desconto_nota)}</p>
-                      </>
+                  <>
+                    {hasPreviousReceipt && (
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-blue-100 bg-blue-50/70 px-4 py-2 text-xs text-blue-700">
+                        <span>
+                          Total da O.S.: <FinancialValue>R$ {brl(nota.valor_total_os ?? nota.total_original + previousReceipt)}</FinancialValue>
+                        </span>
+                        <span>
+                          Já recebido: <FinancialValue>R$ {brl(previousReceipt)}</FinancialValue> · saldo: <FinancialValue>R$ {brl(nota.saldo_aberto ?? nota.total_original)}</FinancialValue>
+                        </span>
+                      </div>
                     )}
-                    <p className="font-bold" style={{ color: effectiveAccent }}>Total {nota.os}: <FinancialValue>R$ {brl(nota.total_com_desconto)}</FinancialValue></p>
-                  </div>
+                    <div className="flex flex-wrap items-center justify-end gap-x-5 gap-y-1 border-t border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+                      {hasDiscount && (
+                        <>
+                          <p><span className="text-slate-500">{hasPreviousReceipt ? 'Saldo antes do desconto:' : 'Subtotal:'}</span> <FinancialValue>R$ {brl(nota.total_original)}</FinancialValue></p>
+                          <p><span className="text-slate-500">Desconto:</span> {pct(nota.desconto_nota)}</p>
+                        </>
+                      )}
+                      <p className="font-bold" style={{ color: effectiveAccent }}>{hasPreviousReceipt ? 'Saldo desta O.S.' : `Total ${nota.os}`}: <FinancialValue>R$ {brl(nota.total_com_desconto)}</FinancialValue></p>
+                    </div>
+                  </>
                 ) : (
                   <p className="border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
                     Continua na próxima seção.
@@ -166,13 +180,19 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
         {recebidas.length > 0 && (
           <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/60 px-5 py-4 text-sm">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">
-              Já recebido no período (não incluso no total a pagar)
+              Recebimentos anteriores (não cobrados novamente)
             </p>
             <div className="space-y-1">
               {recebidas.map((r) => (
                 <div key={r.id} className="flex items-center justify-between gap-3 text-slate-600">
-                  <span>O.S. {r.os}{r.veiculo ? ` · ${r.veiculo}` : ''}{r.pago_em ? ` · pago em ${new Date(r.pago_em).toLocaleDateString('pt-BR')}` : ''}</span>
-                  <span className="font-medium text-emerald-700"><FinancialValue>R$ {brl(r.total)}</FinancialValue></span>
+                  <span>
+                    O.S. {r.os}{r.veiculo ? ` · ${r.veiculo}` : ''}
+                    {r.pago_em ? ` · recebido em ${new Date(r.pago_em).toLocaleDateString('pt-BR')}` : ''}
+                    {(r.saldo_aberto ?? 0) > 0 && (
+                      <> · saldo de <FinancialValue>R$ {brl(r.saldo_aberto ?? 0)}</FinancialValue> incluído acima</>
+                    )}
+                  </span>
+                  <span className="font-medium text-emerald-700"><FinancialValue>R$ {brl(r.valor_recebido ?? r.total)}</FinancialValue></span>
                 </div>
               ))}
             </div>

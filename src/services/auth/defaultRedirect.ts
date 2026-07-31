@@ -12,7 +12,7 @@ const MODULE_PATHS: Record<AppModuleKey, string> = {
   notes: '/notas-entrada',
   kanban: '/kanban',
   closing: '/fechamento',
-  payables: '/contas-a-pagar',
+  payables: '/financeiro',
   marketing: '/crescimento',
   settings: '/configuracoes',
 };
