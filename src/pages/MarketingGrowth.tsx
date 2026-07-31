@@ -31,6 +31,7 @@ import {
   FileWarning,
   Filter,
   Gauge,
+  Globe2,
   ListChecks,
   MailCheck,
   MapPin,
@@ -527,11 +528,28 @@ function ChartTooltip({
   );
 }
 
+function getSiteWhatsappOriginCounts(resumo: MarketingResumo) {
+  const total = Math.max(
+    0,
+    resumo.site.whatsapp?.uniqueClicks ?? resumo.site.current.whatsappClicks,
+  );
+  const reportedPaid = resumo.site.whatsapp?.paidClicks
+    ?? resumo.campaigns.paidActions?.whatsappClicks
+    ?? 0;
+  const paid = Math.min(total, Math.max(0, reportedPaid));
+
+  return {
+    total,
+    paid,
+    other: Math.max(0, total - paid),
+  };
+}
+
 function WhatsappOriginBreakdown({ resumo }: { resumo: MarketingResumo }) {
   const adClicks = (resumo.campaigns.clickTypes ?? [])
     .filter((item) => item.type === 'CLICK_TO_MESSAGE_THIRD_PARTY_CLICK')
     .reduce((total, item) => total + item.clicks, 0);
-  const siteClicks = resumo.site.whatsapp?.uniqueClicks ?? resumo.site.current.whatsappClicks;
+  const siteWhatsappOrigins = getSiteWhatsappOriginCounts(resumo);
   const businessProfile = resumo.businessProfile;
   const businessProfileAvailable = businessProfile?.status === 'available'
     && businessProfile.current.whatsappClicks !== null;
@@ -554,15 +572,23 @@ function WhatsappOriginBreakdown({ resumo }: { resumo: MarketingResumo }) {
       iconTone: 'bg-amber-500 text-white',
     },
     {
-      label: 'WhatsApp do site',
-      value: formatNumber(siteClicks),
-      detail: 'Botões clicados depois de entrar no site',
+      label: 'Site após anúncio',
+      value: formatNumber(siteWhatsappOrigins.paid),
+      detail: 'Entraram por mídia paga e clicaram no WhatsApp do site',
       icon: ExternalLink,
       tone: 'border-emerald-200 bg-emerald-50 text-emerald-950',
       iconTone: 'bg-emerald-600 text-white',
     },
     {
-      label: 'Google Meu Negócio',
+      label: 'Site · outras origens',
+      value: formatNumber(siteWhatsappOrigins.other),
+      detail: 'Busca orgânica, acesso direto, indicação ou outra origem não paga',
+      icon: Globe2,
+      tone: 'border-teal-200 bg-teal-50 text-teal-950',
+      iconTone: 'bg-teal-600 text-white',
+    },
+    {
+      label: 'Perfil da Empresa',
       value: businessProfileValue,
       detail: businessProfileDetail,
       icon: Building2,
@@ -577,9 +603,9 @@ function WhatsappOriginBreakdown({ resumo }: { resumo: MarketingResumo }) {
         <PanelHeading
           eyebrow="Origem do contato"
           title="De onde veio o clique no WhatsApp?"
-          description="As três origens ficam separadas. O clique mede intenção de contato; não confirma sozinho que a mensagem foi enviada."
+          description="Anúncio direto, site após anúncio, outras origens do site e Perfil da Empresa ficam separados. Clique não confirma mensagem enviada."
         />
-        <div className="mt-3 grid gap-2.5 md:grid-cols-3">
+        <div className="mt-3 grid grid-cols-2 gap-2.5 md:grid-cols-4">
           {items.map((item) => {
             const Icon = item.icon;
             return (
@@ -609,7 +635,7 @@ function BasicOverviewTab({ resumo }: { resumo: MarketingResumo }) {
   const search = resumo.searchConsole;
   const pagesPerSession = current.sessions ? (current.pageViews ?? 0) / current.sessions : 0;
   const previousPagesPerSession = previous.sessions ? (previous.pageViews ?? 0) / previous.sessions : 0;
-  const whatsappShare = percentage(current.whatsappClicks, current.visits);
+  const siteWhatsappOrigins = getSiteWhatsappOriginCounts(resumo);
   const showInternalDailyActions = resumo.quality?.actionMetricsSource !== 'ga4';
 
   return (
@@ -626,9 +652,9 @@ function BasicOverviewTab({ resumo }: { resumo: MarketingResumo }) {
           accent="navy"
         />
         <Metric
-          label="Clicaram no WhatsApp"
-          value={formatNumber(current.whatsappClicks)}
-          detail={`${formatPercent(whatsappShare)} em relação aos visitantes`}
+          label="WhatsApp no site · total"
+          value={formatNumber(siteWhatsappOrigins.total)}
+          detail={`${formatNumber(siteWhatsappOrigins.paid)} após anúncio · ${formatNumber(siteWhatsappOrigins.other)} outras origens`}
           help={siteMetricHelp.whatsapp}
           icon={MessageCircle}
           current={current.whatsappClicks}
@@ -762,7 +788,7 @@ export function OverviewTab({ resumo }: { resumo: MarketingResumo }) {
   const business = resumo.business?.current ?? resumo.executive?.business;
   const pagesPerSession = current.sessions ? (current.pageViews ?? 0) / current.sessions : 0;
   const previousPagesPerSession = previous.sessions ? (previous.pageViews ?? 0) / previous.sessions : 0;
-  const whatsappShare = percentage(current.whatsappClicks, current.visits);
+  const siteWhatsappOrigins = getSiteWhatsappOriginCounts(resumo);
   const showInternalDailyActions = resumo.quality?.actionMetricsSource !== 'ga4';
 
   return (
@@ -779,9 +805,9 @@ export function OverviewTab({ resumo }: { resumo: MarketingResumo }) {
           accent="navy"
         />
         <Metric
-          label="Clicaram no WhatsApp"
-          value={formatNumber(current.whatsappClicks)}
-          detail={`${formatPercent(whatsappShare)} em relação aos visitantes`}
+          label="WhatsApp no site · total"
+          value={formatNumber(siteWhatsappOrigins.total)}
+          detail={`${formatNumber(siteWhatsappOrigins.paid)} após anúncio · ${formatNumber(siteWhatsappOrigins.other)} outras origens`}
           help={siteMetricHelp.whatsapp}
           icon={MessageCircle}
           current={current.whatsappClicks}
@@ -1943,6 +1969,9 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
   ) ?? messageAssets[0];
   const paidActions = ads.paidActions;
   const siteWhatsapp = resumo.site.whatsapp;
+  const siteWhatsappOrigins = getSiteWhatsappOriginCounts(resumo);
+  const paidSiteWhatsappPoints = (siteWhatsapp?.points ?? [])
+    .filter((point) => point.paidClicks > 0);
   const calls = ads.calls;
   const conversionActions = ads.conversionActions ?? [];
   const paidVisitors = ads.paidVisitors ?? [];
@@ -2069,13 +2098,13 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
             </div>
           )}
           <ClickBreakdownItem
-            label="WhatsApp dentro do site"
-            value={siteWhatsapp?.uniqueClicks ?? resumo.site.current.whatsappClicks}
-            detail={`${formatNumber(siteWhatsapp?.paidClicks ?? paidActions?.whatsappClicks)} vieram dos anúncios · ${formatNumber(siteWhatsapp?.repeatedClicks)} repetições removidas`}
-            help="Cliques únicos nos botões do site. Este total é separado do botão de WhatsApp exibido diretamente no anúncio."
+            label="WhatsApp no site após anúncio"
+            value={siteWhatsappOrigins.paid}
+            detail="Somente pessoas identificadas como vindas da mídia paga"
+            help="Cliques únicos no WhatsApp dentro do site, limitados às sessões com identificador de anúncio ou origem Google paga. Não inclui busca orgânica, acesso direto, indicação ou IA."
             icon={ExternalLink}
             tone="teal"
-            footer={<span>Depois de a pessoa entrar no site</span>}
+            footer={<span>{formatNumber(siteWhatsappOrigins.other)} de outras origens ficam no Resumo</span>}
           />
         </div>
 
@@ -2109,19 +2138,19 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           ) : null}
         </div>
 
-        {siteWhatsapp?.points.length ? (
+        {paidSiteWhatsappPoints.length ? (
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-            <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">Onde clicaram no WhatsApp do site</p>
+            <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">Onde visitantes dos anúncios clicaram no WhatsApp</p>
             <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-4">
-              {siteWhatsapp.points.slice(0, 4).map((point) => (
+              {paidSiteWhatsappPoints.slice(0, 4).map((point) => (
                 <div key={`${point.eventLabel}:${point.pagePath}`} className="flex min-w-0 items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-2 text-[11px]">
                   <div className="min-w-0">
                     <p className="line-clamp-2 text-[10px] font-semibold leading-3 text-slate-800">{formatWhatsappPointLabel(point.eventLabel, point.pagePath)}</p>
                     <p className="truncate text-[9px] text-slate-500">{point.pagePath}</p>
                   </div>
                   <div className="shrink-0 text-right">
-                    <p className="font-black text-slate-950">{formatNumber(point.uniqueClicks)}</p>
-                    {point.paidClicks ? <p className="text-[8px] font-semibold text-emerald-700">{formatNumber(point.paidClicks)} de anúncio</p> : null}
+                    <p className="font-black text-slate-950">{formatNumber(point.paidClicks)}</p>
+                    <p className="text-[8px] font-semibold text-emerald-700">após anúncio</p>
                   </div>
                 </div>
               ))}

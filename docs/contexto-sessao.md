@@ -4,6 +4,23 @@ Atualizado em: 2026-07-31
 
 ---
 
+## WhatsApp Do Site Separado Por Origem - 2026-07-31
+
+- O card antigo `WhatsApp dentro do site` na aba Google Ads usava `uniqueClicks` como valor
+  principal. Esse total somava sessões pagas e não pagas, embora o backend já entregasse
+  `paidClicks` separado; por isso a apresentação era ambígua.
+- A aba Google Ads agora mostra somente `WhatsApp no site após anúncio`, calculado com `paidClicks`.
+  Cliques de busca orgânica, acesso direto, indicação, IA ou outra origem não paga ficam fora dessa
+  aba e aparecem separadamente no Resumo como `Site · outras origens`.
+- O Resumo mantém o total do site apenas com rótulo explícito e detalha, no próprio card, quantos
+  vieram após anúncio e quantos pertencem a outras origens. O quadro de origem agora tem quatro
+  caminhos independentes: botão do anúncio, site após anúncio, site por outras origens e Perfil da
+  Empresa.
+- Nenhuma migration, tabela, RLS ou Edge Function foi alterada: a correção usa os campos agregados
+  `uniqueClicks` e `paidClicks` que já existiam no contrato de `marketing-dashboard`.
+
+---
+
 ## Correcoes Da Auditoria Completa - 2026-07-31 (segunda passada, apos o relatorio)
 
 - Usuario pediu pra atacar direto: #1 (double-count), #3/#4 (Dashboard silencioso + mock no

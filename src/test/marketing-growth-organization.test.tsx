@@ -312,15 +312,16 @@ describe('organização do painel Crescimento', () => {
     renderWithTooltips(<OverviewTab resumo={buildResumo()} />);
 
     expect(screen.getByText('Visitantes no site')).toBeInTheDocument();
-    expect(screen.getByText('Clicaram no WhatsApp')).toBeInTheDocument();
+    expect(screen.getByText('WhatsApp no site · total')).toBeInTheDocument();
     expect(screen.getByText('Tempo médio no site')).toBeInTheDocument();
     expect(screen.getByText('Páginas por visita')).toBeInTheDocument();
-    expect(screen.getByText('25,0% em relação aos visitantes')).toBeInTheDocument();
+    expect(screen.getByText('4 após anúncio · 1 outras origens')).toBeInTheDocument();
     expect(screen.getByText('1min 30s')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'De onde veio o clique no WhatsApp?' })).toBeInTheDocument();
     expect(screen.getByText('WhatsApp do anúncio')).toBeInTheDocument();
-    expect(screen.getByText('WhatsApp do site')).toBeInTheDocument();
-    expect(screen.getByText('Google Meu Negócio')).toBeInTheDocument();
+    expect(screen.getByText('Site após anúncio')).toBeInTheDocument();
+    expect(screen.getByText('Site · outras origens')).toBeInTheDocument();
+    expect(screen.getByText('Perfil da Empresa')).toBeInTheDocument();
     expect(screen.getByText('Cliques no chat do Perfil da Empresa')).toBeInTheDocument();
   });
 
@@ -335,8 +336,11 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByText('(16) 99302-1998')).toBeInTheDocument();
     expect(screen.getByText('Apto a aparecer')).toBeInTheDocument();
     expect(screen.getByText('Ligar no anúncio')).toBeInTheDocument();
-    expect(screen.getByText('WhatsApp dentro do site')).toBeInTheDocument();
-    expect(screen.getByText('Onde clicaram no WhatsApp do site')).toBeInTheDocument();
+    expect(screen.getByText('WhatsApp no site após anúncio')).toBeInTheDocument();
+    expect(screen.getByText('Somente pessoas identificadas como vindas da mídia paga')).toBeInTheDocument();
+    expect(screen.getByText('1 de outras origens ficam no Resumo')).toBeInTheDocument();
+    expect(screen.queryByText('WhatsApp dentro do site')).not.toBeInTheDocument();
+    expect(screen.getByText('Onde visitantes dos anúncios clicaram no WhatsApp')).toBeInTheDocument();
     expect(screen.getByText('Topo da página B2B')).toBeInTheDocument();
     expect(screen.getByLabelText('55 de 55 cliques explicados')).toHaveTextContent('55 / 55');
     expect(screen.getByText('1 atendida · 45s em média')).toBeInTheDocument();
