@@ -68,3 +68,8 @@ verify_jwt = false
 # e, no modo suporte, a sessão exata antes de assinar o comprovante privado.
 [functions.financeiro-anexo-url]
 verify_jwt = false
+
+# Webhook público da Meta: a própria Function valida x-hub-signature-256,
+# restringe o número autorizado e só executa consultas fixas de leitura.
+[functions.whatsapp-financeiro]
+verify_jwt = false
