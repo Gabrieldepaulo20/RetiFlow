@@ -36,7 +36,7 @@ export default function AdminLayout() {
   const initials = getInitials(user.name);
 
   const NavContent = ({ onNav }: { onNav?: () => void }) => (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="p-4 flex items-center gap-3">
         <div className="w-9 h-9 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
           <Shield className="w-5 h-5 text-primary" />
@@ -49,7 +49,7 @@ export default function AdminLayout() {
         )}
       </div>
 
-      <nav className="flex-1 px-3 space-y-1 mt-2">
+      <nav className="mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-3">
         {adminNav.map(item => {
           const active = isActive(item.path);
           return (
@@ -85,7 +85,7 @@ export default function AdminLayout() {
         </Link>
       </div>
 
-      <div className="p-3 border-t border-sidebar-border">
+      <div className="shrink-0 border-t border-sidebar-border p-3">
         <div className={cn('flex items-center gap-3', collapsed && 'justify-center')}>
           <Avatar className="w-9 h-9">
             <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold tracking-wide">{initials}</AvatarFallback>
@@ -106,7 +106,7 @@ export default function AdminLayout() {
       {/* Desktop Sidebar */}
       {!isMobile && (
         <aside className={cn(
-          'fixed left-0 top-0 h-full bg-sidebar transition-all duration-300 z-40 flex flex-col',
+          'fixed inset-y-0 left-0 z-40 flex min-h-0 flex-col bg-sidebar transition-[width] duration-300 ease-out [backface-visibility:hidden] [transform:translateZ(0)]',
           collapsed ? 'w-[68px]' : 'w-60'
         )}>
           <NavContent />

@@ -277,14 +277,14 @@ export default function AppLayout() {
   };
 
   const NavContent = ({ onNav }: { onNav?: () => void }) => (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="p-4 flex items-center gap-3">
         <div className="w-9 h-9 rounded-lg bg-sidebar-primary flex items-center justify-center flex-shrink-0">
           <Wrench className="w-5 h-5 text-sidebar-primary-foreground" />
         </div>
         {!collapsed && <span className="font-display font-bold text-sidebar-primary-foreground text-lg">Retífica Premium</span>}
       </div>
-      <nav className="flex-1 px-3 space-y-1 mt-2">
+      <nav className="mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-3">
         {navItems.filter(isModuleVisible).map(item => {
           const active = isActive(item.path);
           return (
@@ -307,7 +307,7 @@ export default function AppLayout() {
           );
         })}
       </nav>
-      <div className="p-3 border-t border-sidebar-border">
+      <div className="shrink-0 border-t border-sidebar-border p-3">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -400,7 +400,7 @@ export default function AppLayout() {
       {/* Desktop Sidebar */}
       {!isMobile && (
         <aside className={cn(
-          'fixed left-0 top-0 h-full bg-sidebar transition-all duration-300 z-40 flex flex-col',
+          'fixed inset-y-0 left-0 z-40 flex min-h-0 flex-col bg-sidebar transition-[width] duration-300 ease-out [backface-visibility:hidden] [transform:translateZ(0)]',
           collapsed ? 'w-[68px]' : 'w-64'
         )}>
           <NavContent />
