@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   criarMovimentoManual,
+  estornarMovimentoFinanceiro,
   getAllFinanceiroExtrato,
   getAllFinanceiroLancamentos,
   getAllFinanceiroModelosRecorrentes,
@@ -28,6 +29,7 @@ vi.mock('@/api/supabase/financeiro', async (importOriginal) => {
   return {
     ...original,
     criarMovimentoManual: vi.fn(),
+    estornarMovimentoFinanceiro: vi.fn(),
     getAllFinanceiroExtrato: vi.fn(),
     getAllFinanceiroLancamentos: vi.fn(),
     getAllFinanceiroModelosRecorrentes: vi.fn(),
@@ -193,6 +195,13 @@ describe('Central Financeiro UI', () => {
       valorRealizado: 100,
       valorAberto: 0,
     });
+    vi.mocked(estornarMovimentoFinanceiro).mockResolvedValue({
+      id: 'estorno-1',
+      movimentoId: 'estorno-1',
+      status: 'PENDENTE',
+      valorRealizado: 0,
+      valorAberto: 1250,
+    });
   });
 
   it('mascara valores monetários nos KPIs e lançamentos', () => {
@@ -337,6 +346,51 @@ describe('Central Financeiro UI', () => {
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Salvar conta' })).not.toBeInTheDocument();
+  });
+
+  it('alinha o motivo mínimo do estorno com a validação do banco', async () => {
+    const onError = vi.fn();
+
+    renderWithQueryClient(
+      <FinanceActionDialog
+        kind="estornar"
+        open
+        readOnly={false}
+        onClose={vi.fn()}
+        accounts={[account]}
+        categories={[]}
+        payableCategories={[]}
+        launch={null}
+        movement={movement}
+        model={null}
+        onSuccess={vi.fn().mockResolvedValue(undefined)}
+        onError={onError}
+      />,
+    );
+
+    const reason = screen.getByLabelText('Motivo obrigatório');
+    expect(reason).toHaveAttribute('minLength', '5');
+
+    fireEvent.change(reason, { target: { value: 'Erro' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar estorno' }));
+
+    await waitFor(() => {
+      expect(onError).toHaveBeenCalled();
+      expect(onError.mock.calls[0][0]).toEqual(expect.objectContaining({
+        message: 'Informe um motivo com pelo menos 5 caracteres.',
+      }));
+    });
+    expect(estornarMovimentoFinanceiro).not.toHaveBeenCalled();
+
+    fireEvent.change(reason, { target: { value: 'Erro de lançamento' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar estorno' }));
+
+    await waitFor(() => {
+      expect(estornarMovimentoFinanceiro).toHaveBeenCalledWith(expect.objectContaining({
+        movimentoId: 'movimento-1',
+        motivo: 'Erro de lançamento',
+      }));
+    });
   });
 
   it('usa categoria de saída ao criar um gasto recorrente', async () => {

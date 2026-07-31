@@ -241,7 +241,9 @@ export function FinanceActionDialog({
 
       if (kind === 'estornar') {
         if (!movement) throw new Error('Movimento não encontrado.');
-        if (reason.trim().length < 3) throw new Error('Informe o motivo do estorno.');
+        if (reason.trim().length < 5) {
+          throw new Error('Informe um motivo com pelo menos 5 caracteres.');
+        }
         return estornarMovimentoFinanceiro({
           movimentoId: movement.id,
           motivo: reason.trim(),
@@ -491,8 +493,10 @@ export function FinanceActionDialog({
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
                 placeholder="Explique por que este movimento está sendo estornado."
+                minLength={5}
                 rows={4}
               />
+              <p className="text-xs text-slate-500">Use pelo menos 5 caracteres.</p>
             </div>
           ) : kind !== 'transferir' ? (
             <div className="space-y-2">
