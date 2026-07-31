@@ -613,7 +613,7 @@ function BasicOverviewTab({ resumo }: { resumo: MarketingResumo }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
         <Metric
           label="Visitantes no site"
           value={formatNumber(current.visits)}
@@ -766,7 +766,7 @@ export function OverviewTab({ resumo }: { resumo: MarketingResumo }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
         <Metric
           label="Visitantes no site"
           value={formatNumber(current.visits)}
@@ -2984,7 +2984,7 @@ export default function MarketingGrowth() {
           hasPrivateAccess ? (
             <Tabs defaultValue="visao" className="space-y-4">
               <div className="pb-1">
-                <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-muted/80 p-1 sm:grid-cols-3 lg:grid-cols-5">
+                <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-muted/80 p-1 sm:grid-cols-3 md:grid-cols-5">
                   <TabsTrigger value="visao">Resumo</TabsTrigger>
                   <TabsTrigger value="google">Google</TabsTrigger>
                   <TabsTrigger value="contatos">Contatos</TabsTrigger>
