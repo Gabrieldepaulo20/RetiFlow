@@ -134,15 +134,15 @@ export function FinanceAccountsDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && !mutation.isPending && onClose()}>
-      <DialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-4xl">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[calc(100dvh-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-h-[calc(100dvh-2rem)] sm:max-w-4xl sm:w-[calc(100vw-2rem)]">
+        <DialogHeader className="shrink-0 border-b border-slate-200 px-4 py-4 text-left sm:px-5">
           <DialogTitle>Contas e saldo inicial</DialogTitle>
           <DialogDescription>
             Organize Caixa, Banco, PIX e Carteira. A data de corte separa o histórico estimado do saldo confiável.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid min-h-0 gap-4 md:grid-cols-[minmax(210px,0.72fr)_minmax(0,1.45fr)]">
+        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5 min-[900px]:grid-cols-[minmax(210px,0.72fr)_minmax(0,1.45fr)]">
           <aside className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Contas</p>
@@ -291,7 +291,7 @@ export function FinanceAccountsDialog({
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-slate-200 bg-slate-50/80 px-4 py-3 sm:px-5">
           <Button type="button" variant="outline" onClick={onClose} disabled={mutation.isPending}>
             Cancelar
           </Button>

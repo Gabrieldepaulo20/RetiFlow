@@ -441,7 +441,7 @@ export default function Financeiro() {
       <section className="relative overflow-hidden rounded-[26px] bg-[#0b2035] text-white shadow-[0_18px_60px_-35px_rgba(2,15,28,0.85)] print:rounded-none print:bg-white print:text-black print:shadow-none">
         <div className="absolute inset-y-0 right-0 hidden w-1/3 bg-[linear-gradient(135deg,transparent,rgba(30,136,229,0.16))] lg:block" />
         <div className="relative px-4 pb-4 pt-4 sm:px-5 sm:pt-5 lg:px-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#f0b44d]">
                 <CircleDollarSign className="h-4 w-4" aria-hidden="true" />
@@ -460,19 +460,19 @@ export default function Financeiro() {
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 print:hidden">
+            <div className="flex max-w-full flex-nowrap items-center gap-1.5 overflow-x-auto pb-1 [scrollbar-width:thin] xl:shrink-0 xl:overflow-visible xl:pb-0 print:hidden">
               {!isSupportImpersonating ? (
                 <>
                   <Button
                     type="button"
                     size="sm"
-                    className="h-9 gap-2 rounded-xl bg-[#f0b44d] px-3 font-bold text-[#10253a] hover:bg-[#ffd078]"
+                    className="h-8 min-h-8 shrink-0 gap-1.5 rounded-lg bg-[#f0b44d] px-2.5 text-xs font-bold text-[#10253a] hover:bg-[#ffd078]"
                     onClick={() => setDialog('entrada')}
                   >
                     <Plus className="h-4 w-4" aria-hidden="true" />
                     Nova entrada
                   </Button>
-                  <Button asChild type="button" size="sm" variant="secondary" className="h-9 gap-2 rounded-xl px-3">
+                  <Button asChild type="button" size="sm" variant="secondary" className="h-8 min-h-8 shrink-0 gap-1.5 rounded-lg px-2.5 text-xs">
                     <Link to="/contas-a-pagar/nova">
                       <TrendingDown className="h-4 w-4" aria-hidden="true" />
                       Nova saída
@@ -482,7 +482,7 @@ export default function Financeiro() {
                     type="button"
                     size="sm"
                     variant="ghost"
-                    className="h-9 gap-2 rounded-xl border border-white/15 px-3 text-slate-200 hover:bg-white/10 hover:text-white"
+                    className="h-8 min-h-8 shrink-0 gap-1.5 rounded-lg border border-white/15 px-2.5 text-xs text-slate-200 hover:bg-white/10 hover:text-white"
                     onClick={() => setAccountsDialogOpen(true)}
                   >
                     <Settings2 className="h-4 w-4" aria-hidden="true" />
@@ -490,17 +490,7 @@ export default function Financeiro() {
                   </Button>
                 </>
               ) : null}
-              <FinancialPrivacyToggle />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-9 w-9 rounded-xl border border-white/15 p-0 text-slate-200 hover:bg-white/10 hover:text-white"
-                onClick={() => void refreshAll()}
-                aria-label="Atualizar dados financeiros"
-              >
-                <RefreshCw className={cn('h-4 w-4', resumoQuery.isFetching && 'animate-spin')} aria-hidden="true" />
-              </Button>
+              <FinancialPrivacyToggle className="h-8 min-h-8 shrink-0 rounded-lg border-white/15 bg-white/10 px-2.5 text-slate-200 shadow-none hover:bg-white/15 hover:text-white" />
             </div>
           </div>
 
@@ -585,28 +575,40 @@ export default function Financeiro() {
               </Select>
             </div>
 
-            <div className="grid grid-cols-3 rounded-xl border border-white/15 bg-white/5 p-1">
-              {MODOS.map((item) => (
-                <Tooltip key={item.value}>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={() => setModo(item.value)}
-                      className={cn(
-                        'rounded-lg px-3 py-1.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f0b44d]',
-                        modo === item.value
-                          ? 'bg-white text-[#10253a] shadow-sm'
-                          : 'text-slate-300 hover:bg-white/10 hover:text-white',
-                      )}
-                    >
-                      {item.label}
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-xs text-xs">
-                    {item.description}
-                  </TooltipContent>
-                </Tooltip>
-              ))}
+            <div className="flex items-center gap-2">
+              <div className="grid grid-cols-3 rounded-xl border border-white/15 bg-white/5 p-1">
+                {MODOS.map((item) => (
+                  <Tooltip key={item.value}>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => setModo(item.value)}
+                        className={cn(
+                          'rounded-lg px-3 py-1.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f0b44d]',
+                          modo === item.value
+                            ? 'bg-white text-[#10253a] shadow-sm'
+                            : 'text-slate-300 hover:bg-white/10 hover:text-white',
+                        )}
+                      >
+                        {item.label}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-xs text-xs">
+                      {item.description}
+                    </TooltipContent>
+                  </Tooltip>
+                ))}
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-9 min-h-9 w-9 shrink-0 rounded-xl border border-white/15 p-0 text-slate-200 hover:bg-white/10 hover:text-white print:hidden"
+                onClick={() => void refreshAll()}
+                aria-label="Atualizar dados financeiros"
+              >
+                <RefreshCw className={cn('h-4 w-4', resumoQuery.isFetching && 'animate-spin')} aria-hidden="true" />
+              </Button>
             </div>
           </div>
 

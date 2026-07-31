@@ -354,10 +354,10 @@ export default function PayableQuickForm({
 
   return (
     <>
-    <form onSubmit={handleSubmit} className="space-y-5">
-      <div className={compact ? 'grid gap-4 md:grid-cols-2' : 'grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]'}>
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className={compact ? 'grid gap-4 md:grid-cols-2' : 'grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(250px,0.75fr)] xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]'}>
         <div className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-1.5 md:col-span-2">
               <Label>Descrição da conta *</Label>
               <Input
@@ -381,8 +381,8 @@ export default function PayableQuickForm({
             </div>
             <div className="space-y-1.5">
               <div className="flex items-center justify-between gap-2">
-                <Label>{form.favorecidoTipo === 'FUNCIONARIO' ? 'Funcionário *' : 'Fornecedor *'}</Label>
-                <div className="flex rounded-lg border border-border/70 p-0.5 text-[11px] font-medium">
+                <Label className="whitespace-nowrap">{form.favorecidoTipo === 'FUNCIONARIO' ? 'Funcionário *' : 'Fornecedor *'}</Label>
+                <div className="flex shrink-0 rounded-lg border border-border/70 p-0.5 text-[11px] font-medium">
                   <button
                     type="button"
                     onClick={() => setField('favorecidoTipo', 'FORNECEDOR')}
@@ -427,12 +427,12 @@ export default function PayableQuickForm({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+          <div className="rounded-2xl border border-border/60 bg-muted/20 p-3.5">
             <div className="flex items-center gap-2">
               <ReceiptText className="h-4 w-4 text-primary" />
               <p className="text-sm font-medium">Como essa conta entra no sistema?</p>
             </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
               <button type="button" onClick={() => setField('initialStatus', 'PENDENTE')}>
                 <div className={form.initialStatus === 'PENDENTE' ? 'rounded-2xl border border-primary bg-primary/5 p-3 text-left' : 'rounded-2xl border border-border/60 p-3 text-left'}>
                   <p className="text-sm font-semibold">A pagar</p>
@@ -572,7 +572,7 @@ export default function PayableQuickForm({
         </div>
 
         <div className="space-y-4">
-          <div className="rounded-3xl border border-primary/15 bg-gradient-to-br from-primary/10 via-background to-background p-5">
+          <div className="rounded-3xl border border-primary/15 bg-gradient-to-br from-primary/10 via-background to-background p-4 lg:sticky lg:top-0">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-medium uppercase tracking-[0.2em] text-primary/70">Resumo do lançamento</p>
@@ -590,15 +590,10 @@ export default function PayableQuickForm({
             </div>
           </div>
 
-          {compact ? null : (
-            <div className="rounded-2xl border border-dashed border-primary/25 bg-primary/5 p-4 text-sm text-muted-foreground">
-              Esse formulário prioriza velocidade. Campos secundários ficaram em “Detalhes adicionais” para o financeiro não travar em cadastros do dia a dia.
-            </div>
-          )}
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-end gap-3 border-t border-border/60 pt-4">
+      <div className="sticky bottom-0 z-10 -mx-4 flex flex-wrap items-center justify-end gap-3 border-t border-border/60 bg-background/95 px-4 py-3 backdrop-blur-sm sm:-mx-5 sm:px-5 lg:-mx-6 lg:px-6">
         <Button type="button" variant="outline" onClick={onCancel}>Cancelar</Button>
         <Button type="submit" disabled={saving}>
           <Save className={saving ? 'mr-2 h-4 w-4 animate-pulse' : 'mr-2 h-4 w-4'} />

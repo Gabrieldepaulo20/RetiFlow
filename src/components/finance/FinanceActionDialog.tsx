@@ -307,8 +307,17 @@ export function FinanceActionDialog({
 
   return (
     <Dialog open={open && !readOnly} onOpenChange={(next) => !next && !mutation.isPending && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
-        <DialogHeader>
+      <DialogContent
+        className={cn(
+          'flex max-h-[calc(100dvh-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-h-[calc(100dvh-2rem)]',
+          kind === 'entrada'
+            ? 'sm:max-w-3xl'
+            : kind === 'recorrente' || kind === 'transferir'
+              ? 'sm:max-w-2xl'
+              : 'sm:max-w-xl',
+        )}
+      >
+        <DialogHeader className="shrink-0 border-b border-slate-200 px-4 py-4 text-left sm:px-5">
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
             {kind === 'estornar'
@@ -319,10 +328,13 @@ export function FinanceActionDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-1">
+        <div className={cn(
+          'min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5',
+          kind === 'entrada' && 'md:grid md:grid-cols-6 md:gap-3 md:space-y-0',
+        )}>
           {kind === 'entrada' ? (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
+            <div className="grid gap-4 sm:grid-cols-2 md:contents">
+              <div className="space-y-2 md:col-span-3">
                 <Label>Momento</Label>
                 <Select value={entryTiming} onValueChange={(value) => setEntryTiming(value as 'REALIZADA' | 'PREVISTA')}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -332,7 +344,7 @@ export function FinanceActionDialog({
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2 md:col-span-3">
                 <Label>Tipo</Label>
                 <Select value={entryType} onValueChange={(value) => setEntryType(value as typeof entryType)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -348,7 +360,7 @@ export function FinanceActionDialog({
           ) : null}
 
           {kind === 'recorrente' || kind === 'entrada' || kind === 'transferir' ? (
-            <div className="space-y-2">
+            <div className={cn('space-y-2', kind === 'entrada' && 'md:col-span-6')}>
               <Label htmlFor="finance-description">{kind === 'recorrente' ? 'Nome do gasto fixo' : 'Descrição'}</Label>
               <Input
                 id="finance-description"
@@ -376,8 +388,8 @@ export function FinanceActionDialog({
           ) : null}
 
           {kind !== 'estornar' ? (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
+            <div className={cn('grid gap-4 sm:grid-cols-2', kind === 'entrada' && 'md:contents')}>
+              <div className={cn('space-y-2', kind === 'entrada' && 'md:col-span-3')}>
                 <Label htmlFor="finance-amount">Valor</Label>
                 <Input
                   id="finance-amount"
@@ -389,7 +401,7 @@ export function FinanceActionDialog({
                   placeholder="0,00"
                 />
               </div>
-              <div className="space-y-2">
+              <div className={cn('space-y-2', kind === 'entrada' && 'md:col-span-3')}>
                 <Label htmlFor="finance-date">
                   {kind === 'entrada' && entryTiming === 'PREVISTA' ? 'Vencimento' : kind === 'recorrente' ? 'Competência inicial' : 'Data efetiva'}
                 </Label>
@@ -423,15 +435,15 @@ export function FinanceActionDialog({
           ) : null}
 
           {(kind === 'liquidar' || (kind === 'entrada' && entryTiming === 'REALIZADA')) ? (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
+            <div className={cn('grid gap-4 sm:grid-cols-2', kind === 'entrada' && 'md:contents')}>
+              <div className={cn('space-y-2', kind === 'entrada' && 'md:col-span-2')}>
                 <Label>Conta financeira</Label>
                 <Select value={accountId} onValueChange={setAccountId}>
                   <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>{accounts.map((item) => <SelectItem key={item.id} value={item.id}>{item.nome}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
+              <div className={cn('space-y-2', kind === 'entrada' && 'md:col-span-2')}>
                 <Label>Forma</Label>
                 <Select value={method} onValueChange={(value) => setMethod(value as PaymentMethod)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -442,7 +454,7 @@ export function FinanceActionDialog({
           ) : null}
 
           {kind === 'entrada' ? (
-            <div className="space-y-2">
+            <div className="space-y-2 md:col-span-2">
               <Label>Categoria de entrada</Label>
               <Select value={categoryId} onValueChange={setCategoryId}>
                 <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
@@ -499,14 +511,14 @@ export function FinanceActionDialog({
               <p className="text-xs text-slate-500">Use pelo menos 5 caracteres.</p>
             </div>
           ) : kind !== 'transferir' ? (
-            <div className="space-y-2">
+            <div className={cn('space-y-2', kind === 'entrada' && 'md:col-span-6')}>
               <Label htmlFor="finance-notes">Observações</Label>
-              <Textarea id="finance-notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} placeholder="Informação opcional para conferência." />
+              <Textarea id="finance-notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={kind === 'entrada' ? 2 : 3} placeholder="Informação opcional para conferência." />
             </div>
           ) : null}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-slate-200 bg-slate-50/80 px-4 py-3 sm:px-5">
           <Button type="button" variant="outline" onClick={onClose} disabled={mutation.isPending}>Cancelar</Button>
           <Button
             type="button"

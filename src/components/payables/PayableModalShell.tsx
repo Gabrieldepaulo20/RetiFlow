@@ -58,12 +58,12 @@ export default function PayableModalShell({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn('flex max-h-[92dvh] flex-col overflow-hidden p-0 sm:max-w-4xl', className, desktopClassName)}>
-        <DialogHeader className="border-b border-border/60 px-6 py-5 text-left">
+      <DialogContent className={cn('flex max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] flex-col overflow-hidden p-0 sm:max-h-[calc(100dvh-2rem)] sm:w-[calc(100vw-2rem)] sm:max-w-4xl', className, desktopClassName)}>
+        <DialogHeader className="shrink-0 border-b border-border/60 px-4 py-4 text-left sm:px-5 lg:px-6">
           <DialogTitle className="font-display text-lg font-bold tracking-tight">{title}</DialogTitle>
           {description ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-4">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pt-4 sm:px-5 lg:px-6">{children}</div>
       </DialogContent>
     </Dialog>
   );
