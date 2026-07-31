@@ -556,6 +556,82 @@ function ChartTooltip({
   );
 }
 
+function WhatsappOriginBreakdown({ resumo }: { resumo: MarketingResumo }) {
+  const adClicks = (resumo.campaigns.clickTypes ?? [])
+    .filter((item) => item.type === 'CLICK_TO_MESSAGE_THIRD_PARTY_CLICK')
+    .reduce((total, item) => total + item.clicks, 0);
+  const siteClicks = resumo.site.whatsapp?.uniqueClicks ?? resumo.site.current.whatsappClicks;
+  const businessProfile = resumo.businessProfile;
+  const businessProfileAvailable = businessProfile?.status === 'available'
+    && businessProfile.current.whatsappClicks !== null;
+  const businessProfileValue = businessProfileAvailable
+    ? formatNumber(businessProfile.current.whatsappClicks ?? 0)
+    : '—';
+  const businessProfileDetail = businessProfileAvailable
+    ? 'Cliques no chat do Perfil da Empresa'
+    : businessProfile?.status === 'error'
+      ? 'A API oficial não respondeu nesta atualização'
+      : 'Aguardando o vínculo liberar a métrica na API';
+
+  const items = [
+    {
+      label: 'WhatsApp do anúncio',
+      value: formatNumber(adClicks),
+      detail: 'Botão exibido diretamente no Google Ads',
+      icon: Target,
+      tone: 'border-amber-200 bg-amber-50 text-amber-950',
+      iconTone: 'bg-amber-500 text-white',
+    },
+    {
+      label: 'WhatsApp do site',
+      value: formatNumber(siteClicks),
+      detail: 'Botões clicados depois de entrar no site',
+      icon: ExternalLink,
+      tone: 'border-emerald-200 bg-emerald-50 text-emerald-950',
+      iconTone: 'bg-emerald-600 text-white',
+    },
+    {
+      label: 'Google Meu Negócio',
+      value: businessProfileValue,
+      detail: businessProfileDetail,
+      icon: Building2,
+      tone: 'border-blue-200 bg-blue-50 text-blue-950',
+      iconTone: 'bg-blue-600 text-white',
+    },
+  ];
+
+  return (
+    <Card className="rounded-2xl border-slate-200 shadow-sm">
+      <CardContent className="p-4 sm:p-5">
+        <PanelHeading
+          eyebrow="Origem do contato"
+          title="De onde veio o clique no WhatsApp?"
+          description="As três origens ficam separadas. O clique mede intenção de contato; não confirma sozinho que a mensagem foi enviada."
+        />
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          {items.map((item) => {
+            const Icon = item.icon;
+            return (
+              <div key={item.label} className={cn('rounded-2xl border p-4', item.tone)}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.12em]">{item.label}</p>
+                    <p className="mt-2 text-3xl font-black leading-none">{item.value}</p>
+                  </div>
+                  <span className={cn('flex h-9 w-9 items-center justify-center rounded-xl', item.iconTone)}>
+                    <Icon className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                </div>
+                <p className="mt-3 text-xs leading-relaxed opacity-80">{item.detail}</p>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function BasicOverviewTab({ resumo }: { resumo: MarketingResumo }) {
   const current = resumo.site.current;
   const previous = resumo.site.previous;
@@ -609,6 +685,8 @@ function BasicOverviewTab({ resumo }: { resumo: MarketingResumo }) {
           accent="violet"
         />
       </div>
+
+      <WhatsappOriginBreakdown resumo={resumo} />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.55fr)]">
         <Card className="rounded-2xl border-border/70 shadow-sm">
@@ -760,6 +838,8 @@ export function OverviewTab({ resumo }: { resumo: MarketingResumo }) {
           accent="violet"
         />
       </div>
+
+      <WhatsappOriginBreakdown resumo={resumo} />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.55fr)]">
         <Card className="rounded-2xl border-border/70 shadow-sm">

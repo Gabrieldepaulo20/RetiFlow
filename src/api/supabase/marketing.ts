@@ -72,6 +72,22 @@ export interface MarketingSiteWhatsappSummary {
   }>;
 }
 
+export interface MarketingBusinessProfileSummary {
+  status: 'available' | 'not_available' | 'error';
+  current: {
+    interactions: number | null;
+    whatsappClicks: number | null;
+    calls: number | null;
+    directions: number | null;
+    websiteClicks: number | null;
+    bookings: number | null;
+    menus: number | null;
+  };
+  previous: MarketingBusinessProfileSummary['current'];
+  syncedAt: string | null;
+  dataWindowMonths: 6;
+}
+
 export interface MarketingPageMetric {
   path: string;
   title?: string | null;
@@ -410,6 +426,7 @@ export interface MarketingResumo {
     eventCounts?: Array<{ event: string; count: number }>;
     recentEvents?: MarketingEventItem[];
   };
+  businessProfile?: MarketingBusinessProfileSummary;
   executive?: {
     funnel: {
       visits: number;

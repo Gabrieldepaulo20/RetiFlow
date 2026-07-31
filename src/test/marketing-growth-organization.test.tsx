@@ -134,6 +134,29 @@ function buildResumo(): MarketingResumo {
         ],
       },
     },
+    businessProfile: {
+      status: 'available',
+      current: {
+        interactions: 68,
+        whatsappClicks: 2,
+        calls: 9,
+        directions: 14,
+        websiteClicks: 11,
+        bookings: 0,
+        menus: 0,
+      },
+      previous: {
+        interactions: 0,
+        whatsappClicks: 0,
+        calls: 0,
+        directions: 0,
+        websiteClicks: 0,
+        bookings: 0,
+        menus: 0,
+      },
+      syncedAt: '2026-07-31T00:00:00.000Z',
+      dataWindowMonths: 6,
+    },
     campaigns: {
       current: adsTotals,
       previous: adsTotals,
@@ -294,6 +317,11 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByText('Páginas por visita')).toBeInTheDocument();
     expect(screen.getByText('25,0% em relação aos visitantes')).toBeInTheDocument();
     expect(screen.getByText('1min 30s')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'De onde veio o clique no WhatsApp?' })).toBeInTheDocument();
+    expect(screen.getByText('WhatsApp do anúncio')).toBeInTheDocument();
+    expect(screen.getByText('WhatsApp do site')).toBeInTheDocument();
+    expect(screen.getByText('Google Meu Negócio')).toBeInTheDocument();
+    expect(screen.getByText('Cliques no chat do Perfil da Empresa')).toBeInTheDocument();
   });
 
   it('mantém a aba Google Ads focada somente em mídia paga e explica seus KPIs', async () => {

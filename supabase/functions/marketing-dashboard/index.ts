@@ -113,6 +113,34 @@ interface GoogleRunReportResponse {
   }>;
 }
 
+interface GoogleMetadataMetric {
+  apiName?: string;
+  uiName?: string;
+  description?: string;
+  category?: string;
+  blockedReasons?: string[];
+}
+
+interface GoogleMetadataResponse {
+  metrics?: GoogleMetadataMetric[];
+}
+
+interface MarketingBusinessProfileSummary {
+  status: 'available' | 'not_available' | 'error';
+  current: {
+    interactions: number | null;
+    whatsappClicks: number | null;
+    calls: number | null;
+    directions: number | null;
+    websiteClicks: number | null;
+    bookings: number | null;
+    menus: number | null;
+  };
+  previous: MarketingBusinessProfileSummary['current'];
+  syncedAt: string | null;
+  dataWindowMonths: 6;
+}
+
 interface SearchConsoleResponse {
   rows?: Array<{
     keys?: string[];
@@ -151,6 +179,7 @@ interface Ga4Summary {
   sources: MarketingSourceMetric[];
   devices: Array<{ device: string; users: number; sessions: number }>;
   eventCounts: Array<{ event: string; count: number }>;
+  businessProfile: MarketingBusinessProfileSummary;
   syncedAt: string;
 }
 
@@ -594,6 +623,111 @@ async function runGa4Report(accessToken: string, propertyId: string, body: JsonR
   return payload;
 }
 
+function emptyBusinessProfileTotals(): MarketingBusinessProfileSummary['current'] {
+  return {
+    interactions: null,
+    whatsappClicks: null,
+    calls: null,
+    directions: null,
+    websiteClicks: null,
+    bookings: null,
+    menus: null,
+  };
+}
+
+async function fetchGa4Metadata(accessToken: string, propertyId: string) {
+  const response = await fetch(
+    `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}/metadata`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  const payload = await response.json().catch(() => ({})) as GoogleMetadataResponse & {
+    error?: { message?: string };
+  };
+  if (!response.ok) {
+    throw new Error(payload.error?.message ?? 'Falha ao consultar o catálogo de métricas do GA4.');
+  }
+  return payload;
+}
+
+function findBusinessProfileMetric(
+  metrics: GoogleMetadataMetric[],
+  keywords: RegExp[],
+) {
+  return metrics.find((metric) => {
+    const searchable = [
+      metric.apiName,
+      metric.uiName,
+      metric.description,
+      metric.category,
+    ].filter(Boolean).join(' ');
+    const belongsToBusinessProfile = /google business profile|\bbusiness profile\b|\bbusinessprofile\b|\bgbp\b/i.test(searchable);
+    return belongsToBusinessProfile && keywords.some((keyword) => keyword.test(searchable));
+  })?.apiName ?? null;
+}
+
+async function fetchGa4BusinessProfileSummary(
+  accessToken: string,
+  propertyId: string,
+  range: ReturnType<typeof getMarketingDateRange>,
+): Promise<MarketingBusinessProfileSummary> {
+  const unavailable = (
+    status: MarketingBusinessProfileSummary['status'],
+  ): MarketingBusinessProfileSummary => ({
+    status,
+    current: emptyBusinessProfileTotals(),
+    previous: emptyBusinessProfileTotals(),
+    syncedAt: null,
+    dataWindowMonths: 6,
+  });
+
+  try {
+    const metadata = await fetchGa4Metadata(accessToken, propertyId);
+    const metrics = (metadata.metrics ?? []).filter((metric) => !metric.blockedReasons?.length);
+    const apiNames = {
+      interactions: findBusinessProfileMetric(metrics, [/interaction/i]),
+      whatsappClicks: findBusinessProfileMetric(metrics, [/message/i, /chat/i]),
+      calls: findBusinessProfileMetric(metrics, [/call/i]),
+      directions: findBusinessProfileMetric(metrics, [/direction/i]),
+      websiteClicks: findBusinessProfileMetric(metrics, [/website/i]),
+      bookings: findBusinessProfileMetric(metrics, [/booking/i]),
+      menus: findBusinessProfileMetric(metrics, [/menu/i]),
+    };
+    const requestedMetrics = Object.values(apiNames).filter((name): name is string => Boolean(name));
+    if (!requestedMetrics.length) return unavailable('not_available');
+
+    const [currentReport, previousReport] = await Promise.all([
+      runGa4Report(accessToken, propertyId, {
+        dateRanges: [{ startDate: range.startDate, endDate: range.endDate }],
+        metrics: requestedMetrics.map((name) => ({ name })),
+      }),
+      runGa4Report(accessToken, propertyId, {
+        dateRanges: [{ startDate: range.previousStartDate, endDate: range.previousEndDate }],
+        metrics: requestedMetrics.map((name) => ({ name })),
+      }),
+    ]);
+    const totals = (report: GoogleRunReportResponse) => Object.fromEntries(
+      Object.entries(apiNames).map(([key, apiName]) => {
+        if (!apiName) return [key, null];
+        return [key, metricValue(report, 0, requestedMetrics.indexOf(apiName))];
+      }),
+    ) as MarketingBusinessProfileSummary['current'];
+
+    return {
+      status: 'available',
+      current: totals(currentReport),
+      previous: totals(previousReport),
+      syncedAt: new Date().toISOString(),
+      dataWindowMonths: 6,
+    };
+  } catch (error) {
+    console.error(
+      'Google Business Profile metrics sync failed',
+      error instanceof Error ? error.message : 'unknown',
+    );
+    return unavailable('error');
+  }
+}
+
 function metricValue(report: GoogleRunReportResponse, rowIndex: number, metricIndex = 0) {
   return toNumber(report.rows?.[rowIndex]?.metricValues?.[metricIndex]?.value);
 }
@@ -763,6 +897,7 @@ async function fetchGa4Summary(
     devicesReport,
     currentEventsReport,
     previousEventsReport,
+    businessProfile,
   ] = await Promise.all([
     runGa4Report(accessToken, propertyId, {
       dateRanges: [{ startDate: range.startDate, endDate: range.endDate }],
@@ -819,6 +954,7 @@ async function fetchGa4Summary(
       orderBys: [{ metric: { metricName: 'eventCount' }, desc: true }],
       limit: '100',
     }),
+    fetchGa4BusinessProfileSummary(accessToken, propertyId, range),
   ]);
 
   const currentEvents = eventCountMap(currentEventsReport);
@@ -891,6 +1027,7 @@ async function fetchGa4Summary(
     eventCounts: Array.from(currentEvents.entries())
       .map(([event, count]) => ({ event, count }))
       .sort((a, b) => b.count - a.count),
+    businessProfile,
     syncedAt,
   };
   setCachedValue(ga4SummaryCache, cacheKey, summary, GA4_SUMMARY_CACHE_TTL_MS);
@@ -3002,6 +3139,13 @@ async function handleRequest(request: Request) {
     };
     const siteSources = ga4?.sources ?? internal.sources;
     const aiTraffic = buildAiTrafficSummary(siteSources);
+    const businessProfile = ga4?.businessProfile ?? {
+      status: 'not_available' as const,
+      current: emptyBusinessProfileTotals(),
+      previous: emptyBusinessProfileTotals(),
+      syncedAt: null,
+      dataWindowMonths: 6 as const,
+    };
 
     const unlinkedLeads = internal.currentLeads.filter((lead) => !lead.fk_clientes);
     const quality = {
@@ -3057,6 +3201,7 @@ async function handleRequest(request: Request) {
             devices: ga4?.devices ?? [],
             daily: ga4?.daily ?? internal.daily,
           },
+          businessProfile,
           forms: {
             current: {
               views: siteCurrent.formViews,
@@ -3158,6 +3303,7 @@ async function handleRequest(request: Request) {
           eventCounts: ga4?.eventCounts ?? [],
           recentEvents: [...internal.currentEvents].reverse().slice(0, 50).map(withoutGoogleClickIds),
         },
+        businessProfile,
         forms: {
           current: {
             views: siteCurrent.formViews,
