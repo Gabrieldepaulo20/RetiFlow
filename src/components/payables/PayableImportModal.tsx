@@ -1,4 +1,5 @@
 import { ChangeEvent, useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -19,9 +20,29 @@ import {
 import { inferPayableAttachmentType, isPayableImageFile, isPayablePdfFile } from '@/services/domain/payableFiles';
 import { buildImportedPayableAttachmentName } from '@/services/domain/payableAttachments';
 import { AccountPayable, PAYMENT_METHOD_LABELS, PaymentMethod, RecurrenceType } from '@/types';
-import { AlertTriangle, Camera, CheckCircle2, ChevronDown, FileScan, LoaderCircle, RotateCw, Sparkles, Trash2, Upload, XCircle } from 'lucide-react';
+import { AlertTriangle, ArrowDownLeft, ArrowUpRight, Camera, CheckCircle2, ChevronDown, FileScan, LoaderCircle, RotateCw, Sparkles, Trash2, Upload, XCircle } from 'lucide-react';
 import { analisarContaPagarComIA, insertAnexoContaPagar, uploadAnexoContaPagar } from '@/api/supabase/contas-pagar';
+import {
+  criarMovimentoManual,
+  criarRecebivelManual,
+  getAllFinanceiroExtrato,
+  getAllFinanceiroLancamentos,
+  insertFinanceiroAnexo,
+  uploadFinanceiroComprovante,
+  type CategoriaEntrada,
+  type FinanceiroConta,
+} from '@/api/supabase/financeiro';
 import { normalizeCommonBusinessTermsPtBr } from '@/services/domain/textNormalization';
+import {
+  buildMeaningfulFinancialEntryTitle,
+  canCreateImportedFinancialEntry,
+  isSimilarImportedFinancialEntry,
+  normalizeFinancialImportDirection,
+  type FinancialImportDirection as FinancialDirection,
+  type FinancialImportEntryOrigin as EntryOrigin,
+  type FinancialImportEntryTiming as EntryTiming,
+  type FinancialImportServiceOrderDecision as ServiceOrderDecision,
+} from '@/services/domain/financialImport';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
@@ -48,11 +69,19 @@ type ImportDraft = {
   suggestedStatus: SuggestedStatus;
   recurrenceIndex?: number;
   totalInstallments?: number;
+  direction?: FinancialDirection;
+  directionConfidence?: number;
+  directionReason?: string;
+  entryCategoryId?: string;
+  entryTiming?: EntryTiming;
+  entryOrigin?: EntryOrigin;
+  possibleServiceOrder?: boolean;
+  serviceOrderReference?: string;
 };
 
 type Clarification = {
   id: string;
-  kind: 'account_count' | 'installments' | 'duplicate' | 'other';
+  kind: 'account_count' | 'installments' | 'duplicate' | 'direction' | 'entry_timing' | 'other';
   question: string;
   options: Array<{ label: string; value: string }>;
 };
@@ -78,6 +107,12 @@ type ImportDraftEdits = {
   dueDate?: string;
   paymentMethod?: AccountPayable['paymentMethod'];
   categoryId?: string;
+  direction?: FinancialDirection;
+  entryCategoryId?: string;
+  entryTiming?: EntryTiming;
+  entryOrigin?: EntryOrigin;
+  financeAccountId?: string;
+  serviceOrderDecision?: ServiceOrderDecision;
 };
 
 type ImportFileItem = {
@@ -95,6 +130,8 @@ type ImportFileItem = {
   createdPayableId?: string;
   createdPayable?: AccountPayable;
   duplicatePayableId?: string;
+  duplicateFinancialEntry?: { description: string; date: string };
+  operationKey: string;
   /** Liga itens que vieram do MESMO arquivo (PDF com várias contas). */
   groupId?: string;
   /** Perguntas com botões da IA (mostradas no 1º item do grupo). */
@@ -103,7 +140,7 @@ type ImportFileItem = {
 
 type CreateConfirmation = {
   itemId: string;
-  type: 'receipt' | 'similar';
+  type: 'receipt' | 'similar' | 'entry-similar' | 'service-order';
 };
 
 function formatBytes(size: number) {
@@ -162,6 +199,7 @@ function buildImportFileItem(file: File, source: ImportSource): ImportFileItem {
     expanded: false,
     draftEdits: {},
     creating: false,
+    operationKey: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
   };
 }
 
@@ -235,6 +273,12 @@ function inferDraft(file: File): AnalysisResult {
     observations: `Pré-cadastro importado de ${file.name} com preenchimento assistido por IA.`,
     isUrgent: dueOffset <= 0 || lower.includes('urgente'),
     suggestedStatus,
+    direction: 'SAIDA',
+    directionConfidence: 96,
+    directionReason: 'Ambiente de demonstração: documento tratado como conta a pagar.',
+    entryTiming: 'INCERTO',
+    entryOrigin: 'MOVIMENTO_MANUAL',
+    possibleServiceOrder: false,
   };
 
   return {
@@ -264,10 +308,21 @@ type PayableImportModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated?: (payable: AccountPayable) => void;
+  entryCategories?: CategoriaEntrada[];
+  financeAccounts?: FinanceiroConta[];
+  onFinancialEntryCreated?: () => void;
 };
 
-export default function PayableImportModal({ open, onOpenChange, onCreated }: PayableImportModalProps) {
+export default function PayableImportModal({
+  open,
+  onOpenChange,
+  onCreated,
+  entryCategories = [],
+  financeAccounts = [],
+  onFinancialEntryCreated,
+}: PayableImportModalProps) {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { user } = useAuth();
   const { addPayable, addPayableAttachment, addPayableHistoryEntry, payableCategories, payableSuppliers, payables } = useData();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -305,6 +360,70 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
       dueDate: edits.dueDate ?? draft.dueDate,
       paymentMethod: edits.paymentMethod ?? draft.paymentMethod,
       categoryId: edits.categoryId ?? draft.categoryId,
+      direction: edits.direction ?? draft.direction ?? 'INCERTO',
+      entryCategoryId: edits.entryCategoryId ?? draft.entryCategoryId,
+      entryTiming: edits.entryTiming ?? draft.entryTiming ?? 'INCERTO',
+      entryOrigin: edits.entryOrigin ?? draft.entryOrigin ?? 'MOVIMENTO_MANUAL',
+    };
+  }
+
+  function getDirection(draft: ImportDraft | null | undefined): FinancialDirection {
+    return normalizeFinancialImportDirection(draft?.direction);
+  }
+
+  function normalizeEntryDraft(item: ImportFileItem, draft: ImportDraft) {
+    const originalAmount = Number(draft.originalAmount);
+    if (!Number.isFinite(originalAmount) || originalAmount <= 0) {
+      throw new Error('A IA não identificou um valor válido. Corrija o valor antes de criar a entrada.');
+    }
+    const date = isValidISODate(draft.dueDate)
+      ? draft.dueDate
+      : new Date().toISOString().slice(0, 10);
+    const fallbackCategory = entryCategories.find((category) => category.ativa) ?? entryCategories[0];
+    const entryCategoryId = entryCategories.some((category) => category.id === draft.entryCategoryId)
+      ? draft.entryCategoryId
+      : fallbackCategory?.id;
+    if (!entryCategoryId) {
+      throw new Error('Nenhuma categoria de entrada está disponível. Cadastre uma categoria antes de importar este recebimento.');
+    }
+    const entryTiming: EntryTiming = draft.entryTiming === 'REALIZADA' || draft.entryTiming === 'PREVISTA'
+      ? draft.entryTiming
+      : 'INCERTO';
+    if (entryTiming === 'INCERTO') {
+      throw new Error('Confirme se o dinheiro já entrou ou se ainda está previsto.');
+    }
+    const entryOrigin: EntryOrigin = draft.entryOrigin === 'APORTE'
+      || draft.entryOrigin === 'REEMBOLSO'
+      || draft.entryOrigin === 'AJUSTE'
+      ? draft.entryOrigin
+      : 'MOVIMENTO_MANUAL';
+    const counterparty = normalizeCommonBusinessTermsPtBr(
+      draft.supplierName.trim() || 'Origem não identificada',
+    );
+    const title = buildMeaningfulFinancialEntryTitle({
+      title: normalizeCommonBusinessTermsPtBr(draft.title.trim()),
+      counterparty,
+      timing: entryTiming,
+      date,
+    });
+    const accountId = item.draftEdits.financeAccountId
+      || financeAccounts.find((account) => account.padrao)?.id
+      || (financeAccounts.length === 1 ? financeAccounts[0]?.id : '');
+    if (entryTiming === 'REALIZADA' && !accountId) {
+      throw new Error('Selecione em qual conta financeira o dinheiro entrou.');
+    }
+
+    return {
+      ...draft,
+      title,
+      supplierName: counterparty,
+      originalAmount: Number(originalAmount.toFixed(2)),
+      dueDate: date,
+      paymentMethod: normalizePaymentMethod(draft.paymentMethod),
+      entryCategoryId,
+      entryTiming,
+      entryOrigin,
+      accountId,
     };
   }
 
@@ -429,6 +548,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
           file: item.file,
           categories: payableCategories.map((category) => ({ id: category.id, name: category.name })),
           suppliers: payableSuppliers.map((supplier) => ({ id: supplier.id, name: supplier.name })),
+          entryCategories: entryCategories.filter((category) => category.ativa).map((category) => ({ id: category.id, name: category.nome })),
           expectedAccountCount,
         }) as AnalysisResult;
         updateItem(item.id, { progress: 88 });
@@ -471,6 +591,10 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
         createdPayableId: undefined,
         createdPayable: undefined,
         duplicatePayableId: undefined,
+        duplicateFinancialEntry: undefined,
+        operationKey: index === 0
+          ? item.operationKey
+          : crypto.randomUUID?.() ?? `${Date.now()}-${index}-${Math.random()}`,
       }));
 
       setItems((previous) => {
@@ -501,6 +625,12 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     if (!item.analysis) return { created: false };
     const merged = mergeDraftEdits(item);
     if (!merged) return { created: false };
+    // Entradas sempre passam pela revisão humana: conta financeira, categoria e
+    // possível vínculo com O.S. não podem ser decididos só pelo documento.
+    if (getDirection(merged) !== 'SAIDA') {
+      markItemForReview(item);
+      return { created: false };
+    }
     if (merged.suggestedStatus === 'PAGO' || merged.suggestedStatus === 'INCERTO') {
       markItemForReview(item);
       return { created: false };
@@ -613,6 +743,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     if (fresh.previewUrl && fresh.previewUrl !== sourceItem.previewUrl) URL.revokeObjectURL(fresh.previewUrl);
     fresh.previewUrl = sourceItem.previewUrl;
     fresh.groupId = groupId;
+    fresh.operationKey = sourceItem.operationKey;
 
     setItems((previous) => {
       const idx = previous.findIndex((candidate) => (candidate.groupId ?? candidate.id) === groupId);
@@ -642,9 +773,40 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     const count = Number(value);
     if (Number.isInteger(count) && count >= 1 && count <= 24) {
       void reanalyzeWithCount(item, count);
-    } else {
-      updateItem(item.id, { clarifications: [], status: 'review', expanded: true });
+      return;
     }
+
+    const [kind, answer] = value.split(':', 2);
+    const groupId = item.groupId ?? item.id;
+    if (kind === 'direction' && (answer === 'ENTRADA' || answer === 'SAIDA')) {
+      setItems((previous) => previous.map((candidate) => (
+        (candidate.groupId ?? candidate.id) === groupId
+          ? {
+              ...candidate,
+              status: 'review',
+              expanded: true,
+              clarifications: (candidate.clarifications ?? []).filter((question) => question.kind !== 'direction'),
+              draftEdits: { ...candidate.draftEdits, direction: answer },
+            }
+          : candidate
+      )));
+      return;
+    }
+    if (kind === 'entry_timing' && (answer === 'REALIZADA' || answer === 'PREVISTA')) {
+      setItems((previous) => previous.map((candidate) => (
+        (candidate.groupId ?? candidate.id) === groupId
+          ? {
+              ...candidate,
+              status: 'review',
+              expanded: true,
+              clarifications: (candidate.clarifications ?? []).filter((question) => question.kind !== 'entry_timing'),
+              draftEdits: { ...candidate.draftEdits, entryTiming: answer },
+            }
+          : candidate
+      )));
+      return;
+    }
+    updateItem(item.id, { clarifications: [], status: 'review', expanded: true });
   }
 
   async function persistImportedAttachment(item: ImportFileItem, payableId: string, draft: ImportDraft) {
@@ -765,6 +927,90 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     return { payable };
   }
 
+  async function findSimilarFinancialEntry(draft: ReturnType<typeof normalizeEntryDraft>) {
+    if (draft.entryTiming === 'PREVISTA') {
+      const launches = await getAllFinanceiroLancamentos({
+        p_data_inicio: draft.dueDate,
+        p_data_fim: draft.dueDate,
+        p_modo: 'PREVISTO',
+        p_direcao: 'ENTRADA',
+      });
+      const similar = launches.dados.find((launch) => (
+        launch.direcao === 'ENTRADA'
+        && launch.vencimento?.slice(0, 10) === draft.dueDate
+        && Math.abs(Math.max(launch.aberto, launch.previsto) - draft.originalAmount) < 0.01
+      ));
+      return similar ? { description: similar.descricao, date: similar.vencimento ?? draft.dueDate } : undefined;
+    }
+    const movements = await getAllFinanceiroExtrato({
+      p_data_inicio: draft.dueDate,
+      p_data_fim: draft.dueDate,
+    });
+    const similar = movements.dados.find((movement) => isSimilarImportedFinancialEntry(movement, {
+      value: draft.originalAmount,
+      date: draft.dueDate,
+    }));
+    return similar ? { description: similar.descricao, date: similar.dataEfetiva } : undefined;
+  }
+
+  async function persistFinancialEntryAttachment(item: ImportFileItem, movementId: string) {
+    const extension = item.file.name.split('.').pop()?.toLowerCase();
+    const supported = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'].includes(item.file.type)
+      || ['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(extension ?? '');
+    if (!supported || !IS_REAL_AUTH) return false;
+    const path = await uploadFinanceiroComprovante({ movimentoId: movementId, file: item.file });
+    await insertFinanceiroAnexo({
+      movimentoId: movementId,
+      nomeArquivo: item.file.name.slice(0, 180),
+      caminho: path,
+      mimeType: item.file.type || null,
+      tamanhoBytes: item.file.size,
+    });
+    return true;
+  }
+
+  async function createFinancialEntryFromAnalysis(item: ImportFileItem, draft: ImportDraft) {
+    const normalized = normalizeEntryDraft(item, draft);
+    const notes = [
+      normalized.observations,
+      `Importado com IA a partir de ${item.file.name}.`,
+      normalized.directionReason ? `Critério da IA: ${normalized.directionReason}` : null,
+    ].filter(Boolean).join(' ');
+
+    if (normalized.entryTiming === 'PREVISTA') {
+      await criarRecebivelManual({
+        descricao: normalized.title,
+        valor: normalized.originalAmount,
+        vencimento: normalized.dueDate,
+        competencia: `${normalized.dueDate.slice(0, 7)}-01`,
+        categoriaId: normalized.entryCategoryId,
+        clienteNome: normalized.supplierName === 'Origem não identificada' ? null : normalized.supplierName,
+        impactaDre: normalized.entryOrigin === 'MOVIMENTO_MANUAL',
+        observacoes: `${notes} Documento usado na análise não fica anexado à previsão; anexe o comprovante quando registrar o recebimento.`,
+        idempotencyKey: `ai-recebivel:${item.operationKey}`,
+      });
+      return { attachmentStored: false };
+    }
+
+    const result = await criarMovimentoManual({
+      direcao: 'ENTRADA',
+      origem: normalized.entryOrigin,
+      descricao: normalized.title,
+      valor: normalized.originalAmount,
+      dataEfetiva: `${normalized.dueDate}T12:00:00-03:00`,
+      contaId: normalized.accountId,
+      formaPagamento: normalized.paymentMethod,
+      categoriaEntradaId: normalized.entryCategoryId,
+      impactaDre: normalized.entryOrigin === 'MOVIMENTO_MANUAL',
+      observacoes: notes,
+      idempotencyKey: `ai-entrada:${item.operationKey}`,
+    });
+    if (!result.movimentoId) {
+      throw new Error('A entrada foi criada, mas o movimento não retornou identificador para anexar o documento. Atualize o extrato antes de tentar novamente.');
+    }
+    return { attachmentStored: await persistFinancialEntryAttachment(item, result.movimentoId) };
+  }
+
   // Clique em "Enviar e analisar": dispara a análise de TODOS os pendentes de uma vez.
   function handleSubmitAll() {
     const pending = itemsRef.current.filter((candidate) => candidate.status === 'pending');
@@ -808,11 +1054,83 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     });
   }
 
-  async function handleCreateItem(itemId: string, options: { allowDuplicate?: boolean; confirmedReceipt?: boolean; confirmedDuplicate?: boolean } = {}) {
+  async function handleCreateItem(itemId: string, options: {
+    allowDuplicate?: boolean;
+    confirmedReceipt?: boolean;
+    confirmedDuplicate?: boolean;
+    confirmedEntryDuplicate?: boolean;
+  } = {}) {
     const item = itemsRef.current.find((i) => i.id === itemId);
     if (!item || !item.analysis) return;
     const mergedDraft = mergeDraftEdits(item);
     if (!mergedDraft) return;
+    const direction = getDirection(mergedDraft);
+
+    if (direction === 'INCERTO') {
+      markItemForReview(item, 'Confirme pelos botões se este documento é uma Entrada ou uma Saída.');
+      return;
+    }
+
+    if (direction === 'ENTRADA') {
+      const serviceOrderDecision = item.draftEdits.serviceOrderDecision;
+      if (serviceOrderDecision === 'YES') {
+        setConfirmation({ itemId, type: 'service-order' });
+        return;
+      }
+      if (!canCreateImportedFinancialEntry({ direction, serviceOrderDecision })) {
+        markItemForReview(item, 'Responda se esta entrada já pertence a uma O.S. ou fechamento cadastrado.');
+        return;
+      }
+
+      let normalized: ReturnType<typeof normalizeEntryDraft>;
+      try {
+        normalized = normalizeEntryDraft(item, mergedDraft);
+      } catch (error) {
+        markItemForReview(item, error instanceof Error ? error.message : 'Revise os dados da entrada.');
+        return;
+      }
+
+      if (!options.confirmedEntryDuplicate) {
+        try {
+          const similar = await findSimilarFinancialEntry(normalized);
+          if (similar) {
+            updateItem(item.id, { duplicateFinancialEntry: similar });
+            setConfirmation({ itemId, type: 'entry-similar' });
+            return;
+          }
+        } catch (error) {
+          markItemForReview(item, `Não consegui conferir possíveis duplicidades antes de gravar: ${error instanceof Error ? error.message : 'erro desconhecido'}.`);
+          return;
+        }
+      }
+
+      updateItem(itemId, { creating: true, error: undefined });
+      try {
+        const creation = await createFinancialEntryFromAnalysis(item, mergedDraft);
+        await queryClient.invalidateQueries({ queryKey: ['financeiro'] });
+        toast({
+          title: normalized.entryTiming === 'REALIZADA' ? 'Entrada registrada' : 'Entrada prevista criada',
+          description: creation.attachmentStored || normalized.entryTiming === 'PREVISTA'
+            ? normalized.title
+            : `${normalized.title}. O arquivo foi analisado, mas esse formato não aceita anexo financeiro.`,
+        });
+        removeItem(itemId);
+        const hasRemainingOpenItems = itemsRef.current.some((candidate) => candidate.id !== itemId && candidate.status !== 'created');
+        if (!hasRemainingOpenItems) onOpenChange(false);
+        // A callback do Financeiro troca para a aba Entradas; precisa ser a
+        // ultima navegacao para nao ser sobrescrita pelo fechamento do modal.
+        onFinancialEntryCreated?.();
+      } catch (error) {
+        updateItem(itemId, {
+          creating: false,
+          status: 'error',
+          progress: 0,
+          error: error instanceof Error ? error.message : 'Não foi possível criar a entrada.',
+          expanded: true,
+        });
+      }
+      return;
+    }
 
     if (mergedDraft.suggestedStatus === 'PAGO' && !options.confirmedReceipt) {
       setConfirmation({ itemId, type: 'receipt' });
@@ -857,6 +1175,7 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
       status: 'pending' as ImportFileStatus,
       error: undefined,
       duplicatePayableId: undefined,
+      duplicateFinancialEntry: undefined,
     };
     updateItem(itemId, freshItem);
     await analyzeItems([freshItem]);
@@ -872,8 +1191,8 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
     <PayableModalShell
       open={open}
       onOpenChange={onOpenChange}
-      title="Importar contas"
-      description="Anexe documentos, acompanhe cada status e revise os dados antes de confirmar contas com pendência."
+      title="Importar com IA"
+      description="A IA identifica Entrada ou Saída, preenche os dados e pergunta por botões quando não houver certeza."
       desktopClassName="sm:max-w-4xl"
     >
       <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
@@ -896,6 +1215,8 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
             items={items.filter((item) => item.source === 'arquivo')}
             isAnalyzing={isAnalyzing}
             payableCategories={payableCategories}
+            entryCategories={entryCategories}
+            financeAccounts={financeAccounts}
             onSelect={() => fileInputRef.current?.click()}
             onSubmitAll={handleSubmitAll}
             onClarify={handleClarify}
@@ -922,6 +1243,8 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
             items={items.filter((item) => item.source === 'camera')}
             isAnalyzing={isAnalyzing}
             payableCategories={payableCategories}
+            entryCategories={entryCategories}
+            financeAccounts={financeAccounts}
             cameraMode
             onSelect={() => cameraInputRef.current?.click()}
             onSubmitAll={handleSubmitAll}
@@ -940,11 +1263,21 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            {confirmation?.type === 'receipt' ? 'Criar conta a partir de comprovante?' : 'Criar conta parecida separada?'}
+            {confirmation?.type === 'receipt'
+              ? 'Criar saída a partir de comprovante?'
+              : confirmation?.type === 'entry-similar'
+                ? 'Criar uma entrada parecida?'
+                : confirmation?.type === 'service-order'
+                  ? 'Não duplicar recebimento da O.S.?'
+                  : 'Criar conta parecida separada?'}
           </DialogTitle>
           <DialogDescription>
             {confirmation?.type === 'receipt'
               ? 'Este arquivo parece ser comprovante/recibo. O caminho mais seguro é vincular a uma conta existente quando houver uma correspondente.'
+              : confirmation?.type === 'entry-similar'
+                ? 'Já existe uma entrada com o mesmo valor e a mesma data. Confirme apenas se forem recebimentos realmente distintos.'
+                : confirmation?.type === 'service-order'
+                  ? 'Recebimentos de O.S. e fechamentos devem ser registrados na própria origem. O importador não criará outra entrada.'
               : 'Já existe uma conta muito parecida. Confirme somente se for outra parcela, outra cobrança ou um lançamento que deve ficar separado.'}
           </DialogDescription>
         </DialogHeader>
@@ -954,15 +1287,25 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
             <div className="rounded-xl border bg-muted/20 p-4">
               <p className="text-sm font-semibold">{confirmationDraft.title}</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {confirmationDraft.supplierName} • {formatMoney(confirmationDraft.originalAmount)} • vence {confirmationDraft.dueDate}
+                {confirmationDraft.supplierName} • {formatMoney(confirmationDraft.originalAmount)} • {getDirection(confirmationDraft) === 'ENTRADA' ? 'data' : 'vence'} {confirmationDraft.dueDate}
               </p>
             </div>
             <Alert>
               <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>{confirmation?.type === 'receipt' ? 'Ação sensível' : 'Conta parecida confirmada'}</AlertTitle>
+              <AlertTitle>
+                {confirmation?.type === 'receipt'
+                  ? 'Ação sensível'
+                  : confirmation?.type === 'service-order'
+                    ? 'Nenhum número será alterado'
+                    : 'Lançamento parecido encontrado'}
+              </AlertTitle>
               <AlertDescription>
                 {confirmation?.type === 'receipt'
                   ? 'Ao confirmar, a conta será criada como paga e o anexo ficará vinculado ao novo lançamento.'
+                  : confirmation?.type === 'entry-similar'
+                    ? `Entrada existente: ${confirmationItem?.duplicateFinancialEntry?.description ?? 'lançamento'} em ${confirmationItem?.duplicateFinancialEntry?.date?.slice(0, 10) ?? 'data não informada'}.`
+                    : confirmation?.type === 'service-order'
+                      ? 'O arquivo sairá desta fila e você poderá registrar o recebimento dentro da O.S. ou do fechamento correspondente.'
                   : 'O sistema vai manter as duas contas e registrar a criação no histórico do lançamento.'}
               </AlertDescription>
             </Alert>
@@ -971,20 +1314,36 @@ export default function PayableImportModal({ open, onOpenChange, onCreated }: Pa
 
         <DialogFooter>
           <Button variant="outline" onClick={() => setConfirmation(null)}>
-            {confirmation?.type === 'receipt' ? 'Não, voltar' : 'Não, revisar melhor'}
+            {confirmation?.type === 'receipt' ? 'Não, voltar' : 'Voltar e revisar'}
           </Button>
           <Button
-            variant={confirmation?.type === 'receipt' ? 'default' : 'destructive'}
+            variant={confirmation?.type === 'receipt' || confirmation?.type === 'service-order' ? 'default' : 'destructive'}
             onClick={() => {
               if (!confirmation) return;
               const current = confirmation;
               setConfirmation(null);
+              if (current.type === 'service-order') {
+                removeItem(current.itemId);
+                toast({
+                  title: 'Entrada não duplicada',
+                  description: 'Nada foi lançado. Registre o recebimento na O.S. ou no fechamento correspondente.',
+                });
+                return;
+              }
               void handleCreateItem(current.itemId, current.type === 'receipt'
                 ? { confirmedReceipt: true }
-                : { allowDuplicate: true, confirmedDuplicate: true, confirmedReceipt: true });
+                : current.type === 'entry-similar'
+                  ? { confirmedEntryDuplicate: true }
+                  : { allowDuplicate: true, confirmedDuplicate: true, confirmedReceipt: true });
             }}
           >
-            {confirmation?.type === 'receipt' ? 'Sim, criar mesmo assim' : 'Sim, criar separada'}
+            {confirmation?.type === 'receipt'
+              ? 'Sim, criar mesmo assim'
+              : confirmation?.type === 'entry-similar'
+                ? 'Sim, são entradas diferentes'
+                : confirmation?.type === 'service-order'
+                  ? 'Certo, não lançar aqui'
+                  : 'Sim, criar separada'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -997,11 +1356,13 @@ type ImportBodyProps = {
   items: ImportFileItem[];
   isAnalyzing: boolean;
   payableCategories: Array<{ id: string; name: string }>;
+  entryCategories: CategoriaEntrada[];
+  financeAccounts: FinanceiroConta[];
   cameraMode?: boolean;
   onSelect: () => void;
   onSubmitAll: () => void;
   onClarify: (item: ImportFileItem, value: string) => void;
-  onCreateItem: (id: string, options?: { allowDuplicate?: boolean; confirmedReceipt?: boolean; confirmedDuplicate?: boolean }) => void;
+  onCreateItem: (id: string, options?: { allowDuplicate?: boolean; confirmedReceipt?: boolean; confirmedDuplicate?: boolean; confirmedEntryDuplicate?: boolean }) => void;
   onRetryItem: (id: string) => void;
   onEditDraft: (id: string, edits: ImportDraftEdits) => void;
   onClear: () => void;
@@ -1013,6 +1374,8 @@ function ImportBody({
   items,
   isAnalyzing,
   payableCategories,
+  entryCategories,
+  financeAccounts,
   cameraMode = false,
   onSelect,
   onSubmitAll,
@@ -1035,7 +1398,7 @@ function ImportBody({
         <button
           type="button"
           onClick={onSelect}
-          aria-label={cameraMode ? 'Tirar foto para importar conta' : 'Selecionar arquivos para importar contas'}
+          aria-label={cameraMode ? 'Tirar foto para importar lançamento' : 'Selecionar arquivos para importar lançamentos'}
           className="flex w-full items-center gap-3 rounded-xl border border-dashed border-primary/30 bg-background px-4 py-3 text-left transition hover:border-primary/50 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           <div className="rounded-xl bg-primary/10 p-2.5 text-primary">
@@ -1044,7 +1407,7 @@ function ImportBody({
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold">{cameraMode ? 'Tirar foto' : 'Selecionar arquivos'}</p>
             <p className="text-xs text-muted-foreground">
-              {cameraMode ? 'Use a câmera do celular para uma despesa rápida.' : 'PDF, imagem, DOC ou DOCX. Pode selecionar vários de uma vez.'}
+              {cameraMode ? 'Use a câmera do celular para uma entrada ou saída.' : 'PDF, imagem, DOC ou DOCX. Pode selecionar vários de uma vez.'}
             </p>
           </div>
         </button>
@@ -1095,6 +1458,10 @@ function ImportBody({
               dueDate: item.draftEdits.dueDate ?? item.analysis.draft.dueDate,
               categoryId: item.draftEdits.categoryId ?? item.analysis.draft.categoryId,
               paymentMethod: item.draftEdits.paymentMethod ?? item.analysis.draft.paymentMethod,
+              direction: item.draftEdits.direction ?? item.analysis.draft.direction ?? 'INCERTO',
+              entryCategoryId: item.draftEdits.entryCategoryId ?? item.analysis.draft.entryCategoryId,
+              entryTiming: item.draftEdits.entryTiming ?? item.analysis.draft.entryTiming ?? 'INCERTO',
+              entryOrigin: item.draftEdits.entryOrigin ?? item.analysis.draft.entryOrigin ?? 'MOVIMENTO_MANUAL',
             } : null;
             return (
               <ImportFileCard
@@ -1103,6 +1470,8 @@ function ImportBody({
                 effectiveDraft={effectiveDraft}
                 categoryName={effectiveDraft ? payableCategories.find((c) => c.id === effectiveDraft.categoryId)?.name ?? 'Categoria sugerida' : null}
                 payableCategories={payableCategories}
+                entryCategories={entryCategories}
+                financeAccounts={financeAccounts}
                 onClarify={onClarify}
                 onRemove={onRemove}
                 onToggleExpanded={onToggleExpanded}
@@ -1122,10 +1491,12 @@ type ImportFileCardProps = {
   effectiveDraft: ImportDraft | null;
   categoryName: string | null;
   payableCategories: Array<{ id: string; name: string }>;
+  entryCategories: CategoriaEntrada[];
+  financeAccounts: FinanceiroConta[];
   onClarify: (item: ImportFileItem, value: string) => void;
   onRemove: (id: string) => void;
   onToggleExpanded: (id: string) => void;
-  onCreateItem: (id: string, options?: { allowDuplicate?: boolean; confirmedReceipt?: boolean; confirmedDuplicate?: boolean }) => void;
+  onCreateItem: (id: string, options?: { allowDuplicate?: boolean; confirmedReceipt?: boolean; confirmedDuplicate?: boolean; confirmedEntryDuplicate?: boolean }) => void;
   onRetryItem: (id: string) => void;
   onEditDraft: (id: string, edits: ImportDraftEdits) => void;
 };
@@ -1143,10 +1514,20 @@ function FileTileIcon({ file }: { file: File }) {
 function StatusBadge({ status }: { status: ImportFileStatus }) {
   if (status === 'success') return <Badge className="gap-1 bg-success text-success-foreground"><CheckCircle2 className="h-3 w-3" /> Analisada</Badge>;
   if (status === 'review') return <Badge className="gap-1 border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-100"><AlertTriangle className="h-3 w-3" /> Revisar</Badge>;
-  if (status === 'created') return <Badge className="gap-1 bg-primary text-primary-foreground"><CheckCircle2 className="h-3 w-3" /> Conta criada</Badge>;
+  if (status === 'created') return <Badge className="gap-1 bg-primary text-primary-foreground"><CheckCircle2 className="h-3 w-3" /> Criado</Badge>;
   if (status === 'error') return <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" /> Erro</Badge>;
   if (status === 'analyzing') return <Badge variant="secondary" className="gap-1"><LoaderCircle className="h-3 w-3 animate-spin" /> Analisando</Badge>;
   return <Badge variant="outline">Pendente</Badge>;
+}
+
+function DirectionBadge({ direction }: { direction: FinancialDirection }) {
+  if (direction === 'ENTRADA') {
+    return <Badge className="gap-1 border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-50"><ArrowDownLeft className="h-3 w-3" /> Entrada</Badge>;
+  }
+  if (direction === 'SAIDA') {
+    return <Badge className="gap-1 border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-50"><ArrowUpRight className="h-3 w-3" /> Saída</Badge>;
+  }
+  return <Badge className="gap-1 border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-50"><AlertTriangle className="h-3 w-3" /> Entrada ou saída?</Badge>;
 }
 
 const ANALYZING_MESSAGES = [
@@ -1195,6 +1576,8 @@ function ImportFileCard({
   effectiveDraft,
   categoryName,
   payableCategories,
+  entryCategories,
+  financeAccounts,
   onClarify,
   onRemove,
   onToggleExpanded,
@@ -1207,6 +1590,13 @@ function ImportFileCard({
   const clarifications = item.clarifications ?? [];
   const needsManualCorrection = item.status === 'error' || Boolean(item.error);
   const needsReview = item.status === 'review';
+  const direction: FinancialDirection = effectiveDraft?.direction === 'ENTRADA' || effectiveDraft?.direction === 'SAIDA'
+    ? effectiveDraft.direction
+    : 'INCERTO';
+  const isEntry = direction === 'ENTRADA';
+  const financialAttachmentExtension = item.file.name.split('.').pop()?.toLowerCase();
+  const supportsFinancialAttachment = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'].includes(item.file.type)
+    || ['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(financialAttachmentExtension ?? '');
 
   return (
     <div className={cn(
@@ -1249,6 +1639,7 @@ function ImportFileCard({
               <p className="text-xs text-muted-foreground">{kind.label} • {formatBytes(item.file.size)} • {item.file.type || 'Tipo não informado'}</p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
+              {item.analysis ? <DirectionBadge direction={direction} /> : null}
               <StatusBadge status={item.status} />
               {item.status !== 'created' ? (
                 <Button
@@ -1291,7 +1682,7 @@ function ImportFileCard({
               <AlertTriangle className="h-4 w-4 text-amber-700" />
               <AlertTitle>Revise antes de criar</AlertTitle>
               <AlertDescription>
-                A análise terminou, mas a conta ainda não foi cadastrada. Confira os campos e clique em Confirmar e criar.
+                A análise terminou, mas o lançamento ainda não foi cadastrado. Confira a direção, os campos e confirme.
               </AlertDescription>
             </Alert>
           ) : null}
@@ -1360,11 +1751,37 @@ function ImportFileCard({
                 </Alert>
               ) : null}
 
-              <div className="rounded-2xl border border-primary/20 bg-background p-4 space-y-4">
-                <p className="text-sm font-semibold">Revisar antes de criar</p>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="md:col-span-2 space-y-1">
-                    <label htmlFor={`${fieldPrefix}-title`} className="text-xs font-medium text-muted-foreground">Título</label>
+              <div className="space-y-4 rounded-2xl border border-primary/20 bg-background p-4">
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold">É Entrada ou Saída?</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Button
+                      type="button"
+                      variant={direction === 'ENTRADA' ? 'default' : 'outline'}
+                      className={cn('justify-start gap-2', direction === 'ENTRADA' && 'bg-emerald-700 hover:bg-emerald-800')}
+                      onClick={() => onEditDraft(item.id, { direction: 'ENTRADA' })}
+                    >
+                      <ArrowDownLeft className="h-4 w-4" /> Entrada — dinheiro entra
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={direction === 'SAIDA' ? 'default' : 'outline'}
+                      className={cn('justify-start gap-2', direction === 'SAIDA' && 'bg-rose-700 hover:bg-rose-800')}
+                      onClick={() => onEditDraft(item.id, { direction: 'SAIDA' })}
+                    >
+                      <ArrowUpRight className="h-4 w-4" /> Saída — dinheiro sai
+                    </Button>
+                  </div>
+                  {effectiveDraft?.directionReason ? (
+                    <p className="text-xs text-muted-foreground">
+                      IA: {effectiveDraft.directionReason} ({Math.round(effectiveDraft.directionConfidence ?? 0)}% de confiança na direção)
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="grid gap-3 border-t border-border/50 pt-4 md:grid-cols-2">
+                  <div className="space-y-1 md:col-span-2">
+                    <label htmlFor={`${fieldPrefix}-title`} className="text-xs font-medium text-muted-foreground">Nome do lançamento</label>
                     <input
                       id={`${fieldPrefix}-title`}
                       className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
@@ -1373,7 +1790,7 @@ function ImportFileCard({
                     />
                   </div>
                   <div className="space-y-1">
-                    <label htmlFor={`${fieldPrefix}-supplier`} className="text-xs font-medium text-muted-foreground">Fornecedor</label>
+                    <label htmlFor={`${fieldPrefix}-supplier`} className="text-xs font-medium text-muted-foreground">{isEntry ? 'Cliente / origem do dinheiro' : 'Fornecedor / favorecido'}</label>
                     <input
                       id={`${fieldPrefix}-supplier`}
                       className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
@@ -1392,7 +1809,7 @@ function ImportFileCard({
                     />
                   </div>
                   <div className="space-y-1">
-                    <label htmlFor={`${fieldPrefix}-due-date`} className="text-xs font-medium text-muted-foreground">Vencimento</label>
+                    <label htmlFor={`${fieldPrefix}-due-date`} className="text-xs font-medium text-muted-foreground">{isEntry ? 'Data da entrada / previsão' : 'Vencimento'}</label>
                     <input
                       id={`${fieldPrefix}-due-date`}
                       type="date"
@@ -1401,17 +1818,76 @@ function ImportFileCard({
                       onChange={(e) => onEditDraft(item.id, { dueDate: e.target.value })}
                     />
                   </div>
-                  <div className="space-y-1">
-                    <label htmlFor={`${fieldPrefix}-category`} className="text-xs font-medium text-muted-foreground">Categoria</label>
-                    <select
-                      id={`${fieldPrefix}-category`}
-                      className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                      value={item.draftEdits.categoryId ?? item.analysis.draft.categoryId}
-                      onChange={(e) => onEditDraft(item.id, { categoryId: e.target.value })}
-                    >
-                      {payableCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                  </div>
+
+                  {isEntry ? (
+                    <>
+                      <div className="space-y-1">
+                        <label htmlFor={`${fieldPrefix}-entry-category`} className="text-xs font-medium text-muted-foreground">Categoria de entrada</label>
+                        <select
+                          id={`${fieldPrefix}-entry-category`}
+                          className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                          value={item.draftEdits.entryCategoryId ?? item.analysis.draft.entryCategoryId ?? entryCategories.find((c) => c.ativa)?.id ?? ''}
+                          onChange={(e) => onEditDraft(item.id, { entryCategoryId: e.target.value })}
+                        >
+                          {entryCategories.filter((c) => c.ativa).map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label htmlFor={`${fieldPrefix}-entry-timing`} className="text-xs font-medium text-muted-foreground">Situação</label>
+                        <select
+                          id={`${fieldPrefix}-entry-timing`}
+                          className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                          value={item.draftEdits.entryTiming ?? item.analysis.draft.entryTiming ?? 'INCERTO'}
+                          onChange={(e) => onEditDraft(item.id, { entryTiming: e.target.value as EntryTiming })}
+                        >
+                          <option value="INCERTO">Confirmar se já entrou</option>
+                          <option value="REALIZADA">Já entrou na conta</option>
+                          <option value="PREVISTA">Ainda vai entrar</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label htmlFor={`${fieldPrefix}-entry-origin`} className="text-xs font-medium text-muted-foreground">Tipo de entrada</label>
+                        <select
+                          id={`${fieldPrefix}-entry-origin`}
+                          className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                          value={item.draftEdits.entryOrigin ?? item.analysis.draft.entryOrigin ?? 'MOVIMENTO_MANUAL'}
+                          onChange={(e) => onEditDraft(item.id, { entryOrigin: e.target.value as EntryOrigin })}
+                        >
+                          <option value="MOVIMENTO_MANUAL">Receita / recebimento</option>
+                          <option value="APORTE">Aporte do dono ou sócio</option>
+                          <option value="REEMBOLSO">Reembolso recebido</option>
+                          <option value="AJUSTE">Ajuste financeiro</option>
+                        </select>
+                      </div>
+                      {(item.draftEdits.entryTiming ?? item.analysis.draft.entryTiming) === 'REALIZADA' ? (
+                        <div className="space-y-1">
+                          <label htmlFor={`${fieldPrefix}-finance-account`} className="text-xs font-medium text-muted-foreground">Conta em que o dinheiro entrou</label>
+                          <select
+                            id={`${fieldPrefix}-finance-account`}
+                            className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                            value={item.draftEdits.financeAccountId ?? financeAccounts.find((account) => account.padrao)?.id ?? (financeAccounts.length === 1 ? financeAccounts[0]?.id : '') ?? ''}
+                            onChange={(e) => onEditDraft(item.id, { financeAccountId: e.target.value })}
+                          >
+                            <option value="">Selecione a conta</option>
+                            {financeAccounts.filter((account) => account.ativa).map((account) => <option key={account.id} value={account.id}>{account.nome}</option>)}
+                          </select>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <div className="space-y-1">
+                      <label htmlFor={`${fieldPrefix}-category`} className="text-xs font-medium text-muted-foreground">Categoria de saída</label>
+                      <select
+                        id={`${fieldPrefix}-category`}
+                        className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                        value={item.draftEdits.categoryId ?? item.analysis.draft.categoryId}
+                        onChange={(e) => onEditDraft(item.id, { categoryId: e.target.value })}
+                      >
+                        {payableCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </div>
+                  )}
+
                   <div className="space-y-1">
                     <label htmlFor={`${fieldPrefix}-payment-method`} className="text-xs font-medium text-muted-foreground">Forma de pagamento</label>
                     <select
@@ -1424,19 +1900,68 @@ function ImportFileCard({
                     </select>
                   </div>
                 </div>
+
+                {isEntry ? (
+                  <div className={cn(
+                    'space-y-2 rounded-xl border p-3',
+                    effectiveDraft?.possibleServiceOrder ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-slate-50',
+                  )}>
+                    <p className="text-sm font-semibold">Este valor já pertence a uma O.S. ou fechamento cadastrado?</p>
+                    <p className="text-xs text-muted-foreground">
+                      {effectiveDraft?.possibleServiceOrder
+                        ? `A IA encontrou sinal de serviço/O.S.${effectiveDraft.serviceOrderReference ? ` Referência: ${effectiveDraft.serviceOrderReference}.` : ''} Confirme para não duplicar a entrada.`
+                        : 'Se o recebimento veio de uma O.S. ou fechamento, ele deve ser baixado lá e não criado novamente aqui.'}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {([
+                        ['NO', 'Não, criar esta entrada'],
+                        ['YES', 'Sim, já está na O.S.'],
+                        ['UNKNOWN', 'Não sei'],
+                      ] as const).map(([value, label]) => (
+                        <Button
+                          key={value}
+                          type="button"
+                          size="sm"
+                          variant={item.draftEdits.serviceOrderDecision === value ? 'default' : 'outline'}
+                          onClick={() => onEditDraft(item.id, { serviceOrderDecision: value })}
+                        >
+                          {label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {isEntry && (item.draftEdits.entryTiming ?? item.analysis.draft.entryTiming) === 'PREVISTA' ? (
+                  <Alert className="border-sky-200 bg-sky-50">
+                    <AlertTitle>Entrada prevista</AlertTitle>
+                    <AlertDescription>O valor ficará em A receber. O documento será usado na análise, mas o comprovante só poderá ser anexado quando o recebimento for registrado.</AlertDescription>
+                  </Alert>
+                ) : null}
+
+                {isEntry && !supportsFinancialAttachment ? (
+                  <Alert className="border-amber-200 bg-amber-50">
+                    <AlertTitle>Formato sem anexo financeiro</AlertTitle>
+                    <AlertDescription>DOC e DOCX podem ser analisados pela IA, mas o comprovante financeiro privado aceita PDF ou imagem. O lançamento poderá ser criado sem anexar este arquivo.</AlertDescription>
+                  </Alert>
+                ) : null}
+
                 <div className="flex flex-col gap-3 border-t border-border/50 pt-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">Categoria:</span> {categoryName} &nbsp;•&nbsp;
-                    <span className="font-medium text-foreground">Status:</span> {effectiveDraft?.suggestedStatus === 'PAGO' ? 'Já paga' : effectiveDraft?.suggestedStatus === 'AGENDADO' ? 'Agendada' : effectiveDraft?.suggestedStatus === 'INCERTO' ? 'Revisar' : 'A pagar'}
+                    <span className="font-medium text-foreground">Tipo:</span> {direction === 'ENTRADA' ? 'Entrada' : direction === 'SAIDA' ? 'Saída' : 'Confirmar'} &nbsp;•&nbsp;
+                    <span className="font-medium text-foreground">Categoria:</span>{' '}
+                    {isEntry
+                      ? entryCategories.find((c) => c.id === (item.draftEdits.entryCategoryId ?? effectiveDraft?.entryCategoryId))?.nome ?? 'Confirmar'
+                      : categoryName}
                   </div>
                   <Button
                     size="sm"
                     onClick={() => onCreateItem(item.id)}
-                    disabled={item.creating}
+                    disabled={item.creating || direction === 'INCERTO' || (isEntry && (!item.draftEdits.serviceOrderDecision || item.draftEdits.serviceOrderDecision === 'UNKNOWN'))}
                     className="shrink-0 gap-1.5 sm:w-auto"
                   >
                     {item.creating ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                    Confirmar e criar
+                    {isEntry && item.draftEdits.serviceOrderDecision === 'YES' ? 'Não lançar novamente' : 'Confirmar e criar'}
                   </Button>
                 </div>
               </div>

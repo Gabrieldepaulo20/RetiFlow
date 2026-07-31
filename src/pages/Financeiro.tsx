@@ -24,6 +24,7 @@ import {
   Repeat2,
   Search,
   Settings2,
+  Sparkles,
   TrendingDown,
   WalletCards,
 } from 'lucide-react';
@@ -316,6 +317,25 @@ export default function Financeiro() {
     const params = new URLSearchParams(searchParams);
     params.set('tab', next);
     setSearchParams(params, { replace: true });
+  };
+
+  const openAiImport = () => {
+    const params = new URLSearchParams(searchParams);
+    params.set('tab', 'saidas');
+    params.set('modal', 'import');
+    params.delete('id');
+    setTab('saidas');
+    setSearchParams(params, { replace: true });
+  };
+
+  const handleFinancialEntryImported = () => {
+    const params = new URLSearchParams(searchParams);
+    params.set('tab', 'entradas');
+    params.delete('modal');
+    params.delete('id');
+    setTab('entradas');
+    setSearchParams(params, { replace: true });
+    void refreshAll();
   };
 
   const refreshAll = async () => {
@@ -700,6 +720,12 @@ export default function Financeiro() {
             </TabsList>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {!isSupportImpersonating ? (
+              <Button type="button" variant="outline" size="sm" className="h-9 gap-1.5 rounded-xl text-xs" onClick={openAiImport}>
+                <Sparkles className="h-4 w-4" aria-hidden="true" />
+                Importar com IA
+              </Button>
+            ) : null}
             {tab !== 'saidas' && tab !== 'fixos' && tab !== 'dre' ? (
               <div className="relative min-w-44 flex-1 xl:w-56 xl:flex-none">
                 <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" aria-hidden="true" />
@@ -828,10 +854,16 @@ export default function Financeiro() {
               ) : null}
             </div>
             {!isSupportImpersonating ? (
-              <Button type="button" size="sm" className="h-9 gap-2 rounded-xl" onClick={() => setDialog('entrada')}>
-                <Plus className="h-4 w-4" aria-hidden="true" />
-                Nova entrada
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" size="sm" className="h-9 gap-2 rounded-xl" onClick={openAiImport}>
+                  <Sparkles className="h-4 w-4" aria-hidden="true" />
+                  Importar com IA
+                </Button>
+                <Button type="button" size="sm" className="h-9 gap-2 rounded-xl" onClick={() => setDialog('entrada')}>
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  Nova entrada
+                </Button>
+              </div>
             ) : null}
           </div>
           {launchesQuery.isLoading ? (
@@ -843,7 +875,13 @@ export default function Financeiro() {
 
         <TabsContent value="saidas" className="mt-0">
           <Suspense fallback={<Skeleton className="h-96 rounded-2xl" />}>
-            <ContasAPagar embedded readOnly={isSupportImpersonating} />
+            <ContasAPagar
+              embedded
+              readOnly={isSupportImpersonating}
+              entryCategories={categorias}
+              financeAccounts={contas}
+              onFinancialEntryCreated={handleFinancialEntryImported}
+            />
           </Suspense>
         </TabsContent>
 

@@ -45,6 +45,7 @@ import { usePayablesBriefing } from '@/hooks/usePayablesBriefing';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { FinancialValue } from '@/components/privacy/FinancialValue';
 import { useFinancialPrivacy } from '@/contexts/FinancialPrivacyContext';
+import type { CategoriaEntrada, FinanceiroConta } from '@/api/supabase/financeiro';
 
 function fmtBRL(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -107,9 +108,18 @@ type PageView = 'contas' | 'sugestoes';
 type ContasAPagarProps = {
   embedded?: boolean;
   readOnly?: boolean;
+  entryCategories?: CategoriaEntrada[];
+  financeAccounts?: FinanceiroConta[];
+  onFinancialEntryCreated?: () => void;
 };
 
-export default function ContasAPagar({ embedded = false, readOnly = false }: ContasAPagarProps) {
+export default function ContasAPagar({
+  embedded = false,
+  readOnly = false,
+  entryCategories = [],
+  financeAccounts = [],
+  onFinancialEntryCreated,
+}: ContasAPagarProps) {
   const { payables, payableCategories, updatePayable, addPayable, addPayableHistoryEntry, emailSuggestions } = usePayablesData();
   const { user, isSupportImpersonating } = useAuth();
   const { financialValuesHidden } = useFinancialPrivacy();
@@ -1093,7 +1103,14 @@ export default function ContasAPagar({ embedded = false, readOnly = false }: Con
       </div>
 
       <PayableCreateModal open={!readOnly && routeModal === 'new'} onOpenChange={(open) => { if (!open) updateRouteModal(); }} onSaved={(payable) => updateRouteModal('details', payable.id)} />
-      <PayableImportModal open={!readOnly && routeModal === 'import'} onOpenChange={(open) => { if (!open) updateRouteModal(); }} onCreated={(payable) => updateRouteModal('details', payable.id)} />
+      <PayableImportModal
+        open={!readOnly && routeModal === 'import'}
+        onOpenChange={(open) => { if (!open) updateRouteModal(); }}
+        onCreated={(payable) => updateRouteModal('details', payable.id)}
+        entryCategories={entryCategories}
+        financeAccounts={financeAccounts}
+        onFinancialEntryCreated={onFinancialEntryCreated}
+      />
       <PayableDetailsModal
         open={routeModal === 'details' && !!routeDetailsId}
         payableId={routeDetailsId}

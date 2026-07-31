@@ -1,6 +1,30 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-07-30
+Atualizado em: 2026-07-31
+
+---
+
+## Importacao Financeira Com IA - Entrada E Saida - 2026-07-31
+
+- O atalho `Importar com IA` voltou para a barra principal do Financeiro e para a aba Entradas.
+- O mesmo fluxo aceita PDF, imagem, DOC/DOCX ou foto e classifica cada item do ponto de vista da
+  Retifica Premium como `ENTRADA`, `SAIDA` ou `INCERTO`.
+- A classificacao nao usa palavras isoladas como `PIX`, `comprovante` ou `boleto`: o prompt exige
+  identificar pagador e recebedor. Direcao incerta vira pergunta com botoes, nunca uma suposicao silenciosa.
+- Saidas preservam o fluxo estabilizado de Contas a Pagar, incluindo parcelas, anexos e verificacao
+  de duplicidade.
+- Entradas nunca sao criadas automaticamente. A revisao exige categoria, situacao (realizada/prevista),
+  tipo e, quando realizada, a conta financeira em que o dinheiro entrou.
+- Toda Entrada pergunta por botoes se o valor ja pertence a uma O.S. ou fechamento. Resposta positiva
+  nao grava outro lancamento; orienta registrar o recebimento na origem para evitar duplicidade.
+- Entradas com mesma data e valor sao bloqueadas para confirmacao adicional. Cliques repetidos usam
+  chave de idempotencia estavel por item.
+- Comprovante de Entrada realizada e salvo no bucket financeiro privado. Entrada prevista nao recebe
+  anexo direto porque o schema atual vincula anexos somente a movimentos realizados; a tela informa
+  essa limitacao e orienta anexar ao registrar o recebimento.
+- A Edge Function continua com `OPENAI_API_KEY` somente no servidor e usa `gpt-5-mini` como padrao
+  economico para extracao estruturada com PDF/imagem; o modelo ainda pode ser substituido por secret.
+- Nao houve migration, mudanca de RLS, policy ou privacidade de bucket.
 
 ---
 

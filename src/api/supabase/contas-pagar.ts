@@ -329,11 +329,21 @@ export type PayableImportDraftIA = {
   suggestedStatus: 'PAGO' | 'PENDENTE' | 'AGENDADO' | 'INCERTO';
   recurrenceIndex?: number;
   totalInstallments?: number;
+  /** Classificacao financeira do documento. Ausente apenas em Edge legada. */
+  direction?: 'ENTRADA' | 'SAIDA' | 'INCERTO';
+  directionConfidence?: number;
+  directionReason?: string;
+  /** Campos usados somente quando direction=ENTRADA. */
+  entryCategoryId?: string;
+  entryTiming?: 'REALIZADA' | 'PREVISTA' | 'INCERTO';
+  entryOrigin?: 'MOVIMENTO_MANUAL' | 'APORTE' | 'REEMBOLSO' | 'AJUSTE';
+  possibleServiceOrder?: boolean;
+  serviceOrderReference?: string;
 };
 
 export type PayableImportClarification = {
   id: string;
-  kind: 'account_count' | 'installments' | 'duplicate' | 'other';
+  kind: 'account_count' | 'installments' | 'duplicate' | 'direction' | 'entry_timing' | 'other';
   question: string;
   options: Array<{ label: string; value: string }>;
 };
@@ -380,6 +390,7 @@ export async function analisarContaPagarComIA(params: {
   file: File;
   categories: Array<{ id: string; name: string }>;
   suppliers: Array<{ id: string; name: string }>;
+  entryCategories?: Array<{ id: string; name: string }>;
   /** Re-análise: quantidade de contas confirmada pelo usuário (resposta a uma pergunta). */
   expectedAccountCount?: number;
 }) {
@@ -387,6 +398,7 @@ export async function analisarContaPagarComIA(params: {
   body.append('file', params.file);
   body.append('categories', JSON.stringify(params.categories));
   body.append('suppliers', JSON.stringify(params.suppliers));
+  body.append('entry_categories', JSON.stringify(params.entryCategories ?? []));
   if (params.expectedAccountCount && params.expectedAccountCount >= 1) {
     body.append('expected_account_count', String(params.expectedAccountCount));
   }

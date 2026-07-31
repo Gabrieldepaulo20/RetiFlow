@@ -136,7 +136,7 @@ describe('App routes', () => {
 
   it.each([
     ['/contas-a-pagar/nova', 'modal=new', /Nova conta a pagar/i],
-    ['/contas-a-pagar/importar', 'modal=import', /Importar contas/i],
+    ['/contas-a-pagar/importar', 'modal=import', /Importar com IA/i],
   ])('redirects payable compatibility route %s', async (path, search, modalTitle) => {
     authenticateAs('FINANCEIRO');
     renderAt(path);
