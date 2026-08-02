@@ -1283,6 +1283,22 @@ function getGoogleAdsErrorMessage(payload: unknown) {
   return asString(payload.error.message, 500);
 }
 
+function getPublicGoogleAdsFailureMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : '';
+
+  if (/token has been expired or revoked|invalid_grant|expired|revoked/i.test(message)) {
+    return 'A autorização do Google Ads expirou ou foi revogada. Reconecte a conta oficial.';
+  }
+  if (/credencial google ads incompleta/i.test(message)) {
+    return 'A configuração segura do Google Ads está incompleta.';
+  }
+  if (/permission|access denied|authorization_error|customer_not_enabled/i.test(message)) {
+    return 'A conta conectada não tem permissão para consultar o Google Ads oficial.';
+  }
+
+  return 'Não foi possível sincronizar o Google Ads agora.';
+}
+
 async function runGoogleAdsQuery(
   credentials: GoogleAdsCredentials,
   accessToken: string,
@@ -2944,6 +2960,7 @@ async function handleRequest(request: Request) {
     let ga4: Ga4Summary | null = null;
     let searchConsole: SearchConsoleSummary | null = null;
     let googleAds: GoogleAdsSummary | null = null;
+    let googleAdsFailureMessage: string | null = null;
     const googleCredentialRaw = Deno.env.get('GA4_SERVICE_ACCOUNT_JSON') ?? '';
     const serviceAccount = googleCredentialRaw ? parseServiceAccount(googleCredentialRaw) : null;
 
@@ -3063,12 +3080,13 @@ async function handleRequest(request: Request) {
         }
       } catch (error) {
         console.error('Google Ads dashboard sync failed', error instanceof Error ? error.message : 'unknown');
+        googleAdsFailureMessage = getPublicGoogleAdsFailureMessage(error);
         integrations = mergeIntegration(integrations, {
           provider: 'google_ads',
           status: 'needs_attention',
           accountName: 'Retífica Premium',
           lastSyncAt: null,
-          lastError: 'Não foi possível sincronizar o Google Ads agora.',
+          lastError: googleAdsFailureMessage,
           freshness: 'Aguardando Google Ads',
         });
       }
@@ -3177,7 +3195,7 @@ async function handleRequest(request: Request) {
       ? googleAds.items.length > 0
         ? 'Dados oficiais do Google Ads sincronizados.'
         : 'Conta conectada. Nenhuma campanha ou veiculação no período.'
-      : 'Google Ads aguardando uma conexão válida.';
+      : googleAdsFailureMessage ?? 'Google Ads aguardando uma conexão válida.';
 
     if (!hasPrivateAccess) {
       return jsonResponse({
