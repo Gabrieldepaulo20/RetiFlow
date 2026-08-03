@@ -2845,7 +2845,10 @@ async function handleRequest(request: Request) {
       isPaidMarketingItem(event) && !isTechnicalPaidTest(event)
     );
     const paidVisitors = hasPrivateAccess
-      ? buildMarketingVisitorSessions(paidCurrentEvents, internal.currentLeads, { onlyPaid: true })
+      ? buildMarketingVisitorSessions(paidCurrentEvents, internal.currentLeads, {
+        onlyPaid: true,
+        limit: Math.max(1, paidCurrentEvents.length),
+      })
       : [];
     const allVisitors = hasPrivateAccess
       ? buildMarketingVisitorSessions(internal.currentEvents, internal.currentLeads, {

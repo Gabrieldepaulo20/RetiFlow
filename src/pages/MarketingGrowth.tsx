@@ -56,6 +56,7 @@ import {
   type MarketingEventItem,
   type MarketingIntegrationSummary,
   type MarketingLeadItem,
+  type MarketingPaidVisitor,
   type MarketingResumo,
   type MarketingSearchTotals,
 } from '@/api/supabase/marketing';
@@ -78,6 +79,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { SectionEmptyState, SectionErrorState } from '@/components/ui/section-state';
 import { cn } from '@/lib/utils';
+import {
+  buildUntrackedAdsClickRows,
+  type UntrackedAdsClickRow,
+} from '@/lib/marketingClickLedger';
 import { FinancialValue } from '@/components/privacy/FinancialValue';
 import { useFinancialPrivacy } from '@/contexts/FinancialPrivacyContext';
 
@@ -2179,6 +2184,247 @@ function GoogleAdsCallDetails({
   );
 }
 
+const untrackedAdsClickPresentation: Record<UntrackedAdsClickRow['kind'], {
+  label: string;
+  status: string;
+  className: string;
+}> = {
+  site: {
+    label: 'Clique no site',
+    status: 'Sem sessão medida',
+    className: 'border-rose-200 bg-rose-50 text-rose-700',
+  },
+  whatsapp_ad: {
+    label: 'Clique direto no WhatsApp',
+    status: 'Ação direta no anúncio',
+    className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  },
+  whatsapp_landing: {
+    label: 'WhatsApp intermediário',
+    status: 'Ação direta no anúncio',
+    className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  },
+  call_ad: {
+    label: 'Clique direto para ligar',
+    status: 'Ação direta no anúncio',
+    className: 'border-amber-200 bg-amber-50 text-amber-800',
+  },
+  other: {
+    label: 'Outro clique',
+    status: 'Somente agregado pelo Google',
+    className: 'border-slate-200 bg-slate-50 text-slate-600',
+  },
+};
+
+function PaidClickLedger({
+  officialClicks,
+  paidVisitors,
+  untrackedClicks,
+}: {
+  officialClicks: number;
+  paidVisitors: MarketingPaidVisitor[];
+  untrackedClicks: UntrackedAdsClickRow[];
+}) {
+  const [expandedSession, setExpandedSession] = useState<string | null>(null);
+  const missingSiteSessions = untrackedClicks.filter((row) => row.kind === 'site').length;
+  const directAdActions = untrackedClicks.filter((row) => (
+    row.kind === 'whatsapp_ad' || row.kind === 'whatsapp_landing' || row.kind === 'call_ad'
+  )).length;
+  const activeTimeSessions = paidVisitors.filter((visitor) => visitor.durationSource === 'active').length;
+  const ledgerRows = paidVisitors.length + untrackedClicks.length;
+  const engagementLabel = (visitor: MarketingPaidVisitor) => {
+    if (visitor.engagementLevel === 'converted' || visitor.convertedClient) return 'Virou cliente';
+    if (visitor.engagementLevel === 'contact' || visitor.actionCount > 0) return 'Realizou contato';
+    if (visitor.engagementLevel === 'engaged') return 'Engajou';
+    if (visitor.engagementLevel === 'brief') return 'Saída rápida';
+    return 'Tempo não medido';
+  };
+
+  return (
+    <Card className="min-w-0 overflow-hidden rounded-2xl border-slate-200 shadow-sm">
+      <CardContent className="min-w-0 p-4 sm:p-5 lg:p-4 2xl:p-6">
+        <PanelHeading
+          eyebrow="Conferência clique a clique"
+          title="Quem veio pelos anúncios e o que aconteceu"
+          description="Sessões reais recebem URL, tempo ativo, caminho e ações. Cliques conhecidos apenas pelo Google permanecem visíveis, mas sem horário, pessoa ou duração inventados."
+        />
+
+        <div className="mt-3 grid grid-cols-2 overflow-hidden rounded-xl border border-slate-200 bg-slate-200 lg:grid-cols-4">
+          {[
+            { label: 'Cliques oficiais', value: officialClicks, detail: 'Google Ads' },
+            { label: 'Sessões no site', value: paidVisitors.length, detail: 'rastreadas individualmente' },
+            { label: 'Sem sessão medida', value: missingSiteSessions, detail: 'clicaram no site, sem evento' },
+            { label: 'Ações no anúncio', value: directAdActions, detail: 'WhatsApp ou ligação direta' },
+          ].map((item) => (
+            <div key={item.label} className="min-w-0 bg-white px-3 py-2.5">
+              <p className="truncate text-[9px] font-bold uppercase tracking-[0.09em] text-slate-500">{item.label}</p>
+              <div className="mt-0.5 flex min-w-0 items-baseline gap-2">
+                <p className="text-lg font-black leading-none text-slate-950">{formatNumber(item.value)}</p>
+                <p className="truncate text-[9px] text-slate-500">{item.detail}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-3 w-full max-w-full overflow-auto rounded-xl border" role="region" aria-label="Conferência de cliques e sessões do Google Ads" tabIndex={0}>
+          <table className="w-full min-w-[1080px] text-left text-xs">
+            <thead className="border-b bg-slate-50 text-[10px] uppercase tracking-[0.11em] text-slate-500">
+              <tr>
+                <AdsTableHead label="Horário" />
+                <AdsTableHead label="Registro" help={googleAdsHelp.paidVisitor} />
+                <AdsTableHead label="Tipo" help={googleAdsHelp.clicks} />
+                <AdsTableHead label="Destino" help={googleAdsHelp.visitorUrl} />
+                <AdsTableHead label="Tempo" help={googleAdsHelp.visitorDuration} align="right" />
+                <AdsTableHead label="Páginas / ações" help={googleAdsHelp.paidVisitorEvents} align="right" />
+                <AdsTableHead label="Situação" help={googleAdsHelp.paidVisitorStatus} />
+                <th scope="col" className="w-11 px-2 py-2"><span className="sr-only">Detalhes</span></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {paidVisitors.map((visitor) => {
+                const sessionKey = `${visitor.visitorId}-${visitor.firstSeenAt}`;
+                const expanded = expandedSession === sessionKey;
+                const pages = visitor.pages ?? [];
+                const actions = visitor.actions ?? [];
+                const pageCount = visitor.pageViewCount ?? Math.max(1, pages.length);
+                const actionCount = visitor.activityCount
+                  ?? (visitor.actions ? actions.length : visitor.actionCount);
+                const durationSource = visitor.durationSource ?? 'event_interval';
+                const entryUrl = visitor.landingUrl ?? `https://www.premiumretifica.com.br${visitor.landingPage}`;
+                const sessionStatus = engagementLabel(visitor);
+                return (
+                  <Fragment key={sessionKey}>
+                    <tr className={cn('transition-colors', expanded && 'bg-slate-50/80')}>
+                      <td className="px-3 py-2 text-slate-500">{formatDateTime(visitor.firstSeenAt)}</td>
+                      <td className="px-3 py-2">
+                        <p className="font-semibold text-slate-950">{visitor.leadName ?? `Sessão • ${visitor.visitorId}`}</p>
+                        <p className="mt-0.5 text-[10px] text-slate-500">{visitor.campaign ?? `${visitor.source} / ${visitor.medium}`}</p>
+                      </td>
+                      <td className="px-3 py-2">
+                        <Badge variant="outline" className="whitespace-nowrap border-violet-200 bg-violet-50 text-violet-700">Clique no site</Badge>
+                      </td>
+                      <td className="max-w-[260px] px-3 py-2">
+                        <a href={entryUrl} target="_blank" rel="noreferrer noopener" className="flex min-w-0 items-center gap-1 font-semibold text-slate-800 hover:text-sky-700 hover:underline" title={entryUrl}>
+                          <span className="truncate">{entryUrl}</span>
+                          <ExternalLink className="h-3 w-3 shrink-0" />
+                        </a>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <p className="font-semibold text-slate-950">{formatDuration(visitor.durationSeconds)}</p>
+                        <p className="text-[9px] text-slate-500">{durationSource === 'active' ? 'tempo ativo' : 'piso entre eventos'}</p>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <p className="font-semibold text-slate-950">{formatNumber(pageCount)} pág.</p>
+                        <p className="text-[9px] text-slate-500">{formatNumber(actionCount)} ações</p>
+                      </td>
+                      <td className="px-3 py-2">
+                        <Badge variant="outline" className={cn('whitespace-nowrap', sessionStatus === 'Virou cliente'
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : sessionStatus === 'Engajou' || sessionStatus === 'Realizou contato'
+                            ? 'border-amber-200 bg-amber-50 text-amber-800'
+                            : sessionStatus === 'Saída rápida'
+                              ? 'border-rose-200 bg-rose-50 text-rose-700'
+                              : 'border-slate-200 bg-slate-50 text-slate-600')}>
+                          {sessionStatus}
+                        </Badge>
+                      </td>
+                      <td className="px-2 py-2 text-right">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          aria-label={`${expanded ? 'Ocultar' : 'Ver'} detalhes da sessão ${visitor.visitorId}`}
+                          aria-expanded={expanded}
+                          onClick={() => setExpandedSession(expanded ? null : sessionKey)}
+                        >
+                          <ChevronDown className={cn('h-4 w-4 transition-transform', expanded && 'rotate-180')} />
+                        </Button>
+                      </td>
+                    </tr>
+                    {expanded ? (
+                      <tr>
+                        <td colSpan={8} className="bg-slate-50/70 px-3 py-3 sm:px-4">
+                          <div className="grid gap-4 lg:grid-cols-2">
+                            <div>
+                              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Caminho no site</p>
+                              <div className="mt-2 space-y-1.5">
+                                {pages.length ? pages.map((page, index) => (
+                                  <div key={`${page.occurredAt}-${page.path}-${index}`} className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2">
+                                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-950 text-[9px] font-bold text-amber-300">{index + 1}</span>
+                                    <div className="min-w-0 flex-1">
+                                      <a href={page.url ?? `https://www.premiumretifica.com.br${page.path}`} target="_blank" rel="noreferrer noopener" className="flex min-w-0 items-center gap-1 font-semibold text-slate-800 hover:text-sky-700 hover:underline">
+                                        <span className="truncate">{page.url ?? `https://www.premiumretifica.com.br${page.path}`}</span>
+                                        <ExternalLink className="h-3 w-3 shrink-0" />
+                                      </a>
+                                      <p className="truncate text-[10px] text-slate-500">{page.title ?? formatDateTime(page.occurredAt)}</p>
+                                    </div>
+                                  </div>
+                                )) : <p className="text-xs text-slate-500">Nenhuma abertura adicional registrada.</p>}
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Ações realizadas</p>
+                              <div className="mt-2 space-y-1.5">
+                                {actions.length ? actions.map((action, index) => (
+                                  <div key={`${action.occurredAt}-${action.type}-${index}`} className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-2.5 py-2">
+                                    <div className="min-w-0">
+                                      <p className="truncate font-semibold text-slate-800">{eventLabels[action.type] ?? action.type}</p>
+                                      <p className="truncate text-[10px] text-slate-500">{action.pagePath}{action.detail ? ` · ${action.detail}` : ''}</p>
+                                    </div>
+                                    <span className="shrink-0 text-[10px] text-slate-400">{formatDateTime(action.occurredAt)}</span>
+                                  </div>
+                                )) : <p className="text-xs text-slate-500">Nenhuma ação adicional registrada.</p>}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
+              {untrackedClicks.map((click, index) => {
+                const presentation = untrackedAdsClickPresentation[click.kind];
+                return (
+                  <tr key={click.id} className="bg-rose-50/20">
+                    <td className="px-3 py-2 text-slate-400">Horário não fornecido</td>
+                    <td className="px-3 py-2">
+                      <p className="font-semibold text-slate-800">Clique Ads • {index + 1}</p>
+                      <p className="mt-0.5 text-[10px] text-slate-500">registro agregado da API</p>
+                    </td>
+                    <td className="px-3 py-2"><Badge variant="outline" className={cn('whitespace-nowrap', presentation.className)}>{presentation.label}</Badge></td>
+                    <td className="max-w-[260px] px-3 py-2 text-slate-600">
+                      {click.destinationUrl ? (
+                        <a href={click.destinationUrl} target="_blank" rel="noreferrer noopener" className="flex min-w-0 items-center gap-1 font-semibold hover:text-sky-700 hover:underline" title={click.destinationUrl}>
+                          <span className="truncate">{click.destinationLabel}</span>
+                          <ExternalLink className="h-3 w-3 shrink-0" />
+                        </a>
+                      ) : <span>{click.destinationLabel}</span>}
+                    </td>
+                    <td className="px-3 py-2 text-right"><p className="font-semibold text-slate-500">—</p><p className="text-[9px] text-slate-400">sem sessão</p></td>
+                    <td className="px-3 py-2 text-right"><p className="font-semibold text-slate-500">—</p><p className="text-[9px] text-slate-400">não informado</p></td>
+                    <td className="px-3 py-2"><Badge variant="outline" className={cn('whitespace-nowrap', presentation.className)}>{presentation.status}</Badge></td>
+                    <td className="px-2 py-2" />
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {ledgerRows === 0 ? (
+            <div className="p-8 text-center text-sm text-slate-500">Nenhum clique ou sessão paga no período.</div>
+          ) : null}
+        </div>
+
+        <p className="mt-2.5 text-[10px] leading-4 text-slate-500">
+          {formatNumber(ledgerRows)} linhas de conferência para {formatNumber(officialClicks)} cliques oficiais. {formatNumber(activeTimeSessions)} sessão(ões) já têm tempo ativo medido.
+          Linhas “sem sessão” vêm dos totais agregados do Google Ads: o Google não fornece pessoa, horário individual nem duração desses cliques, e o Retiflow não inventa esses dados.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
   const { financialValuesHidden } = useFinancialPrivacy();
   const ads = resumo.campaigns;
@@ -2219,6 +2465,12 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
     + adCallClicks;
   const otherClicks = Math.max(0, current.clicks - classifiedClicks);
   const confirmedCallClients = resumo.business?.current.confirmedCalls ?? 0;
+  const untrackedAdClicks = buildUntrackedAdsClickRows({
+    totalClicks: current.clicks,
+    paidVisitors,
+    landingPages,
+    clickTypes,
+  });
 
   if (!ads.financialAvailable) {
     return (
@@ -2527,74 +2779,11 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
         </Card>
       </div>
 
-      <Card className="min-w-0 rounded-2xl border-border/70 shadow-sm">
-        <CardContent className="min-w-0 p-4 sm:p-5 lg:p-4 2xl:p-6">
-          <PanelHeading
-            eyebrow="Jornada paga"
-            title="Pessoas que entraram por anúncio"
-            description="Sessões com GCLID/GBRAID/WBRAID ou origem Google CPC, sem expor o identificador bruto do clique."
-          />
-          <div className="mt-3 w-full max-w-full overflow-auto rounded-xl border 2xl:mt-5" role="region" aria-label="Visitantes vindos de anúncios" tabIndex={0}>
-            <table className="w-full min-w-[820px] text-left text-xs 2xl:min-w-[980px]">
-              <thead className="border-b bg-muted/70 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                <tr>
-                  <AdsTableHead label="Última visita" />
-                  <AdsTableHead label="Pessoa / sessão" help={googleAdsHelp.paidVisitor} />
-                  <AdsTableHead label="Campanha" />
-                  <AdsTableHead label="Entrada" help={googleAdsHelp.visitorUrl} />
-                  <AdsTableHead label="Eventos" help={googleAdsHelp.paidVisitorEvents} align="right" />
-                  <AdsTableHead label="Situação" help={googleAdsHelp.paidVisitorStatus} />
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {paidVisitors.map((visitor) => (
-                  <tr key={`${visitor.visitorId}-${visitor.firstSeenAt}`}>
-                    <td className="px-3 py-2 text-muted-foreground 2xl:py-3">{formatDateTime(visitor.lastSeenAt)}</td>
-                    <td className="px-3 py-2 2xl:py-3">
-                      <p className="font-semibold text-foreground">{visitor.leadName ?? `Sessão • ${visitor.visitorId}`}</p>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">{visitor.leadContact ?? visitor.leadCode ?? visitor.clickIdType?.toUpperCase() ?? 'Google CPC'}</p>
-                    </td>
-                    <td className="px-3 py-2 2xl:py-3">
-                      <p className="font-medium text-foreground">{visitor.campaign ?? 'Campanha não informada'}</p>
-                      <p className="text-[11px] text-muted-foreground">{visitor.source} / {visitor.medium}</p>
-                    </td>
-                    <td className="max-w-[240px] px-3 py-2 text-muted-foreground 2xl:max-w-[280px] 2xl:py-3">
-                      <a
-                        href={visitor.landingUrl ?? `https://www.premiumretifica.com.br${visitor.landingPage}`}
-                        target="_blank"
-                        rel="noreferrer noopener"
-                        className="flex min-w-0 items-center gap-1 hover:text-sky-700 hover:underline"
-                        title={visitor.landingUrl ?? visitor.landingPage}
-                      >
-                        <span className="truncate">{visitor.landingUrl ?? `https://www.premiumretifica.com.br${visitor.landingPage}`}</span>
-                        <ExternalLink className="h-3 w-3 shrink-0" />
-                      </a>
-                    </td>
-                    <td className="px-3 py-2 text-right 2xl:py-3">
-                      <p className="font-semibold text-foreground">{formatNumber(visitor.eventCount)}</p>
-                      <p className="text-[11px] text-muted-foreground">{formatNumber(visitor.actionCount)} ações</p>
-                    </td>
-                    <td className="px-3 py-2 2xl:py-3">
-                      <Badge variant="outline" className={cn('whitespace-nowrap', visitor.convertedClient
-                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                        : visitor.actionCount
-                          ? 'border-amber-200 bg-amber-50 text-amber-700'
-                          : 'border-slate-200 bg-slate-50 text-slate-600')}>
-                        {visitor.convertedClient ? 'Cliente cadastrado' : visitor.actionCount ? 'Demonstrou interesse' : 'Somente visitou'}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {paidVisitors.length === 0 ? (
-              <div className="p-8 text-center text-sm text-muted-foreground">
-                Nenhuma visita paga registrada no período. A conta está pronta para começar a receber os acessos dos anúncios.
-              </div>
-            ) : null}
-          </div>
-        </CardContent>
-      </Card>
+      <PaidClickLedger
+        officialClicks={current.clicks}
+        paidVisitors={paidVisitors}
+        untrackedClicks={untrackedAdClicks}
+      />
 
       <Tabs defaultValue="campanhas" className="min-w-0 space-y-4">
         <div className="w-full overflow-x-auto pb-1">
