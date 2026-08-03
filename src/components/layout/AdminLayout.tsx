@@ -106,9 +106,9 @@ export default function AdminLayout() {
       {/* Desktop Sidebar */}
       {!isMobile && (
         <aside className={cn(
-          'fixed inset-y-0 left-0 z-40 flex min-h-0 flex-col bg-sidebar transition-[width] duration-300 ease-out [backface-visibility:hidden] [transform:translateZ(0)]',
+          'viewport-sidebar fixed left-0 top-0 z-40 flex flex-col bg-sidebar transition-[width] duration-300 ease-out',
           collapsed ? 'w-[68px]' : 'w-60'
-        )}>
+        )} data-layout-sidebar>
           <NavContent />
           <button
             onClick={() => setCollapsed(!collapsed)}

@@ -95,6 +95,29 @@
 }
 
 @layer utilities {
+  /*
+   * Keep fixed desktop/tablet sidebars painted for the largest viewport.
+   * Mobile browsers resize the visual viewport while their address/tab bars
+   * collapse; tying a fixed element to bottom: 0 can expose an unpainted strip
+   * until the next compositor frame. 100lvh reserves that final height from
+   * the start, while 100vh remains the fallback for older browsers.
+   */
+  .viewport-sidebar {
+    height: 100vh;
+    min-height: 100vh;
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    transform: translate3d(0, 0, 0);
+    will-change: transform;
+  }
+
+  @supports (height: 100lvh) {
+    .viewport-sidebar {
+      height: 100lvh;
+      min-height: 100lvh;
+    }
+  }
+
   .scrollbar-thin {
     scrollbar-width: thin;
   }

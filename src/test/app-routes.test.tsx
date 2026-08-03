@@ -135,6 +135,19 @@ describe('App routes', () => {
   });
 
   it.each([
+    ['/dashboard', 'FINANCEIRO'],
+    ['/admin', 'ADMIN'],
+  ] as const)('keeps the %s sidebar stable while the tablet viewport changes', async (path, role) => {
+    authenticateAs(role);
+    const { container } = renderAt(path);
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-layout-sidebar]')).toHaveClass('viewport-sidebar');
+    });
+    expect(container.querySelector('[data-layout-sidebar]')).not.toHaveClass('inset-y-0');
+  });
+
+  it.each([
     ['/contas-a-pagar/nova', 'modal=new', /Nova conta a pagar/i],
     ['/contas-a-pagar/importar', 'modal=import', /Importar com IA/i],
   ])('redirects payable compatibility route %s', async (path, search, modalTitle) => {
