@@ -832,7 +832,7 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
   const originLabel = (originType: 'paid' | 'organic' | 'other') => (
     originType === 'paid' ? 'Google Ads' : originType === 'organic' ? 'Orgânico' : 'Direto / outros'
   );
-  const engagementLabel = (level: (typeof allVisitors)[number]['engagementLevel']) => ({
+  const engagementLabel = (level: NonNullable<(typeof allVisitors)[number]['engagementLevel']>) => ({
     converted: 'Virou cliente',
     contact: 'Realizou contato',
     engaged: 'Engajou',
@@ -866,6 +866,15 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
               {allVisitors.map((visitor) => {
                 const sessionKey = `${visitor.visitorId}-${visitor.firstSeenAt}`;
                 const expanded = expandedSession === sessionKey;
+                const pages = visitor.pages ?? [];
+                const actions = visitor.actions ?? [];
+                const pageViewCount = visitor.pageViewCount
+                  ?? (visitor.pages ? pages.length : Math.max(1, visitor.eventCount - visitor.actionCount));
+                const activityCount = visitor.activityCount
+                  ?? (visitor.actions ? actions.length : visitor.actionCount);
+                const durationSource = visitor.durationSource ?? 'event_interval';
+                const engagementLevel = visitor.engagementLevel
+                  ?? (visitor.convertedClient ? 'converted' : visitor.actionCount > 0 ? 'contact' : 'unknown');
                 return (
                 <Fragment key={sessionKey}>
                 <tr className={cn('transition-colors', expanded && 'bg-slate-50/80')}>
@@ -885,19 +894,19 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
                   </td>
                   <td className="px-3 py-2 text-right 2xl:py-3">
                     <p className="font-semibold text-foreground">{formatDuration(visitor.durationSeconds)}</p>
-                    <p className="text-[10px] text-muted-foreground">{visitor.durationSource === 'active' ? 'tempo ativo' : 'entre eventos'}</p>
+                    <p className="text-[10px] text-muted-foreground">{durationSource === 'active' ? 'tempo ativo' : 'entre eventos'}</p>
                   </td>
-                  <td className="px-3 py-2 text-right font-semibold text-foreground 2xl:py-3">{formatNumber(visitor.pageViewCount)}</td>
-                  <td className="px-3 py-2 text-right font-semibold text-foreground 2xl:py-3">{formatNumber(visitor.activityCount)}</td>
+                  <td className="px-3 py-2 text-right font-semibold text-foreground 2xl:py-3">{formatNumber(pageViewCount)}</td>
+                  <td className="px-3 py-2 text-right font-semibold text-foreground 2xl:py-3">{formatNumber(activityCount)}</td>
                   <td className="px-3 py-2 2xl:py-3">
-                    <Badge variant="outline" className={cn('whitespace-nowrap', visitor.engagementLevel === 'converted'
+                    <Badge variant="outline" className={cn('whitespace-nowrap', engagementLevel === 'converted'
                       ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                      : visitor.engagementLevel === 'contact' || visitor.engagementLevel === 'engaged'
+                      : engagementLevel === 'contact' || engagementLevel === 'engaged'
                         ? 'border-amber-200 bg-amber-50 text-amber-700'
-                        : visitor.engagementLevel === 'brief'
+                        : engagementLevel === 'brief'
                           ? 'border-rose-200 bg-rose-50 text-rose-700'
                         : 'border-slate-200 bg-slate-50 text-slate-600')}>
-                      {engagementLabel(visitor.engagementLevel)}
+                      {engagementLabel(engagementLevel)}
                     </Badge>
                   </td>
                   <td className="px-2 py-2 text-right 2xl:py-3">
@@ -921,7 +930,7 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
                         <div>
                           <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Caminho no site</p>
                           <div className="mt-2 space-y-1.5">
-                            {visitor.pages.length ? visitor.pages.map((page, index) => (
+                            {pages.length ? pages.map((page, index) => (
                               <div key={`${page.occurredAt}-${page.path}-${index}`} className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2">
                                 <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-950 text-[9px] font-bold text-amber-300">{index + 1}</span>
                                 <div className="min-w-0 flex-1">
@@ -935,7 +944,7 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
                         <div>
                           <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Ações realizadas</p>
                           <div className="mt-2 space-y-1.5">
-                            {visitor.actions.length ? visitor.actions.map((action, index) => (
+                            {actions.length ? actions.map((action, index) => (
                               <div key={`${action.occurredAt}-${action.type}-${index}`} className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-2.5 py-2">
                                 <div className="min-w-0">
                                   <p className="truncate font-semibold text-slate-800">{eventLabels[action.type] ?? action.type}</p>

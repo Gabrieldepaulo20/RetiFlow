@@ -373,7 +373,7 @@ export interface MarketingPaidVisitor {
   /** Segundos ativos quando medidos pelo site; nas sessões antigas, intervalo entre eventos. */
   durationSeconds: number;
   /** `active` quando o site mediu atividade visível; caso contrário, apenas intervalo entre eventos. */
-  durationSource: 'active' | 'event_interval';
+  durationSource?: 'active' | 'event_interval';
   landingPage: string;
   lastPage: string;
   source: string;
@@ -384,20 +384,20 @@ export interface MarketingPaidVisitor {
   originType: 'paid' | 'organic' | 'other';
   eventCount: number;
   actionCount: number;
-  pageViewCount: number;
-  activityCount: number;
-  pages: Array<{
+  pageViewCount?: number;
+  activityCount?: number;
+  pages?: Array<{
     path: string;
     title: string | null;
     occurredAt: string;
   }>;
-  actions: Array<{
+  actions?: Array<{
     type: string;
     occurredAt: string;
     pagePath: string;
     detail: string | null;
   }>;
-  engagementLevel: 'converted' | 'contact' | 'engaged' | 'brief' | 'unknown';
+  engagementLevel?: 'converted' | 'contact' | 'engaged' | 'brief' | 'unknown';
   leadCode: string | null;
   leadName: string | null;
   leadContact: string | null;
