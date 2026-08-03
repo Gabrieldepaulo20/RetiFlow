@@ -2848,7 +2848,9 @@ async function handleRequest(request: Request) {
       ? buildMarketingVisitorSessions(paidCurrentEvents, internal.currentLeads, { onlyPaid: true })
       : [];
     const allVisitors = hasPrivateAccess
-      ? buildMarketingVisitorSessions(internal.currentEvents, internal.currentLeads)
+      ? buildMarketingVisitorSessions(internal.currentEvents, internal.currentLeads, {
+        limit: Math.max(1, internal.currentEvents.length),
+      })
       : [];
     const countPaidAction = (type: string) =>
       paidCurrentEvents.filter((event) => event.event_type === type).length;

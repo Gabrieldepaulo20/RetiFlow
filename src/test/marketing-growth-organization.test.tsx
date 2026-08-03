@@ -388,6 +388,7 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByText('Orgânico')).toBeInTheDocument();
     expect(screen.queryByText('Anúncio principal')).not.toBeInTheDocument();
     expect(screen.getByText('5min 00s')).toBeInTheDocument();
+    expect(screen.getByText(/Mostrando todas as 2 sessões rastreadas do período selecionado/i)).toBeInTheDocument();
     expect(screen.getByText(/não permite afirmar que a pessoa saiu imediatamente/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Ver detalhes da sessão sessao-paga/i }));

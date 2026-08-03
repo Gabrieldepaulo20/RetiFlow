@@ -973,7 +973,7 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
           ) : null}
         </div>
         <p className="mt-2.5 text-[10px] leading-4 text-slate-400 2xl:mt-4 2xl:text-xs 2xl:leading-relaxed">
-          Mostrando as {formatNumber(allVisitors.length)} sessões rastreadas mais recentes do período. “Tempo ativo” é medido pelo site;
+          Mostrando todas as {formatNumber(allVisitors.length)} sessões rastreadas do período selecionado. “Tempo ativo” é medido pelo site;
           “entre eventos” é apenas um piso e não permite afirmar que a pessoa saiu imediatamente.
         </p>
       </CardContent>
