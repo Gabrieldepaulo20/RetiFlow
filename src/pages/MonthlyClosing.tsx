@@ -1474,7 +1474,7 @@ export default function MonthlyClosing() {
         <CardContent className="p-3 sm:p-4">
           <p className="text-sm font-medium">Novo rascunho de fechamento</p>
           <p className="mb-2 mt-0.5 text-xs text-muted-foreground">
-            Agrupa as O.S. novas pela data real de entrega. No histórico legado, usa prazo ou criação quando não há entrega confiável.
+            Agrupa as O.S. pela data de entrega informada no prazo. Quando ela não existe, usa a criação.
           </p>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[220px_minmax(330px,440px)_minmax(240px,1fr)_auto] lg:items-end">
             <div>

@@ -142,7 +142,7 @@ describe('monthly closing domain service', () => {
     expect(januaryResults[0]?.id).toBe('n-finalized-at');
   });
 
-  it('uses the real delivery date for notes created in Retiflow', () => {
+  it('uses the promised delivery date for notes created in Retiflow', () => {
     const createdInJuneDeliveredInJuly = buildNote({
       id: 'n-retiflow-delivery',
       createdAt: '2026-06-26T11:30:00-03:00',
@@ -185,10 +185,58 @@ describe('monthly closing domain service', () => {
       },
     );
 
-    expect(getClosingCompetenceDate(createdInJuneDeliveredInJuly)).toBe('2026-07-01T12:00:00-03:00');
+    expect(getClosingCompetenceDate(createdInJuneDeliveredInJuly)).toBe('2026-07-01');
     expect(julyResults).toHaveLength(1);
     expect(julyResults[0]?.id).toBe('n-retiflow-delivery');
     expect(juneResults).toHaveLength(0);
+  });
+
+  it('keeps the note in the promised delivery month when the delivered status is registered later', () => {
+    const deliveredStatusRegisteredLater = buildNote({
+      id: 'n-late-status-update',
+      createdAt: '2026-07-30T15:18:00-03:00',
+      deadline: '2026-07-30',
+      finalizedAt: '2026-08-03T15:19:00-03:00',
+      updatedAt: '2026-08-03T15:19:00-03:00',
+    });
+
+    const julyResults = getFinalizedNotesForClosing(
+      {
+        customers: [customer],
+        notes: [deliveredStatusRegisteredLater],
+        services,
+      },
+      {
+        periodType: 'mensal',
+        month: '7',
+        year: '2026',
+        quinzena: '1',
+        weekDate: new Date('2026-07-30T00:00:00-03:00'),
+        customRange: {},
+        clientFilter: 'all',
+      },
+    );
+
+    const augustResults = getFinalizedNotesForClosing(
+      {
+        customers: [customer],
+        notes: [deliveredStatusRegisteredLater],
+        services,
+      },
+      {
+        periodType: 'mensal',
+        month: '8',
+        year: '2026',
+        quinzena: '1',
+        weekDate: new Date('2026-08-03T00:00:00-03:00'),
+        customRange: {},
+        clientFilter: 'all',
+      },
+    );
+
+    expect(getClosingCompetenceDate(deliveredStatusRegisteredLater)).toBe('2026-07-30');
+    expect(julyResults).toHaveLength(1);
+    expect(augustResults).toHaveLength(0);
   });
 
   it('does not move legacy notes to another month just because updatedAt changed', () => {

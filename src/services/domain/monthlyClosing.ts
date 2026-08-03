@@ -10,7 +10,7 @@ import {
   IntakeService,
 } from '@/types';
 import { isBillableNoteStatus } from '@/services/domain/intakeNotes';
-import { getDashboardRevenueDate, toComparableTime } from '@/services/domain/dashboardFinance';
+import { toComparableTime } from '@/services/domain/dashboardFinance';
 import { normalizeNoteNumber } from '@/lib/noteNumbers';
 
 export type ClosingPeriodType = 'mensal' | 'quinzenal' | 'semanal' | 'personalizado';
@@ -81,9 +81,11 @@ export function getServicesForClosingNote(services: IntakeService[], noteId: str
 export function getClosingCompetenceDate(
   note: Pick<IntakeNote, 'createdAt' | 'deadline' | 'finalizedAt'>,
 ) {
-  // Fechamento e Dashboard precisam usar a mesma competência: entrega real nas
-  // O.S. novas do Retiflow e prazo/criação apenas na compatibilidade do legado.
-  return getDashboardRevenueDate(note);
+  // O fechamento usa a data de entrega informada no prazo. O status pode ser
+  // atualizado depois da entrega física; nesse caso, finalizadoAt não deve
+  // empurrar uma O.S. de julho para agosto. Sem prazo, preserva a data de
+  // entrada usada historicamente pelo fechamento.
+  return note.deadline ?? note.createdAt;
 }
 
 function pad2(value: number) {
