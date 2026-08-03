@@ -48,7 +48,7 @@ describe('conferência de cliques do Google Ads', () => {
       totalClicks: 7,
       paidVisitors: [paidVisitor('/contato'), paidVisitor('/problemas/junta-do-cabecote-queimada')],
       landingPages: [
-        landingPage('https://premiumretifica.com.br/contato?gclid=nao-expor', 2),
+        landingPage('https://premiumretifica.com.br/contato{ignore}?gclid=nao-expor', 2),
         landingPage('https://premiumretifica.com.br/problemas/junta-do-cabecote-queimada', 1),
         landingPage('https://premiumretifica.com.br/servicos/retifica-de-cabecote', 2),
         landingPage('https://premiumretifica.com.br/servicos', 1),

@@ -37,7 +37,8 @@ function wholeClicks(value: unknown) {
 
 function destinationFromUrl(rawUrl: string) {
   try {
-    const parsed = new URL(rawUrl, 'https://www.premiumretifica.com.br');
+    const normalizedUrl = rawUrl.replace(/\{ignore\}|%7Bignore%7D/gi, '');
+    const parsed = new URL(normalizedUrl, 'https://www.premiumretifica.com.br');
     const path = parsed.pathname || '/';
     const isPremiumDomain = ['premiumretifica.com.br', 'www.premiumretifica.com.br']
       .includes(parsed.hostname.toLowerCase());
