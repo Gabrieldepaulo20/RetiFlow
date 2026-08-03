@@ -128,6 +128,8 @@ const googleAdsHelp = {
   paidVisitor: 'Pessoa identificada quando possível; caso contrário, uma sessão anônima preservada até existir contato ou cadastro.',
   paidVisitorEvents: 'Quantidade de páginas e eventos rastreados nessa visita. Ações mostram interações de maior intenção.',
   paidVisitorStatus: 'Mostra se a sessão apenas visitou, demonstrou interesse ou já foi vinculada a um cliente cadastrado.',
+  visitorOrigin: 'Como a sessão chegou ao site: anúncio pago (Google Ads), busca orgânica ou acesso direto/outra origem.',
+  visitorDuration: 'Tempo entre o primeiro e o último evento registrado nessa sessão. É um piso, não o tempo real de leitura: quem abre uma página e não clica em nada aparece com duração zero.',
   offlineTotal: 'Clientes cadastrados que foram atribuídos a um clique de anúncio e entraram no fluxo de envio ao Google.',
   offlineUploaded: 'Conversões de cliente já aceitas pelo serviço de envio do Google.',
   offlinePending: 'Conversões aguardando processamento ou sendo processadas neste momento.',
@@ -822,6 +824,82 @@ function BasicOverviewTab({ resumo }: { resumo: MarketingResumo }) {
   );
 }
 
+function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
+  const allVisitors = resumo.campaigns.allVisitors ?? [];
+
+  return (
+    <Card className="min-w-0 rounded-2xl border-border/70 shadow-sm">
+      <CardContent className="min-w-0 p-4 sm:p-5 lg:p-4 2xl:p-6">
+        <PanelHeading
+          eyebrow="Todas as origens"
+          title="Sessões individuais do site"
+          description="Anúncios, busca orgânica e acessos diretos/outros aparecem no mesmo quadro, sempre com a origem da sessão explícita."
+        />
+        <div className="mt-3 w-full max-w-full overflow-auto rounded-xl border 2xl:mt-5" role="region" aria-label="Todas as sessões do site" tabIndex={0}>
+          <table className="w-full min-w-[900px] text-left text-xs 2xl:min-w-[1060px]">
+            <thead className="border-b bg-muted/70 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+              <tr>
+                <AdsTableHead label="Última visita" />
+                <AdsTableHead label="Pessoa / sessão" help={googleAdsHelp.paidVisitor} />
+                <AdsTableHead label="Origem" help={googleAdsHelp.visitorOrigin} />
+                <AdsTableHead label="Entrada" help={googleAdsHelp.landingPage} />
+                <AdsTableHead label="Intervalo rastreado" help={googleAdsHelp.visitorDuration} align="right" />
+                <AdsTableHead label="Páginas / ações" help={googleAdsHelp.paidVisitorEvents} align="right" />
+                <AdsTableHead label="Situação" help={googleAdsHelp.paidVisitorStatus} />
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {allVisitors.map((visitor) => (
+                <tr key={`${visitor.visitorId}-${visitor.firstSeenAt}`}>
+                  <td className="px-3 py-2 text-muted-foreground 2xl:py-3">{formatDateTime(visitor.lastSeenAt)}</td>
+                  <td className="px-3 py-2 2xl:py-3">
+                    <p className="font-semibold text-foreground">{visitor.leadName ?? `Sessão • ${visitor.visitorId}`}</p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">{visitor.leadContact ?? visitor.leadCode ?? 'Sessão anônima'}</p>
+                  </td>
+                  <td className="px-3 py-2 2xl:py-3">
+                    <Badge variant="outline" className={cn('whitespace-nowrap', visitor.originType === 'paid'
+                      ? 'border-violet-200 bg-violet-50 text-violet-700'
+                      : visitor.originType === 'organic'
+                        ? 'border-sky-200 bg-sky-50 text-sky-700'
+                        : 'border-slate-200 bg-slate-50 text-slate-600')}>
+                      {visitor.originType === 'paid' ? (visitor.campaign ?? 'Anúncio') : visitor.originType === 'organic' ? 'Busca orgânica' : 'Direto / outros'}
+                    </Badge>
+                    <p className="mt-1 text-[11px] text-muted-foreground">{visitor.source} / {visitor.medium}</p>
+                  </td>
+                  <td className="max-w-[220px] truncate px-3 py-2 text-muted-foreground 2xl:max-w-[260px] 2xl:py-3" title={visitor.landingPage}>{visitor.landingPage}</td>
+                  <td className="px-3 py-2 text-right font-medium text-foreground 2xl:py-3">{formatDuration(visitor.durationSeconds)}</td>
+                  <td className="px-3 py-2 text-right 2xl:py-3">
+                    <p className="font-semibold text-foreground">{formatNumber(visitor.eventCount)}</p>
+                    <p className="text-[11px] text-muted-foreground">{formatNumber(visitor.actionCount)} ações</p>
+                  </td>
+                  <td className="px-3 py-2 2xl:py-3">
+                    <Badge variant="outline" className={cn('whitespace-nowrap', visitor.convertedClient
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      : visitor.actionCount
+                        ? 'border-amber-200 bg-amber-50 text-amber-700'
+                        : 'border-slate-200 bg-slate-50 text-slate-600')}>
+                      {visitor.convertedClient ? 'Cliente cadastrado' : visitor.actionCount ? 'Demonstrou interesse' : 'Somente visitou'}
+                    </Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {allVisitors.length === 0 ? (
+            <div className="p-8 text-center text-sm text-muted-foreground">
+              Nenhuma sessão registrada no período.
+            </div>
+          ) : null}
+        </div>
+        <p className="mt-2.5 text-[10px] leading-4 text-slate-400 2xl:mt-4 2xl:text-xs 2xl:leading-relaxed">
+          Mostrando as {formatNumber(allVisitors.length)} sessões mais recentes do período. O intervalo é calculado entre
+          o primeiro e o último evento rastreado; uma sessão com um único evento aparece com 0s.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function OverviewTab({ resumo }: { resumo: MarketingResumo }) {
   const current = resumo.site.current;
   const previous = resumo.site.previous;
@@ -975,6 +1053,8 @@ export function OverviewTab({ resumo }: { resumo: MarketingResumo }) {
       </div>
 
       <BehaviorTab resumo={resumo} showSummary={false} />
+
+      <VisitorSessionsCard resumo={resumo} />
     </div>
   );
 }

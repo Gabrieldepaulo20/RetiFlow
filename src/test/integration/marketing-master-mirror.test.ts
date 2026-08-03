@@ -112,6 +112,20 @@ describe.skipIf(!envStatus.configured)('Crescimento — Master espelha a Retífi
       phoneClicks: expect.any(Number),
       formSubmits: expect.any(Number),
     });
+    expect(payload.dados.campaigns.allVisitors).toEqual(expect.any(Array));
+    if (payload.dados.campaigns.allVisitors.length > 0) {
+      expect(payload.dados.campaigns.allVisitors[0]).toMatchObject({
+        visitorId: expect.any(String),
+        firstSeenAt: expect.any(String),
+        lastSeenAt: expect.any(String),
+        durationSeconds: expect.any(Number),
+        source: expect.any(String),
+        medium: expect.any(String),
+        originType: expect.stringMatching(/^(paid|organic|other)$/),
+        eventCount: expect.any(Number),
+        actionCount: expect.any(Number),
+      });
+    }
     expect(payload.dados.campaigns.messageAssets).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

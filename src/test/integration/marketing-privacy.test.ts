@@ -87,6 +87,7 @@ describe.skipIf(!envStatus.configured)('Crescimento — visão básica da empres
     expect(payload.dados.leads).toBeUndefined();
     expect(payload.dados.business).toBeUndefined();
     expect(payload.dados.snapshots).toBeUndefined();
+    expect(payload.dados.campaigns.allVisitors).toEqual([]);
     expect(JSON.stringify(payload.dados)).not.toMatch(/commission|telefone|lead_code/i);
   });
 

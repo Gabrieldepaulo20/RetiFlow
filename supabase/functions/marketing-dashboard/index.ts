@@ -7,7 +7,12 @@ import {
   toMarketingDayStartIso,
 } from '../_shared/marketing-date.ts';
 import { resolveMarketingActionMetricsSource } from '../_shared/marketing-sources.ts';
-import { classifyMarketingAttribution } from '../_shared/marketing-attribution.ts';
+import {
+  classifyMarketingAttribution,
+  getMarketingClickIdType as getClickIdType,
+  isTechnicalMarketingTest as isTechnicalPaidTest,
+} from '../_shared/marketing-attribution.ts';
+import { buildMarketingVisitorSessions } from '../_shared/marketing-visitors.ts';
 
 type JsonRecord = Record<string, unknown>;
 function createServiceClient(supabaseUrl: string, serviceRoleKey: string) {
@@ -2559,13 +2564,6 @@ function aggregateBusinessData(
   };
 }
 
-function getClickIdType(item: JsonRecord) {
-  if (asString(item.gclid, 220)) return 'gclid';
-  if (asString(item.gbraid, 220)) return 'gbraid';
-  if (asString(item.wbraid, 220)) return 'wbraid';
-  return null;
-}
-
 function withoutGoogleClickIds(item: JsonRecord) {
   const { gclid: _gclid, gbraid: _gbraid, wbraid: _wbraid, ...safe } = item;
   return {
@@ -2576,14 +2574,6 @@ function withoutGoogleClickIds(item: JsonRecord) {
 
 function isPaidMarketingItem(item: JsonRecord) {
   return classifyMarketingAttribution(item) === 'paid';
-}
-
-function isTechnicalPaidTest(item: JsonRecord) {
-  const term = String(item.term ?? '').trim().toLowerCase();
-  const campaign = String(item.campaign ?? '').trim().toLowerCase();
-  return term === 'teste_pre_lancamento'
-    || campaign === 'teste_pre_lancamento'
-    || campaign.endsWith('_teste_pre_lancamento');
 }
 
 function buildSiteWhatsappSummary(events: JsonRecord[]): MarketingSiteWhatsappSummary {
@@ -2647,93 +2637,6 @@ function buildSiteWhatsappSummary(events: JsonRecord[]): MarketingSiteWhatsappSu
       .sort((left, right) => right.lastClickedAt.localeCompare(left.lastClickedAt))
       .slice(0, 20),
   };
-}
-
-function getPaidVisitorKey(item: JsonRecord) {
-  return asString(item.session_id, 160)
-    || asString(item.anonymous_id, 160)
-    || asString(item.lead_code, 40)
-    || String(item.id_marketing_site_eventos ?? '');
-}
-
-function buildPaidVisitors(events: JsonRecord[], leads: JsonRecord[]) {
-  const leadByCode = new Map(
-    leads
-      .filter((lead) => asString(lead.lead_code, 40))
-      .map((lead) => [String(lead.lead_code), lead]),
-  );
-  const visitors = new Map<string, {
-    visitorId: string;
-    firstSeenAt: string;
-    lastSeenAt: string;
-    landingPage: string;
-    lastPage: string;
-    source: string;
-    medium: string;
-    campaign: string | null;
-    clickIdType: string | null;
-    eventCount: number;
-    actionCount: number;
-    leadCode: string | null;
-    leadName: string | null;
-    leadContact: string | null;
-    convertedClient: boolean;
-    clientId: string | null;
-  }>();
-
-  events
-    .filter((event) => isPaidMarketingItem(event) && !isTechnicalPaidTest(event))
-    .forEach((event) => {
-      const rawKey = getPaidVisitorKey(event);
-      if (!rawKey) return;
-      const leadCode = asString(event.lead_code, 40);
-      const lead = leadCode ? leadByCode.get(leadCode) : undefined;
-      const occurredAt = String(event.occurred_at ?? '');
-      const existing = visitors.get(rawKey);
-      const isAction = ['whatsapp_click', 'phone_click', 'form_submit'].includes(String(event.event_type));
-      if (!existing) {
-        visitors.set(rawKey, {
-          visitorId: rawKey.slice(-12),
-          firstSeenAt: occurredAt,
-          lastSeenAt: occurredAt,
-          landingPage: String(event.page_path || '/'),
-          lastPage: String(event.page_path || '/'),
-          source: String(event.source || 'google'),
-          medium: String(event.medium || 'cpc'),
-          campaign: asString(event.campaign, 180) || null,
-          clickIdType: getClickIdType(event),
-          eventCount: 1,
-          actionCount: isAction ? 1 : 0,
-          leadCode: leadCode || null,
-          leadName: lead ? asString(lead.nome, 160) || null : null,
-          leadContact: lead
-            ? asString(lead.telefone, 120) || asString(lead.email, 180) || null
-            : null,
-          convertedClient: Boolean(lead?.fk_clientes),
-          clientId: lead?.fk_clientes ? String(lead.fk_clientes) : null,
-        });
-        return;
-      }
-
-      existing.lastSeenAt = occurredAt > existing.lastSeenAt ? occurredAt : existing.lastSeenAt;
-      existing.lastPage = String(event.page_path || existing.lastPage);
-      existing.eventCount += 1;
-      existing.actionCount += isAction ? 1 : 0;
-      existing.clickIdType = existing.clickIdType ?? getClickIdType(event);
-      existing.leadCode = existing.leadCode ?? leadCode ?? null;
-      if (lead) {
-        existing.leadName = asString(lead.nome, 160) || existing.leadName;
-        existing.leadContact = asString(lead.telefone, 120)
-          || asString(lead.email, 180)
-          || existing.leadContact;
-        existing.convertedClient = Boolean(lead.fk_clientes);
-        existing.clientId = lead.fk_clientes ? String(lead.fk_clientes) : existing.clientId;
-      }
-    });
-
-  return Array.from(visitors.values())
-    .sort((left, right) => right.lastSeenAt.localeCompare(left.lastSeenAt))
-    .slice(0, 200);
 }
 
 function aggregateOfflineConversions(items: JsonRecord[]) {
@@ -2939,7 +2842,10 @@ async function handleRequest(request: Request) {
       isPaidMarketingItem(event) && !isTechnicalPaidTest(event)
     );
     const paidVisitors = hasPrivateAccess
-      ? buildPaidVisitors(paidCurrentEvents, internal.currentLeads)
+      ? buildMarketingVisitorSessions(paidCurrentEvents, internal.currentLeads, { onlyPaid: true })
+      : [];
+    const allVisitors = hasPrivateAccess
+      ? buildMarketingVisitorSessions(internal.currentEvents, internal.currentLeads)
       : [];
     const countPaidAction = (type: string) =>
       paidCurrentEvents.filter((event) => event.event_type === type).length;
@@ -3274,6 +3180,7 @@ async function handleRequest(request: Request) {
             conversionActions: [],
             paidActions,
             paidVisitors: [],
+            allVisitors: [],
             offlineConversions: null,
             financialAvailable: Boolean(googleAds),
             statusMessage: googleAdsStatusMessage,
@@ -3382,6 +3289,7 @@ async function handleRequest(request: Request) {
           conversionActions: googleAds?.conversionActions ?? [],
           paidActions,
           paidVisitors,
+          allVisitors,
           offlineConversions,
           financialAvailable: Boolean(googleAds),
           statusMessage: googleAdsStatusMessage,

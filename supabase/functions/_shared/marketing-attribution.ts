@@ -1,5 +1,7 @@
 export type MarketingAttributionBucket = 'paid' | 'organic' | 'other';
 
+export type MarketingClickIdType = 'gclid' | 'gbraid' | 'wbraid';
+
 type MarketingAttributionInput = {
   source?: unknown;
   medium?: unknown;
@@ -55,4 +57,21 @@ export function classifyMarketingAttribution(
   if (medium === 'organic' || isKnownOrganicSearchHost(referrerHost)) return 'organic';
 
   return 'other';
+}
+
+export function getMarketingClickIdType(
+  item: Pick<MarketingAttributionInput, 'gclid' | 'gbraid' | 'wbraid'>,
+): MarketingClickIdType | null {
+  if (hasValue(item.gclid)) return 'gclid';
+  if (hasValue(item.gbraid)) return 'gbraid';
+  if (hasValue(item.wbraid)) return 'wbraid';
+  return null;
+}
+
+export function isTechnicalMarketingTest(item: { term?: unknown; campaign?: unknown }) {
+  const term = String(item.term ?? '').trim().toLowerCase();
+  const campaign = String(item.campaign ?? '').trim().toLowerCase();
+  return term === 'teste_pre_lancamento'
+    || campaign === 'teste_pre_lancamento'
+    || campaign.endsWith('_teste_pre_lancamento');
 }

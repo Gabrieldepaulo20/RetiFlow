@@ -270,6 +270,48 @@ function buildResumo(): MarketingResumo {
         formSubmits: 1,
       },
       paidVisitors: [],
+      allVisitors: [
+        {
+          visitorId: 'sessao-paga',
+          firstSeenAt: '2026-07-29T10:00:00.000Z',
+          lastSeenAt: '2026-07-29T10:05:00.000Z',
+          durationSeconds: 300,
+          landingPage: '/b2b',
+          lastPage: '/contato',
+          source: 'google',
+          medium: 'cpc',
+          campaign: 'Anúncio principal',
+          clickIdType: 'gclid',
+          originType: 'paid',
+          eventCount: 3,
+          actionCount: 1,
+          leadCode: null,
+          leadName: null,
+          leadContact: null,
+          convertedClient: false,
+          clientId: null,
+        },
+        {
+          visitorId: 'sessao-organica',
+          firstSeenAt: '2026-07-28T09:00:00.000Z',
+          lastSeenAt: '2026-07-28T09:00:00.000Z',
+          durationSeconds: 0,
+          landingPage: '/servicos',
+          lastPage: '/servicos',
+          source: 'google',
+          medium: 'organic',
+          campaign: null,
+          clickIdType: null,
+          originType: 'organic',
+          eventCount: 1,
+          actionCount: 0,
+          leadCode: null,
+          leadName: null,
+          leadContact: null,
+          convertedClient: false,
+          clientId: null,
+        },
+      ],
       offlineConversions: null,
       financialAvailable: true,
       statusMessage: 'Conta conectada.',
@@ -330,6 +372,11 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByText('Site · demais origens')).toBeInTheDocument();
     expect(screen.getByText('Perfil da Empresa')).toBeInTheDocument();
     expect(screen.getByText('Cliques no chat do Perfil da Empresa')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Sessões individuais do site' })).toBeInTheDocument();
+    expect(screen.getByText('Anúncio principal')).toBeInTheDocument();
+    expect(screen.getByText('Busca orgânica')).toBeInTheDocument();
+    expect(screen.getByText('5min 00s')).toBeInTheDocument();
+    expect(screen.getByText(/uma sessão com um único evento aparece com 0s/i)).toBeInTheDocument();
   });
 
   it('mantém a aba Google Ads focada somente em mídia paga e explica seus KPIs', async () => {
@@ -374,6 +421,7 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByText('Todas as conversões')).toBeInTheDocument();
     expect(screen.queryByText('Comissão gerada')).not.toBeInTheDocument();
     expect(screen.queryByText('O.S. aprovadas')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Sessões individuais do site' })).not.toBeInTheDocument();
 
     const [ctrHelp] = screen.getAllByRole('button', { name: 'Entender CTR' });
     fireEvent.focus(ctrHelp);

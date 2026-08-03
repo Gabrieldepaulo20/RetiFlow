@@ -370,12 +370,16 @@ export interface MarketingPaidVisitor {
   visitorId: string;
   firstSeenAt: string;
   lastSeenAt: string;
+  /** Segundos entre o primeiro e o último evento da sessão (piso, não tempo real de leitura). */
+  durationSeconds: number;
   landingPage: string;
   lastPage: string;
   source: string;
   medium: string;
   campaign: string | null;
   clickIdType: string | null;
+  /** Como a sessão chegou: anúncio pago, busca orgânica, ou direto/outros. */
+  originType: 'paid' | 'organic' | 'other';
   eventCount: number;
   actionCount: number;
   leadCode: string | null;
@@ -384,6 +388,9 @@ export interface MarketingPaidVisitor {
   convertedClient: boolean;
   clientId: string | null;
 }
+
+/** Mesma forma de MarketingPaidVisitor — usado pelo painel "Todas as sessões" (não só pago). */
+export type MarketingVisitorSession = MarketingPaidVisitor;
 
 export interface MarketingOfflineConversionSummary {
   total: number;
@@ -502,6 +509,7 @@ export interface MarketingResumo {
     conversionActions?: MarketingAdsConversionActionMetric[];
     paidActions?: MarketingAdsPaidActionSummary;
     paidVisitors?: MarketingPaidVisitor[];
+    allVisitors?: MarketingVisitorSession[];
     offlineConversions?: MarketingOfflineConversionSummary | null;
     financialAvailable: boolean;
     statusMessage?: string;
