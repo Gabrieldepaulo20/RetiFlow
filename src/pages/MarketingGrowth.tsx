@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -23,6 +23,7 @@ import {
   BadgeDollarSign,
   Building2,
   CheckCircle2,
+  ChevronDown,
   CircleHelp,
   Clock3,
   ExternalLink,
@@ -129,7 +130,7 @@ const googleAdsHelp = {
   paidVisitorEvents: 'Quantidade de páginas e eventos rastreados nessa visita. Ações mostram interações de maior intenção.',
   paidVisitorStatus: 'Mostra se a sessão apenas visitou, demonstrou interesse ou já foi vinculada a um cliente cadastrado.',
   visitorOrigin: 'Como a sessão chegou ao site: anúncio pago (Google Ads), busca orgânica ou acesso direto/outra origem.',
-  visitorDuration: 'Tempo entre o primeiro e o último evento registrado nessa sessão. É um piso, não o tempo real de leitura: quem abre uma página e não clica em nada aparece com duração zero.',
+  visitorDuration: 'Tempo ativo quando o site enviou a medição de engajamento. Nas sessões antigas, mostra apenas o intervalo entre o primeiro e o último evento e deixa essa limitação explícita.',
   offlineTotal: 'Clientes cadastrados que foram atribuídos a um clique de anúncio e entraram no fluxo de envio ao Google.',
   offlineUploaded: 'Conversões de cliente já aceitas pelo serviço de envio do Google.',
   offlinePending: 'Conversões aguardando processamento ou sendo processadas neste momento.',
@@ -826,6 +827,18 @@ function BasicOverviewTab({ resumo }: { resumo: MarketingResumo }) {
 
 function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
   const allVisitors = resumo.campaigns.allVisitors ?? [];
+  const [expandedSession, setExpandedSession] = useState<string | null>(null);
+
+  const originLabel = (originType: 'paid' | 'organic' | 'other') => (
+    originType === 'paid' ? 'Google Ads' : originType === 'organic' ? 'Orgânico' : 'Direto / outros'
+  );
+  const engagementLabel = (level: (typeof allVisitors)[number]['engagementLevel']) => ({
+    converted: 'Virou cliente',
+    contact: 'Realizou contato',
+    engaged: 'Engajou',
+    brief: 'Saída rápida',
+    unknown: 'Tempo não medido',
+  }[level]);
 
   return (
     <Card className="min-w-0 rounded-2xl border-border/70 shadow-sm">
@@ -833,24 +846,29 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
         <PanelHeading
           eyebrow="Todas as origens"
           title="Sessões individuais do site"
-          description="Anúncios, busca orgânica e acessos diretos/outros aparecem no mesmo quadro, sempre com a origem da sessão explícita."
+          description="Uma linha por sessão rastreada, com origem simples, tempo, páginas abertas e ações realizadas."
         />
         <div className="mt-3 w-full max-w-full overflow-auto rounded-xl border 2xl:mt-5" role="region" aria-label="Todas as sessões do site" tabIndex={0}>
-          <table className="w-full min-w-[900px] text-left text-xs 2xl:min-w-[1060px]">
+          <table className="w-full min-w-[880px] text-left text-xs 2xl:min-w-[1040px]">
             <thead className="border-b bg-muted/70 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
               <tr>
                 <AdsTableHead label="Última visita" />
                 <AdsTableHead label="Pessoa / sessão" help={googleAdsHelp.paidVisitor} />
                 <AdsTableHead label="Origem" help={googleAdsHelp.visitorOrigin} />
-                <AdsTableHead label="Entrada" help={googleAdsHelp.landingPage} />
-                <AdsTableHead label="Intervalo rastreado" help={googleAdsHelp.visitorDuration} align="right" />
-                <AdsTableHead label="Páginas / ações" help={googleAdsHelp.paidVisitorEvents} align="right" />
-                <AdsTableHead label="Situação" help={googleAdsHelp.paidVisitorStatus} />
+                <AdsTableHead label="Tempo" help={googleAdsHelp.visitorDuration} align="right" />
+                <AdsTableHead label="Páginas" help={googleAdsHelp.paidVisitorEvents} align="right" />
+                <AdsTableHead label="Ações" help={googleAdsHelp.paidVisitorEvents} align="right" />
+                <AdsTableHead label="Engajamento" help={googleAdsHelp.paidVisitorStatus} />
+                <th scope="col" className="w-11 px-2 py-2"><span className="sr-only">Detalhes</span></th>
               </tr>
             </thead>
             <tbody className="divide-y">
-              {allVisitors.map((visitor) => (
-                <tr key={`${visitor.visitorId}-${visitor.firstSeenAt}`}>
+              {allVisitors.map((visitor) => {
+                const sessionKey = `${visitor.visitorId}-${visitor.firstSeenAt}`;
+                const expanded = expandedSession === sessionKey;
+                return (
+                <Fragment key={sessionKey}>
+                <tr className={cn('transition-colors', expanded && 'bg-slate-50/80')}>
                   <td className="px-3 py-2 text-muted-foreground 2xl:py-3">{formatDateTime(visitor.lastSeenAt)}</td>
                   <td className="px-3 py-2 2xl:py-3">
                     <p className="font-semibold text-foreground">{visitor.leadName ?? `Sessão • ${visitor.visitorId}`}</p>
@@ -862,27 +880,81 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
                       : visitor.originType === 'organic'
                         ? 'border-sky-200 bg-sky-50 text-sky-700'
                         : 'border-slate-200 bg-slate-50 text-slate-600')}>
-                      {visitor.originType === 'paid' ? (visitor.campaign ?? 'Anúncio') : visitor.originType === 'organic' ? 'Busca orgânica' : 'Direto / outros'}
+                      {originLabel(visitor.originType)}
                     </Badge>
-                    <p className="mt-1 text-[11px] text-muted-foreground">{visitor.source} / {visitor.medium}</p>
                   </td>
-                  <td className="max-w-[220px] truncate px-3 py-2 text-muted-foreground 2xl:max-w-[260px] 2xl:py-3" title={visitor.landingPage}>{visitor.landingPage}</td>
-                  <td className="px-3 py-2 text-right font-medium text-foreground 2xl:py-3">{formatDuration(visitor.durationSeconds)}</td>
                   <td className="px-3 py-2 text-right 2xl:py-3">
-                    <p className="font-semibold text-foreground">{formatNumber(visitor.eventCount)}</p>
-                    <p className="text-[11px] text-muted-foreground">{formatNumber(visitor.actionCount)} ações</p>
+                    <p className="font-semibold text-foreground">{formatDuration(visitor.durationSeconds)}</p>
+                    <p className="text-[10px] text-muted-foreground">{visitor.durationSource === 'active' ? 'tempo ativo' : 'entre eventos'}</p>
                   </td>
+                  <td className="px-3 py-2 text-right font-semibold text-foreground 2xl:py-3">{formatNumber(visitor.pageViewCount)}</td>
+                  <td className="px-3 py-2 text-right font-semibold text-foreground 2xl:py-3">{formatNumber(visitor.activityCount)}</td>
                   <td className="px-3 py-2 2xl:py-3">
-                    <Badge variant="outline" className={cn('whitespace-nowrap', visitor.convertedClient
+                    <Badge variant="outline" className={cn('whitespace-nowrap', visitor.engagementLevel === 'converted'
                       ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                      : visitor.actionCount
+                      : visitor.engagementLevel === 'contact' || visitor.engagementLevel === 'engaged'
                         ? 'border-amber-200 bg-amber-50 text-amber-700'
+                        : visitor.engagementLevel === 'brief'
+                          ? 'border-rose-200 bg-rose-50 text-rose-700'
                         : 'border-slate-200 bg-slate-50 text-slate-600')}>
-                      {visitor.convertedClient ? 'Cliente cadastrado' : visitor.actionCount ? 'Demonstrou interesse' : 'Somente visitou'}
+                      {engagementLabel(visitor.engagementLevel)}
                     </Badge>
+                  </td>
+                  <td className="px-2 py-2 text-right 2xl:py-3">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      aria-label={`${expanded ? 'Ocultar' : 'Ver'} detalhes da sessão ${visitor.visitorId}`}
+                      aria-expanded={expanded}
+                      onClick={() => setExpandedSession(expanded ? null : sessionKey)}
+                    >
+                      <ChevronDown className={cn('h-4 w-4 transition-transform', expanded && 'rotate-180')} />
+                    </Button>
                   </td>
                 </tr>
-              ))}
+                {expanded ? (
+                  <tr>
+                    <td colSpan={8} className="bg-slate-50/70 px-3 py-3 sm:px-4">
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Caminho no site</p>
+                          <div className="mt-2 space-y-1.5">
+                            {visitor.pages.length ? visitor.pages.map((page, index) => (
+                              <div key={`${page.occurredAt}-${page.path}-${index}`} className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2">
+                                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-950 text-[9px] font-bold text-amber-300">{index + 1}</span>
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate font-semibold text-slate-800" title={page.path}>{page.path}</p>
+                                  <p className="truncate text-[10px] text-slate-500">{page.title ?? formatDateTime(page.occurredAt)}</p>
+                                </div>
+                              </div>
+                            )) : <p className="text-xs text-slate-500">Nenhuma abertura de página registrada.</p>}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Ações realizadas</p>
+                          <div className="mt-2 space-y-1.5">
+                            {visitor.actions.length ? visitor.actions.map((action, index) => (
+                              <div key={`${action.occurredAt}-${action.type}-${index}`} className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-2.5 py-2">
+                                <div className="min-w-0">
+                                  <p className="truncate font-semibold text-slate-800">{eventLabels[action.type] ?? action.type}</p>
+                                  <p className="truncate text-[10px] text-slate-500">{action.pagePath}{action.detail ? ` · ${action.detail}` : ''}</p>
+                                </div>
+                                <span className="shrink-0 text-[10px] text-slate-400">{formatDateTime(action.occurredAt)}</span>
+                              </div>
+                            )) : <p className="text-xs text-slate-500">Nenhuma ação adicional registrada.</p>}
+                          </div>
+                        </div>
+                      </div>
+                      <p className="mt-3 text-[10px] leading-4 text-slate-500">
+                        Entrada: <span className="font-semibold text-slate-700">{visitor.landingPage}</span> · Saída rastreada: <span className="font-semibold text-slate-700">{visitor.lastPage}</span>
+                      </p>
+                    </td>
+                  </tr>
+                ) : null}
+                </Fragment>
+              );})}
             </tbody>
           </table>
           {allVisitors.length === 0 ? (
@@ -892,8 +964,8 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
           ) : null}
         </div>
         <p className="mt-2.5 text-[10px] leading-4 text-slate-400 2xl:mt-4 2xl:text-xs 2xl:leading-relaxed">
-          Mostrando as {formatNumber(allVisitors.length)} sessões mais recentes do período. O intervalo é calculado entre
-          o primeiro e o último evento rastreado; uma sessão com um único evento aparece com 0s.
+          Mostrando as {formatNumber(allVisitors.length)} sessões rastreadas mais recentes do período. “Tempo ativo” é medido pelo site;
+          “entre eventos” é apenas um piso e não permite afirmar que a pessoa saiu imediatamente.
         </p>
       </CardContent>
     </Card>

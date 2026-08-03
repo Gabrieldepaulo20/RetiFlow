@@ -12,6 +12,7 @@ export interface MarketingVisitorSession {
   firstSeenAt: string;
   lastSeenAt: string;
   durationSeconds: number;
+  durationSource: 'active' | 'event_interval';
   landingPage: string;
   lastPage: string;
   source: string;
@@ -21,11 +22,29 @@ export interface MarketingVisitorSession {
   originType: MarketingAttributionBucket;
   eventCount: number;
   actionCount: number;
+  pageViewCount: number;
+  activityCount: number;
+  pages: MarketingVisitorPage[];
+  actions: MarketingVisitorAction[];
+  engagementLevel: 'converted' | 'contact' | 'engaged' | 'brief' | 'unknown';
   leadCode: string | null;
   leadName: string | null;
   leadContact: string | null;
   convertedClient: boolean;
   clientId: string | null;
+}
+
+export interface MarketingVisitorPage {
+  path: string;
+  title: string | null;
+  occurredAt: string;
+}
+
+export interface MarketingVisitorAction {
+  type: string;
+  occurredAt: string;
+  pagePath: string;
+  detail: string | null;
 }
 
 function limitedString(value: unknown, maxLength: number) {
@@ -47,6 +66,14 @@ function attributionPriority(value: MarketingAttributionBucket) {
   return 0;
 }
 
+function sessionAttribution(item: JsonRecord) {
+  const metadata = eventMetadata(item);
+  const stored = limitedString(metadata.sessionOriginType ?? metadata.session_origin_type, 20);
+  return stored === 'paid' || stored === 'organic' || stored === 'other'
+    ? stored
+    : classifyMarketingAttribution(item);
+}
+
 function attributionLabels(item: JsonRecord, originType: MarketingAttributionBucket) {
   const rawSource = limitedString(item.source, 180);
   const rawMedium = limitedString(item.medium, 120);
@@ -60,6 +87,39 @@ function attributionLabels(item: JsonRecord, originType: MarketingAttributionBuc
     medium: rawMedium ?? (originType === 'paid' ? 'cpc' : originType === 'organic' ? 'organic' : 'sem meio'),
     campaign: limitedString(item.campaign, 180),
   };
+}
+
+function eventMetadata(item: JsonRecord) {
+  return item.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata)
+    ? item.metadata as JsonRecord
+    : {};
+}
+
+function isEngagementPulse(item: JsonRecord) {
+  if (String(item.event_type) !== 'custom') return false;
+  const metadata = eventMetadata(item);
+  return limitedString(metadata.eventLabel ?? metadata.event_label, 100) === 'session_engagement';
+}
+
+function activeEngagementSeconds(item: JsonRecord) {
+  if (!isEngagementPulse(item)) return null;
+  const metadata = eventMetadata(item);
+  const raw = metadata.engagedSeconds ?? metadata.engaged_seconds;
+  const numeric = typeof raw === 'number' ? raw : Number(raw);
+  return Number.isFinite(numeric) && numeric >= 0 ? Math.round(numeric) : null;
+}
+
+function isMeaningfulAction(item: JsonRecord) {
+  const eventType = String(item.event_type ?? '');
+  return Boolean(eventType && eventType !== 'page_view' && !isEngagementPulse(item));
+}
+
+function classifyEngagement(session: MarketingVisitorSession): MarketingVisitorSession['engagementLevel'] {
+  if (session.convertedClient) return 'converted';
+  if (session.actionCount > 0) return 'contact';
+  if (session.activityCount > 0 || session.pageViewCount > 1) return 'engaged';
+  if (session.durationSource === 'active') return session.durationSeconds >= 10 ? 'engaged' : 'brief';
+  return 'unknown';
 }
 
 export function buildMarketingVisitorSessions(
@@ -78,7 +138,7 @@ export function buildMarketingVisitorSessions(
 
   events.forEach((event) => {
     if (isTechnicalMarketingTest(event)) return;
-    const originType = classifyMarketingAttribution(event);
+    const originType = options.onlyPaid ? classifyMarketingAttribution(event) : sessionAttribution(event);
     if (options.onlyPaid && originType !== 'paid') return;
 
     const rawKey = getMarketingVisitorKey(event);
@@ -91,6 +151,11 @@ export function buildMarketingVisitorSessions(
     const occurredAtEpoch = Date.parse(occurredAt);
     const labels = attributionLabels(event, originType);
     const isAction = ['whatsapp_click', 'phone_click', 'form_submit'].includes(String(event.event_type));
+    const engagementPulse = isEngagementPulse(event);
+    const activeSeconds = activeEngagementSeconds(event);
+    const isPageView = String(event.event_type) === 'page_view';
+    const meaningfulAction = isMeaningfulAction(event);
+    const metadata = eventMetadata(event);
     const existing = visitors.get(rawKey);
 
     if (!existing) {
@@ -98,14 +163,29 @@ export function buildMarketingVisitorSessions(
         visitorId: rawKey.slice(-12),
         firstSeenAt: occurredAt,
         lastSeenAt: occurredAt,
-        durationSeconds: 0,
+        durationSeconds: activeSeconds ?? 0,
+        durationSource: activeSeconds === null ? 'event_interval' : 'active',
         landingPage: pagePath,
         lastPage: pagePath,
         ...labels,
         clickIdType: getMarketingClickIdType(event),
         originType,
-        eventCount: 1,
+        eventCount: engagementPulse ? 0 : 1,
         actionCount: isAction ? 1 : 0,
+        pageViewCount: isPageView ? 1 : 0,
+        activityCount: meaningfulAction ? 1 : 0,
+        pages: isPageView ? [{
+          path: pagePath,
+          title: limitedString(event.page_title, 300),
+          occurredAt,
+        }] : [],
+        actions: meaningfulAction ? [{
+          type: String(event.event_type),
+          occurredAt,
+          pagePath,
+          detail: limitedString(metadata.eventLabel ?? metadata.event_label, 180),
+        }] : [],
+        engagementLevel: 'unknown',
         leadCode,
         leadName: lead ? limitedString(lead.nome, 160) : null,
         leadContact: lead
@@ -125,12 +205,36 @@ export function buildMarketingVisitorSessions(
       existing.lastSeenAt = occurredAt;
       existing.lastPage = pagePath;
     }
-    existing.durationSeconds = Math.max(
+    const intervalSeconds = Math.max(
       0,
       Math.round((Date.parse(existing.lastSeenAt) - Date.parse(existing.firstSeenAt)) / 1000),
     );
-    existing.eventCount += 1;
+    if (activeSeconds !== null) {
+      const previousActiveSeconds = existing.durationSource === 'active' ? existing.durationSeconds : 0;
+      existing.durationSource = 'active';
+      existing.durationSeconds = Math.max(previousActiveSeconds, activeSeconds);
+    } else if (existing.durationSource === 'event_interval') {
+      existing.durationSeconds = intervalSeconds;
+    }
+    existing.eventCount += engagementPulse ? 0 : 1;
     existing.actionCount += isAction ? 1 : 0;
+    existing.pageViewCount += isPageView ? 1 : 0;
+    existing.activityCount += meaningfulAction ? 1 : 0;
+    if (isPageView) {
+      existing.pages.push({
+        path: pagePath,
+        title: limitedString(event.page_title, 300),
+        occurredAt,
+      });
+    }
+    if (meaningfulAction) {
+      existing.actions.push({
+        type: String(event.event_type),
+        occurredAt,
+        pagePath,
+        detail: limitedString(metadata.eventLabel ?? metadata.event_label, 180),
+      });
+    }
 
     if (attributionPriority(originType) > attributionPriority(existing.originType)) {
       existing.originType = originType;
@@ -154,6 +258,12 @@ export function buildMarketingVisitorSessions(
   });
 
   return Array.from(visitors.values())
+    .map((visitor) => ({
+      ...visitor,
+      pages: visitor.pages.sort((left, right) => Date.parse(left.occurredAt) - Date.parse(right.occurredAt)),
+      actions: visitor.actions.sort((left, right) => Date.parse(left.occurredAt) - Date.parse(right.occurredAt)),
+      engagementLevel: classifyEngagement(visitor),
+    }))
     .sort((left, right) => Date.parse(right.lastSeenAt) - Date.parse(left.lastSeenAt))
     .slice(0, limit);
 }

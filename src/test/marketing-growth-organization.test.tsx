@@ -276,6 +276,7 @@ function buildResumo(): MarketingResumo {
           firstSeenAt: '2026-07-29T10:00:00.000Z',
           lastSeenAt: '2026-07-29T10:05:00.000Z',
           durationSeconds: 300,
+          durationSource: 'active',
           landingPage: '/b2b',
           lastPage: '/contato',
           source: 'google',
@@ -285,6 +286,16 @@ function buildResumo(): MarketingResumo {
           originType: 'paid',
           eventCount: 3,
           actionCount: 1,
+          pageViewCount: 2,
+          activityCount: 1,
+          pages: [
+            { path: '/b2b', title: 'Retífica para empresas', occurredAt: '2026-07-29T10:00:00.000Z' },
+            { path: '/contato', title: 'Contato', occurredAt: '2026-07-29T10:04:00.000Z' },
+          ],
+          actions: [
+            { type: 'whatsapp_click', occurredAt: '2026-07-29T10:05:00.000Z', pagePath: '/contato', detail: 'whatsapp_contato' },
+          ],
+          engagementLevel: 'contact',
           leadCode: null,
           leadName: null,
           leadContact: null,
@@ -296,6 +307,7 @@ function buildResumo(): MarketingResumo {
           firstSeenAt: '2026-07-28T09:00:00.000Z',
           lastSeenAt: '2026-07-28T09:00:00.000Z',
           durationSeconds: 0,
+          durationSource: 'event_interval',
           landingPage: '/servicos',
           lastPage: '/servicos',
           source: 'google',
@@ -305,6 +317,13 @@ function buildResumo(): MarketingResumo {
           originType: 'organic',
           eventCount: 1,
           actionCount: 0,
+          pageViewCount: 1,
+          activityCount: 0,
+          pages: [
+            { path: '/servicos', title: 'Serviços', occurredAt: '2026-07-28T09:00:00.000Z' },
+          ],
+          actions: [],
+          engagementLevel: 'unknown',
           leadCode: null,
           leadName: null,
           leadContact: null,
@@ -373,10 +392,16 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByText('Perfil da Empresa')).toBeInTheDocument();
     expect(screen.getByText('Cliques no chat do Perfil da Empresa')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Sessões individuais do site' })).toBeInTheDocument();
-    expect(screen.getByText('Anúncio principal')).toBeInTheDocument();
-    expect(screen.getByText('Busca orgânica')).toBeInTheDocument();
+    expect(screen.getByText('Google Ads')).toBeInTheDocument();
+    expect(screen.getByText('Orgânico')).toBeInTheDocument();
+    expect(screen.queryByText('Anúncio principal')).not.toBeInTheDocument();
     expect(screen.getByText('5min 00s')).toBeInTheDocument();
-    expect(screen.getByText(/uma sessão com um único evento aparece com 0s/i)).toBeInTheDocument();
+    expect(screen.getByText(/não permite afirmar que a pessoa saiu imediatamente/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Ver detalhes da sessão sessao-paga/i }));
+    expect(screen.getByText('Caminho no site')).toBeInTheDocument();
+    expect(screen.getByText('Clique no WhatsApp')).toBeInTheDocument();
+    expect(screen.getByText('/contato · whatsapp_contato')).toBeInTheDocument();
   });
 
   it('mantém a aba Google Ads focada somente em mídia paga e explica seus KPIs', async () => {

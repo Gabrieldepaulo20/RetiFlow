@@ -55,6 +55,7 @@ describe('sessões individuais de marketing', () => {
       firstSeenAt: '2026-08-03T10:00:00.000Z',
       lastSeenAt: '2026-08-03T10:05:00.000Z',
       durationSeconds: 300,
+      durationSource: 'event_interval',
       landingPage: '/',
       lastPage: '/orcamento',
       source: 'google',
@@ -64,11 +65,19 @@ describe('sessões individuais de marketing', () => {
       originType: 'paid',
       eventCount: 3,
       actionCount: 1,
+      pageViewCount: 2,
+      activityCount: 1,
       leadCode: 'LEAD-1',
       leadName: 'Cliente identificado',
       convertedClient: true,
       clientId: 'cliente-1',
     });
+    expect(sessions[0].pages.map((page) => page.path)).toEqual(['/', '/servicos']);
+    expect(sessions[0].actions).toEqual([expect.objectContaining({
+      type: 'whatsapp_click',
+      pagePath: '/orcamento',
+    })]);
+    expect(sessions[0].engagementLevel).toBe('converted');
   });
 
   it('rotula acesso sem atribuição como direto/outros e não inventa duração', () => {
@@ -88,7 +97,35 @@ describe('sessões individuais de marketing', () => {
       durationSeconds: 0,
       eventCount: 1,
       actionCount: 0,
+      engagementLevel: 'unknown',
     });
+  });
+
+  it('usa tempo ativo e só classifica saída rápida quando existe medição de engajamento', () => {
+    const [session] = buildMarketingVisitorSessions([
+      {
+        session_id: 'sessao-tempo-ativo',
+        occurred_at: '2026-08-03T11:00:00.000Z',
+        page_path: '/',
+        event_type: 'page_view',
+      },
+      {
+        session_id: 'sessao-tempo-ativo',
+        occurred_at: '2026-08-03T11:00:45.000Z',
+        page_path: '/',
+        event_type: 'custom',
+        metadata: { eventLabel: 'session_engagement', engagedSeconds: 7 },
+      },
+    ], []);
+
+    expect(session).toMatchObject({
+      durationSeconds: 7,
+      durationSource: 'active',
+      eventCount: 1,
+      activityCount: 0,
+      engagementLevel: 'brief',
+    });
+    expect(session.actions).toEqual([]);
   });
 
   it('mantém a visão paga sem orgânico e remove eventos técnicos', () => {
@@ -117,5 +154,34 @@ describe('sessões individuais de marketing', () => {
 
     expect(sessions).toHaveLength(1);
     expect(sessions[0]).toMatchObject({ originType: 'paid', source: 'google' });
+  });
+
+  it('separa a origem desta sessão da atribuição antiga preservada para o contato', () => {
+    const [session] = buildMarketingVisitorSessions([
+      {
+        session_id: 'retorno-direto',
+        occurred_at: '2026-08-03T13:00:00.000Z',
+        event_type: 'page_view',
+        source: 'google',
+        medium: 'cpc',
+        gclid: 'clique-anterior',
+        metadata: { sessionOriginType: 'other' },
+      },
+    ], []);
+
+    expect(session.originType).toBe('other');
+
+    const [paidAttribution] = buildMarketingVisitorSessions([
+      {
+        session_id: 'retorno-direto',
+        occurred_at: '2026-08-03T13:00:00.000Z',
+        event_type: 'page_view',
+        source: 'google',
+        medium: 'cpc',
+        gclid: 'clique-anterior',
+        metadata: { sessionOriginType: 'other' },
+      },
+    ], [], { onlyPaid: true });
+    expect(paidAttribution.originType).toBe('paid');
   });
 });
