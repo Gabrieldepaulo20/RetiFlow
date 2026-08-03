@@ -15,6 +15,8 @@ export interface MarketingVisitorSession {
   durationSource: 'active' | 'event_interval';
   landingPage: string;
   lastPage: string;
+  landingUrl: string;
+  lastUrl: string;
   source: string;
   medium: string;
   campaign: string | null;
@@ -27,6 +29,7 @@ export interface MarketingVisitorSession {
   pages: MarketingVisitorPage[];
   actions: MarketingVisitorAction[];
   engagementLevel: 'converted' | 'contact' | 'engaged' | 'brief' | 'unknown';
+  measurementMode: 'anonymous' | 'consented' | 'mixed' | 'unknown';
   leadCode: string | null;
   leadName: string | null;
   leadContact: string | null;
@@ -36,6 +39,7 @@ export interface MarketingVisitorSession {
 
 export interface MarketingVisitorPage {
   path: string;
+  url: string;
   title: string | null;
   occurredAt: string;
 }
@@ -95,6 +99,37 @@ function eventMetadata(item: JsonRecord) {
     : {};
 }
 
+function safePageUrl(item: JsonRecord, pagePath: string) {
+  const raw = limitedString(item.page_location, 1200);
+  const normalizedPath = pagePath.startsWith('/') ? pagePath : `/${pagePath}`;
+  if (!raw) return `https://www.premiumretifica.com.br${normalizedPath}`;
+  try {
+    const parsed = new URL(raw, 'https://www.premiumretifica.com.br');
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname !== 'premiumretifica.com.br' && hostname !== 'www.premiumretifica.com.br') {
+      return `https://www.premiumretifica.com.br${normalizedPath}`;
+    }
+    return `https://www.premiumretifica.com.br${parsed.pathname}`;
+  } catch {
+    return `https://www.premiumretifica.com.br${normalizedPath}`;
+  }
+}
+
+function eventMeasurementMode(item: JsonRecord): MarketingVisitorSession['measurementMode'] {
+  const metadata = eventMetadata(item);
+  const raw = limitedString(metadata.measurementMode ?? metadata.measurement_mode, 30);
+  return raw === 'anonymous' || raw === 'consented' ? raw : 'unknown';
+}
+
+function mergeMeasurementMode(
+  current: MarketingVisitorSession['measurementMode'],
+  next: MarketingVisitorSession['measurementMode'],
+) {
+  if (current === 'mixed' || next === current || next === 'unknown') return current;
+  if (current === 'unknown') return next;
+  return 'mixed';
+}
+
 function isEngagementPulse(item: JsonRecord) {
   if (String(item.event_type) !== 'custom') return false;
   const metadata = eventMetadata(item);
@@ -148,6 +183,7 @@ export function buildMarketingVisitorSessions(
     const leadCode = limitedString(event.lead_code, 40);
     const lead = leadCode ? leadByCode.get(leadCode) : undefined;
     const pagePath = limitedString(event.page_path, 800) ?? '/';
+    const pageUrl = safePageUrl(event, pagePath);
     const occurredAtEpoch = Date.parse(occurredAt);
     const labels = attributionLabels(event, originType);
     const isAction = ['whatsapp_click', 'phone_click', 'form_submit'].includes(String(event.event_type));
@@ -167,6 +203,8 @@ export function buildMarketingVisitorSessions(
         durationSource: activeSeconds === null ? 'event_interval' : 'active',
         landingPage: pagePath,
         lastPage: pagePath,
+        landingUrl: pageUrl,
+        lastUrl: pageUrl,
         ...labels,
         clickIdType: getMarketingClickIdType(event),
         originType,
@@ -176,6 +214,7 @@ export function buildMarketingVisitorSessions(
         activityCount: meaningfulAction ? 1 : 0,
         pages: isPageView ? [{
           path: pagePath,
+          url: pageUrl,
           title: limitedString(event.page_title, 300),
           occurredAt,
         }] : [],
@@ -186,6 +225,7 @@ export function buildMarketingVisitorSessions(
           detail: limitedString(metadata.eventLabel ?? metadata.event_label, 180),
         }] : [],
         engagementLevel: 'unknown',
+        measurementMode: eventMeasurementMode(event),
         leadCode,
         leadName: lead ? limitedString(lead.nome, 160) : null,
         leadContact: lead
@@ -200,10 +240,12 @@ export function buildMarketingVisitorSessions(
     if (occurredAtEpoch < Date.parse(existing.firstSeenAt)) {
       existing.firstSeenAt = occurredAt;
       existing.landingPage = pagePath;
+      existing.landingUrl = pageUrl;
     }
     if (occurredAtEpoch > Date.parse(existing.lastSeenAt)) {
       existing.lastSeenAt = occurredAt;
       existing.lastPage = pagePath;
+      existing.lastUrl = pageUrl;
     }
     const intervalSeconds = Math.max(
       0,
@@ -223,10 +265,15 @@ export function buildMarketingVisitorSessions(
     if (isPageView) {
       existing.pages.push({
         path: pagePath,
+        url: pageUrl,
         title: limitedString(event.page_title, 300),
         occurredAt,
       });
     }
+    existing.measurementMode = mergeMeasurementMode(
+      existing.measurementMode,
+      eventMeasurementMode(event),
+    );
     if (meaningfulAction) {
       existing.actions.push({
         type: String(event.event_type),

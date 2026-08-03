@@ -376,6 +376,10 @@ export interface MarketingPaidVisitor {
   durationSource?: 'active' | 'event_interval';
   landingPage: string;
   lastPage: string;
+  /** URL pública sem query string nem identificador de anúncio. */
+  landingUrl?: string;
+  /** Última URL pública rastreada, também sem query string. */
+  lastUrl?: string;
   source: string;
   medium: string;
   campaign: string | null;
@@ -388,6 +392,7 @@ export interface MarketingPaidVisitor {
   activityCount?: number;
   pages?: Array<{
     path: string;
+    url?: string;
     title: string | null;
     occurredAt: string;
   }>;
@@ -398,6 +403,8 @@ export interface MarketingPaidVisitor {
     detail: string | null;
   }>;
   engagementLevel?: 'converted' | 'contact' | 'engaged' | 'brief' | 'unknown';
+  /** Se a sessão foi medida antes, depois ou nos dois momentos do consentimento opcional. */
+  measurementMode?: 'anonymous' | 'consented' | 'mixed' | 'unknown';
   leadCode: string | null;
   leadName: string | null;
   leadContact: string | null;

@@ -131,6 +131,7 @@ const googleAdsHelp = {
   paidVisitorStatus: 'Mostra se a sessão apenas visitou, demonstrou interesse ou já foi vinculada a um cliente cadastrado.',
   visitorOrigin: 'Como a sessão chegou ao site: anúncio pago (Google Ads), busca orgânica ou acesso direto/outra origem.',
   visitorDuration: 'Tempo ativo quando o site enviou a medição de engajamento. Nas sessões antigas, mostra apenas o intervalo entre o primeiro e o último evento e deixa essa limitação explícita.',
+  visitorUrl: 'Endereço público acessado, sem parâmetros de consulta, termo pesquisado ou identificador bruto do anúncio.',
   offlineTotal: 'Clientes cadastrados que foram atribuídos a um clique de anúncio e entraram no fluxo de envio ao Google.',
   offlineUploaded: 'Conversões de cliente já aceitas pelo serviço de envio do Google.',
   offlinePending: 'Conversões aguardando processamento ou sendo processadas neste momento.',
@@ -156,6 +157,7 @@ const eventLabels: Record<string, string> = {
   form_submit_error: 'Falha no envio',
   form_submit: 'Formulário enviado',
   generate_lead: 'Contato gerado',
+  custom: 'Interação na página',
 };
 
 const providerLabels: Record<string, string> = {
@@ -839,6 +841,12 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
     brief: 'Saída rápida',
     unknown: 'Tempo não medido',
   }[level]);
+  const sessionMeasurementLabel = (mode: (typeof allVisitors)[number]['measurementMode']) => ({
+    anonymous: 'Sem identificação direta',
+    consented: 'Medição autorizada',
+    mixed: 'Medição básica + autorizada',
+    unknown: 'Sessão legada',
+  }[mode ?? 'unknown']);
 
   return (
     <Card className="min-w-0 rounded-2xl border-border/70 shadow-sm">
@@ -846,7 +854,7 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
         <PanelHeading
           eyebrow="Todas as origens"
           title="Sessões individuais do site"
-          description="Uma linha por sessão rastreada, com origem simples, tempo, páginas abertas e ações realizadas."
+          description="Uma linha por sessão rastreada, com origem, URL limpa, tempo, páginas abertas e ações realizadas."
         />
         <div className="mt-3 w-full max-w-full overflow-auto rounded-xl border 2xl:mt-5" role="region" aria-label="Todas as sessões do site" tabIndex={0}>
           <table className="w-full min-w-[880px] text-left text-xs 2xl:min-w-[1040px]">
@@ -881,7 +889,7 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
                   <td className="px-3 py-2 text-muted-foreground 2xl:py-3">{formatDateTime(visitor.lastSeenAt)}</td>
                   <td className="px-3 py-2 2xl:py-3">
                     <p className="font-semibold text-foreground">{visitor.leadName ?? `Sessão • ${visitor.visitorId}`}</p>
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">{visitor.leadContact ?? visitor.leadCode ?? 'Sessão anônima'}</p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">{visitor.leadContact ?? visitor.leadCode ?? sessionMeasurementLabel(visitor.measurementMode)}</p>
                   </td>
                   <td className="px-3 py-2 2xl:py-3">
                     <Badge variant="outline" className={cn('whitespace-nowrap', visitor.originType === 'paid'
@@ -934,7 +942,16 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
                               <div key={`${page.occurredAt}-${page.path}-${index}`} className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2">
                                 <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-950 text-[9px] font-bold text-amber-300">{index + 1}</span>
                                 <div className="min-w-0 flex-1">
-                                  <p className="truncate font-semibold text-slate-800" title={page.path}>{page.path}</p>
+                                  <a
+                                    href={page.url ?? `https://www.premiumretifica.com.br${page.path}`}
+                                    target="_blank"
+                                    rel="noreferrer noopener"
+                                    className="flex min-w-0 items-center gap-1 font-semibold text-slate-800 hover:text-sky-700 hover:underline"
+                                    title={page.url ?? page.path}
+                                  >
+                                    <span className="truncate">{page.url ?? `https://www.premiumretifica.com.br${page.path}`}</span>
+                                    <ExternalLink className="h-3 w-3 shrink-0" />
+                                  </a>
                                   <p className="truncate text-[10px] text-slate-500">{page.title ?? formatDateTime(page.occurredAt)}</p>
                                 </div>
                               </div>
@@ -957,7 +974,14 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
                         </div>
                       </div>
                       <p className="mt-3 text-[10px] leading-4 text-slate-500">
-                        Entrada: <span className="font-semibold text-slate-700">{visitor.landingPage}</span> · Saída rastreada: <span className="font-semibold text-slate-700">{visitor.lastPage}</span>
+                        Entrada:{' '}
+                        <a className="font-semibold text-slate-700 hover:underline" href={visitor.landingUrl ?? `https://www.premiumretifica.com.br${visitor.landingPage}`} target="_blank" rel="noreferrer noopener">
+                          {visitor.landingUrl ?? `https://www.premiumretifica.com.br${visitor.landingPage}`}
+                        </a>
+                        {' '}· Saída rastreada:{' '}
+                        <a className="font-semibold text-slate-700 hover:underline" href={visitor.lastUrl ?? `https://www.premiumretifica.com.br${visitor.lastPage}`} target="_blank" rel="noreferrer noopener">
+                          {visitor.lastUrl ?? `https://www.premiumretifica.com.br${visitor.lastPage}`}
+                        </a>
                       </p>
                     </td>
                   </tr>
@@ -974,7 +998,7 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
         </div>
         <p className="mt-2.5 text-[10px] leading-4 text-slate-400 2xl:mt-4 2xl:text-xs 2xl:leading-relaxed">
           Mostrando todas as {formatNumber(allVisitors.length)} sessões rastreadas do período selecionado. “Tempo ativo” é medido pelo site;
-          “entre eventos” é apenas um piso e não permite afirmar que a pessoa saiu imediatamente.
+          “entre eventos” é apenas um piso e não permite afirmar que a pessoa saiu imediatamente. As URLs não mostram query string nem identificadores de anúncio.
         </p>
       </CardContent>
     </Card>
@@ -2517,7 +2541,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                   <AdsTableHead label="Última visita" />
                   <AdsTableHead label="Pessoa / sessão" help={googleAdsHelp.paidVisitor} />
                   <AdsTableHead label="Campanha" />
-                  <AdsTableHead label="Entrada" help={googleAdsHelp.landingPage} />
+                  <AdsTableHead label="Entrada" help={googleAdsHelp.visitorUrl} />
                   <AdsTableHead label="Eventos" help={googleAdsHelp.paidVisitorEvents} align="right" />
                   <AdsTableHead label="Situação" help={googleAdsHelp.paidVisitorStatus} />
                 </tr>
@@ -2534,7 +2558,18 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                       <p className="font-medium text-foreground">{visitor.campaign ?? 'Campanha não informada'}</p>
                       <p className="text-[11px] text-muted-foreground">{visitor.source} / {visitor.medium}</p>
                     </td>
-                    <td className="max-w-[240px] truncate px-3 py-2 text-muted-foreground 2xl:max-w-[280px] 2xl:py-3" title={visitor.landingPage}>{visitor.landingPage}</td>
+                    <td className="max-w-[240px] px-3 py-2 text-muted-foreground 2xl:max-w-[280px] 2xl:py-3">
+                      <a
+                        href={visitor.landingUrl ?? `https://www.premiumretifica.com.br${visitor.landingPage}`}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="flex min-w-0 items-center gap-1 hover:text-sky-700 hover:underline"
+                        title={visitor.landingUrl ?? visitor.landingPage}
+                      >
+                        <span className="truncate">{visitor.landingUrl ?? `https://www.premiumretifica.com.br${visitor.landingPage}`}</span>
+                        <ExternalLink className="h-3 w-3 shrink-0" />
+                      </a>
+                    </td>
                     <td className="px-3 py-2 text-right 2xl:py-3">
                       <p className="font-semibold text-foreground">{formatNumber(visitor.eventCount)}</p>
                       <p className="text-[11px] text-muted-foreground">{formatNumber(visitor.actionCount)} ações</p>

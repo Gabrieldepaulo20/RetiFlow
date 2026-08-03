@@ -18,25 +18,30 @@ describe('sessões individuais de marketing', () => {
         session_id: 'sessao-ordenacao-1',
         occurred_at: '2026-08-03T10:05:00.000Z',
         page_path: '/orcamento',
+        page_location: 'https://www.premiumretifica.com.br/orcamento?gclid=segredo#formulario',
         event_type: 'whatsapp_click',
         source: 'google',
         medium: 'cpc',
         campaign: 'Pesquisa regional',
         gclid: 'identificador-presente',
         lead_code: 'LEAD-1',
+        metadata: { measurementMode: 'consented' },
       },
       {
         session_id: 'sessao-ordenacao-1',
         occurred_at: '2026-08-03T10:00:00.000Z',
         page_path: '/',
+        page_location: 'https://premiumretifica.com.br/?gclid=nao-expor',
         event_type: 'page_view',
         source: 'direto',
         medium: 'sem meio',
+        metadata: { measurementMode: 'anonymous' },
       },
       {
         session_id: 'sessao-ordenacao-1',
         occurred_at: '2026-08-03T10:02:00.000Z',
         page_path: '/servicos',
+        page_location: 'https://www.premiumretifica.com.br/servicos?utm_term=cabecote',
         event_type: 'page_view',
         source: 'google',
         medium: 'organic',
@@ -58,6 +63,8 @@ describe('sessões individuais de marketing', () => {
       durationSource: 'event_interval',
       landingPage: '/',
       lastPage: '/orcamento',
+      landingUrl: 'https://www.premiumretifica.com.br/',
+      lastUrl: 'https://www.premiumretifica.com.br/orcamento',
       source: 'google',
       medium: 'cpc',
       campaign: 'Pesquisa regional',
@@ -67,12 +74,19 @@ describe('sessões individuais de marketing', () => {
       actionCount: 1,
       pageViewCount: 2,
       activityCount: 1,
+      measurementMode: 'mixed',
       leadCode: 'LEAD-1',
       leadName: 'Cliente identificado',
       convertedClient: true,
       clientId: 'cliente-1',
     });
     expect(sessions[0].pages.map((page) => page.path)).toEqual(['/', '/servicos']);
+    expect(sessions[0].pages.map((page) => page.url)).toEqual([
+      'https://www.premiumretifica.com.br/',
+      'https://www.premiumretifica.com.br/servicos',
+    ]);
+    expect(JSON.stringify(sessions[0])).not.toContain('gclid=');
+    expect(JSON.stringify(sessions[0])).not.toContain('utm_term=');
     expect(sessions[0].actions).toEqual([expect.objectContaining({
       type: 'whatsapp_click',
       pagePath: '/orcamento',
