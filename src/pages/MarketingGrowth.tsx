@@ -2256,7 +2256,16 @@ function PaidClickLedger({
           {[
             { label: 'Cliques oficiais', value: officialClicks, detail: 'Google Ads' },
             { label: 'Sessões no site', value: paidVisitors.length, detail: 'rastreadas individualmente' },
-            { label: 'Tempo médio medido', value: averageMeasuredDuration, detail: 'só sessões rastreadas', duration: true },
+            {
+              label: 'Tempo médio medido',
+              value: averageMeasuredDuration,
+              detail: paidVisitors.length === 0
+                ? 'nenhuma sessão medida'
+                : activeTimeSessions === paidVisitors.length
+                  ? 'tempo ativo'
+                  : 'inclui piso entre eventos',
+              duration: true,
+            },
             { label: 'Sem sessão medida', value: missingSiteSessions, detail: 'clicaram no site, sem evento' },
             { label: 'Ações no anúncio', value: directAdActions, detail: 'WhatsApp ou ligação direta' },
           ].map((item) => (

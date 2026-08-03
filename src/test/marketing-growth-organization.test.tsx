@@ -441,6 +441,7 @@ describe('organização do painel Crescimento', () => {
     expect(screen.queryByText('O.S. aprovadas')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Sessões individuais do site' })).not.toBeInTheDocument();
     expect(screen.getByText('Tempo médio medido')).toBeInTheDocument();
+    expect(screen.getByText('nenhuma sessão medida')).toBeInTheDocument();
 
     const [ctrHelp] = screen.getAllByRole('button', { name: 'Entender CTR' });
     fireEvent.focus(ctrHelp);
