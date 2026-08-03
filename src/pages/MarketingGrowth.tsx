@@ -2231,6 +2231,9 @@ function PaidClickLedger({
     row.kind === 'whatsapp_ad' || row.kind === 'whatsapp_landing' || row.kind === 'call_ad'
   )).length;
   const activeTimeSessions = paidVisitors.filter((visitor) => visitor.durationSource === 'active').length;
+  const averageMeasuredDuration = paidVisitors.length
+    ? Math.round(paidVisitors.reduce((total, visitor) => total + visitor.durationSeconds, 0) / paidVisitors.length)
+    : 0;
   const ledgerRows = paidVisitors.length + untrackedClicks.length;
   const engagementLabel = (visitor: MarketingPaidVisitor) => {
     if (visitor.engagementLevel === 'converted' || visitor.convertedClient) return 'Virou cliente';
@@ -2249,17 +2252,20 @@ function PaidClickLedger({
           description="Sessões reais recebem URL, tempo ativo, caminho e ações. Cliques conhecidos apenas pelo Google permanecem visíveis, mas sem horário, pessoa ou duração inventados."
         />
 
-        <div className="mt-3 grid grid-cols-2 overflow-hidden rounded-xl border border-slate-200 bg-slate-200 lg:grid-cols-4">
+        <div className="mt-3 grid grid-cols-2 overflow-hidden rounded-xl border border-slate-200 bg-slate-200 lg:grid-cols-5">
           {[
             { label: 'Cliques oficiais', value: officialClicks, detail: 'Google Ads' },
             { label: 'Sessões no site', value: paidVisitors.length, detail: 'rastreadas individualmente' },
+            { label: 'Tempo médio medido', value: averageMeasuredDuration, detail: 'só sessões rastreadas', duration: true },
             { label: 'Sem sessão medida', value: missingSiteSessions, detail: 'clicaram no site, sem evento' },
             { label: 'Ações no anúncio', value: directAdActions, detail: 'WhatsApp ou ligação direta' },
           ].map((item) => (
             <div key={item.label} className="min-w-0 bg-white px-3 py-2.5">
               <p className="truncate text-[9px] font-bold uppercase tracking-[0.09em] text-slate-500">{item.label}</p>
               <div className="mt-0.5 flex min-w-0 items-baseline gap-2">
-                <p className="text-lg font-black leading-none text-slate-950">{formatNumber(item.value)}</p>
+                <p className="text-lg font-black leading-none text-slate-950">
+                  {item.duration ? (paidVisitors.length ? formatDuration(item.value) : '—') : formatNumber(item.value)}
+                </p>
                 <p className="truncate text-[9px] text-slate-500">{item.detail}</p>
               </div>
             </div>
