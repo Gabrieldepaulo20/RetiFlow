@@ -34,7 +34,7 @@ function limitedString(value: unknown, maxLength: number) {
   return normalized ? normalized.slice(0, maxLength) : null;
 }
 
-function getVisitorKey(item: JsonRecord) {
+export function getMarketingVisitorKey(item: JsonRecord) {
   return limitedString(item.session_id, 160)
     || limitedString(item.anonymous_id, 160)
     || limitedString(item.lead_code, 40)
@@ -81,7 +81,7 @@ export function buildMarketingVisitorSessions(
     const originType = classifyMarketingAttribution(event);
     if (options.onlyPaid && originType !== 'paid') return;
 
-    const rawKey = getVisitorKey(event);
+    const rawKey = getMarketingVisitorKey(event);
     const occurredAt = limitedString(event.occurred_at, 80);
     if (!rawKey || !occurredAt || !Number.isFinite(Date.parse(occurredAt))) return;
 

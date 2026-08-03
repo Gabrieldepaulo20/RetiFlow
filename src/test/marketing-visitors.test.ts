@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { buildMarketingVisitorSessions } from '../../supabase/functions/_shared/marketing-visitors';
+import {
+  buildMarketingVisitorSessions,
+  getMarketingVisitorKey,
+} from '../../supabase/functions/_shared/marketing-visitors';
 
 describe('sessões individuais de marketing', () => {
+  it('usa a mesma chave no agrupamento detalhado e no total agregado', () => {
+    expect(getMarketingVisitorKey({ session_id: 'sessao-1', anonymous_id: 'anonimo-1' })).toBe('sessao-1');
+    expect(getMarketingVisitorKey({ anonymous_id: 'anonimo-1', lead_code: 'LEAD-1' })).toBe('anonimo-1');
+    expect(getMarketingVisitorKey({ lead_code: 'LEAD-1' })).toBe('LEAD-1');
+    expect(getMarketingVisitorKey({ id_marketing_site_eventos: 42 })).toBe('42');
+  });
+
   it('ordena os eventos por horário e preserva a atribuição mais específica da sessão', () => {
     const sessions = buildMarketingVisitorSessions([
       {

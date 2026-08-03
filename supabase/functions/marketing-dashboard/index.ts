@@ -12,7 +12,10 @@ import {
   getMarketingClickIdType as getClickIdType,
   isTechnicalMarketingTest as isTechnicalPaidTest,
 } from '../_shared/marketing-attribution.ts';
-import { buildMarketingVisitorSessions } from '../_shared/marketing-visitors.ts';
+import {
+  buildMarketingVisitorSessions,
+  getMarketingVisitorKey,
+} from '../_shared/marketing-visitors.ts';
 
 type JsonRecord = Record<string, unknown>;
 function createServiceClient(supabaseUrl: string, serviceRoleKey: string) {
@@ -2850,7 +2853,7 @@ async function handleRequest(request: Request) {
     const countPaidAction = (type: string) =>
       paidCurrentEvents.filter((event) => event.event_type === type).length;
     const paidActions = {
-      trackedSessions: new Set(paidCurrentEvents.map(getPaidVisitorKey).filter(Boolean)).size,
+      trackedSessions: new Set(paidCurrentEvents.map(getMarketingVisitorKey).filter(Boolean)).size,
       whatsappClicks: countPaidAction('whatsapp_click'),
       phoneClicks: countPaidAction('phone_click'),
       formSubmits: countPaidAction('form_submit'),
