@@ -41,7 +41,7 @@ import {
   getFinanceiroContas,
   registrarRecebimentoFechamento,
 } from '@/api/supabase/financeiro';
-import { getNotasServico, mapStatusNome } from '@/api/supabase/notas';
+import { getNotasServico, mapStatusNome, type NotaServico } from '@/api/supabase/notas';
 import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 import {
   filterFechamentosForClientScope,
@@ -75,6 +75,7 @@ import {
 } from '@/services/domain/financialIdempotency';
 import { PAYMENT_METHOD_LABELS, type IntakeNote, type NotePaymentStatus, type PaymentMethod } from '@/types';
 import { isBillableNoteStatus } from '@/services/domain/intakeNotes';
+import { toComparableTime } from '@/services/domain/dashboardFinance';
 import { readActiveSupportContext } from '@/services/auth/supportContext';
 import { FinancialValue } from '@/components/privacy/FinancialValue';
 
@@ -93,6 +94,41 @@ const PALETTE = [
   { border: 'border-l-teal-400',    avatar: 'bg-teal-100 text-teal-700'   },
   { border: 'border-l-rose-400',    avatar: 'bg-rose-100 text-rose-700'   },
 ] as const;
+
+const CLOSING_NOTES_PAGE_SIZE = 1000;
+
+async function getAllClosingCandidateNotes(
+  clientId: string,
+  supportContextActive: boolean,
+): Promise<NotaServico[]> {
+  const result: NotaServico[] = [];
+  let offset = 0;
+
+  while (true) {
+    const page = await getNotasServico({
+      p_fk_clientes: clientId,
+      p_limite: CLOSING_NOTES_PAGE_SIZE,
+      p_offset: offset,
+      p_ordem_campo: 'registration',
+      p_ordem_direcao: 'asc',
+      ...(supportContextActive ? {} : { p_apenas_sem_fechamento: true }),
+    });
+
+    result.push(...page.dados);
+    offset += page.dados.length;
+
+    if (
+      page.dados.length === 0
+      || (page.total > 0
+        ? result.length >= page.total
+        : page.dados.length < CLOSING_NOTES_PAGE_SIZE)
+    ) {
+      break;
+    }
+  }
+
+  return result;
+}
 
 interface AvailableClosingPeriod {
   key: string;
@@ -243,7 +279,7 @@ const normalizeClosingDraft = (value: unknown, fallbackMonth: string, fallbackYe
 const normalizeAvailablePeriods = (dates: string[]) => {
   const map = new Map<string, AvailableClosingPeriod>();
   for (const rawDate of dates) {
-    const dt = new Date(rawDate);
+    const dt = new Date(toComparableTime(rawDate));
     if (Number.isNaN(dt.getTime())) continue;
     const month = String(dt.getMonth() + 1);
     const year = String(dt.getFullYear());
@@ -273,8 +309,10 @@ const isAvailableForClosing = (note: IntakeNote) =>
 const isInClosingDateRange = (note: IntakeNote, start: Date, end: Date) => {
   const competenceDate = getClosingCompetenceDate(note);
   if (!competenceDate) return false;
-  const dt = new Date(competenceDate);
-  return dt >= start && dt <= end;
+  const competenceTime = toComparableTime(competenceDate);
+  return Number.isFinite(competenceTime)
+    && competenceTime >= start.getTime()
+    && competenceTime <= end.getTime();
 };
 
 /* ── Dual-ring spinner ─────────────────────────────────────────────────── */
@@ -705,29 +743,30 @@ export default function MonthlyClosing() {
       const localClosingIdByNoteId = new Map(notes.map((note) => [note.id, note.closingId ?? null]));
       const supportContextActive = Boolean(readActiveSupportContext());
       const notasFiltradas = IS_REAL_AUTH
-        ? (await getNotasServico({
-            p_fk_clientes: selClientId,
-            p_limite: 1000,
-            p_offset: 0,
-            p_data_inicio: toDateInputValue(inicio),
-            p_data_fim: toDateInputValue(fim),
-            p_ordem_campo: 'date',
-            p_ordem_direcao: 'asc',
-            ...(supportContextActive ? {} : { p_apenas_sem_fechamento: true }),
-          })).dados.filter((note) => {
+        ? (await getAllClosingCandidateNotes(selClientId, supportContextActive)).filter((note) => {
             const closingId = note.fk_fechamentos ?? localClosingIdByNoteId.get(note.id_notas_servico);
             if (closingId) return false;
             if (!isBillableNoteStatus(mapStatusNome(note.status?.nome ?? ''))) return false;
-            const dt = new Date(note.created_at);
-            if (Number.isNaN(dt.getTime())) return false;
-            return dt >= inicio && dt <= fim;
+            const competenceDate = getClosingCompetenceDate({
+              createdAt: note.created_at,
+              deadline: note.prazo || undefined,
+              finalizedAt: note.finalizado_em ?? undefined,
+            });
+            const competenceTime = toComparableTime(competenceDate);
+            return Number.isFinite(competenceTime)
+              && competenceTime >= inicio.getTime()
+              && competenceTime <= fim.getTime();
           }).map((note) => ({
             id: note.id_notas_servico,
             number: asString(note.os, 'O.S. sem número'),
             vehicleModel: asString(note.veiculo?.modelo, 'Veículo não informado'),
             plate: typeof note.veiculo?.placa === 'string' && note.veiculo.placa.trim() ? note.veiculo.placa : null,
             totalAmount: asNumber(note.total),
-            updatedAt: asString(note.created_at, new Date().toISOString()),
+            updatedAt: getClosingCompetenceDate({
+              createdAt: note.created_at,
+              deadline: note.prazo || undefined,
+              finalizedAt: note.finalizado_em ?? undefined,
+            }),
             paymentStatus: (
               note.payment_status === 'PAGO'
                 ? 'PAGO'
@@ -741,8 +780,10 @@ export default function MonthlyClosing() {
         : notes.filter((n) => {
             if (!isAvailableForClosing(n)) return false;
             if (n.clientId !== selClientId) return false;
-            const dt = new Date(getClosingCompetenceDate(n));
-            return dt >= inicio && dt <= fim;
+            const competenceTime = toComparableTime(getClosingCompetenceDate(n));
+            return Number.isFinite(competenceTime)
+              && competenceTime >= inicio.getTime()
+              && competenceTime <= fim.getTime();
           }).map((note) => ({
             id: note.id,
             number: note.number,
@@ -756,7 +797,7 @@ export default function MonthlyClosing() {
           }));
 
       if (notasFiltradas.length === 0) {
-        toast({ title: 'Nenhuma O.S. faturável criada neste período', variant: 'destructive' });
+        toast({ title: 'Nenhuma O.S. faturável entregue neste período', variant: 'destructive' });
         return;
       }
 
@@ -1433,7 +1474,7 @@ export default function MonthlyClosing() {
         <CardContent className="p-3 sm:p-4">
           <p className="text-sm font-medium">Novo rascunho de fechamento</p>
           <p className="mb-2 mt-0.5 text-xs text-muted-foreground">
-            Agrupa as O.S. pela data de entrada/criação e considera apenas O.S. faturáveis ainda sem fechamento.
+            Agrupa as O.S. novas pela data real de entrega. No histórico legado, usa prazo ou criação quando não há entrega confiável.
           </p>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[220px_minmax(330px,440px)_minmax(240px,1fr)_auto] lg:items-end">
             <div>

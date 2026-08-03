@@ -94,7 +94,7 @@ describe('monthly closing domain service', () => {
     expect(range).toBeNull();
   });
 
-  it('uses the note entry date instead of finalizedAt to place notes in the closing period', () => {
+  it('preserves the entry date for legacy notes finalized in a later batch', () => {
     const januaryCreatedButFebruaryFinalized = buildNote({
       id: 'n-finalized-at',
       createdAt: '2026-01-20T10:00:00.000Z',
@@ -140,6 +140,55 @@ describe('monthly closing domain service', () => {
 
     expect(januaryResults).toHaveLength(1);
     expect(januaryResults[0]?.id).toBe('n-finalized-at');
+  });
+
+  it('uses the real delivery date for notes created in Retiflow', () => {
+    const createdInJuneDeliveredInJuly = buildNote({
+      id: 'n-retiflow-delivery',
+      createdAt: '2026-06-26T11:30:00-03:00',
+      deadline: '2026-07-01',
+      finalizedAt: '2026-07-01T12:00:00-03:00',
+      updatedAt: '2026-07-01T12:00:00-03:00',
+    });
+
+    const julyResults = getFinalizedNotesForClosing(
+      {
+        customers: [customer],
+        notes: [createdInJuneDeliveredInJuly],
+        services,
+      },
+      {
+        periodType: 'mensal',
+        month: '7',
+        year: '2026',
+        quinzena: '1',
+        weekDate: new Date('2026-07-10T00:00:00-03:00'),
+        customRange: {},
+        clientFilter: 'all',
+      },
+    );
+
+    const juneResults = getFinalizedNotesForClosing(
+      {
+        customers: [customer],
+        notes: [createdInJuneDeliveredInJuly],
+        services,
+      },
+      {
+        periodType: 'mensal',
+        month: '6',
+        year: '2026',
+        quinzena: '1',
+        weekDate: new Date('2026-06-10T00:00:00-03:00'),
+        customRange: {},
+        clientFilter: 'all',
+      },
+    );
+
+    expect(getClosingCompetenceDate(createdInJuneDeliveredInJuly)).toBe('2026-07-01T12:00:00-03:00');
+    expect(julyResults).toHaveLength(1);
+    expect(julyResults[0]?.id).toBe('n-retiflow-delivery');
+    expect(juneResults).toHaveLength(0);
   });
 
   it('does not move legacy notes to another month just because updatedAt changed', () => {

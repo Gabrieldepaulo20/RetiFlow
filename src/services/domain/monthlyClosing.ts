@@ -10,6 +10,7 @@ import {
   IntakeService,
 } from '@/types';
 import { isBillableNoteStatus } from '@/services/domain/intakeNotes';
+import { getDashboardRevenueDate, toComparableTime } from '@/services/domain/dashboardFinance';
 import { normalizeNoteNumber } from '@/lib/noteNumbers';
 
 export type ClosingPeriodType = 'mensal' | 'quinzenal' | 'semanal' | 'personalizado';
@@ -77,8 +78,12 @@ export function getServicesForClosingNote(services: IntakeService[], noteId: str
   return services.filter((service) => service.noteId === noteId);
 }
 
-export function getClosingCompetenceDate(note: Pick<IntakeNote, 'createdAt'>) {
-  return note.createdAt;
+export function getClosingCompetenceDate(
+  note: Pick<IntakeNote, 'createdAt' | 'deadline' | 'finalizedAt'>,
+) {
+  // Fechamento e Dashboard precisam usar a mesma competência: entrega real nas
+  // O.S. novas do Retiflow e prazo/criação apenas na compatibilidade do legado.
+  return getDashboardRevenueDate(note);
 }
 
 function pad2(value: number) {
@@ -410,8 +415,8 @@ export function getFinalizedNotesForClosing(source: ClosingSource, filters: Clos
       return false;
     }
 
-    const entryDate = new Date(competenceDate);
-    if (entryDate < start || entryDate > end) {
+    const competenceTime = toComparableTime(competenceDate);
+    if (!Number.isFinite(competenceTime) || competenceTime < start.getTime() || competenceTime > end.getTime()) {
       return false;
     }
 
