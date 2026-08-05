@@ -30,7 +30,6 @@ import {
   Eye,
   FileCheck2,
   FileWarning,
-  Filter,
   Gauge,
   Globe2,
   ListChecks,
@@ -53,7 +52,6 @@ import {
   getMarketingResumoQueryKey,
   linkMarketingLeadToClient,
   type MarketingClientOption,
-  type MarketingEventItem,
   type MarketingIntegrationSummary,
   type MarketingLeadItem,
   type MarketingPaidVisitor,
@@ -87,7 +85,7 @@ import { FinancialValue } from '@/components/privacy/FinancialValue';
 import { useFinancialPrivacy } from '@/contexts/FinancialPrivacyContext';
 
 const RETIFICA_PREMIUM_EMAIL = 'retificapremium5@gmail.com';
-const periodOptions = [1, 7, 10, 15, 20, 30, 40, 60, 90];
+const periodOptions = [1, 7, 30, 60];
 
 const googleAdsHelp = {
   spend: 'Total cobrado pelo Google Ads no período selecionado. Pode existir atraso de processamento na fonte oficial.',
@@ -111,7 +109,6 @@ const googleAdsHelp = {
   cpa: 'Custo por aquisição/conversão: investimento dividido pelas conversões principais.',
   conversionValue: 'Soma dos valores configurados nas ações de conversão. Não representa faturamento real se a ação usar um valor simbólico.',
   valuePerConversion: 'Valor médio configurado por conversão. Só representa receita quando a ação recebe um valor financeiro real.',
-  roas: 'Valor das conversões dividido pelo investimento. Só deve orientar retorno financeiro quando os valores das conversões representarem receita real.',
   searchImpressionShare: 'Percentual das impressões recebidas entre todas as impressões em que os anúncios estavam qualificados para aparecer na Pesquisa.',
   searchBudgetLostImpressionShare: 'Percentual de oportunidades de impressão perdido porque o orçamento foi insuficiente.',
   searchRankLostImpressionShare: 'Percentual de oportunidades perdido por classificação do anúncio, influenciada por lance, qualidade e relevância.',
@@ -124,7 +121,6 @@ const googleAdsHelp = {
   adRelevance: 'Compara a relevância do anúncio para esta palavra-chave com outros anunciantes: abaixo, na média ou acima da média.',
   landingPageQuality: 'Compara a experiência da página de destino para esta palavra-chave com outros anunciantes.',
   expectedCtr: 'Compara a probabilidade estimada de clique desta palavra-chave com outros anunciantes.',
-  network: 'Rede em que o anúncio apareceu. Pesquisa Google e Parceiros de Pesquisa devem ser avaliados separadamente porque podem ter qualidade e custo diferentes.',
   adGroup: 'Conjunto de palavras-chave e anúncios com o mesmo tema. Grupos enxutos facilitam relevância, leitura de custo e otimização.',
   matchType: 'Regra que define o quanto a pesquisa da pessoa precisa se aproximar da palavra-chave configurada.',
   searchTerm: 'Texto que a pessoa realmente digitou no Google antes de o anúncio ser acionado.',
@@ -835,94 +831,149 @@ function BasicOverviewTab({ resumo }: { resumo: MarketingResumo }) {
 function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
   const allVisitors = resumo.campaigns.allVisitors ?? [];
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
+  const [originFilter, setOriginFilter] = useState<'all' | 'paid' | 'organic' | 'other'>('all');
+  const visibleVisitors = (
+    originFilter === 'all'
+      ? allVisitors
+      : allVisitors.filter((visitor) => visitor.originType === originFilter)
+  );
 
   const originLabel = (originType: 'paid' | 'organic' | 'other') => (
     originType === 'paid' ? 'Google Ads' : originType === 'organic' ? 'Orgânico' : 'Direto / outros'
   );
-  const engagementLabel = (level: NonNullable<(typeof allVisitors)[number]['engagementLevel']>) => ({
-    converted: 'Virou cliente',
-    contact: 'Realizou contato',
-    engaged: 'Engajou',
-    brief: 'Saída rápida',
-    unknown: 'Tempo não medido',
+  const originClassName = (originType: 'paid' | 'organic' | 'other') => (
+    originType === 'paid'
+      ? 'border-violet-700 bg-violet-700 text-white'
+      : originType === 'organic'
+        ? 'border-sky-600 bg-sky-600 text-white'
+        : 'border-slate-300 bg-slate-100 text-slate-700'
+  );
+  const sourceLabel = (source: string) => {
+    const normalized = source.trim().toLowerCase();
+    if (normalized === 'google') return 'Google';
+    if (normalized === 'bing') return 'Bing';
+    if (['direto', 'direct', '(direct)'].includes(normalized)) return 'Direto';
+    return source || 'Origem não informada';
+  };
+  const engagementPresentation = (level: NonNullable<(typeof allVisitors)[number]['engagementLevel']>) => ({
+    converted: { label: 'Virou cliente', className: 'border-emerald-700 bg-emerald-700 text-white' },
+    contact: { label: 'Entrou em contato', className: 'border-teal-700 bg-teal-700 text-white' },
+    engaged: { label: 'Engajou', className: 'border-amber-300 bg-amber-300 text-slate-950' },
+    brief: { label: 'Saída rápida', className: 'border-rose-600 bg-rose-600 text-white' },
+    unknown: { label: 'Tempo não medido', className: 'border-slate-300 bg-slate-100 text-slate-600' },
   }[level]);
-  const sessionMeasurementLabel = (mode: (typeof allVisitors)[number]['measurementMode']) => ({
-    anonymous: 'Sem identificação direta',
-    consented: 'Medição autorizada',
-    mixed: 'Medição básica + autorizada',
-    unknown: 'Sessão legada',
-  }[mode ?? 'unknown']);
+  const searchTermLabel = (visitor: (typeof allVisitors)[number]) => {
+    if (visitor.searchTerm) return visitor.searchTerm;
+    if (visitor.originType === 'paid') return 'Não informado pelo Ads';
+    if (visitor.originType === 'organic') return 'Não fornecido pelo buscador';
+    return 'Não se aplica';
+  };
+  const originFilters = [
+    { value: 'all' as const, label: 'Tudo', count: allVisitors.length },
+    { value: 'paid' as const, label: 'Google Ads', count: allVisitors.filter((visitor) => visitor.originType === 'paid').length },
+    { value: 'organic' as const, label: 'Orgânico', count: allVisitors.filter((visitor) => visitor.originType === 'organic').length },
+    { value: 'other' as const, label: 'Direto / outros', count: allVisitors.filter((visitor) => visitor.originType === 'other').length },
+  ];
 
   return (
     <Card className="min-w-0 rounded-2xl border-border/70 shadow-sm">
       <CardContent className="min-w-0 p-4 sm:p-5 lg:p-4 2xl:p-6">
         <PanelHeading
-          eyebrow="Todas as origens"
-          title="Sessões individuais do site"
-          description="Uma linha por sessão rastreada, com origem, URL limpa, tempo, páginas abertas e ações realizadas."
+          eyebrow="Jornada no site"
+          title="De onde vieram e por onde passaram"
+          description="Cada linha reúne origem, página de entrada, caminho em ordem, termo capturado, tempo e resultado. O Retiflow não associa pesquisas agregadas a uma pessoa."
+          action={(
+            <div className="flex max-w-full gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1" role="group" aria-label="Filtrar jornadas por origem">
+              {originFilters.map((filter) => (
+                <Button
+                  key={filter.value}
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  aria-pressed={originFilter === filter.value}
+                  onClick={() => setOriginFilter(filter.value)}
+                  className={cn(
+                    'h-7 shrink-0 rounded-lg px-2.5 text-[10px] font-bold',
+                    originFilter === filter.value
+                      ? 'bg-slate-950 text-white hover:bg-slate-950 hover:text-white'
+                      : 'text-slate-600 hover:bg-white',
+                  )}
+                >
+                  {filter.label} <span className="ml-1 opacity-65">{filter.count}</span>
+                </Button>
+              ))}
+            </div>
+          )}
         />
-        <div className="mt-3 w-full max-w-full overflow-auto rounded-xl border 2xl:mt-5" role="region" aria-label="Todas as sessões do site" tabIndex={0}>
-          <table className="w-full min-w-[880px] text-left text-xs 2xl:min-w-[1040px]">
-            <thead className="border-b bg-muted/70 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+        <div className="mt-3 max-h-[34rem] w-full max-w-full overflow-auto rounded-xl border 2xl:mt-5" role="region" aria-label="Jornadas das sessões do site" tabIndex={0}>
+          <table className="w-full min-w-[850px] table-fixed text-left text-xs 2xl:min-w-[980px]">
+            <thead className="sticky top-0 z-20 border-b bg-slate-50/95 text-[10px] uppercase tracking-[0.1em] text-slate-500 backdrop-blur">
               <tr>
-                <AdsTableHead label="Última visita" />
-                <AdsTableHead label="Pessoa / sessão" help={googleAdsHelp.paidVisitor} />
+                <th className="w-[126px] px-3 py-2.5 font-semibold">Data e hora</th>
                 <AdsTableHead label="Origem" help={googleAdsHelp.visitorOrigin} />
+                <th className="w-[34%] px-3 py-2.5 font-semibold">Entrada e caminho</th>
+                <th className="w-[18%] px-3 py-2.5 font-semibold">Pesquisa / palavra</th>
                 <AdsTableHead label="Tempo" help={googleAdsHelp.visitorDuration} align="right" />
-                <AdsTableHead label="Páginas" help={googleAdsHelp.paidVisitorEvents} align="right" />
-                <AdsTableHead label="Ações" help={googleAdsHelp.paidVisitorEvents} align="right" />
-                <AdsTableHead label="Engajamento" help={googleAdsHelp.paidVisitorStatus} />
+                <AdsTableHead label="Resultado" help={googleAdsHelp.paidVisitorStatus} />
                 <th scope="col" className="w-11 px-2 py-2"><span className="sr-only">Detalhes</span></th>
               </tr>
             </thead>
             <tbody className="divide-y">
-              {allVisitors.map((visitor) => {
+              {visibleVisitors.map((visitor) => {
                 const sessionKey = `${visitor.visitorId}-${visitor.firstSeenAt}`;
                 const expanded = expandedSession === sessionKey;
                 const pages = visitor.pages ?? [];
                 const actions = visitor.actions ?? [];
-                const pageViewCount = visitor.pageViewCount
-                  ?? (visitor.pages ? pages.length : Math.max(1, visitor.eventCount - visitor.actionCount));
-                const activityCount = visitor.activityCount
-                  ?? (visitor.actions ? actions.length : visitor.actionCount);
                 const durationSource = visitor.durationSource ?? 'event_interval';
                 const engagementLevel = visitor.engagementLevel
                   ?? (visitor.convertedClient ? 'converted' : visitor.actionCount > 0 ? 'contact' : 'unknown');
+                const engagement = engagementPresentation(engagementLevel);
+                const entryUrl = visitor.landingUrl ?? `https://www.premiumretifica.com.br${visitor.landingPage}`;
                 return (
                 <Fragment key={sessionKey}>
                 <tr className={cn('transition-colors', expanded && 'bg-slate-50/80')}>
-                  <td className="px-3 py-2 text-muted-foreground 2xl:py-3">{formatDateTime(visitor.lastSeenAt)}</td>
-                  <td className="px-3 py-2 2xl:py-3">
-                    <p className="font-semibold text-foreground">{visitor.leadName ?? `Sessão • ${visitor.visitorId}`}</p>
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">{visitor.leadContact ?? visitor.leadCode ?? sessionMeasurementLabel(visitor.measurementMode)}</p>
-                  </td>
-                  <td className="px-3 py-2 2xl:py-3">
-                    <Badge variant="outline" className={cn('whitespace-nowrap', visitor.originType === 'paid'
-                      ? 'border-violet-200 bg-violet-50 text-violet-700'
-                      : visitor.originType === 'organic'
-                        ? 'border-sky-200 bg-sky-50 text-sky-700'
-                        : 'border-slate-200 bg-slate-50 text-slate-600')}>
+                  <td className="px-3 py-2 text-slate-500">{formatDateTime(visitor.firstSeenAt)}</td>
+                  <td className="px-3 py-2">
+                    <Badge variant="outline" className={cn('whitespace-nowrap font-bold', originClassName(visitor.originType))}>
                       {originLabel(visitor.originType)}
                     </Badge>
+                    <p className="mt-1 truncate text-[10px] font-semibold text-slate-600" title={`${visitor.source} / ${visitor.medium}`}>
+                      {sourceLabel(visitor.source)} · {visitor.medium}
+                    </p>
                   </td>
-                  <td className="px-3 py-2 text-right 2xl:py-3">
+                  <td className="px-3 py-2">
+                    <a href={entryUrl} target="_blank" rel="noreferrer noopener" className="flex min-w-0 items-center gap-1 font-semibold text-slate-900 hover:text-sky-700 hover:underline" title={entryUrl}>
+                      <span className="truncate">{visitor.landingPage || '/'}</span>
+                      <ExternalLink className="h-3 w-3 shrink-0" />
+                    </a>
+                    <div className="mt-1 flex min-w-0 items-center gap-1 overflow-hidden" aria-label={`Caminho com ${pages.length} páginas`}>
+                      {(pages.length ? pages : [{ path: visitor.landingPage }]).slice(0, 3).map((page, index) => (
+                        <Fragment key={`${page.path}-${index}`}>
+                          {index > 0 ? <span className="text-slate-300">→</span> : null}
+                          <span className="max-w-[92px] truncate rounded-md bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-600" title={page.path}>
+                            {index + 1}. {page.path}
+                          </span>
+                        </Fragment>
+                      ))}
+                      {pages.length > 3 ? <span className="text-[9px] font-bold text-slate-500">+{pages.length - 3}</span> : null}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <p className={cn('line-clamp-2 text-[11px] leading-4', visitor.searchTerm ? 'font-semibold text-slate-900' : 'text-slate-400')} title={searchTermLabel(visitor)}>
+                      {searchTermLabel(visitor)}
+                    </p>
+                  </td>
+                  <td className="px-3 py-2 text-right">
                     <p className="font-semibold text-foreground">{formatDuration(visitor.durationSeconds)}</p>
                     <p className="text-[10px] text-muted-foreground">{durationSource === 'active' ? 'tempo ativo' : 'entre eventos'}</p>
                   </td>
-                  <td className="px-3 py-2 text-right font-semibold text-foreground 2xl:py-3">{formatNumber(pageViewCount)}</td>
-                  <td className="px-3 py-2 text-right font-semibold text-foreground 2xl:py-3">{formatNumber(activityCount)}</td>
-                  <td className="px-3 py-2 2xl:py-3">
-                    <Badge variant="outline" className={cn('whitespace-nowrap', engagementLevel === 'converted'
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                      : engagementLevel === 'contact' || engagementLevel === 'engaged'
-                        ? 'border-amber-200 bg-amber-50 text-amber-700'
-                        : engagementLevel === 'brief'
-                          ? 'border-rose-200 bg-rose-50 text-rose-700'
-                        : 'border-slate-200 bg-slate-50 text-slate-600')}>
-                      {engagementLabel(engagementLevel)}
+                  <td className="px-3 py-2">
+                    <Badge variant="outline" className={cn('whitespace-nowrap font-bold', engagement.className)}>
+                      {engagement.label}
                     </Badge>
+                    {actions.length ? <p className="mt-1 text-[9px] font-semibold text-teal-700">{actions.length} ação(ões)</p> : null}
                   </td>
-                  <td className="px-2 py-2 text-right 2xl:py-3">
+                  <td className="px-2 py-2 text-right">
                     <Button
                       type="button"
                       variant="ghost"
@@ -938,10 +989,10 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
                 </tr>
                 {expanded ? (
                   <tr>
-                    <td colSpan={8} className="bg-slate-50/70 px-3 py-3 sm:px-4">
+                    <td colSpan={7} className="bg-slate-50/70 px-3 py-3 sm:px-4">
                       <div className="grid gap-4 lg:grid-cols-2">
                         <div>
-                          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Caminho no site</p>
+                          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Caminho completo no site</p>
                           <div className="mt-2 space-y-1.5">
                             {pages.length ? pages.map((page, index) => (
                               <div key={`${page.occurredAt}-${page.path}-${index}`} className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2">
@@ -995,15 +1046,15 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
               );})}
             </tbody>
           </table>
-          {allVisitors.length === 0 ? (
+          {visibleVisitors.length === 0 ? (
             <div className="p-8 text-center text-sm text-muted-foreground">
-              Nenhuma sessão registrada no período.
+              Nenhuma jornada encontrada neste filtro.
             </div>
           ) : null}
         </div>
         <p className="mt-2.5 text-[10px] leading-4 text-slate-400 2xl:mt-4 2xl:text-xs 2xl:leading-relaxed">
-          Mostrando todas as {formatNumber(allVisitors.length)} sessões rastreadas do período selecionado. “Tempo ativo” é medido pelo site;
-          “entre eventos” é apenas um piso e não permite afirmar que a pessoa saiu imediatamente. As URLs não mostram query string nem identificadores de anúncio.
+          Mostrando {formatNumber(visibleVisitors.length)} de {formatNumber(allVisitors.length)} jornadas rastreadas. “Tempo ativo” é medido pelo site;
+          “entre eventos” é apenas um piso e não permite afirmar que a pessoa saiu imediatamente. Termos só aparecem quando vieram na própria sessão.
         </p>
       </CardContent>
     </Card>
@@ -2033,16 +2084,6 @@ const googleAdsDeviceLabels: Record<string, string> = {
   UNKNOWN: 'Não informado',
 };
 
-const googleAdsNetworkLabels: Record<string, string> = {
-  SEARCH: 'Pesquisa Google',
-  SEARCH_PARTNERS: 'Parceiros de Pesquisa',
-  CONTENT: 'Rede de Display',
-  YOUTUBE_SEARCH: 'Pesquisa do YouTube',
-  YOUTUBE_WATCH: 'Vídeos do YouTube',
-  MIXED: 'Rede mista',
-  UNKNOWN: 'Não informado',
-};
-
 const googleAdsQualityBucketLabels: Record<string, string> = {
   BELOW_AVERAGE: 'Abaixo',
   AVERAGE: 'Na média',
@@ -2281,14 +2322,14 @@ function PaidClickLedger({
           ))}
         </div>
 
-        <div className="mt-3 w-full max-w-full overflow-auto rounded-xl border" role="region" aria-label="Conferência de cliques e sessões do Google Ads" tabIndex={0}>
-          <table className="w-full min-w-[1080px] text-left text-xs">
-            <thead className="border-b bg-slate-50 text-[10px] uppercase tracking-[0.11em] text-slate-500">
+        <div className="mt-3 max-h-[32rem] w-full max-w-full overflow-auto rounded-xl border" role="region" aria-label="Conferência de cliques e sessões do Google Ads" tabIndex={0}>
+          <table className="w-full min-w-[900px] text-left text-xs 2xl:min-w-[1040px]">
+            <thead className="sticky top-0 z-20 border-b bg-slate-50/95 text-[10px] uppercase tracking-[0.11em] text-slate-500 backdrop-blur">
               <tr>
                 <AdsTableHead label="Horário" />
-                <AdsTableHead label="Registro" help={googleAdsHelp.paidVisitor} />
+                <AdsTableHead label="Origem" help={googleAdsHelp.visitorOrigin} />
                 <AdsTableHead label="Tipo" help={googleAdsHelp.clicks} />
-                <AdsTableHead label="Destino" help={googleAdsHelp.visitorUrl} />
+                <AdsTableHead label="Destino, caminho e busca" help={googleAdsHelp.visitorUrl} />
                 <AdsTableHead label="Tempo" help={googleAdsHelp.visitorDuration} align="right" />
                 <AdsTableHead label="Páginas / ações" help={googleAdsHelp.paidVisitorEvents} align="right" />
                 <AdsTableHead label="Situação" help={googleAdsHelp.paidVisitorStatus} />
@@ -2312,8 +2353,8 @@ function PaidClickLedger({
                     <tr className={cn('transition-colors', expanded && 'bg-slate-50/80')}>
                       <td className="px-3 py-2 text-slate-500">{formatDateTime(visitor.firstSeenAt)}</td>
                       <td className="px-3 py-2">
-                        <p className="font-semibold text-slate-950">{visitor.leadName ?? `Sessão • ${visitor.visitorId}`}</p>
-                        <p className="mt-0.5 text-[10px] text-slate-500">{visitor.campaign ?? `${visitor.source} / ${visitor.medium}`}</p>
+                        <Badge variant="outline" className="whitespace-nowrap border-violet-700 bg-violet-700 font-bold text-white">Google Ads</Badge>
+                        <p className="mt-1 text-[10px] font-semibold text-slate-500">{visitor.source} · {visitor.medium}</p>
                       </td>
                       <td className="px-3 py-2">
                         <Badge variant="outline" className="whitespace-nowrap border-violet-200 bg-violet-50 text-violet-700">Clique no site</Badge>
@@ -2323,6 +2364,20 @@ function PaidClickLedger({
                           <span className="truncate">{entryUrl}</span>
                           <ExternalLink className="h-3 w-3 shrink-0" />
                         </a>
+                        <div className="mt-1 flex min-w-0 items-center gap-1 overflow-hidden">
+                          {(pages.length ? pages : [{ path: visitor.landingPage }]).slice(0, 3).map((page, pageIndex) => (
+                            <Fragment key={`${page.path}-${pageIndex}`}>
+                              {pageIndex > 0 ? <span className="text-slate-300">→</span> : null}
+                              <span className="max-w-[80px] truncate rounded bg-slate-100 px-1 py-0.5 text-[8px] font-semibold text-slate-600" title={page.path}>
+                                {pageIndex + 1}. {page.path}
+                              </span>
+                            </Fragment>
+                          ))}
+                          {pages.length > 3 ? <span className="text-[8px] font-bold text-slate-500">+{pages.length - 3}</span> : null}
+                        </div>
+                        <p className={cn('mt-1 truncate text-[9px]', visitor.searchTerm ? 'font-semibold text-slate-700' : 'text-slate-400')} title={visitor.searchTerm ?? 'Não informado pelo Google Ads'}>
+                          Busca: {visitor.searchTerm ?? 'não informada pelo Ads'}
+                        </p>
                       </td>
                       <td className="px-3 py-2 text-right">
                         <p className="font-semibold text-slate-950">{formatDuration(visitor.durationSeconds)}</p>
@@ -2334,11 +2389,13 @@ function PaidClickLedger({
                       </td>
                       <td className="px-3 py-2">
                         <Badge variant="outline" className={cn('whitespace-nowrap', sessionStatus === 'Virou cliente'
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                          : sessionStatus === 'Engajou' || sessionStatus === 'Realizou contato'
-                            ? 'border-amber-200 bg-amber-50 text-amber-800'
+                          ? 'border-emerald-700 bg-emerald-700 font-bold text-white'
+                          : sessionStatus === 'Realizou contato'
+                            ? 'border-teal-700 bg-teal-700 font-bold text-white'
+                            : sessionStatus === 'Engajou'
+                              ? 'border-amber-300 bg-amber-300 font-bold text-slate-950'
                             : sessionStatus === 'Saída rápida'
-                              ? 'border-rose-200 bg-rose-50 text-rose-700'
+                              ? 'border-rose-600 bg-rose-600 font-bold text-white'
                               : 'border-slate-200 bg-slate-50 text-slate-600')}>
                           {sessionStatus}
                         </Badge>
@@ -2399,14 +2456,14 @@ function PaidClickLedger({
                   </Fragment>
                 );
               })}
-              {untrackedClicks.map((click, index) => {
+              {untrackedClicks.map((click) => {
                 const presentation = untrackedAdsClickPresentation[click.kind];
                 return (
                   <tr key={click.id} className="bg-rose-50/20">
                     <td className="px-3 py-2 text-slate-400">Horário não fornecido</td>
                     <td className="px-3 py-2">
-                      <p className="font-semibold text-slate-800">Clique Ads • {index + 1}</p>
-                      <p className="mt-0.5 text-[10px] text-slate-500">registro agregado da API</p>
+                      <Badge variant="outline" className="whitespace-nowrap border-violet-200 bg-violet-50 font-bold text-violet-700">Google Ads</Badge>
+                      <p className="mt-1 text-[10px] text-slate-500">Sem sessão rastreada</p>
                     </td>
                     <td className="px-3 py-2"><Badge variant="outline" className={cn('whitespace-nowrap', presentation.className)}>{presentation.label}</Badge></td>
                     <td className="max-w-[260px] px-3 py-2 text-slate-600">
@@ -2416,6 +2473,7 @@ function PaidClickLedger({
                           <ExternalLink className="h-3 w-3 shrink-0" />
                         </a>
                       ) : <span>{click.destinationLabel}</span>}
+                      <p className="mt-1 text-[9px] text-slate-400">Busca não individualizada pelo Google</p>
                     </td>
                     <td className="px-3 py-2 text-right"><p className="font-semibold text-slate-500">—</p><p className="text-[9px] text-slate-400">sem sessão</p></td>
                     <td className="px-3 py-2 text-right"><p className="font-semibold text-slate-500">—</p><p className="text-[9px] text-slate-400">não informado</p></td>
@@ -2446,7 +2504,6 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
   const current = ads.current;
   const offline = ads.offlineConversions;
   const devices = ads.devices ?? [];
-  const networks = ads.networks ?? [];
   const adGroups = ads.adGroups ?? [];
   const keywords = ads.keywords ?? [];
   const searchTerms = ads.searchTerms ?? [];
@@ -2506,12 +2563,12 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           title="Quanto investimos e quantas interações tivemos?"
           description="O total de cliques reúne site, WhatsApp, ligação e outras interações registradas pelo Google. A divisão principal aparece logo abaixo."
         />
-        <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-5">
-          <Metric label="Investimento" value={formatCurrency(current.spend)} detail="Custo oficial no período" help={googleAdsHelp.spend} icon={BadgeDollarSign} current={current.spend} previous={ads.previous?.spend} accent="navy" financial />
-          <Metric label="Impressões" value={formatNumber(current.impressions)} detail="Exibições dos anúncios" help={googleAdsHelp.impressions} icon={Eye} current={current.impressions} previous={ads.previous?.impressions} accent="violet" />
-          <Metric label="Cliques totais" value={formatNumber(current.clicks)} detail="Site + WhatsApp + ligar + outros" help={googleAdsHelp.clicks} icon={MousePointerClick} current={current.clicks} previous={ads.previous?.clicks} accent="teal" />
-          <Metric label="CTR" value={formatPercent(current.ctr)} detail="Cliques ÷ impressões" help={googleAdsHelp.ctr} icon={Target} accent="violet" />
-          <Metric label="CPC médio" value={formatCurrency(current.averageCpc)} detail="Custo médio por clique" help={googleAdsHelp.averageCpc} icon={Gauge} accent="gold" financial />
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(145px,1fr))] gap-2.5 [&_.growth-metric-icon]:hidden 2xl:[&_.growth-metric-icon]:flex">
+          <Metric compact label="Investimento" value={formatCurrency(current.spend)} detail="Custo oficial no período" help={googleAdsHelp.spend} icon={BadgeDollarSign} current={current.spend} previous={ads.previous?.spend} accent="navy" financial />
+          <Metric compact label="Impressões" value={formatNumber(current.impressions)} detail="Exibições dos anúncios" help={googleAdsHelp.impressions} icon={Eye} current={current.impressions} previous={ads.previous?.impressions} accent="violet" />
+          <Metric compact label="Cliques totais" value={formatNumber(current.clicks)} detail="Site + WhatsApp + outros" help={googleAdsHelp.clicks} icon={MousePointerClick} current={current.clicks} previous={ads.previous?.clicks} accent="teal" />
+          <Metric compact label="CTR" value={formatPercent(current.ctr)} detail="Cliques ÷ impressões" help={googleAdsHelp.ctr} icon={Target} accent="violet" />
+          <Metric compact label="CPC médio" value={formatCurrency(current.averageCpc)} detail="Custo médio por clique" help={googleAdsHelp.averageCpc} icon={Gauge} accent="gold" financial />
         </div>
       </section>
 
@@ -2521,7 +2578,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           title="Para onde foram os cliques?"
           description="Os cliques do anúncio e os cliques feitos dentro do site ficam separados para não misturar etapas diferentes."
         />
-        <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(210px,1fr))] gap-2.5">
           {clickTypes.length ? (
             <>
               <ClickBreakdownItem
@@ -2553,19 +2610,9 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                   </div>
                 )}
               />
-              <ClickBreakdownItem
-                label="Ligar no anúncio"
-                value={adCallClicks}
-                detail={calls?.reported
-                  ? `${formatNumber(calls.received)} ${calls.received === 1 ? 'atendida' : 'atendidas'} · ${formatDuration(calls.averageDurationSeconds)} em média`
-                  : 'Abriram o discador pelo próprio anúncio'}
-                help={googleAdsHelp.adCalls}
-                icon={PhoneCall}
-                tone="amber"
-              />
             </>
           ) : (
-            <div className="col-span-2 flex min-h-32 items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center lg:col-span-3">
+            <div className="col-span-full flex min-h-32 items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center">
               <div>
                 <MousePointerClick className="mx-auto h-5 w-5 text-slate-500" aria-hidden="true" />
                 <p className="mt-2 text-sm font-semibold text-slate-800">Detalhamento aguardando sincronização</p>
@@ -2651,13 +2698,12 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           title="Os cliques estão virando resultado?"
           description="Conversão aqui é uma ação configurada no Google Ads; não é comissão nem faturamento da O.S. As primárias orientam a campanha e o total também inclui ações secundárias."
         />
-        <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-6 [&_.growth-metric-icon]:hidden 2xl:[&_.growth-metric-icon]:flex">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2.5 [&_.growth-metric-icon]:hidden 2xl:[&_.growth-metric-icon]:flex">
           <Metric compact label="Conversões primárias" value={formatDecimal(current.conversions)} detail="Ações usadas na otimização" help={googleAdsHelp.conversions} icon={Target} current={current.conversions} previous={ads.previous?.conversions} accent="violet" />
           <Metric compact label="Todas as conversões" value={formatDecimal(current.allConversions)} detail="Primárias + secundárias" help={googleAdsHelp.allConversions} icon={ListChecks} current={current.allConversions} previous={ads.previous?.allConversions} accent="navy" />
           <Metric compact label="Taxa de conversão" value={formatPercent(current.conversionRate)} detail="Conversões ÷ cliques" help={googleAdsHelp.conversionRate} icon={ArrowUpRight} accent="teal" />
           <Metric compact label="CPA" value={formatCurrency(current.cpl)} detail="Custo por conversão principal" help={googleAdsHelp.cpa} icon={BadgeDollarSign} accent="rose" financial />
           <Metric compact label="Valor das conversões" value={formatCurrency(current.conversionValue)} detail={`${formatCurrency(current.valuePerConversion)} por conversão`} help={`${googleAdsHelp.conversionValue} ${googleAdsHelp.valuePerConversion}`} icon={Sparkles} accent="teal" financial financialDetail />
-          <Metric compact label="ROAS configurado" value={`${formatDecimal(current.roas)}x`} detail="Valor configurado ÷ investimento" help={googleAdsHelp.roas} icon={ArrowUpRight} accent="gold" />
         </div>
       </section>
 
@@ -2667,7 +2713,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           title="Onde estamos perdendo oportunidades?"
           description="Esses indicadores ajudam a decidir se o gargalo está no orçamento, na posição ou na qualidade do tráfego."
         />
-        <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-6 [&_.growth-metric-icon]:hidden 2xl:[&_.growth-metric-icon]:flex">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(145px,1fr))] gap-2.5 [&_.growth-metric-icon]:hidden 2xl:[&_.growth-metric-icon]:flex">
           <Metric compact label="Parcela de impressões" value={formatPercent(current.searchImpressionShare)} detail="Cobertura possível na Pesquisa" help={googleAdsHelp.searchImpressionShare} icon={Gauge} accent="navy" />
           <Metric compact label="Perdida por orçamento" value={formatPercent(current.searchBudgetLostImpressionShare)} detail="Limitação de verba" help={googleAdsHelp.searchBudgetLostImpressionShare} icon={AlertTriangle} accent="rose" />
           <Metric compact label="Perdida por classificação" value={formatPercent(current.searchRankLostImpressionShare)} detail="Lance, qualidade e relevância" help={googleAdsHelp.searchRankLostImpressionShare} icon={Search} accent="violet" />
@@ -2675,49 +2721,6 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           <Metric compact label="Primeira posição" value={formatPercent(current.searchAbsoluteTopImpressionShare)} detail="Topo absoluto da pesquisa" help={googleAdsHelp.searchAbsoluteTopImpressionShare} icon={Target} accent="gold" />
           <Metric compact label="Cliques inválidos" value={formatNumber(current.invalidClicks)} detail={`${formatPercent(current.invalidClickRate)} dos cliques filtrados`} help={googleAdsHelp.invalidClicks} icon={ShieldCheck} accent="navy" />
         </div>
-        <Card className="rounded-2xl border-border/70 shadow-sm">
-          <CardContent className="p-4 sm:p-5">
-            <PanelHeading
-              eyebrow="Rede de veiculação"
-              title="Pesquisa Google x parceiros"
-              description="Separa custo e resultado por rede para revelar tráfego barato que não gera conversão."
-            />
-            {networks.length ? (
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {networks.map((item) => (
-                  <div key={item.network} className="rounded-xl border bg-card p-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                        {googleAdsNetworkLabels[item.network] ?? item.network}
-                      </p>
-                      <HelpTip label="Rede" description={googleAdsHelp.network} />
-                    </div>
-                    <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
-                      <div>
-                        <dt className="text-muted-foreground">Cliques</dt>
-                        <dd className="mt-1 font-bold">{formatNumber(item.clicks)}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-muted-foreground">CTR</dt>
-                        <dd className="mt-1 font-bold">{formatPercent(item.ctr)}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-muted-foreground">Custo</dt>
-                        <dd className="mt-1 font-bold"><FinancialValue>{formatCurrency(item.spend)}</FinancialValue></dd>
-                      </div>
-                      <div>
-                        <dt className="text-muted-foreground">Conversões</dt>
-                        <dd className="mt-1 font-bold">{formatDecimal(item.conversions)}</dd>
-                      </div>
-                    </dl>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="mt-4 text-sm text-muted-foreground">A divisão por rede aparecerá na próxima sincronização da API.</p>
-            )}
-          </CardContent>
-        </Card>
       </section>
 
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(260px,0.45fr)]">
@@ -3059,11 +3062,6 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
 
 export function QualityTab({ resumo }: { resumo: MarketingResumo }) {
   const quality = resumo.quality;
-  const [eventFilter, setEventFilter] = useState('todos');
-  const filteredEvents = useMemo(() => {
-    const events = resumo.site.recentEvents ?? [];
-    return eventFilter === 'todos' ? events : events.filter((event) => event.event_type === eventFilter);
-  }, [eventFilter, resumo.site.recentEvents]);
 
   return (
     <div className="space-y-5">
@@ -3089,70 +3087,28 @@ export function QualityTab({ resumo }: { resumo: MarketingResumo }) {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.65fr)]">
-        <Card className="min-w-0 rounded-2xl border-border/70 shadow-sm">
-          <CardContent className="min-w-0 p-4 sm:p-6">
-            <PanelHeading
-              eyebrow="Auditoria dos eventos"
-              title="O que aconteceu no site"
-              action={(
-                <Select value={eventFilter} onValueChange={setEventFilter}>
-                  <SelectTrigger className="w-full sm:w-[210px]">
-                    <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="todos">Todas as ações</SelectItem>
-                    {Object.entries(eventLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              )}
-            />
-            <div className="mt-5 w-full max-w-full overflow-auto rounded-xl border" role="region" aria-label="Auditoria dos eventos do site" tabIndex={0}>
-              <table className="w-full min-w-[820px] text-left text-xs">
-                <thead className="sticky top-0 z-10 border-b bg-muted/95 text-[10px] uppercase tracking-[0.12em] text-muted-foreground backdrop-blur">
-                  <tr>
-                    <th className="px-3 py-3 font-semibold">Data</th>
-                    <th className="px-3 py-3 font-semibold">Ação</th>
-                    <th className="px-3 py-3 font-semibold">Código</th>
-                    <th className="px-3 py-3 font-semibold">Página</th>
-                    <th className="px-3 py-3 font-semibold">Origem</th>
-                    <th className="px-3 py-3 font-semibold">Qualidade</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {filteredEvents.map((event, index) => <EventRow key={event.external_event_id ?? event.id_marketing_site_eventos ?? index} event={event} />)}
-                </tbody>
-              </table>
-              {filteredEvents.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">Nenhum evento neste filtro.</div> : null}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-2xl border-border/70 shadow-sm">
+      <Card className="rounded-2xl border-border/70 shadow-sm">
           <CardContent className="p-4 sm:p-6">
             <PanelHeading eyebrow="Marcos do piloto" title="Snapshots congelados" description="D0, D30, D60 e D90 permitem comprovar a evolução sem reescrever o passado." />
-            <div className="relative mt-6 space-y-5 before:absolute before:bottom-3 before:left-[11px] before:top-3 before:w-px before:bg-border">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {(resumo.snapshots ?? []).map((snapshot) => {
                 const metrics = snapshot.metrics as { marker?: string };
                 return (
-                  <div key={`${snapshot.snapshot_type}-${snapshot.period_start}`} className="relative flex gap-4">
-                    <span className="relative z-10 mt-1 h-[23px] w-[23px] shrink-0 rounded-full border-4 border-card bg-amber-400 shadow-sm" />
+                  <div key={`${snapshot.snapshot_type}-${snapshot.period_start}`} className="flex gap-3 rounded-xl border bg-background p-3">
+                    <span className="mt-1 h-3 w-3 shrink-0 rounded-full bg-amber-400 shadow-sm" />
                     <div>
                       <p className="text-sm font-bold text-foreground">{metrics.marker ?? snapshot.snapshot_type}</p>
                       <p className="text-xs text-muted-foreground">{formatDateTime(snapshot.generated_at)}</p>
-                      <Badge variant="outline" className="mt-2">Dados congelados</Badge>
                     </div>
                   </div>
                 );
               })}
               {(resumo.snapshots ?? []).length === 0 ? (
-                <p className="pl-10 text-sm text-muted-foreground">Nenhum snapshot congelado ainda.</p>
+                <p className="text-sm text-muted-foreground">Nenhum snapshot congelado ainda.</p>
               ) : null}
             </div>
           </CardContent>
-        </Card>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -3178,27 +3134,6 @@ function IntegrationDetail({ integration }: { integration: MarketingIntegrationS
         {integration.lastError ? <p className="mt-1 line-clamp-2 text-amber-700">{integration.lastError}</p> : null}
       </div>
     </div>
-  );
-}
-
-function EventRow({ event }: { event: MarketingEventItem }) {
-  const quality = event.alert_status === 'failed'
-    ? { label: 'Falha', className: 'border-rose-200 bg-rose-50 text-rose-700' }
-    : Number(event.duplicate_count ?? 0) > 0
-      ? { label: `${event.duplicate_count} repetido(s)`, className: 'border-amber-200 bg-amber-50 text-amber-700' }
-      : { label: 'Válido', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' };
-  return (
-    <tr className="bg-card hover:bg-muted/30">
-      <td className="px-3 py-3 text-muted-foreground">{formatDateTime(event.occurred_at)}</td>
-      <td className="px-3 py-3 font-semibold text-foreground">{eventLabels[event.event_type] ?? event.event_type}</td>
-      <td className="px-3 py-3 font-mono text-[10px] text-muted-foreground">{event.lead_code ?? '—'}</td>
-      <td className="max-w-[180px] truncate px-3 py-3 text-foreground" title={event.page_path ?? undefined}>{event.page_path ?? '/'}</td>
-      <td className="px-3 py-3">
-        <p className="font-medium text-foreground">{event.source ?? 'direto'}</p>
-        <p className="text-[10px] text-muted-foreground">{event.campaign ?? event.medium ?? 'sem campanha'}</p>
-      </td>
-      <td className="px-3 py-3"><Badge variant="outline" className={quality.className}>{quality.label}</Badge></td>
-    </tr>
   );
 }
 
@@ -3310,10 +3245,10 @@ export default function MarketingGrowth() {
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,hsl(var(--primary)/0.06),transparent_32%),hsl(var(--background))]">
       <div className="mx-auto w-full max-w-[1680px] space-y-3 p-3 sm:p-4 lg:p-5">
-        <header className="overflow-hidden rounded-[26px] bg-[#0b2035] text-white shadow-[0_18px_60px_-35px_rgba(2,15,28,0.85)]">
-          <div className="relative px-4 pb-3 pt-4 sm:px-5 lg:px-6">
+        <header className="overflow-hidden rounded-[22px] bg-[#0b2035] text-white shadow-[0_18px_60px_-35px_rgba(2,15,28,0.85)]">
+          <div className="relative px-4 py-3 sm:px-5 lg:px-5">
             <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-1/3 bg-[linear-gradient(135deg,transparent,rgba(240,180,77,0.10))] lg:block" />
-            <div className="relative grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+            <div className="relative grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
               <div className="min-w-0 max-w-3xl">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#f0b44d]">
@@ -3325,23 +3260,11 @@ export default function MarketingGrowth() {
                       Visão da Retífica
                     </Badge>
                   ) : null}
-                  <Badge className="gap-1.5 border-teal-300/20 bg-teal-300/10 text-teal-200 hover:bg-teal-300/10">
-                    <span className="relative flex h-2 w-2">
-                      <span className="absolute inline-flex h-full w-full rounded-full bg-teal-300 opacity-75 motion-safe:animate-ping" />
-                      <span className="relative inline-flex h-2 w-2 rounded-full bg-teal-300" />
-                    </span>
-                    Atualização automática · 5 min
-                  </Badge>
                 </div>
-                <h1 className="mt-2 font-display text-2xl font-bold tracking-tight sm:text-3xl">Crescimento</h1>
-                <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-300 sm:text-sm">
-                  {hasPrivateAccess
-                    ? 'Impressão, visita, contato, cliente, O.S. e comissão no mesmo painel — com origem e disponibilidade de cada fonte explícitas.'
-                    : 'Acompanhe como o site aparece no Google, recebe visitas e transforma interesse em contatos.'}
-                </p>
+                <h1 className="mt-1 font-display text-2xl font-bold tracking-tight sm:text-3xl">Crescimento</h1>
               </div>
 
-              <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,190px)_auto] lg:self-center xl:grid-cols-[minmax(0,210px)_auto]">
+              <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,180px)_auto] lg:self-center xl:grid-cols-[minmax(0,190px)_auto]">
                 {hasPrivateAccess && isCurrentUserMegaMaster ? (
                   <Select value={selectedUserId} onValueChange={setSelectedUserId} disabled={isLoadingUsers || !selectableUsers.length}>
                     <SelectTrigger className="h-9 min-w-0 border-white/15 bg-white/5 text-white hover:bg-white/10">

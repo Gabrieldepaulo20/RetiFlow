@@ -23,6 +23,7 @@ describe('sessões individuais de marketing', () => {
         source: 'google',
         medium: 'cpc',
         campaign: 'Pesquisa regional',
+        term: 'retífica de cabeçote',
         gclid: 'identificador-presente',
         lead_code: 'LEAD-1',
         metadata: { measurementMode: 'consented' },
@@ -68,6 +69,7 @@ describe('sessões individuais de marketing', () => {
       source: 'google',
       medium: 'cpc',
       campaign: 'Pesquisa regional',
+      searchTerm: 'retífica de cabeçote',
       clickIdType: 'gclid',
       originType: 'paid',
       eventCount: 3,
@@ -92,6 +94,34 @@ describe('sessões individuais de marketing', () => {
       pagePath: '/orcamento',
     })]);
     expect(sessions[0].engagementLevel).toBe('converted');
+  });
+
+  it('não reaproveita termo de uma origem antiga quando a sessão passa a ser paga', () => {
+    const [session] = buildMarketingVisitorSessions([
+      {
+        session_id: 'sessao-termo-origem',
+        occurred_at: '2026-08-03T09:00:00.000Z',
+        event_type: 'page_view',
+        source: 'bing',
+        medium: 'organic',
+        term: 'termo orgânico antigo',
+      },
+      {
+        session_id: 'sessao-termo-origem',
+        occurred_at: '2026-08-03T09:03:00.000Z',
+        event_type: 'page_view',
+        source: 'google',
+        medium: 'cpc',
+        campaign: 'Pesquisa paga',
+        gclid: 'clique-pago',
+      },
+    ], []);
+
+    expect(session).toMatchObject({
+      originType: 'paid',
+      source: 'google',
+      searchTerm: null,
+    });
   });
 
   it('rotula acesso sem atribuição como direto/outros e não inventa duração', () => {

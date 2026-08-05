@@ -282,6 +282,7 @@ function buildResumo(): MarketingResumo {
           source: 'google',
           medium: 'cpc',
           campaign: 'Anúncio principal',
+          searchTerm: 'retífica de cabeçote',
           clickIdType: 'gclid',
           originType: 'paid',
           eventCount: 3,
@@ -383,16 +384,20 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByText('Site · demais origens')).toBeInTheDocument();
     expect(screen.getByText('Perfil da Empresa')).toBeInTheDocument();
     expect(screen.getByText('Cliques no chat do Perfil da Empresa')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Sessões individuais do site' })).toBeInTheDocument();
-    expect(screen.getByText('Google Ads')).toBeInTheDocument();
-    expect(screen.getByText('Orgânico')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'De onde vieram e por onde passaram' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Filtrar jornadas por origem' })).toBeInTheDocument();
+    expect(screen.getAllByText('Google Ads').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Orgânico').length).toBeGreaterThan(0);
+    expect(screen.getByText('retífica de cabeçote')).toBeInTheDocument();
+    expect(screen.getByText('Não fornecido pelo buscador')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Jornadas das sessões do site' })).toHaveClass('max-h-[34rem]', 'overflow-auto');
     expect(screen.queryByText('Anúncio principal')).not.toBeInTheDocument();
     expect(screen.getByText('5min 00s')).toBeInTheDocument();
-    expect(screen.getByText(/Mostrando todas as 2 sessões rastreadas do período selecionado/i)).toBeInTheDocument();
+    expect(screen.getByText(/Mostrando 2 de 2 jornadas rastreadas/i)).toBeInTheDocument();
     expect(screen.getByText(/não permite afirmar que a pessoa saiu imediatamente/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Ver detalhes da sessão sessao-paga/i }));
-    expect(screen.getByText('Caminho no site')).toBeInTheDocument();
+    expect(screen.getByText('Caminho completo no site')).toBeInTheDocument();
     expect(screen.getByText('Clique no WhatsApp')).toBeInTheDocument();
     expect(screen.getByText('/contato · whatsapp_contato')).toBeInTheDocument();
   });
@@ -408,7 +413,7 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByText('WhatsApp do anúncio')).toBeInTheDocument();
     expect(screen.getByText('(16) 99302-1998')).toBeInTheDocument();
     expect(screen.getByText('Apto a aparecer')).toBeInTheDocument();
-    expect(screen.getByText('Ligar no anúncio')).toBeInTheDocument();
+    expect(screen.queryByText('Ligar no anúncio')).not.toBeInTheDocument();
     expect(screen.getByText('WhatsApp no site após anúncio')).toBeInTheDocument();
     expect(screen.getByText('Somente pessoas identificadas como vindas da mídia paga')).toBeInTheDocument();
     expect(screen.getByText('1 SEO · 0 demais ficam no Resumo')).toBeInTheDocument();
@@ -416,7 +421,7 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByText('Onde visitantes dos anúncios clicaram no WhatsApp')).toBeInTheDocument();
     expect(screen.getByText('Topo da página B2B')).toBeInTheDocument();
     expect(screen.getByLabelText('55 de 55 cliques explicados')).toHaveTextContent('55 / 55');
-    expect(screen.getByText('1 atendida · 45s em média')).toBeInTheDocument();
+    expect(screen.queryByText('1 atendida · 45s em média')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Do clique ao atendimento real' })).not.toBeInTheDocument();
     expect(screen.getByText('Toques em Ligar')).toBeInTheDocument();
     expect(screen.getByText('Registradas')).toBeInTheDocument();
@@ -433,13 +438,14 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByText(/não nome nem telefone completo/i)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Os cliques estão virando resultado?' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Onde estamos perdendo oportunidades?' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Pesquisa Google x parceiros' })).toBeInTheDocument();
-    expect(screen.getByText('Parceiros de Pesquisa')).toBeInTheDocument();
+    expect(screen.queryByText('ROAS configurado')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Pesquisa Google x parceiros' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Desempenho por grupo de anúncios' })).toBeInTheDocument();
     expect(screen.getByText('Todas as conversões')).toBeInTheDocument();
     expect(screen.queryByText('Comissão gerada')).not.toBeInTheDocument();
     expect(screen.queryByText('O.S. aprovadas')).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Sessões individuais do site' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'De onde vieram e por onde passaram' })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Conferência de cliques e sessões do Google Ads' })).toHaveClass('max-h-[32rem]', 'overflow-auto');
     expect(screen.getByText('Tempo médio medido')).toBeInTheDocument();
     expect(screen.getByText('nenhuma sessão medida')).toBeInTheDocument();
 
@@ -532,6 +538,7 @@ describe('organização do painel Crescimento', () => {
     const integrationsGrid = screen.getByTestId('quality-integrations-grid');
     expect(integrationsGrid).toHaveClass('grid-cols-2', 'lg:grid-cols-4', 'gap-2');
     expect(integrationsGrid.children).toHaveLength(4);
-    expect(screen.getByRole('heading', { name: 'O que aconteceu no site' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'O que aconteceu no site' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Snapshots congelados' })).toBeInTheDocument();
   });
 });

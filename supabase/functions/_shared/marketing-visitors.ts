@@ -20,6 +20,8 @@ export interface MarketingVisitorSession {
   source: string;
   medium: string;
   campaign: string | null;
+  /** Termo de busca/UTM capturado nesta sessão. Nunca é inferido de relatórios agregados. */
+  searchTerm: string | null;
   clickIdType: 'gclid' | 'gbraid' | 'wbraid' | null;
   originType: MarketingAttributionBucket;
   eventCount: number;
@@ -186,6 +188,7 @@ export function buildMarketingVisitorSessions(
     const pageUrl = safePageUrl(event, pagePath);
     const occurredAtEpoch = Date.parse(occurredAt);
     const labels = attributionLabels(event, originType);
+    const searchTerm = limitedString(event.term, 180);
     const isAction = ['whatsapp_click', 'phone_click', 'form_submit'].includes(String(event.event_type));
     const engagementPulse = isEngagementPulse(event);
     const activeSeconds = activeEngagementSeconds(event);
@@ -206,6 +209,7 @@ export function buildMarketingVisitorSessions(
         landingUrl: pageUrl,
         lastUrl: pageUrl,
         ...labels,
+        searchTerm,
         clickIdType: getMarketingClickIdType(event),
         originType,
         eventCount: engagementPulse ? 0 : 1,
@@ -288,8 +292,12 @@ export function buildMarketingVisitorSessions(
       existing.source = labels.source;
       existing.medium = labels.medium;
       existing.campaign = labels.campaign;
+      existing.searchTerm = searchTerm;
       existing.clickIdType = getMarketingClickIdType(event);
     } else {
+      if (originType === existing.originType && !existing.searchTerm) {
+        existing.searchTerm = searchTerm;
+      }
       existing.clickIdType = existing.clickIdType ?? getMarketingClickIdType(event);
     }
 

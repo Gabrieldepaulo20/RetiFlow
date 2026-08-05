@@ -383,6 +383,8 @@ export interface MarketingPaidVisitor {
   source: string;
   medium: string;
   campaign: string | null;
+  /** Termo capturado na própria sessão; ausente quando a origem não o fornece. */
+  searchTerm?: string | null;
   clickIdType: string | null;
   /** Como a sessão chegou: anúncio pago, busca orgânica, ou direto/outros. */
   originType: 'paid' | 'organic' | 'other';
