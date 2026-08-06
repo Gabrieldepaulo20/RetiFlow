@@ -35,6 +35,29 @@ export interface ClosingSource {
   services: IntakeService[];
 }
 
+export async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+) {
+  if (items.length === 0) return [];
+
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const workerCount = Math.min(items.length, Math.max(1, Math.trunc(concurrency)));
+
+  const worker = async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  };
+
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
 export function getClosingDateRange(filters: ClosingPeriodFilters) {
   const year = Number.parseInt(filters.year, 10);
   const monthIndex = Number.parseInt(filters.month, 10) - 1;

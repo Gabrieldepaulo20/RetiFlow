@@ -348,7 +348,7 @@ describe('ProtectedRoute', () => {
     expect(screen.queryByText('access-denied')).not.toBeInTheDocument();
   });
 
-  it('renders admin content for a real Master with the Admin module enabled', async () => {
+  it('renders admin content immediately and refreshes stale access in the background', async () => {
     const refreshProfile = vi.fn().mockResolvedValue(true);
     mockedUseAuth.mockReturnValue({
       ...authBase,
@@ -369,13 +369,14 @@ describe('ProtectedRoute', () => {
 
     renderAdminRoute();
 
-    expect(screen.getByText('Verificando acesso')).toBeInTheDocument();
+    expect(screen.getByText('admin-page')).toBeInTheDocument();
+    expect(screen.queryByText('Verificando acesso')).not.toBeInTheDocument();
     await waitFor(() => expect(refreshProfile).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('admin-page')).toBeInTheDocument();
     expect(screen.queryByText('dashboard-page')).not.toBeInTheDocument();
   });
 
-  it('renders admin content for the configured Mega Master after server access revalidation', async () => {
+  it('keeps the configured Mega Master unblocked while server access is refreshed', async () => {
     const refreshProfile = vi.fn().mockResolvedValue(true);
     mockedUseAuth.mockReturnValue({
       ...authBase,
@@ -396,7 +397,8 @@ describe('ProtectedRoute', () => {
 
     renderAdminRoute();
 
-    expect(screen.getByText('Verificando acesso')).toBeInTheDocument();
+    expect(screen.getByText('admin-page')).toBeInTheDocument();
+    expect(screen.queryByText('Verificando acesso')).not.toBeInTheDocument();
     await waitFor(() => expect(refreshProfile).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('admin-page')).toBeInTheDocument();
     expect(screen.queryByText('admin-login-page')).not.toBeInTheDocument();

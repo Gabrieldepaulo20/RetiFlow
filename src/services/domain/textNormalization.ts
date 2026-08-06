@@ -214,10 +214,45 @@ function localDateValue(value: string | null | undefined) {
   const date = normalizeWhitespace(value).slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
   const [year, month, day] = date.split('-').map(Number);
-  return new Date(year, month - 1, day).getTime();
+  const parsed = new Date(year, month - 1, day);
+  if (
+    parsed.getFullYear() !== year
+    || parsed.getMonth() !== month - 1
+    || parsed.getDate() !== day
+  ) return null;
+  return parsed.getTime();
 }
 
 export const DEFAULT_NOTE_DEADLINE_DAYS = 5;
+
+export function getDefaultDeadlineForBaseDate(
+  baseDate: string | null | undefined,
+  days = DEFAULT_NOTE_DEADLINE_DAYS,
+) {
+  const base = localDateValue(baseDate);
+  if (base == null) return '';
+
+  const deadline = new Date(base);
+  deadline.setDate(deadline.getDate() + Math.max(0, Math.trunc(days)));
+  const baseYear = new Date(base).getFullYear();
+  if (deadline.getFullYear() !== baseYear) {
+    return `${baseYear}-12-31`;
+  }
+
+  const month = String(deadline.getMonth() + 1).padStart(2, '0');
+  const day = String(deadline.getDate()).padStart(2, '0');
+  return `${deadline.getFullYear()}-${month}-${day}`;
+}
+
+export function validateDatesShareCalendarYear(
+  firstDate: string | null | undefined,
+  secondDate: string | null | undefined,
+) {
+  const first = localDateValue(firstDate);
+  const second = localDateValue(secondDate);
+  if (first == null || second == null) return true;
+  return new Date(first).getFullYear() === new Date(second).getFullYear();
+}
 
 export function validateDueDateNotBeforeBaseDate(dueDate: string | null | undefined, baseDate: string | null | undefined) {
   const due = localDateValue(dueDate);

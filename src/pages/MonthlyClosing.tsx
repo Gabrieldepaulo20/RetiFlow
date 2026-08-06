@@ -50,6 +50,7 @@ import {
 import {
   getClosingCompetenceDate,
   getMonthlyClosingDateRange,
+  mapWithConcurrency,
   parseDateInputValue,
   toDateInputValue,
   type MonthlyClosingDateMode,
@@ -801,9 +802,10 @@ export default function MonthlyClosing() {
         return;
       }
 
-      const resultado: PreviewNote[] = [];
-
-      for (const nota of notasFiltradas) {
+      // O detalhe de cada O.S. ainda vem de uma RPC individual. Executar com
+      // concorrência limitada elimina a espera sequencial sem saturar a
+      // instância pequena do Supabase em fechamentos grandes.
+      const resultado = await mapWithConcurrency(notasFiltradas, 6, async (nota): Promise<PreviewNote> => {
         const det = IS_REAL_AUTH ? await getNotaDetalhesParaFechamento(nota.id) : null;
         const itensServico = Array.isArray(det?.itens_servico) ? det.itens_servico : [];
         const fallbackItem = {
@@ -814,7 +816,7 @@ export default function MonthlyClosing() {
           desconto_porcentagem: 0,
           subtotal: nota.totalAmount,
         };
-        resultado.push({
+        return {
           id: nota.id,
           os: nota.number,
           veiculo: nota.vehicleModel,
@@ -841,8 +843,8 @@ export default function MonthlyClosing() {
                 };
               })
             : [fallbackItem],
-        });
-      }
+        };
+      });
 
       setPreviewNotes(resultado);
       setDescontos({});
@@ -1929,7 +1931,15 @@ export default function MonthlyClosing() {
                   const descontoItens = Math.max(0, itensBruto - nota.total);
                   const descontoFinalOs = Math.max(0, saldoAbertoNota - totalComDesc);
                   return (
-                    <Card key={nota.id} className={cn('overflow-hidden border-border/70 transition', !included && 'opacity-70', isPaid && 'bg-muted/30')}>
+                    <Card
+                      key={nota.id}
+                      aria-disabled={isPaid}
+                      className={cn(
+                        'overflow-hidden border-border/70 transition',
+                        !included && 'opacity-70',
+                        isPaid && 'border-muted-foreground/20 bg-muted/60 opacity-60 grayscale-[0.2] shadow-none',
+                      )}
+                    >
                       <div className="bg-muted/40 border-b border-border/50 px-4 py-3 flex items-center justify-between gap-3">
                         <div className="flex min-w-0 items-start gap-3">
                           <label className={cn('mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border bg-background transition', isPaid ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:border-primary/50')}>

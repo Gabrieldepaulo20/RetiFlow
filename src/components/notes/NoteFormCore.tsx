@@ -42,8 +42,8 @@ import {
   parsePositiveNumber,
   toTitleCasePtBr,
   DEFAULT_NOTE_DEADLINE_DAYS,
-  validateDateNotAfter,
-  validateDueDateNotBeforeBaseDate,
+  getDefaultDeadlineForBaseDate,
+  validateDatesShareCalendarYear,
 } from '@/services/domain/textNormalization';
 import { formatNoteNumber, normalizeNoteNumber } from '@/lib/noteNumbers';
 import { getNotaServicoDetalhes, uploadNotaPDF, updateNotaPdfUrl } from '@/api/supabase/notas';
@@ -121,12 +121,6 @@ function formatInputDate(date: Date) {
 
 function getTodayInputValue() {
   return formatInputDate(new Date());
-}
-
-function getFutureInputValue(days: number) {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  return formatInputDate(date);
 }
 
 /* ─── Item types ─── */
@@ -216,7 +210,10 @@ export default function NoteFormCore({
     editingNote?.parentNoteId ?? (PURCHASE_NOTES_ENABLED ? preParentId : ''),
   );
   const [data, setData] = useState(() => editingNote?.createdAt.split('T')[0] || getTodayInputValue());
-  const [prazo, setPrazo] = useState(() => editingNote?.deadline?.split('T')[0] || getFutureInputValue(DEFAULT_NOTE_DEADLINE_DAYS));
+  const [prazo, setPrazo] = useState(() => (
+    editingNote?.deadline?.split('T')[0]
+    || getDefaultDeadlineForBaseDate(editingNote?.createdAt.split('T')[0] || getTodayInputValue(), DEFAULT_NOTE_DEADLINE_DAYS)
+  ));
   const [clientId, setClientId] = useState(editingNote?.clientId ?? preClientId);
   const [vehicleModel, setVehicleModel] = useState('');
   const [engineType, setEngineType] = useState('Cabeçote');
@@ -540,16 +537,12 @@ export default function NoteFormCore({
       toast({ title: 'Preencha cliente e data', variant: 'destructive' });
       return;
     }
-    if (!validateDateNotAfter(data, getTodayInputValue())) {
+    if (prazo && !validateDatesShareCalendarYear(data, prazo)) {
       toast({
-        title: 'Data de entrada inválida',
-        description: 'A data de entrada da O.S. não pode ser futura.',
+        title: 'Prazo fora do ano da O.S.',
+        description: 'A data da O.S. e o prazo devem ficar entre 01/01 e 31/12 do mesmo ano civil.',
         variant: 'destructive',
       });
-      return;
-    }
-    if (prazo && !validateDueDateNotBeforeBaseDate(prazo, data)) {
-      toast({ title: 'Prazo inválido', description: 'O prazo não pode ser anterior à data de entrada.', variant: 'destructive' });
       return;
     }
     const normalizedContatoNome = toTitleCasePtBr(contatoNome);
@@ -857,12 +850,20 @@ export default function NoteFormCore({
         <Field label="Data da O.S. / autorização" required>
           <DatePicker
             value={data}
-            onChange={setData}
+            onChange={(nextData) => {
+              const currentDefault = getDefaultDeadlineForBaseDate(data, DEFAULT_NOTE_DEADLINE_DAYS);
+              setData(nextData);
+              setPrazo((currentDeadline) => (
+                !currentDeadline || currentDeadline === currentDefault
+                  ? getDefaultDeadlineForBaseDate(nextData, DEFAULT_NOTE_DEADLINE_DAYS)
+                  : currentDeadline
+              ));
+            }}
             placeholder="Selecionar data"
             ariaLabel="Data da O.S. / autorização"
           />
           <p className="mt-1.5 text-[10px] leading-snug text-muted-foreground">
-            Pode ser uma data de meses anteriores.
+            Pode ser qualquer data dentro do ano civil informado.
           </p>
         </Field>
         <Field label="Entrega / retirada prevista">
@@ -873,7 +874,7 @@ export default function NoteFormCore({
             ariaLabel="Entrega / retirada prevista"
           />
           <p className="mt-1.5 text-[10px] leading-snug text-muted-foreground">
-            Pode ultrapassar 10 dias; não pode ser anterior à data da O.S.
+            Pode ser anterior ou posterior à O.S., desde que fique no mesmo ano civil.
           </p>
         </Field>
       </div>

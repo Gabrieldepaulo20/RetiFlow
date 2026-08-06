@@ -10,7 +10,9 @@ import {
   normalizeWhitespace,
   onlyDigits,
   toTitleCasePtBr,
+  getDefaultDeadlineForBaseDate,
   validateDateNotAfter,
+  validateDatesShareCalendarYear,
   validateDueDateNotBeforeBaseDate,
 } from '@/services/domain/textNormalization';
 
@@ -71,5 +73,17 @@ describe('textNormalization', () => {
     expect(validateDateNotAfter('2026-05-01', '2026-07-15')).toBe(true);
     expect(validateDateNotAfter('2026-07-15', '2026-07-15')).toBe(true);
     expect(validateDateNotAfter('2026-07-16', '2026-07-15')).toBe(false);
+  });
+
+  it('accepts any order/deadline sequence inside the same calendar year', () => {
+    expect(validateDatesShareCalendarYear('2026-12-20', '2026-01-03')).toBe(true);
+    expect(validateDatesShareCalendarYear('2026-01-03', '2026-12-31')).toBe(true);
+    expect(validateDatesShareCalendarYear('2026-12-31', '2027-01-01')).toBe(false);
+  });
+
+  it('keeps the default deadline inside the order calendar year', () => {
+    expect(getDefaultDeadlineForBaseDate('2026-08-06')).toBe('2026-08-11');
+    expect(getDefaultDeadlineForBaseDate('2026-12-29')).toBe('2026-12-31');
+    expect(getDefaultDeadlineForBaseDate('invalid')).toBe('');
   });
 });

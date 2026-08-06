@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { RefreshCw, WifiOff } from 'lucide-react';
 import { AppModuleKey, UserRole } from '@/types';
@@ -31,11 +31,6 @@ export default function ProtectedRoute({ moduleKey, allowedRoles, redirectTo, me
   } = useAuth();
   const location = useLocation();
   const loginPath = moduleKey === 'admin' ? '/admin/login' : '/login';
-  const accessCheckKey = useMemo(
-    () => `${user?.id ?? 'anonymous'}:${moduleKey ?? 'route'}:${location.pathname}`,
-    [location.pathname, moduleKey, user?.id],
-  );
-  const [verifiedAccessKey, setVerifiedAccessKey] = useState<string | null>(null);
   const [profileRecoveryAttempts, setProfileRecoveryAttempts] = useState(0);
   const shouldRevalidateRoute = authMode === 'real'
     && isAuthenticated
@@ -62,32 +57,18 @@ export default function ProtectedRoute({ moduleKey, allowedRoles, redirectTo, me
   }, [profileError, profileRecoveryAttempts, retryAuth]);
 
   useEffect(() => {
-    if (!shouldRevalidateRoute) {
-      setVerifiedAccessKey(null);
-      return;
-    }
+    if (!shouldRevalidateRoute) return;
 
-    // Perfil carregado recentemente — libera rota sem spinner nem RPC adicional
-    if (isProfileFresh()) {
-      setVerifiedAccessKey(accessCheckKey);
-      return;
-    }
+    // O perfil autenticado já carregado libera a navegação imediatamente. Quando
+    // envelhece, a permissão é atualizada em segundo plano; RLS/RPCs continuam
+    // sendo a barreira real para cada acesso a dados.
+    if (isProfileFresh()) return;
 
-    let cancelled = false;
-    setVerifiedAccessKey(null);
-
-    void refreshProfile()
+    void refreshProfile({ keepCurrentSessionOnTransientError: true })
       .catch(() => {
-        // AuthContext exibirá uma falha de perfil; a rota fica fechada enquanto isso.
-      })
-      .finally(() => {
-        if (!cancelled) setVerifiedAccessKey(accessCheckKey);
+        // Uma falha transitória preserva o perfil atual; o próximo ciclo tenta de novo.
       });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [accessCheckKey, isProfileFresh, refreshProfile, shouldRevalidateRoute]);
+  }, [isProfileFresh, location.pathname, moduleKey, refreshProfile, shouldRevalidateRoute, user?.id]);
 
   if (isAuthLoading || isSupportSessionValidating) {
     return (
@@ -133,15 +114,6 @@ export default function ProtectedRoute({ moduleKey, allowedRoles, redirectTo, me
 
   if (!isAuthenticated) {
     return <Navigate to={loginPath} replace state={{ from: location.pathname }} />;
-  }
-
-  if (shouldRevalidateRoute && verifiedAccessKey !== accessCheckKey) {
-    return (
-      <LoadingScreen
-        description="Confirmando no servidor se este usuário ainda pode acessar esta área."
-        label="Verificando acesso"
-      />
-    );
   }
 
   if (allowedRoles && user && !allowedRoles.includes(user.role)) {

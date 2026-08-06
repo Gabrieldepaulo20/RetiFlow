@@ -6,6 +6,7 @@ import {
   getFinalizedNotesForClosing,
   getMonthlyClosingDateRange,
   getNoteDiscount,
+  mapWithConcurrency,
   normalizeClosingRecord,
   toDateInputValue,
 } from '@/services/domain/monthlyClosing';
@@ -51,6 +52,21 @@ function buildNote(overrides: Partial<IntakeNote>): IntakeNote {
 }
 
 describe('monthly closing domain service', () => {
+  it('loads note details with bounded concurrency while preserving their order', async () => {
+    let active = 0;
+    let peak = 0;
+    const result = await mapWithConcurrency([30, 10, 20, 5], 2, async (delay, index) => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      active -= 1;
+      return `item-${index}`;
+    });
+
+    expect(peak).toBe(2);
+    expect(result).toEqual(['item-0', 'item-1', 'item-2', 'item-3']);
+  });
+
   it('builds a custom closing range from two selected dates', () => {
     const range = getMonthlyClosingDateRange({
       mode: 'custom',

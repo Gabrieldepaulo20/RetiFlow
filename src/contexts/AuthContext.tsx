@@ -145,6 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const sessionRef = useRef<AuthSession | null>(session);
   const pendingMfaSessionRef = useRef<{ session: AuthSession; portal: LoginPortal } | null>(null);
   const lastSuccessfulProfileFetchAt = useRef<number>(0);
+  const pendingProfileRefreshRef = useRef<Promise<boolean> | null>(null);
   const previousAuthenticatedUserId = useRef<string | null>(session?.user.id ?? null);
   const validatedSupportSessionKey = useRef<string | null>(null);
   const PROFILE_CACHE_TTL_MS = 30_000;
@@ -360,16 +361,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return true;
     }
 
-    const { data: { session: sbSession } } = await supabase.auth.getSession();
-    if (!sbSession) {
-      setSession(null);
-      clearSupportState();
-      setProfileError(null);
-      return false;
-    }
+    if (pendingProfileRefreshRef.current) return pendingProfileRefreshRef.current;
 
-    const result = await fetchProfileFromSupabase();
-    return applyProfileResult(result, options);
+    const request = (async () => {
+      const { data: { session: sbSession } } = await supabase.auth.getSession();
+      if (!sbSession) {
+        setSession(null);
+        clearSupportState();
+        setProfileError(null);
+        return false;
+      }
+
+      const result = await fetchProfileFromSupabase();
+      return applyProfileResult(result, options);
+    })();
+
+    pendingProfileRefreshRef.current = request;
+    try {
+      return await request;
+    } finally {
+      if (pendingProfileRefreshRef.current === request) {
+        pendingProfileRefreshRef.current = null;
+      }
+    }
   }, [applyProfileResult, clearSupportState]);
 
   useEffect(() => subscribeToModuleAccessChanges(() => setModuleAccessVersion((v) => v + 1)), []);
