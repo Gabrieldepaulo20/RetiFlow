@@ -107,10 +107,10 @@ function InlineInfo({ label }: { label: string }) {
   );
 }
 
-const financialMetricButtonClass = 'min-h-[64px] rounded-lg border border-border/70 bg-background p-1.5 text-left transition sm:min-h-[74px] sm:rounded-xl sm:p-2.5 lg:min-h-[82px] lg:p-3';
-const financialMetricLabelClass = 'flex items-start gap-0.5 text-[9px] font-medium leading-tight text-muted-foreground sm:gap-1 sm:text-[11px]';
-const financialMetricValueClass = 'mt-1 truncate text-[13px] font-display font-bold leading-none sm:text-lg lg:text-xl';
-const financialMetricIconClass = 'hidden h-6 w-6 shrink-0 items-center justify-center rounded-lg sm:flex lg:h-7 lg:w-7';
+const financialMetricButtonClass = 'min-h-[64px] rounded-lg border border-border/70 bg-background p-1.5 text-left transition sm:min-h-[74px] sm:rounded-xl sm:p-2.5 lg:min-h-[66px] lg:p-2 2xl:min-h-[82px] 2xl:p-3';
+const financialMetricLabelClass = 'flex items-start gap-0.5 text-[9px] font-medium leading-tight text-muted-foreground sm:gap-1 sm:text-[11px] lg:text-[9px] lg:tracking-tight xl:text-[10px] 2xl:text-[11px]';
+const financialMetricValueClass = 'mt-1 truncate text-[13px] font-display font-bold leading-none sm:text-lg lg:text-[13px] xl:text-sm 2xl:text-xl';
+const financialMetricIconClass = 'hidden h-6 w-6 shrink-0 items-center justify-center rounded-lg sm:flex lg:hidden 2xl:flex 2xl:h-7 2xl:w-7';
 
 function DRERow({ label, amount, deduction, subtotal, final }: {
   label: string;
@@ -726,7 +726,7 @@ export default function Dashboard() {
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-1.5 p-1.5 sm:gap-2 sm:p-2.5 md:grid-cols-4 xl:p-3 2xl:grid-cols-7">
+          <div className="grid grid-cols-3 gap-1.5 p-1.5 sm:gap-2 sm:p-2.5 md:grid-cols-4 lg:grid-cols-7 lg:gap-1.5 lg:p-2 xl:p-2.5 2xl:gap-2 2xl:p-3" data-testid="dashboard-financial-kpis">
             <button
               type="button"
               onClick={() => navigate('/notas-entrada')}

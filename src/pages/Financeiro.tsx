@@ -688,11 +688,11 @@ export default function Financeiro() {
       ) : null}
 
       {resumoQuery.isLoading ? (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 2xl:grid-cols-7">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7 lg:gap-1.5 2xl:gap-2">
           {Array.from({ length: 7 }, (_, index) => <Skeleton key={index} className="h-20 rounded-2xl" />)}
         </div>
       ) : resumoQuery.data ? (
-        <section className="grid grid-cols-2 gap-2 sm:grid-cols-4 2xl:grid-cols-7">
+        <section className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7 lg:gap-1.5 2xl:gap-2" data-testid="finance-summary-grid">
           <KpiCard
             label={resumo.saldoInicialInformado ? 'Saldo anterior' : 'Resultado anterior'}
             value={resumo.saldoAnterior}

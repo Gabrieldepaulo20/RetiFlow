@@ -14,6 +14,22 @@ test.describe('Dashboard', () => {
     await expect(page.getByRole('button', { name: /Ticket médio/i })).toBeVisible();
   });
 
+  test('mantém os sete KPIs em uma linha no tablet deitado', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.reload();
+
+    const cards = page.getByTestId('dashboard-financial-kpis').locator(':scope > *');
+    await expect(cards).toHaveCount(7);
+
+    const boxes = await cards.evaluateAll((elements) => elements.map((element) => {
+      const rect = element.getBoundingClientRect();
+      return { x: rect.x, y: rect.y, right: rect.right };
+    }));
+
+    expect(new Set(boxes.map((box) => Math.round(box.y))).size).toBe(1);
+    expect(boxes.at(-1)?.right).toBeLessThanOrEqual(1280);
+  });
+
   test('visualiza gráficos de faturamento e status', async ({ page }) => {
     await expect(page.getByText('Distribuição por Status', { exact: true })).toBeVisible();
     await expect(page.getByText('Faturamento — 6 meses', { exact: true })).toBeVisible();

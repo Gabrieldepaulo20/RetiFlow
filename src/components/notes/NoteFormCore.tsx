@@ -1353,7 +1353,7 @@ export default function NoteFormCore({
     return (
       <div className="relative flex flex-col flex-1 overflow-hidden">
         {/* Scrollable body */}
-        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5 min-[900px]:py-3">
           {isLocked && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -1384,7 +1384,7 @@ export default function NoteFormCore({
         )}
 
         {/* Sticky footer */}
-        <div className="border-t border-border/50 px-6 py-4 shrink-0 bg-muted/20">
+        <div className="shrink-0 border-t border-border/50 bg-muted/20 px-4 py-3 sm:px-5">
           <div className="flex items-center justify-between flex-wrap gap-3">
             {financialSummary}
             <div className="flex gap-2 ml-auto">

@@ -13,6 +13,21 @@ test.describe('Clientes', () => {
     await expect(page.getByRole('row', { name: /José Carlos Mendes/i })).toBeVisible();
   });
 
+  test('organiza os indicadores e a tabela no tablet deitado', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.reload();
+
+    const cards = page.getByTestId('clients-summary-grid').locator(':scope > div');
+    await expect(cards).toHaveCount(3);
+
+    const cardRows = await cards.evaluateAll((elements) => elements.map((element) => (
+      Math.round(element.getBoundingClientRect().y)
+    )));
+    expect(new Set(cardRows).size).toBe(1);
+    await expect(page.getByRole('table')).toBeVisible();
+    await expect(page.getByText('Em queda', { exact: true })).toHaveCount(0);
+  });
+
   test('cadastra cliente com CEP consultado e feedback de sucesso', async ({ page }) => {
     await page.route('https://viacep.com.br/ws/01310930/json/', async (route) => {
       await route.fulfill({

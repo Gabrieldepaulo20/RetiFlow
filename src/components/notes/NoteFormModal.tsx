@@ -37,12 +37,12 @@ export default function NoteFormModal({
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent
-        className="max-w-3xl p-0 gap-0 overflow-hidden flex flex-col max-h-[92vh] rounded-2xl border-border/60 [&>button:last-child]:hidden"
+        className="flex h-[calc(100dvh-1rem)] max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl border-border/60 p-0 sm:h-[min(820px,calc(100dvh-2rem))] sm:w-[calc(100vw-2rem)] [&>button:last-child]:hidden"
         onPointerDownOutside={(event) => event.preventDefault()}
         onInteractOutside={(event) => event.preventDefault()}
         onEscapeKeyDown={(event) => event.preventDefault()}
       >
-        <DialogHeader className="shrink-0 border-b border-border/40 px-6 pb-4 pt-5">
+        <DialogHeader className="shrink-0 border-b border-border/40 px-4 pb-3 pt-4 sm:px-5 min-[900px]:py-3">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">

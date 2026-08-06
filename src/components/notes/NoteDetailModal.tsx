@@ -344,9 +344,9 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
        * - p-0 gap-0 (we control internal spacing)
        * - overflow-hidden (child div handles scroll)
        */}
-      <DialogContent className="w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] gap-0 overflow-hidden p-0 sm:max-w-2xl lg:max-w-4xl">
+      <DialogContent className="w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] gap-0 overflow-hidden p-0 sm:w-[calc(100vw-2rem)] sm:max-w-2xl min-[900px]:max-w-[min(980px,calc(100vw-2rem))]">
         <DialogTitle className="sr-only">Detalhes da nota {note.number}</DialogTitle>
-        <div className="flex max-h-[92vh] flex-col">
+        <div className="flex max-h-[calc(100dvh-1rem)] flex-col sm:max-h-[calc(100dvh-2rem)]">
           {/* ── Header (fundo suave por status; sem a antiga listra no topo) ── */}
           {/* pr-12/14 reserva espaço para o botão de fechar do Dialog */}
           <div

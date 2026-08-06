@@ -521,6 +521,14 @@ describe('Central Financeiro UI', () => {
     expect(screen.queryByText('Projetado')).not.toBeInTheDocument();
   });
 
+  it('mantém os sete KPIs preparados para uma linha no tablet deitado', async () => {
+    renderWithQueryClient(<Financeiro />);
+
+    const grid = await screen.findByTestId('finance-summary-grid');
+    expect(grid.children).toHaveLength(7);
+    expect(grid).toHaveClass('lg:grid-cols-7');
+  });
+
   it('bloqueia a exportação CSV enquanto os valores estão ocultos', async () => {
     renderWithQueryClient(<Financeiro />, true);
 

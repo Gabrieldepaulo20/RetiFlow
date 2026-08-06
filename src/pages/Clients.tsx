@@ -69,7 +69,7 @@ const RISK_META: Record<CustomerRiskLevel, { label: string; className: string }>
 
 const TREND_META: Record<CustomerTrend, { label: string; className: string }> = {
   growing: { label: 'Crescendo', className: 'text-emerald-700' },
-  falling: { label: 'Em queda', className: 'text-rose-700' },
+  falling: { label: 'Atenção', className: 'text-rose-700' },
   reactivated: { label: 'Voltou', className: 'text-teal-700' },
   new: { label: 'Novo', className: 'text-sky-700' },
   stable: { label: 'Estável', className: 'text-slate-600' },
@@ -154,14 +154,14 @@ function MetricTile({
   }[tone];
 
   return (
-    <div className="rounded-lg border border-border/70 bg-card p-3 shadow-sm">
+    <div className="rounded-lg border border-border/70 bg-card p-3 shadow-sm min-[760px]:p-2.5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
-          <p className="mt-1 truncate text-xl font-bold tabular-nums text-foreground md:text-2xl">{value}</p>
-          <p className="mt-1 truncate text-xs text-muted-foreground">{detail}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground min-[760px]:text-[10px]">{label}</p>
+          <p className="mt-1 truncate text-xl font-bold tabular-nums text-foreground md:text-xl 2xl:text-2xl">{value}</p>
+          <p className="mt-1 truncate text-xs text-muted-foreground min-[760px]:text-[11px]">{detail}</p>
         </div>
-        <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg', toneClass)}>
+        <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg min-[760px]:h-8 min-[760px]:w-8', toneClass)}>
           <Icon className="h-4 w-4" />
         </span>
       </div>
@@ -295,7 +295,7 @@ export default function Clients() {
         </div>
       </div>
 
-      <section className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+      <section className="grid gap-2 min-[760px]:grid-cols-3" data-testid="clients-summary-grid">
         <MetricTile
           label="Receita mapeada"
           value={formatCurrency(crm.summary.totalRevenue)}
@@ -306,7 +306,7 @@ export default function Clients() {
         <MetricTile
           label="Receita em risco"
           value={formatCurrency(crm.summary.revenueAtRisk90d)}
-          detail={`${crm.summary.fallingCount} clientes em queda`}
+          detail={`${crm.summary.fallingCount} clientes em risco`}
           icon={AlertTriangle}
           tone="rose"
         />
@@ -373,12 +373,12 @@ export default function Clients() {
             </Badge>
           </div>
 
-          <div className="grid gap-2 lg:hidden">
+          <div className="grid gap-2 min-[900px]:hidden">
             {filtered.map((client) => {
               const stat = crm.statsByClientId.get(client.id);
 
               return (
-                <div key={client.id} className="rounded-lg border border-border/60 bg-background p-3 shadow-sm">
+                <div key={client.id} className="rounded-lg border border-border/60 bg-background p-2.5 shadow-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold leading-tight text-foreground">{client.name}</p>
@@ -413,7 +413,7 @@ export default function Clients() {
                     </Badge>
                   </div>
 
-                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                  <div className="mt-2.5 grid grid-cols-3 gap-2 text-xs">
                     <div>
                       <p className="text-muted-foreground">Faturamento</p>
                       <p className="font-bold tabular-nums">{formatCurrency(stat?.totalRevenue ?? 0)}</p>
@@ -428,7 +428,7 @@ export default function Clients() {
                     </div>
                   </div>
 
-                  <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                  <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                     <span className="flex min-w-0 items-center gap-1.5">
                       <Phone className="h-3.5 w-3.5 shrink-0" />
                       <span className="truncate">{client.phone || 'Telefone não informado'}</span>
@@ -451,16 +451,16 @@ export default function Clients() {
             )}
           </div>
 
-          <div className="hidden overflow-hidden rounded-lg border border-border/60 lg:block">
+          <div className="hidden overflow-hidden rounded-lg border border-border/60 min-[900px]:block">
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[24%]">Cliente</TableHead>
-                  <TableHead className="w-[15%]">Perfil CRM</TableHead>
-                  <TableHead className="w-[15%]">Receita</TableHead>
-                  <TableHead className="w-[14%]">Frequência</TableHead>
-                  <TableHead className="w-[14%]">Última O.S.</TableHead>
-                  <TableHead className="w-[150px] text-right">Ações</TableHead>
+                  <TableHead className="h-10 w-[24%] px-3 text-xs">Cliente</TableHead>
+                  <TableHead className="h-10 w-[16%] px-3 text-xs">Perfil CRM</TableHead>
+                  <TableHead className="h-10 w-[15%] px-3 text-xs">Receita</TableHead>
+                  <TableHead className="h-10 w-[14%] px-3 text-xs">Frequência</TableHead>
+                  <TableHead className="h-10 w-[14%] px-3 text-xs">Última O.S.</TableHead>
+                  <TableHead className="h-10 w-[120px] px-3 text-right text-xs">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -469,14 +469,14 @@ export default function Clients() {
 
                   return (
                     <TableRow key={client.id}>
-                      <TableCell>
+                      <TableCell className="px-3 py-2.5">
                         <div className="min-w-0">
                           <p className="truncate font-medium">{client.name}</p>
                           <p className="truncate text-xs text-muted-foreground">{client.docType}: {client.docNumber}</p>
                           <p className="truncate text-xs text-muted-foreground">{client.city}/{client.state}</p>
                         </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="px-3 py-2.5">
                         <ClientCrmBadges stat={stat} />
                         {stat ? (
                           <p className={cn('mt-1 text-xs font-medium', TREND_META[stat.trend].className)}>
@@ -484,7 +484,7 @@ export default function Clients() {
                           </p>
                         ) : null}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="px-3 py-2.5">
                         <p className="font-bold tabular-nums">{formatCurrency(stat?.totalRevenue ?? 0)}</p>
                         {stat ? (
                           <p className="text-xs text-muted-foreground">
@@ -492,17 +492,17 @@ export default function Clients() {
                           </p>
                         ) : null}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="px-3 py-2.5">
                         <p className="font-medium">{stat?.noteCount ?? 0} O.S.</p>
                         <p className="text-xs text-muted-foreground">Ticket {formatCurrency(stat?.avgTicket ?? 0)}</p>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="px-3 py-2.5">
                         <p className="font-medium tabular-nums">{formatDate(stat?.lastNoteAt ?? null)}</p>
                         {stat?.daysSinceLastNote != null ? (
                           <p className="text-xs text-muted-foreground">{stat.daysSinceLastNote} dia{stat.daysSinceLastNote === 1 ? '' : 's'} sem O.S.</p>
                         ) : null}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="px-3 py-2.5 text-right">
                         <div className="flex justify-end gap-1">
                           <Button size="sm" variant="ghost" onClick={() => setSelectedClientId(client.id)}>Ver</Button>
                           <Button size="sm" variant="ghost" onClick={() => openEdit(client.id)}>Editar</Button>

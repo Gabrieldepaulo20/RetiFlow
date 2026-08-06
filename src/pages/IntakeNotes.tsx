@@ -692,19 +692,19 @@ export default function IntakeNotes() {
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:gap-3 min-[760px]:grid-cols-4 min-[760px]:gap-2" data-testid="intake-summary-grid">
             {summaryCards.map((item) => (
-              <div key={item.label} className="rounded-xl border border-border/60 bg-muted/20 p-2.5 sm:rounded-2xl sm:p-3">
+              <div key={item.label} className="rounded-xl border border-border/60 bg-muted/20 p-2.5 sm:rounded-2xl sm:p-3 min-[760px]:rounded-xl min-[760px]:p-2.5">
                 <div className="flex items-start justify-between gap-2 sm:gap-3">
                   <div className="min-w-0">
-                    <p className="truncate text-[11px] font-medium text-muted-foreground sm:text-xs">{item.label}</p>
-                    <p className="mt-1 truncate text-base font-bold tracking-tight text-foreground sm:text-xl">{item.value}</p>
+                    <p className="truncate text-[11px] font-medium text-muted-foreground sm:text-xs min-[760px]:text-[11px]">{item.label}</p>
+                    <p className="mt-1 truncate text-base font-bold tracking-tight text-foreground sm:text-xl min-[760px]:text-lg">{item.value}</p>
                   </div>
-                  <div className={cn('hidden h-8 w-8 shrink-0 items-center justify-center rounded-xl sm:flex md:h-9 md:w-9', item.tone)}>
+                  <div className={cn('hidden h-8 w-8 shrink-0 items-center justify-center rounded-xl sm:flex md:h-9 md:w-9 min-[760px]:h-8 min-[760px]:w-8 min-[760px]:rounded-lg', item.tone)}>
                     <item.icon className="h-4 w-4" />
                   </div>
                 </div>
-                <p className="mt-1.5 truncate text-[11px] text-muted-foreground sm:mt-2 sm:text-xs">{item.sub}</p>
+                <p className="mt-1.5 truncate text-[11px] text-muted-foreground sm:mt-2 sm:text-xs min-[760px]:mt-1 min-[760px]:text-[10px]">{item.sub}</p>
               </div>
             ))}
           </div>
@@ -752,7 +752,7 @@ export default function IntakeNotes() {
               </Button>
 
               <Dialog open={filterDialogOpen} onOpenChange={handleFilterDialogOpenChange}>
-                <DialogContent className="max-w-xl gap-0 overflow-visible p-0">
+                <DialogContent className="flex max-h-[calc(100dvh-1rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:w-[calc(100vw-2rem)]">
                   <DialogHeader className="border-b border-border/70 px-4 py-3 text-left sm:px-5">
                     <DialogTitle className="text-base sm:text-lg">Filtros da lista</DialogTitle>
                     <DialogDescription>
@@ -760,7 +760,7 @@ export default function IntakeNotes() {
                     </DialogDescription>
                   </DialogHeader>
 
-                  <div className="space-y-3 px-4 py-3 sm:px-5">
+                  <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-3 sm:px-5">
                     <section className="rounded-2xl border border-border/70 bg-muted/20 p-2.5">
                       <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">Ordenar por</p>
                       <div className="mt-2 grid grid-cols-3 gap-2">
@@ -1045,7 +1045,7 @@ export default function IntakeNotes() {
                 : `${paginatedNotes.length} de ${filtered.length} O.S.`}
             </Badge>
           </div>
-          <div className="space-y-2 p-2 sm:p-3 xl:hidden">
+          <div className="space-y-2 p-2 sm:p-3 min-[900px]:hidden">
             {paginatedNotes.map(n => {
               const client = clients.find(c => c.id === n.clientId);
               const StatusIcon = getNoteStatusIcon(n.status as NoteStatus);
@@ -1062,7 +1062,7 @@ export default function IntakeNotes() {
                       setDetailNoteId(n.id);
                     }
                   }}
-                  className="rounded-xl border border-border/70 bg-card p-2.5 shadow-sm transition-colors active:bg-muted/50 sm:rounded-2xl sm:p-4"
+                  className="rounded-xl border border-border/70 bg-card p-2.5 shadow-sm transition-colors active:bg-muted/50 sm:p-3"
                 >
                   <div className="flex min-w-0 items-start justify-between gap-2 sm:gap-3">
                     <div className="min-w-0 flex-1">
@@ -1174,7 +1174,7 @@ export default function IntakeNotes() {
                     </div>
                   </div>
 
-                  <div className="mt-3 hidden grid-cols-2 gap-2 border-t border-border/50 pt-3 text-xs sm:grid">
+                  <div className="mt-2.5 hidden grid-cols-2 gap-2 border-t border-border/50 pt-2.5 text-xs sm:grid">
                     <div className="min-w-0 rounded-lg bg-muted/25 px-2.5 py-2">
                       <p className="text-[10px] font-semibold uppercase text-muted-foreground">Motor</p>
                       <p className="mt-0.5 truncate font-medium text-foreground">{n.engineType || '—'}</p>
@@ -1201,18 +1201,18 @@ export default function IntakeNotes() {
             )}
           </div>
 
-          <div className="hidden overflow-x-auto xl:block">
-            <Table>
+          <div className="hidden overflow-x-auto min-[900px]:block">
+            <Table className="min-w-[760px]">
               <TableHeader>
                 <TableRow className="border-b border-border/70 bg-card hover:bg-card">
-                  <TableHead className="h-12 pl-5 text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">O.S.</TableHead>
-                  <TableHead className="h-12 text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Cliente e veículo</TableHead>
-                  <TableHead className="hidden h-12 text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground sm:table-cell">Entrada</TableHead>
-                  <TableHead className="h-12 text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Status</TableHead>
-                  <TableHead className="hidden h-12 text-right text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground md:table-cell">
+                  <TableHead className="h-10 pl-4 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">O.S.</TableHead>
+                  <TableHead className="h-10 px-3 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Cliente e veículo</TableHead>
+                  <TableHead className="hidden h-10 px-3 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground sm:table-cell">Entrada</TableHead>
+                  <TableHead className="h-10 px-3 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Status</TableHead>
+                  <TableHead className="hidden h-10 px-3 text-right text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground md:table-cell">
                     Valor Total
                   </TableHead>
-                  <TableHead className="h-12 w-[76px] pr-5 text-right text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                  <TableHead className="h-10 w-[64px] pr-4 text-right text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
                     Ações
                   </TableHead>
                 </TableRow>
@@ -1226,18 +1226,18 @@ export default function IntakeNotes() {
                       className="group cursor-pointer border-b border-border/60 bg-card transition-colors duration-150 last:border-b-0 hover:bg-primary/[0.035]"
                       onClick={() => setDetailNoteId(n.id)}
                     >
-                      <TableCell className="py-4 pl-5 align-middle">
-                        <div className="flex min-w-[132px] items-center gap-3">
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-primary/15 bg-primary/10 text-primary">
+                      <TableCell className="py-2.5 pl-4 pr-3 align-middle">
+                        <div className="flex min-w-[112px] items-center gap-2">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-primary/15 bg-primary/10 text-primary">
                             <FileText className="h-4 w-4" />
                           </div>
                           <div className="min-w-0">
-                            <span className="block text-base font-bold leading-none text-primary">
+                            <span className="block text-sm font-bold leading-none text-primary">
                               {n.number}
                             </span>
                           <span
                             className={cn(
-                                'mt-2 inline-flex rounded-md border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide',
+                                'mt-1 inline-flex rounded-md border px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide',
                               n.type === 'COMPRA'
                                 ? 'bg-amber-50 text-amber-600 border-amber-200/60'
                                 : 'bg-blue-50 text-blue-600 border-blue-200/60',
@@ -1248,10 +1248,10 @@ export default function IntakeNotes() {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="max-w-[360px] py-4 align-middle">
-                        <p className="truncate text-base font-bold text-foreground">{client?.name}</p>
+                      <TableCell className="max-w-[360px] px-3 py-2.5 align-middle">
+                        <p className="truncate text-sm font-semibold text-foreground">{client?.name}</p>
                         {n.vehicleModel && (
-                          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                          <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-muted-foreground">
                             <span className="inline-flex min-w-0 items-center gap-1">
                               <CarFront className="h-3.5 w-3.5 shrink-0" />
                               <span className="truncate">{n.vehicleModel}</span>
@@ -1270,13 +1270,13 @@ export default function IntakeNotes() {
                           </div>
                         )}
                       </TableCell>
-                      <TableCell className="hidden py-4 align-middle text-sm text-muted-foreground sm:table-cell">
+                      <TableCell className="hidden px-3 py-2.5 align-middle text-xs text-muted-foreground sm:table-cell">
                         <span className="inline-flex items-center gap-2 tabular-nums">
                           <CalendarDays className="h-3.5 w-3.5" />
                           {new Date(n.createdAt).toLocaleDateString('pt-BR')}
                         </span>
                       </TableCell>
-                      <TableCell className="py-4 align-middle">
+                      <TableCell className="px-3 py-2.5 align-middle">
                         <div className="flex flex-col items-start gap-1.5">
                           {(() => {
                             const StatusIcon = getNoteStatusIcon(n.status as NoteStatus);
@@ -1284,7 +1284,7 @@ export default function IntakeNotes() {
                               <Badge
                                 className={cn(
                                   STATUS_COLORS[n.status as NoteStatus],
-                                  'gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-bold shadow-none',
+                                  'gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold shadow-none',
                                 )}
                               >
                                 <StatusIcon className="h-3.5 w-3.5 shrink-0" />
@@ -1294,16 +1294,16 @@ export default function IntakeNotes() {
                           })()}
                         </div>
                       </TableCell>
-                      <TableCell className="hidden py-4 text-right align-middle md:table-cell">
-                        <div className="inline-flex items-center justify-end gap-2 rounded-xl bg-muted/35 px-3 py-2">
-                          <Banknote className="h-4 w-4 text-muted-foreground" />
-                          <span className="font-bold tabular-nums text-foreground">
+                      <TableCell className="hidden px-3 py-2.5 text-right align-middle md:table-cell">
+                        <div className="inline-flex items-center justify-end gap-1.5 rounded-lg bg-muted/35 px-2.5 py-1.5">
+                          <Banknote className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="text-xs font-bold tabular-nums text-foreground">
                             {formatCurrency(n.totalAmount)}
                           </span>
                         </div>
                       </TableCell>
                       <TableCell
-                        className="py-4 pr-5 text-right align-middle"
+                        className="py-2.5 pr-4 text-right align-middle"
                         onClick={e => e.stopPropagation()}
                       >
                         <DropdownMenu>
@@ -1311,7 +1311,7 @@ export default function IntakeNotes() {
                             <Button
                               size="icon"
                               variant="ghost"
-                              className="h-9 w-9 rounded-xl hover:bg-muted"
+                              className="h-8 w-8 rounded-lg hover:bg-muted"
                               aria-label={`Mais ações para ${n.number}`}
                               title="Mais ações"
                             >

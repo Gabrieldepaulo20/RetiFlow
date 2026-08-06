@@ -91,7 +91,7 @@ export default function ClientDetailModal({ clientId, onClose, onEdit }: ClientD
             className={cn(
               'fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2',
               'h-[100dvh] w-[calc(100vw-1rem)]',
-              'sm:h-[min(720px,calc(100vh-3rem))] sm:w-[min(760px,calc(100vw-2rem))] sm:rounded-[28px]',
+              'sm:h-[min(760px,calc(100dvh-2rem))] sm:w-[min(900px,calc(100vw-2rem))] sm:rounded-[28px]',
               'flex flex-col overflow-hidden',
               'bg-card border border-white/10 shadow-2xl shadow-slate-950/30',
               'data-[state=open]:animate-in data-[state=closed]:animate-out',

@@ -37,7 +37,7 @@ export function ClientFormModal({ open, onClose, onSuccess, editingClient }: Cli
             'fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2',
             // sizing
             'h-[100dvh] w-[calc(100vw-1rem)]',
-            'sm:h-auto sm:max-h-[92vh] sm:w-[min(760px,calc(100vw-2rem))] sm:rounded-[28px]',
+            'sm:h-[min(780px,calc(100dvh-2rem))] sm:max-h-[calc(100dvh-2rem)] sm:w-[min(900px,calc(100vw-2rem))] sm:rounded-[28px]',
             // layout
             'flex flex-col overflow-hidden',
             // appearance
@@ -52,7 +52,7 @@ export function ClientFormModal({ open, onClose, onSuccess, editingClient }: Cli
           <div className="h-1 shrink-0 bg-gradient-to-r from-primary/55 via-primary to-accent/70" />
 
           {/* ── Header ── */}
-          <div className="flex items-start justify-between gap-4 border-b border-border/60 bg-gradient-to-br from-primary/[0.09] via-background to-background px-5 pt-5 pb-4 shrink-0 sm:px-6">
+          <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border/60 bg-gradient-to-br from-primary/[0.09] via-background to-background px-5 pb-3 pt-4 sm:px-6">
             <div className="flex min-w-0 items-start gap-3">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-sm ring-1 ring-primary/20">
                 <Building2 className="h-5 w-5" />

@@ -28,6 +28,20 @@ test.describe('Notas de Entrada', () => {
     await expect(dialog.getByText('OS-2', { exact: true })).toBeVisible();
   });
 
+  test('mantém quatro indicadores e a tabela compacta no tablet deitado', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openNotes(page);
+
+    const cards = page.getByTestId('intake-summary-grid').locator(':scope > div');
+    await expect(cards).toHaveCount(4);
+
+    const cardRows = await cards.evaluateAll((elements) => elements.map((element) => (
+      Math.round(element.getBoundingClientRect().y)
+    )));
+    expect(new Set(cardRows).size).toBe(1);
+    await expect(page.getByRole('table')).toBeVisible();
+  });
+
   test('abre preview do documento com itens da O.S.', async ({ page }) => {
     await openNotes(page);
 

@@ -74,14 +74,14 @@ export function KpiCard({
         emphasized && 'border-blue-200 bg-gradient-to-br from-blue-50 to-white',
       )}
     >
-      <CardContent className="p-3 sm:p-4">
+      <CardContent className="p-3 sm:p-4 lg:max-2xl:p-2.5">
         <div className="flex items-center gap-1.5">
-          <p className="truncate text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 sm:text-xs">
+          <p className="truncate text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 sm:text-xs lg:max-2xl:text-[9px] lg:max-2xl:tracking-[0.08em]">
             {label}
           </p>
           <FieldHint>{hint}</FieldHint>
         </div>
-        <p className={cn('mt-1.5 truncate font-display text-base font-bold tabular-nums sm:text-xl', toneClass)}>
+        <p className={cn('mt-1.5 truncate font-display text-base font-bold tabular-nums sm:text-xl lg:max-2xl:mt-1 lg:max-2xl:text-[13px] xl:max-2xl:text-sm', toneClass)}>
           <FinancialValue>{brl(value)}</FinancialValue>
         </p>
       </CardContent>
