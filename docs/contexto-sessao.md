@@ -1,6 +1,38 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-07-31
+Atualizado em: 2026-08-06
+
+---
+
+## Fechamentos Históricos Reclassificados Pelo Prazo - 2026-08-06
+
+- A Retífica Premium confirmou que as sete O.S. identificadas na auditoria não tinham sido
+  recebidas e autorizou retirá-las dos fechamentos do mês da criação. A correção foi aplicada em
+  produção: `OS-5937`, `OS-5948`, `OS-6035`, `OS-8242` e `OS-5950` ficaram disponíveis para a
+  competência `07/2026`; `OS-6407` e `OS-6355`, para `08/2026`.
+- As sete estão `PENDENTE`, com `valor_recebido=0`, sem movimento financeiro individual e sem
+  `fk_fechamentos`. A auditoria final retornou zero O.S. históricas ainda fechadas pelo mês da
+  criação quando criação e prazo pertencem a meses diferentes.
+- Quatro fechamentos de origem foram corrigidos, preservando os demais itens. Totais finais:
+  `R$ 3.784,00` (pago), `R$ 1.780,00`, `R$ 2.222,00` e `R$ 1.411,00` (pendentes). Em todos eles,
+  `valor_total`, `dados_json.notas`, `dados_json.total_com_desconto` e vínculos vivos coincidem.
+- `OS-5948`, `OS-6035` e `OS-8242` apareciam como pagas apenas pela cascata do fechamento de
+  `R$ 4.686,00`. O movimento original foi preservado e estornado de forma auditável; um novo
+  recebimento de `R$ 3.784,00` foi criado somente para as dez O.S. que permaneceram. O líquido do
+  razão e o resumo do fechamento coincidem em `R$ 3.784,00`.
+- Antes de qualquer escrita, dois dry-runs transacionais completos passaram e foram revertidos. A
+  execução salvou quatro backups integrais em `Fechamento_Logs`, criou dois movimentos explícitos
+  de correção e registrou logs de antes/depois. Roteiro idempotente/rollback:
+  `scripts/oneoff/reclassify-service-orders-by-deadline-2026-08-06.sql`.
+- Os quatro PDFs privados afetados foram regenerados e validados por signed URL. O regenerador agora
+  aceita um ou mais argumentos `--id=<uuid>` para limitar a operação aos fechamentos desejados.
+- A regra prospectiva continua sendo `prazo` como competência, com criação apenas como fallback se o
+  prazo não existir (`getClosingCompetenceDate`). Nenhuma nova mudança de schema, RLS, policy ou Edge
+  Function foi necessária nesta correção de dados.
+- Validações: consulta final ao banco; quatro PDFs `regenerated`; `npm run typecheck`; `npm run lint`
+  (0 erros, 5 warnings antigos); `npm test -- --run` (83 arquivos, 660 testes); `npm run build`.
+  `npm run test:integration` não foi executado porque o ambiente configurado aponta para produção e a
+  suíte cria dados; os contratos reais foram validados diretamente com transações e consultas finais.
 
 ---
 

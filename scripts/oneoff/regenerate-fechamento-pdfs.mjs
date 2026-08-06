@@ -8,6 +8,7 @@
  * Uso:
  *   node scripts/oneoff/regenerate-fechamento-pdfs.mjs            # dry-run (não escreve)
  *   node scripts/oneoff/regenerate-fechamento-pdfs.mjs --apply    # regrava no Storage
+ *   node scripts/oneoff/regenerate-fechamento-pdfs.mjs --id=<uuid> # limita a um ou mais IDs
  *
  * Requer SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY no .env.local/.env.integration.
  * Segue a convenção do projeto: dry-run por padrão, --apply para escrever.
@@ -20,6 +21,12 @@ import { createClient } from '@supabase/supabase-js';
 import { createServer } from 'vite';
 
 const APPLY = process.argv.includes('--apply');
+const FECHAMENTO_IDS = new Set(
+  process.argv
+    .filter((arg) => arg.startsWith('--id='))
+    .map((arg) => arg.slice('--id='.length).trim())
+    .filter(Boolean),
+);
 const FECHAMENTOS_BUCKET = 'fechamentos';
 const REPORT_PATH = process.env.REPORT_PATH
   ?? path.join(process.cwd(), 'tmp', 'fechamento-pdfs-regeneration.json');
@@ -80,9 +87,13 @@ async function pdfToBuffer(instance) {
 }
 
 async function loadFechamentos() {
-  const { data, error } = await supabase.schema('RetificaPremium').from('Fechamentos')
+  let query = supabase.schema('RetificaPremium').from('Fechamentos')
     .select('id_fechamentos, periodo, pdf_url, dados_json, documento_config_snapshot, documento_tema_snapshot')
     .not('dados_json', 'is', null);
+  if (FECHAMENTO_IDS.size > 0) {
+    query = query.in('id_fechamentos', [...FECHAMENTO_IDS]);
+  }
+  const { data, error } = await query;
   if (error) throw new Error(`fechamentos_query_failed:${error.message}`);
   return data ?? [];
 }
