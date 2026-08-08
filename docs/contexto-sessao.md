@@ -4,10 +4,11 @@ Atualizado em: 2026-08-08
 
 ---
 
-## Pagamento Parcial De Fechamentos Em Duas Etapas - 2026-08-08 (local)
+## Pagamento Parcial De Fechamentos Em Duas Etapas - 2026-08-08 (rollout)
 
-- A implementação está somente no código local; nenhuma migration desta rodada foi aplicada e nenhum
-  frontend foi publicado. O banco de produção continua terminando na migration `20260730214138`.
+- As cinco migrations foram aplicadas em produção em 2026-08-08, durante janela sem heartbeat ativo.
+  O banco passou a terminar em `20260808154354`; a publicação do frontend correspondente deve ocorrer
+  imediatamente depois, pela `main`, seguida de recarregamento das abas e smoke test do fechamento.
 - O rascunho de fechamento permite gerar sem entrada ou registrar, na mesma transação do fechamento,
   uma primeira parcela de 50%, 60%, valor livre ou quitação integral. Valores são calculados em
   centavos; a segunda parcela deve quitar exatamente o saldo e uma terceira parcela é bloqueada.
@@ -41,8 +42,8 @@ Atualizado em: 2026-08-08
 - A produção tem um único fechamento legado sem `dados_json`, ainda em aberto, sem recebimento e sem
   PDF. A UI não tenta fabricar/compartilhar um documento atual sem snapshot; os outros 46 registros
   têm snapshot ou PDF em condição compatível com o fluxo novo.
-- Ordem de implantação futura: `20260806121003`, `20260806121013`, `20260806121413`,
-  `20260806121826` e `20260808043246`. As cinco passaram juntas em produção dentro de
+- Ordem aplicada: `20260808154240`, `20260808154258`, `20260808154309`,
+  `20260808154323` e `20260808154354`. Antes da aplicação, as cinco passaram juntas em produção dentro de
   `BEGIN/ROLLBACK`, inclusive um cenário funcional temporário de 60% + quitação + concorrência
   otimista + terceira parcela + estornos LIFO + entitlement. Um segundo ensaio confirmou a RPC de
   PDF com o saldo atual e a rejeição de precondição desatualizada. O ensaio final confirmou julho pela

@@ -1,4 +1,5 @@
 -- Remove superfícies legadas SECURITY DEFINER que aceitam IDs arbitrários sem
+-- Versao registrada na producao: 20260808154309.
 -- validar o dono. O frontend atual usa os contratos tenant-aware mais novos;
 -- essas funções permanecem disponíveis somente ao service_role e a wrappers
 -- internos executados pelo proprietário das funções.

@@ -1,4 +1,5 @@
 -- Consultar o perfil em cada renovação de cache não deve gerar UPDATE em
+-- Versao registrada na producao: 20260808154258.
 -- Usuarios. Presença/última atividade já é registrada pelo heartbeat dedicado.
 create or replace function "RetificaPremium".get_usuario_por_auth_id()
 returns json

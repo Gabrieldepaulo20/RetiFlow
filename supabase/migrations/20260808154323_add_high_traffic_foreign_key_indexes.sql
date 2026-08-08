@@ -1,4 +1,5 @@
 -- Índices de FKs usados nos módulos mais acessados. A base atual é pequena
+-- Versao registrada na producao: 20260808154323.
 -- (aprox. 1,2 mil O.S.), portanto o custo de criação e lock é baixo; ainda
 -- assim, a aplicação em produção deve ocorrer fora do pico.
 

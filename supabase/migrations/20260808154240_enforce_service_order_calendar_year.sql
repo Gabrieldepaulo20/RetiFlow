@@ -1,4 +1,5 @@
 -- Regra de negócio: a data da O.S. e o prazo podem estar em qualquer ordem e
+-- Versao registrada na producao: 20260808154240.
 -- podem ser futuras ou passadas, desde que pertençam ao mesmo ano civil.
 --
 -- As RPCs acumulam validações de tenant, suporte e bloqueio por fechamento em

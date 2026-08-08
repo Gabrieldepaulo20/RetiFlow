@@ -1,4 +1,5 @@
 -- Fechamentos em ate duas parcelas.
+-- Versao registrada na producao: 20260808154354.
 --
 -- Objetivos desta migration:
 --   * finalizar cabecalho, snapshot, vinculos de O.S. e recebimento inicial em
