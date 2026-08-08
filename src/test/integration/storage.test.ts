@@ -107,22 +107,29 @@ describe.skipIf(skipIntegration)('Storage — PDFs e anexos privados com signed 
     const clientId = createdClient.id_cliente as string;
     createdClientIds.add(clientId);
 
-    const createdClosing = await callRpc(client, 'insert_fechamento', {
-      p_fk_clientes: clientId,
-      p_mes: 'Junho',
-      p_ano: 2026,
-      p_periodo: `${TEST_PREFIX} Junho 2026 ${suffix}`,
-      p_label: `${TEST_PREFIX} Fechamento PDF ${suffix}`,
-      p_valor_total: 123.45,
-    });
-    expect(createdClosing.status).toBe(200);
-    const closingId = createdClosing.id_fechamentos as string;
+    const closingId = crypto.randomUUID();
+    const createdClosing = await createServiceClient()
+      .schema('RetificaPremium')
+      .from('Fechamentos')
+      .insert({
+        id_fechamentos: closingId,
+        fk_clientes: clientId,
+        mes: 'Junho',
+        ano: 2026,
+        periodo: `${TEST_PREFIX} Junho 2026 ${suffix}`,
+        label: `${TEST_PREFIX} Fechamento PDF ${suffix}`,
+        valor_total: 123.45,
+        versao: 1,
+        status_pagamento: 'PENDENTE',
+        valor_recebido: 0,
+      });
+    expect(createdClosing.error).toBeNull();
     createdClosingIds.add(closingId);
 
     const pdfBlob = new Blob(['%PDF-1.4\n% integration test edge closing\n'], { type: 'application/pdf' });
-    const path = await fechamentoApi.uploadFechamentoPDF(closingId, pdfBlob);
+    const path = await fechamentoApi.uploadFechamentoPDF(closingId, pdfBlob, { versionCents: 0 });
     fechamentoPaths.push(path);
-    await fechamentoApi.updateFechamento(closingId, { p_pdf_url: path });
+    await fechamentoApi.atualizarFechamentoPdf(closingId, path, { expectedValorRecebido: 0 });
 
     const edgeResponse = await fetch(`${getTestEnv().url}/functions/v1/closing-pdf-url`, {
       method: 'POST',

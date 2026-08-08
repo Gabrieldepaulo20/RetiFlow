@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  adaptFechamentoParcela,
   adaptFinanceiroLancamento,
   adaptFinanceiroMovimento,
+  adaptParcelasFechamentoResumo,
+  estornarParcelaFechamento,
   estornarMovimentoFinanceiro,
   extractFinanceiroStoragePath,
   gerarContasRecorrentes,
@@ -11,7 +14,9 @@ import {
   getFinanceiroExtrato,
   getFinanceiroLancamentos,
   getFinanceiroResumo,
+  getParcelasFechamento,
   registrarPagamentoConta,
+  registrarParcelaFechamento,
   registrarRecebimentoManual,
   registrarRecebimentoNota,
   transferirContasFinanceiras,
@@ -27,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   getUser: vi.fn(),
   getSession: vi.fn(),
   invoke: vi.fn(),
+  logError: vi.fn(),
 }));
 
 vi.mock('@/lib/supabase', () => ({
@@ -39,6 +45,10 @@ vi.mock('@/lib/supabase', () => ({
     },
     functions: { invoke: mocks.invoke },
   },
+}));
+
+vi.mock('@/lib/monitoring', () => ({
+  logError: mocks.logError,
 }));
 
 function activateSupportContext() {
@@ -119,6 +129,84 @@ describe('Supabase Financeiro adapters', () => {
     )).toBe('tenant/mov-1/comprovante.pdf');
     expect(extractFinanceiroStoragePath('https://example.com/publico.pdf')).toBeNull();
   });
+
+  it('adapta parcela de fechamento, estorno e comprovantes sem aceitar linha incompleta', () => {
+    expect(adaptFechamentoParcela({ id_movimento: 'sem-data' })).toBeNull();
+    expect(adaptFechamentoParcela({
+      id_movimento: 'movimento-parcela-2',
+      parcela_numero: '2',
+      valor: '400.50',
+      data_efetiva: '2026-08-20',
+      fk_conta_financeira: 'conta-1',
+      conta_nome: 'Caixa geral',
+      forma_pagamento: 'CHEQUE',
+      observacoes: 'Segundo cheque',
+      usuario_nome: 'Patricia',
+      created_at: '2026-08-20T12:00:00.000Z',
+      ativa: false,
+      estornada_em: '2026-08-21T12:00:00.000Z',
+      motivo_estorno: 'Cheque substituído',
+      pode_estornar: false,
+      anexos: [
+        {
+          id_anexo: 'anexo-1',
+          fk_financeiro_movimentos: 'movimento-parcela-2',
+          nome_arquivo: 'cheque.jpg',
+          caminho: 'usuario-1/movimento-parcela-2/cheque.jpg',
+        },
+        { nome_arquivo: 'sem ids' },
+      ],
+    })).toMatchObject({
+      id: 'movimento-parcela-2',
+      numero: 2,
+      valor: 400.5,
+      dataEfetiva: '2026-08-20',
+      contaId: 'conta-1',
+      contaNome: 'Caixa geral',
+      formaPagamento: 'CHEQUE',
+      ativa: false,
+      estornadaEm: '2026-08-21T12:00:00.000Z',
+      motivoEstorno: 'Cheque substituído',
+      podeEstornar: false,
+      anexos: [{
+        id: 'anexo-1',
+        movimentoId: 'movimento-parcela-2',
+        nomeArquivo: 'cheque.jpg',
+        caminho: 'usuario-1/movimento-parcela-2/cheque.jpg',
+        mimeType: null,
+        tamanhoBytes: null,
+        createdAt: null,
+        usuarioNome: null,
+      }],
+    });
+  });
+
+  it('normaliza o resumo de parcelas e calcula a quantidade ativa como fallback', () => {
+    expect(adaptParcelasFechamentoResumo({
+      id_fechamentos: 'fechamento-1',
+      valor_total: '1000',
+      valor_recebido: '600',
+      valor_aberto: '400',
+      status_pagamento: 'PARCIAL',
+      parcelas: [
+        {
+          id_movimento: 'movimento-parcela-1',
+          valor: '600',
+          data_efetiva: '2026-08-08',
+          fk_conta_financeira: 'conta-1',
+          ativa: true,
+        },
+      ],
+    })).toMatchObject({
+      fechamentoId: 'fechamento-1',
+      valorTotal: 1_000,
+      valorRecebido: 600,
+      valorAberto: 400,
+      status: 'PARCIAL',
+      parcelasAtivas: 1,
+      parcelas: [{ id: 'movimento-parcela-1', numero: 1, ativa: true }],
+    });
+  });
 });
 
 describe('Supabase Financeiro RPCs', () => {
@@ -136,6 +224,7 @@ describe('Supabase Financeiro RPCs', () => {
     mocks.getUser.mockReset();
     mocks.getSession.mockReset();
     mocks.invoke.mockReset();
+    mocks.logError.mockReset();
     mocks.from.mockReturnValue({
       upload: mocks.upload,
       createSignedUrl: mocks.createSignedUrl,
@@ -297,6 +386,126 @@ describe('Supabase Financeiro RPCs', () => {
     });
   });
 
+  it('busca parcelas com parâmetro exato e adapta o envelope financeiro', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        status: 200,
+        mensagem: 'ok',
+        dados: {
+          fechamento_id: 'fechamento-1',
+          valor_total: '1000',
+          valor_recebido: '600',
+          valor_aberto: '400',
+          status: 'PARCIAL',
+          parcelas_ativas: '1',
+          parcelas: [{
+            id: 'movimento-parcela-1',
+            numero: 1,
+            valor: '600',
+            data_efetiva: '2026-08-08',
+            conta_id: 'conta-1',
+            forma_pagamento: 'CHEQUE',
+            ativa: true,
+            pode_estornar: true,
+          }],
+        },
+      },
+      error: null,
+    });
+
+    await expect(getParcelasFechamento('fechamento-1')).resolves.toMatchObject({
+      fechamentoId: 'fechamento-1',
+      valorTotal: 1_000,
+      valorRecebido: 600,
+      valorAberto: 400,
+      status: 'PARCIAL',
+      parcelasAtivas: 1,
+      parcelas: [{
+        id: 'movimento-parcela-1',
+        numero: 1,
+        valor: 600,
+        formaPagamento: 'CHEQUE',
+        ativa: true,
+        podeEstornar: true,
+      }],
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith('get_parcelas_fechamento', {
+      p_id_fechamentos: 'fechamento-1',
+    });
+  });
+
+  it('registra parcela com trava otimista e repete os mesmos parâmetros no retry', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        status: 200,
+        mensagem: 'ok',
+        dados: {
+          id_movimento: 'movimento-parcela-2',
+          status: 'PAGO',
+          valor_realizado: 400,
+          valor_aberto: 0,
+        },
+      },
+      error: null,
+    });
+
+    const input = {
+      fechamentoId: 'fechamento-1',
+      valor: 400,
+      valorRecebidoEsperado: 600,
+      dataEfetiva: '2026-08-20',
+      contaId: 'conta-1',
+      formaPagamento: 'CHEQUE' as const,
+      observacoes: 'Segundo cheque',
+      idempotencyKey: 'fechamento-1-parcela-2',
+    };
+    const first = await registrarParcelaFechamento(input);
+    const retry = await registrarParcelaFechamento(input);
+
+    expect(first).toEqual(retry);
+    expect(first).toEqual({
+      id: 'movimento-parcela-2',
+      movimentoId: 'movimento-parcela-2',
+      status: 'PAGO',
+      valorRealizado: 400,
+      valorAberto: 0,
+    });
+    const expectedParams = {
+      p_id_fechamentos: 'fechamento-1',
+      p_valor: 400,
+      p_data_efetiva: '2026-08-20',
+      p_fk_conta_financeira: 'conta-1',
+      p_forma_pagamento: 'CHEQUE',
+      p_observacoes: 'Segundo cheque',
+      p_idempotency_key: 'fechamento-1-parcela-2',
+      p_valor_recebido_esperado: 600,
+    };
+    expect(mocks.rpc).toHaveBeenNthCalledWith(1, 'registrar_parcela_fechamento', expectedParams);
+    expect(mocks.rpc).toHaveBeenNthCalledWith(2, 'registrar_parcela_fechamento', expectedParams);
+  });
+
+  it('propaga conflito de concorrência da nova parcela sem adaptar como sucesso', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        status: 409,
+        mensagem: 'Fechamento alterado em outra sessão. Recarregue os dados.',
+      },
+      error: null,
+    });
+
+    await expect(registrarParcelaFechamento({
+      fechamentoId: 'fechamento-1',
+      valor: 400,
+      valorRecebidoEsperado: 600,
+      dataEfetiva: '2026-08-20',
+      contaId: 'conta-1',
+      idempotencyKey: 'fechamento-1-parcela-concorrente',
+    })).rejects.toThrow(
+      '[registrar_parcela_fechamento] Fechamento alterado em outra sessão. Recarregue os dados.',
+    );
+    expect(mocks.rpc).toHaveBeenCalledOnce();
+  });
+
   it('registra pagamento parcial da saída na data escolhida sem alterar a chave idempotente', async () => {
     mocks.rpc.mockResolvedValue({
       data: {
@@ -420,6 +629,42 @@ describe('Supabase Financeiro RPCs', () => {
       p_motivo: 'Pagamento lançado em duplicidade',
       p_data_efetiva: '2026-07-21',
       p_idempotency_key: 'reverse-movimento-1',
+    });
+  });
+
+  it('estorna uma única parcela com fechamento, movimento e chave explícitos', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        status: 200,
+        mensagem: 'ok',
+        dados: {
+          id_movimento: 'estorno-parcela-2',
+          status: 'PARCIAL',
+          valor_realizado: 600,
+          valor_aberto: 400,
+        },
+      },
+      error: null,
+    });
+
+    await expect(estornarParcelaFechamento({
+      fechamentoId: 'fechamento-1',
+      movimentoId: 'movimento-parcela-2',
+      motivo: 'Cheque substituído pelo cliente',
+      dataEfetiva: '2026-08-21',
+      idempotencyKey: 'estorno-fechamento-1-parcela-2',
+    })).resolves.toMatchObject({
+      movimentoId: 'estorno-parcela-2',
+      status: 'PARCIAL',
+      valorRealizado: 600,
+      valorAberto: 400,
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith('estornar_parcela_fechamento', {
+      p_id_fechamentos: 'fechamento-1',
+      p_id_financeiro_movimentos: 'movimento-parcela-2',
+      p_motivo: 'Cheque substituído pelo cliente',
+      p_data_efetiva: '2026-08-21',
+      p_idempotency_key: 'estorno-fechamento-1-parcela-2',
     });
   });
 
@@ -682,7 +927,7 @@ describe('Supabase Financeiro RPCs', () => {
       file,
     });
 
-    expect(path).toMatch(/^user-1\/movimento-1\/\d+-Comprovante-PIX\.pdf$/);
+    expect(path).toMatch(/^user-1\/movimento-1\/[a-f0-9]{64}-Comprovante-PIX\.pdf$/);
     expect(mocks.from).toHaveBeenCalledWith('financeiro-comprovantes');
     expect(mocks.upload).toHaveBeenCalledWith(
       path,
@@ -693,6 +938,20 @@ describe('Supabase Financeiro RPCs', () => {
         upsert: false,
       },
     );
+  });
+
+  it('reutiliza o caminho por conteúdo quando o comprovante já foi enviado', async () => {
+    mocks.upload.mockResolvedValue({
+      data: null,
+      error: { statusCode: '409', message: 'The resource already exists' },
+    });
+    const file = new File(['mesmo comprovante'], 'cheque.pdf', { type: 'application/pdf' });
+
+    const first = await uploadFinanceiroComprovante({ movimentoId: 'movimento-1', file });
+    const retry = await uploadFinanceiroComprovante({ movimentoId: 'movimento-1', file });
+
+    expect(retry).toBe(first);
+    expect(mocks.upload).toHaveBeenCalledTimes(2);
   });
 
   it('assina comprovante diretamente com validade curta para o tenant dono', async () => {

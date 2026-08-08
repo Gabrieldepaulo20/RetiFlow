@@ -185,6 +185,39 @@ export interface FinanceiroAnexo {
   usuarioNome: string | null;
 }
 
+export type FechamentoParcelaAnexo = FinanceiroAnexo;
+
+export interface FechamentoParcela {
+  id: string;
+  numero: number;
+  valor: number;
+  dataEfetiva: string;
+  contaId: string;
+  contaNome: string | null;
+  formaPagamento: PaymentMethod | null;
+  observacoes: string | null;
+  usuarioNome: string | null;
+  createdAt: string | null;
+  ativa: boolean;
+  estornadaEm: string | null;
+  motivoEstorno: string | null;
+  podeEstornar: boolean;
+  anexos: FechamentoParcelaAnexo[];
+}
+
+export interface ParcelasFechamentoResumo {
+  fechamentoId: string;
+  clienteId: string | null;
+  chaveIdempotencia: string | null;
+  recebimentoInicialChave: string | null;
+  valorTotal: number;
+  valorRecebido: number;
+  valorAberto: number;
+  status: FinanceiroStatus;
+  parcelasAtivas: number;
+  parcelas: FechamentoParcela[];
+}
+
 export interface FinanceiroOperacaoResultado {
   id: string | null;
   movimentoId: string | null;
@@ -435,6 +468,58 @@ export function adaptFinanceiroAnexo(value: unknown): FinanceiroAnexo | null {
   };
 }
 
+export function adaptFechamentoParcela(value: unknown): FechamentoParcela | null {
+  if (!isRecord(value)) return null;
+  const id = asString(field(value, 'id', 'id_movimento', 'id_financeiro_movimentos'));
+  const dataEfetiva = asString(field(value, 'data_efetiva', 'dataEfetiva'));
+  const contaId = asString(field(value, 'conta_id', 'fk_conta_financeira', 'contaId'));
+  if (!id || !dataEfetiva || !contaId) return null;
+  const anexos = Array.isArray(field(value, 'anexos'))
+    ? adaptList(field(value, 'anexos'), adaptFinanceiroAnexo)
+    : [];
+  return {
+    id,
+    numero: Math.max(1, Math.trunc(asNumber(field(value, 'numero', 'parcela_numero'), 1))),
+    valor: Math.max(0, asNumber(field(value, 'valor'))),
+    dataEfetiva,
+    contaId,
+    contaNome: asNullableString(field(value, 'conta_nome', 'contaNome')),
+    formaPagamento: toPaymentMethod(field(value, 'forma_pagamento', 'formaPagamento')) ?? null,
+    observacoes: asNullableString(field(value, 'observacoes')),
+    usuarioNome: asNullableString(field(value, 'usuario_nome', 'usuarioNome')),
+    createdAt: asNullableString(field(value, 'created_at', 'createdAt')),
+    ativa: asBoolean(field(value, 'ativa'), !asBoolean(field(value, 'estornado'))),
+    estornadaEm: asNullableString(field(value, 'estornada_em', 'estornadoEm')),
+    motivoEstorno: asNullableString(field(value, 'motivo_estorno', 'motivoEstorno')),
+    podeEstornar: asBoolean(field(value, 'pode_estornar', 'podeEstornar')),
+    anexos,
+  };
+}
+
+export function adaptParcelasFechamentoResumo(value: unknown): ParcelasFechamentoResumo {
+  const row = isRecord(value) ? value : {};
+  const parcelas = adaptList(field(row, 'parcelas'), adaptFechamentoParcela);
+  return {
+    fechamentoId: asString(field(row, 'fechamento_id', 'id_fechamentos')),
+    clienteId: asNullableString(field(row, 'cliente_id', 'clienteId')),
+    chaveIdempotencia: asNullableString(field(row, 'chave_idempotencia', 'chaveIdempotencia')),
+    recebimentoInicialChave: asNullableString(field(
+      row,
+      'recebimento_inicial_chave',
+      'recebimentoInicialChave',
+    )),
+    valorTotal: Math.max(0, asNumber(field(row, 'valor_total', 'valorTotal'))),
+    valorRecebido: Math.max(0, asNumber(field(row, 'valor_recebido', 'valorRecebido'))),
+    valorAberto: Math.max(0, asNumber(field(row, 'valor_aberto', 'valorAberto'))),
+    status: asStatus(field(row, 'status', 'status_pagamento')),
+    parcelasAtivas: Math.max(
+      0,
+      Math.trunc(asNumber(field(row, 'parcelas_ativas', 'parcelasAtivas'), parcelas.filter((item) => item.ativa).length)),
+    ),
+    parcelas,
+  };
+}
+
 function adaptList<T>(value: unknown, adapter: (item: unknown) => T | null): T[] {
   if (!Array.isArray(value)) return [];
   return value.map(adapter).filter((item): item is T => item !== null);
@@ -583,6 +668,13 @@ export async function getFinanceiroAnexos(movimentoId: string) {
   return adaptList(env.dados, adaptFinanceiroAnexo);
 }
 
+export async function getParcelasFechamento(fechamentoId: string) {
+  const env = await callRPC<unknown>('get_parcelas_fechamento', {
+    p_id_fechamentos: fechamentoId,
+  });
+  return adaptParcelasFechamentoResumo(extractDados(env, 'get_parcelas_fechamento'));
+}
+
 interface MovimentoBaseInput {
   valor: number;
   dataEfetiva: string;
@@ -616,6 +708,28 @@ export async function registrarRecebimentoFechamento(input: MovimentoBaseInput &
     p_forma_pagamento: input.formaPagamento ?? null,
     p_observacoes: input.observacoes ?? null,
     p_idempotency_key: input.idempotencyKey,
+  });
+  return adaptOperacaoResultado(env);
+}
+
+/**
+ * Registra uma das duas parcelas permitidas para o fechamento.
+ * `valorRecebidoEsperado` implementa concorrência otimista: se outra aba já tiver
+ * movimentado o fechamento, a gravação é rejeitada e a tela deve recarregar.
+ */
+export async function registrarParcelaFechamento(input: MovimentoBaseInput & {
+  fechamentoId: string;
+  valorRecebidoEsperado: number;
+}) {
+  const env = await callRPC('registrar_parcela_fechamento', {
+    p_id_fechamentos: input.fechamentoId,
+    p_valor: input.valor,
+    p_data_efetiva: input.dataEfetiva,
+    p_fk_conta_financeira: input.contaId,
+    p_forma_pagamento: input.formaPagamento ?? null,
+    p_observacoes: input.observacoes ?? null,
+    p_idempotency_key: input.idempotencyKey,
+    p_valor_recebido_esperado: input.valorRecebidoEsperado,
   });
   return adaptOperacaoResultado(env);
 }
@@ -746,14 +860,16 @@ export async function estornarRecebimentoNota(input: {
   return adaptOperacaoResultado(env);
 }
 
-export async function estornarRecebimentoFechamento(input: {
+export async function estornarParcelaFechamento(input: {
   fechamentoId: string;
+  movimentoId: string;
   motivo: string;
   dataEfetiva: string;
   idempotencyKey: string;
 }) {
-  const env = await callRPC('estornar_recebimento_fechamento', {
+  const env = await callRPC('estornar_parcela_fechamento', {
     p_id_fechamentos: input.fechamentoId,
+    p_id_financeiro_movimentos: input.movimentoId,
     p_motivo: input.motivo,
     p_data_efetiva: input.dataEfetiva,
     p_idempotency_key: input.idempotencyKey,
@@ -890,6 +1006,19 @@ export async function insertFinanceiroAnexo(input: {
   return adaptOperacaoResultado(env);
 }
 
+async function readBlobBytes(blob: Blob): Promise<ArrayBuffer> {
+  if (typeof blob.arrayBuffer === 'function') return blob.arrayBuffer();
+  return new Promise<ArrayBuffer>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error('Não foi possível ler o comprovante.'));
+    reader.onload = () => {
+      if (reader.result instanceof ArrayBuffer) resolve(reader.result);
+      else reject(new Error('Não foi possível ler o comprovante.'));
+    };
+    reader.readAsArrayBuffer(blob);
+  });
+}
+
 export async function uploadFinanceiroComprovante(input: {
   movimentoId: string;
   file: File;
@@ -903,13 +1032,22 @@ export async function uploadFinanceiroComprovante(input: {
     throw new Error('[uploadFinanceiroComprovante] Sessão sem usuário autenticado.');
   }
   const filename = sanitizeStorageFilename(input.file.name, 'comprovante');
-  const path = `${user.id}/${input.movimentoId}/${Date.now()}-${filename}`;
+  const bytes = await readBlobBytes(input.file);
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+  const fingerprint = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  // O conteúdo define o caminho: repetir o mesmo comprovante depois de uma
+  // resposta perdida reutiliza o objeto e o INSERT de metadata é idempotente.
+  const path = `${user.id}/${input.movimentoId}/${fingerprint}-${filename}`;
   const { error } = await supabase.storage.from(FINANCEIRO_BUCKET).upload(path, input.file, {
     contentType: input.file.type || 'application/octet-stream',
     cacheControl: '3600',
     upsert: false,
   });
-  if (error) {
+  const storageError = error as null | { message?: string; statusCode?: number | string };
+  const alreadyExists = storageError?.statusCode === 409
+    || storageError?.statusCode === '409'
+    || /already exists|resource exists|duplicate/i.test(storageError?.message ?? '');
+  if (error && !alreadyExists) {
     throw new Error(`[uploadFinanceiroComprovante] ${error.message}`);
   }
   return path;

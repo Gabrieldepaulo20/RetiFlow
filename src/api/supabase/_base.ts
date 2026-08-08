@@ -22,6 +22,8 @@ const SUPPORT_CONTEXT_RPC_MAP: Record<string, string> = {
   get_conta_pagar_detalhes: 'get_conta_pagar_detalhes_contexto_suporte',
   get_fornecedores: 'get_fornecedores_contexto_suporte',
   get_fechamentos: 'get_fechamentos_contexto_suporte',
+  get_fechamentos_abertos_cliente: 'get_fechamentos_abertos_cliente_contexto_suporte',
+  get_parcelas_fechamento: 'get_parcelas_fechamento_contexto_suporte',
   get_sugestoes_email: 'get_sugestoes_email_contexto_suporte',
   get_gmail_connection_status: 'get_gmail_connection_status_contexto_suporte',
   // Leituras — Central Financeiro
@@ -68,6 +70,8 @@ const SUPPORT_BLOCKED_WRITE_RPCS = new Set([
   // Central Financeiro — suporte é estritamente somente leitura
   'registrar_recebimento_nota',
   'registrar_recebimento_fechamento',
+  'registrar_parcela_fechamento',
+  'estornar_parcela_fechamento',
   'estornar_recebimento_nota',
   'estornar_recebimento_fechamento',
   'registrar_pagamento_conta',
@@ -85,6 +89,9 @@ const SUPPORT_BLOCKED_WRITE_RPCS = new Set([
   'cancelar_fatura',
   'insert_fatura',
   'insert_fechamento',
+  'finalizar_fechamento',
+  'atualizar_pdf_fechamento',
+  'atualizar_pdf_fechamento_seguro',
   'insert_sugestao_email',
   'registrar_acao_fechamento',
   'marcar_fechamento_pago',

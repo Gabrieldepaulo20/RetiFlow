@@ -1,6 +1,68 @@
 # Contexto da Sessao - Retiflow
 
-Atualizado em: 2026-08-06
+Atualizado em: 2026-08-08
+
+---
+
+## Pagamento Parcial De Fechamentos Em Duas Etapas - 2026-08-08 (local)
+
+- A implementação está somente no código local; nenhuma migration desta rodada foi aplicada e nenhum
+  frontend foi publicado. O banco de produção continua terminando na migration `20260730214138`.
+- O rascunho de fechamento permite gerar sem entrada ou registrar, na mesma transação do fechamento,
+  uma primeira parcela de 50%, 60%, valor livre ou quitação integral. Valores são calculados em
+  centavos; a segunda parcela deve quitar exatamente o saldo e uma terceira parcela é bloqueada.
+- O histórico mostra parcelas ativas e estornadas, conta, forma, data, responsável e comprovantes
+  privados. Somente administrador pode corrigir a parcela ativa mais recente; o estorno é LIFO e
+  preserva o lançamento compensatório. Em modo suporte toda a área continua somente leitura.
+- Clientes com fechamento anterior em aberto recebem um lembrete clicável. O saldo antigo nunca é
+  somado automaticamente ao novo rascunho. Quando o fechamento fica integralmente pago, suas O.S.
+  passam a pagas pela cascata financeira; cartões quitados ficam visualmente escurecidos.
+- PDF, prévia e mensagem do WhatsApp mostram Total, Recebido e Saldo; no rascunho os termos são
+  `Entrada prevista` e `Saldo após gerar`, para não apresentar uma intenção como dinheiro recebido.
+  Antes de visualizar, baixar ou compartilhar, o fechamento é recarregado e o PDF privado é
+  regenerado pelo snapshot. O arquivo é versionado pelo valor recebido, só é vinculado sob lock se
+  esse valor continuar atual e é revalidado antes da entrega; uma versão antiga não sobrescreve uma
+  nova e respostas fora de ordem não reabrem uma prévia já substituída ou fechada.
+- A finalização usa UUID e chave estáveis. Cabeçalho, snapshot, vínculos das O.S. e entrada inicial
+  são atômicos no Postgres; o PDF e o comprovante são pós-commit, com aviso recuperável em falha.
+  Uma resposta perdida é repetida uma única vez com o contrato completo, e só é aceita se o backend
+  confirmar idempotência de snapshot, cliente, período, template, vínculos e pagamento.
+- Segurança da nova migration: máximo de duas parcelas e saldo esperado são validados sob `FOR UPDATE`;
+  formas de pagamento têm allowlist; paths de comprovante precisam corresponder a usuário/movimento e
+  a objeto privado real; helpers internos não ficam executáveis por `anon/authenticated`; as RPCs
+  exigem os módulos Financeiro/Fechamento; o DML REST direto de `Fechamentos` é revogado. O servidor
+  também exige total positivo, template do mesmo tenant e competência estruturada, conferindo o
+  `prazo` de cada O.S.; RPCs antigas de criação/edição/PDF/estorno em massa ficam fora do navegador.
+  Ações de download/compartilhamento agora validam tenant e módulo, e os locks seguem uma ordem única
+  para evitar ciclos entre fechamento, idempotência, movimentos e O.S.
+- Estorno, PDF e comprovante toleram resposta perdida sem duplicar o efeito: o estorno repete a mesma
+  chave/data/payload; PDFs usam precondição financeira; comprovantes usam hash SHA-256 do conteúdo e
+  o vínculo de metadata aceita retry do mesmo path. A listagem de fechamentos agora é paginada.
+- A produção tem um único fechamento legado sem `dados_json`, ainda em aberto, sem recebimento e sem
+  PDF. A UI não tenta fabricar/compartilhar um documento atual sem snapshot; os outros 46 registros
+  têm snapshot ou PDF em condição compatível com o fluxo novo.
+- Ordem de implantação futura: `20260806121003`, `20260806121013`, `20260806121413`,
+  `20260806121826` e `20260808043246`. As cinco passaram juntas em produção dentro de
+  `BEGIN/ROLLBACK`, inclusive um cenário funcional temporário de 60% + quitação + concorrência
+  otimista + terceira parcela + estornos LIFO + entitlement. Um segundo ensaio confirmou a RPC de
+  PDF com o saldo atual e a rejeição de precondição desatualizada. O ensaio final confirmou julho pela
+  data de prazo, rejeição de mês/range incorretos e total zero, isolamento entre tenants e bloqueio das
+  seis RPCs legadas no navegador. O pós-rollback confirmou os mesmos 47 fechamentos, 16 recebimentos
+  ativos, perfis de acesso, migration head, zero fixtures residuais e ausência dos objetos novos.
+- O rollout não pode separar banco e frontend: a migration revoga as RPCs antigas ao liberar o fluxo
+  novo. A publicação segura exige uma janela coordenada, bloqueando temporariamente novos fechamentos,
+  aplicando as migrations, publicando o frontend imediatamente, forçando o recarregamento das abas,
+  executando um smoke test e só então reabrindo o módulo. Como alternativa, o rollout deve ser dividido
+  em uma fase aditiva e outra posterior de revogação; aplicar apenas o banco ou apenas o frontend quebra
+  clientes da versão oposta.
+- Hardening não bloqueante para uma rodada posterior: normalizar no servidor também os campos apenas
+  informativos/textuais do `dados_json` (o total pagável, saldo e razão já são reconciliados), migrar a
+  ação genérica da Central Financeira para a mesma precondição otimista usada pelo diálogo novo e criar
+  um contrato próprio caso alguma automação headless precise executar as RPCs legadas de `service_role`.
+- Validações locais desta rodada: typecheck, lint sem erros (5 warnings antigos), 86 arquivos/705
+  testes unitários, build e 2 cenários Playwright Chromium. A suíte `test:integration` não foi usada:
+  o `.env.integration` configurado aponta para produção e cria/exclui fixtures e usuário; os contratos
+  reais foram exercitados no ensaio transacional com rollback.
 
 ---
 

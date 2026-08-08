@@ -1,11 +1,13 @@
 import type { NotePaymentStatus } from '@/types';
-import type { FechamentoDadosJson } from '@/api/supabase/fechamentos';
+import type { FechamentoCompetencia, FechamentoDadosJson } from '@/api/supabase/fechamentos';
 import type { MonthlyClosingDateMode } from '@/services/domain/monthlyClosing';
+import type { ClosingInitialPaymentMode } from '@/services/domain/monthlyClosingPayment';
+import type { PaymentMethod } from '@/types';
 
 /**
  * Matemática pura do rascunho de Fechamento Mensal.
  * Extraída de MonthlyClosing.tsx para permitir teste unitário direto das
- * fórmulas de dinheiro que alimentam `insert_fechamento`/`dados_json`.
+ * fórmulas de dinheiro que alimentam `finalizar_fechamento`/`dados_json`.
  */
 
 export interface PreviewItem {
@@ -34,6 +36,12 @@ export interface PreviewNote {
 
 export interface ClosingDraft {
   id: string;
+  /** UUID estável para permitir retry idempotente da finalização. */
+  closingId: string;
+  /** Chave estável do comando; nunca é regenerada entre tentativas do mesmo rascunho. */
+  generationKey: string;
+  /** Fixado no primeiro envio ao backend para retries produzirem o mesmo snapshot. */
+  generationStartedAt?: string | null;
   clientId: string;
   clientName: string;
   periodMode?: MonthlyClosingDateMode;
@@ -46,6 +54,14 @@ export interface ClosingDraft {
   notes: PreviewNote[];
   includedNoteIds?: string[];
   discounts: Record<string, number>;
+  initialPayment: {
+    mode: ClosingInitialPaymentMode;
+    customAmountCents?: number;
+    date: string;
+    method: PaymentMethod;
+    accountId: string;
+    observations: string;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -114,6 +130,37 @@ const getNoteDiscountPercent = (draft: Pick<ClosingDraft, 'discounts'>, noteId: 
 const noteTotalComDesconto = (draft: Pick<ClosingDraft, 'discounts'>, note: PreviewNote) =>
   roundMoney(getPreviewNoteOpenAmount(note) * (1 - getNoteDiscountPercent(draft, note.id) / 100));
 
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+export const buildClosingCompetenceSnapshot = (
+  draft: Pick<ClosingDraft, 'periodMode' | 'startDate' | 'endDate' | 'cutoffDate' | 'month' | 'year'>,
+) => {
+  const year = Number.parseInt(draft.year, 10);
+  const month = Number.parseInt(draft.month, 10);
+  const safeYear = Number.isInteger(year) && year >= 2000 && year <= 9999 ? year : 2000;
+  const safeMonth = Number.isInteger(month) && month >= 1 && month <= 12 ? month : 1;
+  const monthText = String(safeMonth).padStart(2, '0');
+  const monthlyStart = `${safeYear}-${monthText}-01`;
+  const monthlyEnd = `${safeYear}-${monthText}-${String(
+    new Date(safeYear, safeMonth, 0).getDate(),
+  ).padStart(2, '0')}`;
+
+  if (draft.periodMode === 'custom') {
+    const legacyCutoff = draft.cutoffDate && ISO_DATE_PATTERN.test(draft.cutoffDate)
+      ? draft.cutoffDate
+      : null;
+    const start = draft.startDate && ISO_DATE_PATTERN.test(draft.startDate)
+      ? draft.startDate
+      : legacyCutoff ? `${legacyCutoff.slice(0, 8)}01` : null;
+    const end = draft.endDate && ISO_DATE_PATTERN.test(draft.endDate)
+      ? draft.endDate
+      : legacyCutoff;
+    if (start && end) return { modo: 'PERSONALIZADO' as const, inicio: start, fim: end };
+  }
+
+  return { modo: 'MENSAL' as const, inicio: monthlyStart, fim: monthlyEnd };
+};
+
 export const computeDraftTotals = (draft: Pick<ClosingDraft, 'notes' | 'discounts' | 'includedNoteIds'>) => {
   const includedNotes = getIncludedDraftNotes(draft);
   // Totais consolidados somam os valores por O.S. já arredondados em centavos,
@@ -127,12 +174,15 @@ export const computeDraftTotals = (draft: Pick<ClosingDraft, 'notes' | 'discount
   return { totalOriginal, totalComDesconto };
 };
 
-export const buildDadosFromDraft = (draft: ClosingDraft): FechamentoDadosJson => {
+export const buildDadosFromDraft = (
+  draft: ClosingDraft,
+): FechamentoDadosJson & { competencia: FechamentoCompetencia } => {
   const totals = computeDraftTotals(draft);
   return {
     gerado_em: new Date().toISOString(),
     periodo: draft.periodLabel,
     cliente: { id: draft.clientId, nome: draft.clientName },
+    competencia: buildClosingCompetenceSnapshot(draft),
     notas: getIncludedDraftNotes(draft).map((note) => {
       const valorRecebido = getPreviewNoteReceivedAmount(note);
       const saldoAberto = getPreviewNoteOpenAmount(note);

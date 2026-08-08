@@ -4,6 +4,10 @@ import { getDocumentAccentColor, renderTemplateText, normalizeDocumentCompanyNam
 import { cn } from '@/lib/utils';
 import { FinancialValue } from '@/components/privacy/FinancialValue';
 import { useFinancialPrivacy } from '@/contexts/FinancialPrivacyContext';
+import {
+  getClosingFinancialSummaryDisplay,
+  type ClosingFinancialSummary,
+} from '@/components/closing/closingFinancialSummary';
 
 const MAX_ITEMS_PER_SECTION = 12;
 
@@ -26,9 +30,15 @@ interface Props {
   dados: FechamentoDadosJson;
   accentColor?: string;
   documentSettings?: ResolvedDocumentCustomization | null;
+  financialSummary?: ClosingFinancialSummary;
 }
 
-export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSettings }: Props) {
+export function ClosingHtmlPreview({
+  dados,
+  accentColor = '#0f7f95',
+  documentSettings,
+  financialSummary,
+}: Props) {
   const { financialValuesHidden } = useFinancialPrivacy();
   const effectiveAccent = getDocumentAccentColor(documentSettings, accentColor);
   const company = documentSettings?.company;
@@ -39,6 +49,9 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
   const clienteNome = dados.cliente?.nome ?? 'Cliente';
   const totalOriginal = Number.isFinite(dados.total_original) ? dados.total_original : 0;
   const totalComDesconto = Number.isFinite(dados.total_com_desconto) ? dados.total_com_desconto : 0;
+  const financialDisplay = financialSummary
+    ? getClosingFinancialSummaryDisplay(financialSummary)
+    : null;
   const generatedAt = new Date(dados.gerado_em).toLocaleDateString('pt-BR', {
     day: '2-digit',
     month: 'long',
@@ -203,19 +216,81 @@ export function ClosingHtmlPreview({ dados, accentColor = '#0f7f95', documentSet
           </div>
         )}
 
-        <div className="mt-5 flex flex-col gap-2 rounded-2xl border px-5 py-4 sm:flex-row sm:items-end sm:justify-between" style={{ backgroundColor: `${effectiveAccent}12`, borderColor: `${effectiveAccent}25` }}>
-          <div className="text-sm text-slate-600">
-            <p>{notas.length} {notas.length === 1 ? 'ordem' : 'ordens'} de serviço · {dados.periodo}</p>
-            {totalOriginal !== totalComDesconto && (
-              <p className="mt-1">Subtotal: <FinancialValue>R$ {brl(totalOriginal)}</FinancialValue> · Descontos: <FinancialValue>R$ {brl(totalOriginal - totalComDesconto)}</FinancialValue></p>
-            )}
+        {financialDisplay ? (
+          <section
+            aria-label={financialDisplay.isPlanned
+              ? 'Resumo financeiro planejado do fechamento'
+              : 'Resumo financeiro do fechamento'}
+            className="mt-5 rounded-2xl border px-5 py-4"
+            style={{ backgroundColor: `${effectiveAccent}12`, borderColor: `${effectiveAccent}25` }}
+          >
+            <div className="text-sm text-slate-600">
+              <p>{notas.length} {notas.length === 1 ? 'ordem' : 'ordens'} de serviço · {dados.periodo}</p>
+              {totalOriginal !== totalComDesconto && (
+                <p className="mt-1">Subtotal: <FinancialValue>R$ {brl(totalOriginal)}</FinancialValue> · Descontos: <FinancialValue>R$ {brl(totalOriginal - totalComDesconto)}</FinancialValue></p>
+              )}
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              <FinancialSummaryItem label="Total" value={`R$ ${brl(financialDisplay.total)}`} accentColor={effectiveAccent} />
+              <FinancialSummaryItem
+                label={financialDisplay.isPlanned ? 'Entrada prevista' : 'Recebido'}
+                value={`R$ ${brl(financialDisplay.received)}`}
+                accentColor={effectiveAccent}
+              />
+              <FinancialSummaryItem
+                label={financialDisplay.isPlanned
+                  ? 'Saldo após gerar'
+                  : financialDisplay.isPaid ? 'Situação' : 'Saldo'}
+                value={!financialDisplay.isPlanned && financialDisplay.isPaid
+                  ? 'Quitado'
+                  : `R$ ${brl(financialDisplay.open)}`}
+                accentColor={effectiveAccent}
+                financial={financialDisplay.isPlanned || !financialDisplay.isPaid}
+                paid={!financialDisplay.isPlanned && financialDisplay.isPaid}
+              />
+            </div>
+          </section>
+        ) : (
+          <div className="mt-5 flex flex-col gap-2 rounded-2xl border px-5 py-4 sm:flex-row sm:items-end sm:justify-between" style={{ backgroundColor: `${effectiveAccent}12`, borderColor: `${effectiveAccent}25` }}>
+            <div className="text-sm text-slate-600">
+              <p>{notas.length} {notas.length === 1 ? 'ordem' : 'ordens'} de serviço · {dados.periodo}</p>
+              {totalOriginal !== totalComDesconto && (
+                <p className="mt-1">Subtotal: <FinancialValue>R$ {brl(totalOriginal)}</FinancialValue> · Descontos: <FinancialValue>R$ {brl(totalOriginal - totalComDesconto)}</FinancialValue></p>
+              )}
+            </div>
+            <div className="text-right">
+              <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: effectiveAccent }}>Total a pagar</p>
+              <p className="text-2xl font-bold" style={{ color: effectiveAccent }}><FinancialValue>R$ {brl(totalComDesconto)}</FinancialValue></p>
+            </div>
           </div>
-          <div className="text-right">
-            <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: effectiveAccent }}>Total a pagar</p>
-            <p className="text-2xl font-bold" style={{ color: effectiveAccent }}><FinancialValue>R$ {brl(totalComDesconto)}</FinancialValue></p>
-          </div>
-        </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+function FinancialSummaryItem({
+  label,
+  value,
+  accentColor,
+  financial = true,
+  paid = false,
+}: {
+  label: string;
+  value: string;
+  accentColor: string;
+  financial?: boolean;
+  paid?: boolean;
+}) {
+  return (
+    <div className="rounded-xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200/80">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+      <p
+        className={cn('mt-1 text-base font-bold tabular-nums', paid && 'text-emerald-700')}
+        style={paid ? undefined : { color: accentColor }}
+      >
+        {financial ? <FinancialValue>{value}</FinancialValue> : value}
+      </p>
     </div>
   );
 }

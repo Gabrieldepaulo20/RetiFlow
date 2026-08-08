@@ -38,6 +38,9 @@ const makeNote = (overrides: Partial<PreviewNote> & { id: string }): PreviewNote
 
 const makeDraft = (overrides: Partial<ClosingDraft>): ClosingDraft => ({
   id: 'draft-1',
+  closingId: '00000000-0000-4000-8000-000000000001',
+  generationKey: 'finalizar-fechamento:test-1',
+  generationStartedAt: null,
   clientId: 'c1',
   clientName: 'Cliente',
   month: '6',
@@ -45,6 +48,13 @@ const makeDraft = (overrides: Partial<ClosingDraft>): ClosingDraft => ({
   periodLabel: 'Junho 2026',
   notes: [],
   discounts: {},
+  initialPayment: {
+    mode: 'NONE',
+    date: '2026-07-01',
+    method: 'PIX',
+    accountId: '',
+    observations: '',
+  },
   createdAt: '2026-07-01T10:00:00Z',
   updatedAt: '2026-07-01T10:00:00Z',
   ...overrides,
@@ -169,6 +179,11 @@ describe('buildDadosFromDraft', () => {
     expect(dados.notas.map((n) => n.id)).toEqual(['n1', 'n2']);
     expect((dados.recebidas ?? []).map((n) => n.id)).toEqual(['n3']);
     expect(dados.total_ja_recebido).toBe(500);
+    expect(dados.competencia).toEqual({
+      modo: 'MENSAL',
+      inicio: '2026-06-01',
+      fim: '2026-06-30',
+    });
 
     // soma dos por-O.S. (já arredondados) = total consolidado, sem poeira de float
     const somaNotas = dados.notas.reduce((sum, n) => sum + n.total_com_desconto, 0);
@@ -251,5 +266,19 @@ describe('buildDadosFromDraft', () => {
       }),
     ]);
     expect(dados.total_ja_recebido).toBe(175);
+  });
+
+  it('persiste o intervalo personalizado que o backend valida contra o prazo', () => {
+    const dados = buildDadosFromDraft(makeDraft({
+      periodMode: 'custom',
+      startDate: '2026-06-20',
+      endDate: '2026-07-10',
+    }));
+
+    expect(dados.competencia).toEqual({
+      modo: 'PERSONALIZADO',
+      inicio: '2026-06-20',
+      fim: '2026-07-10',
+    });
   });
 });

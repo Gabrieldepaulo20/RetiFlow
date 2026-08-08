@@ -230,6 +230,7 @@ interface DataCtx {
   updateNote: (id: string, d: Partial<IntakeNote>, itens?: NotaItemDB[]) => Promise<void>;
   getNote: (id: string) => IntakeNote | undefined;
   updateNoteStatus: (id: string, status: NoteStatus) => Promise<void>;
+  refreshNotes: () => Promise<void>;
   registrarRecebimentoNota: (
     id: string,
     opts: {
@@ -313,7 +314,7 @@ const PayablesCtx = createContext<PayablesData | null>(null);
  */
 type OperationalData = Pick<DataCtx,
   | 'customers' | 'clients' | 'addClient' | 'updateClient' | 'getClient'
-  | 'notes' | 'addNote' | 'updateNote' | 'getNote' | 'updateNoteStatus'
+  | 'notes' | 'addNote' | 'updateNote' | 'getNote' | 'updateNoteStatus' | 'refreshNotes'
   | 'registrarRecebimentoNota' | 'estornarRecebimentoNota' | 'createPurchaseNote' | 'getChildNotes'
   | 'services' | 'getServicesForNote' | 'addService' | 'replaceServicesForNote' | 'removeService'
   | 'products' | 'getProductsForNote' | 'addProduct' | 'replaceProductsForNote' | 'removeProduct'
@@ -398,6 +399,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const bumpDataVersion = useCallback(() => {
     setDataVersion((value) => value + 1);
   }, []);
+
+  const refreshNotes = useCallback(async () => {
+    if (!IS_REAL_AUTH) return;
+    const operationScope = captureActiveSupportScope();
+    const { dados } = await getNotasServico({ p_limite: 5000 });
+    assertActiveSupportScopeUnchanged(operationScope);
+    const loaded = dados.map(supabaseToIntakeNote);
+    setNotes(loaded);
+    setNoteCounter(getNextNoteCounter(loaded.map((note) => note.number)));
+    bumpDataVersion();
+    void queryClient.invalidateQueries({ queryKey: ['financeiro'] });
+  }, [bumpDataVersion, queryClient]);
 
   const resetRealData = useCallback(() => {
     setCustomers([]);
@@ -1449,6 +1462,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     updateNote,
     getNote,
     updateNoteStatus,
+    refreshNotes,
     registrarRecebimentoNota,
     estornarRecebimentoNota,
     createPurchaseNote,
@@ -1498,6 +1512,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     updateNote,
     getNote,
     updateNoteStatus,
+    refreshNotes,
     registrarRecebimentoNota,
     estornarRecebimentoNota,
     createPurchaseNote,
@@ -1594,6 +1609,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     updateNote,
     getNote,
     updateNoteStatus,
+    refreshNotes,
     registrarRecebimentoNota,
     estornarRecebimentoNota,
     createPurchaseNote,
@@ -1624,6 +1640,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     updateNote,
     getNote,
     updateNoteStatus,
+    refreshNotes,
     registrarRecebimentoNota,
     estornarRecebimentoNota,
     createPurchaseNote,

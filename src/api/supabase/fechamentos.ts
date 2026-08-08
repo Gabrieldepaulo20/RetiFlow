@@ -47,6 +47,21 @@ export interface FechamentoRecebida {
   pago_em: string | null;
 }
 
+export interface FechamentoRecebimentoInicial {
+  valor: number;
+  data_efetiva: string;
+  conta_id: string;
+  forma_pagamento: string | null;
+  observacoes: string | null;
+  chave_idempotencia: string;
+}
+
+export interface FechamentoCompetencia {
+  modo: 'MENSAL' | 'PERSONALIZADO';
+  inicio: string;
+  fim: string;
+}
+
 export interface FechamentoDadosJson {
   gerado_em: string;
   periodo: string;
@@ -54,10 +69,14 @@ export interface FechamentoDadosJson {
   notas: FechamentoNota[];
   total_original: number;
   total_com_desconto: number;
+  /** Intervalo imutável validado no servidor contra o prazo de cada O.S. */
+  competencia?: FechamentoCompetencia | null;
   /** Partes já recebidas no período (mostradas no documento, fora do total a pagar). */
   recebidas?: FechamentoRecebida[];
   /** Soma das parcelas já recebidas no período. */
   total_ja_recebido?: number;
+  /** Intenção imutável usada para reconciliar retries da geração atômica. */
+  recebimento_inicial?: FechamentoRecebimentoInicial | null;
 }
 
 export interface FechamentoListItem {
@@ -85,6 +104,57 @@ export interface FechamentoListItem {
   fk_template_documento?: string | null;
   documento_tema_snapshot?: Record<string, unknown> | null;
   documento_config_snapshot?: Record<string, unknown> | null;
+}
+
+export interface FechamentoAbertoClienteItem {
+  id: string;
+  periodo: string;
+  label: string;
+  valorTotal: number;
+  valorRecebido: number;
+  saldo: number;
+  status: 'PENDENTE' | 'PARCIAL';
+  createdAt: string | null;
+}
+
+export interface FechamentosAbertosCliente {
+  clienteId: string;
+  quantidade: number;
+  saldoTotal: number;
+  fechamentos: FechamentoAbertoClienteItem[];
+}
+
+export interface FinalizarFechamentoPagamentoInput {
+  valor: number;
+  dataEfetiva: string;
+  contaId: string;
+  formaPagamento: string | null;
+  observacoes?: string | null;
+  idempotencyKey: string;
+}
+
+export interface FinalizarFechamentoInput {
+  id: string;
+  clienteId: string;
+  mes: string;
+  ano: number;
+  periodo: string;
+  label: string;
+  valorTotal: number;
+  dadosJson: FechamentoDadosJson & { competencia: FechamentoCompetencia };
+  idempotencyKey: string;
+  pdfUrl?: string | null;
+  customization?: ResolvedDocumentCustomization | null;
+  pagamentoInicial?: FinalizarFechamentoPagamentoInput | null;
+}
+
+export interface FinalizarFechamentoResult {
+  id: string;
+  movimentoId: string | null;
+  status: 'PENDENTE' | 'PARCIAL' | 'PAGO';
+  valorRecebido: number;
+  valorAberto: number;
+  idempotentRetry: boolean;
 }
 
 export interface NotaDetalhesItem {
@@ -190,6 +260,39 @@ function normalizeFechamentoRecebida(value: unknown): FechamentoRecebida | null 
   };
 }
 
+function normalizeFechamentoRecebimentoInicial(
+  value: unknown,
+): FechamentoRecebimentoInicial | null {
+  if (!isRecord(value)) return null;
+  const contaId = asString(value.conta_id, '');
+  const dataEfetiva = asString(value.data_efetiva, '');
+  const chaveIdempotencia = asString(value.chave_idempotencia, '');
+  if (!contaId || !dataEfetiva || !chaveIdempotencia) return null;
+  return {
+    valor: Math.max(0, asNumber(value.valor)),
+    data_efetiva: dataEfetiva,
+    conta_id: contaId,
+    forma_pagamento: typeof value.forma_pagamento === 'string'
+      ? value.forma_pagamento
+      : null,
+    observacoes: typeof value.observacoes === 'string' ? value.observacoes : null,
+    chave_idempotencia: chaveIdempotencia,
+  };
+}
+
+function normalizeFechamentoCompetencia(value: unknown): FechamentoCompetencia | null {
+  if (!isRecord(value)) return null;
+  const modo = value.modo === 'MENSAL' || value.modo === 'PERSONALIZADO'
+    ? value.modo
+    : null;
+  const inicio = asString(value.inicio, '');
+  const fim = asString(value.fim, '');
+  if (!modo || !/^\d{4}-\d{2}-\d{2}$/.test(inicio) || !/^\d{4}-\d{2}-\d{2}$/.test(fim)) {
+    return null;
+  }
+  return { modo, inicio, fim };
+}
+
 export function normalizeFechamentoDadosJson(value: unknown): FechamentoDadosJson | null {
   if (!isRecord(value)) return null;
 
@@ -216,11 +319,13 @@ export function normalizeFechamentoDadosJson(value: unknown): FechamentoDadosJso
     notas,
     total_original: totalOriginal,
     total_com_desconto: totalComDesconto,
+    competencia: normalizeFechamentoCompetencia(value.competencia),
     recebidas,
     total_ja_recebido: asNumber(
       value.total_ja_recebido,
       recebidas.reduce((sum, nota) => sum + nota.total, 0),
     ),
+    recebimento_inicial: normalizeFechamentoRecebimentoInicial(value.recebimento_inicial),
   };
 }
 
@@ -276,31 +381,129 @@ export async function getFechamentos(params?: {
   return { dados, total: env.total ?? 0 };
 }
 
-export async function insertFechamento(params: {
-  p_fk_clientes: string;
-  p_mes: string;
-  p_ano: number;
-  p_periodo: string;
-  p_label: string;
-  p_valor_total: number;
-}) {
-  const env = await callRPC('insert_fechamento', params);
-  return env.id_fechamentos as string;
+export async function getAllFechamentos(params?: {
+  p_fk_clientes?: string;
+  p_periodo?: string;
+  pageSize?: number;
+}): Promise<FechamentoListItem[]> {
+  const pageSize = Math.min(500, Math.max(1, Math.trunc(params?.pageSize ?? 200)));
+  const all: FechamentoListItem[] = [];
+  let offset = 0;
+
+  while (true) {
+    const page = await getFechamentos({
+      ...(params?.p_fk_clientes ? { p_fk_clientes: params.p_fk_clientes } : {}),
+      ...(params?.p_periodo ? { p_periodo: params.p_periodo } : {}),
+      p_limite: pageSize,
+      p_offset: offset,
+    });
+    all.push(...page.dados);
+    if (
+      page.dados.length === 0
+      || (page.total > 0 ? all.length >= page.total : page.dados.length < pageSize)
+    ) break;
+    offset += page.dados.length;
+  }
+
+  return all;
 }
 
-export async function updateFechamento(
-  idFechamentos: string,
-  dados: Partial<{
-    p_label: string;
-    p_valor_total: number;
-    p_dados_json: FechamentoDadosJson;
-    p_pdf_url: string;
-    p_fk_template_documento: string | null;
-    p_documento_tema_snapshot: Record<string, unknown> | null;
-    p_documento_config_snapshot: Record<string, unknown> | null;
-  }>,
+export async function getFechamentosAbertosCliente(
+  clienteId: string,
+): Promise<FechamentosAbertosCliente> {
+  const env = await callRPC<unknown>('get_fechamentos_abertos_cliente', {
+    p_fk_clientes: clienteId,
+  });
+  const row = isRecord(env.dados) ? env.dados : {};
+  const rawItems = Array.isArray(row.fechamentos) ? row.fechamentos : [];
+  const fechamentos = rawItems.flatMap((value): FechamentoAbertoClienteItem[] => {
+    if (!isRecord(value)) return [];
+    const id = asString(value.id ?? value.id_fechamentos, '');
+    if (!id) return [];
+    return [{
+      id,
+      periodo: asString(value.periodo, 'Período não informado'),
+      label: asString(value.label, 'Fechamento'),
+      valorTotal: Math.max(0, asNumber(value.valor_total ?? value.valorTotal)),
+      valorRecebido: Math.max(0, asNumber(value.valor_recebido ?? value.valorRecebido)),
+      saldo: Math.max(0, asNumber(value.saldo ?? value.valor_aberto ?? value.valorAberto)),
+      status: value.status_pagamento === 'PARCIAL' || value.status === 'PARCIAL'
+        ? 'PARCIAL'
+        : 'PENDENTE',
+      createdAt: typeof (value.created_at ?? value.createdAt) === 'string'
+        ? String(value.created_at ?? value.createdAt)
+        : null,
+    }];
+  });
+  return {
+    clienteId: asString(row.cliente_id ?? row.clienteId, clienteId),
+    quantidade: Math.max(0, Math.trunc(asNumber(row.quantidade, fechamentos.length))),
+    saldoTotal: Math.max(
+      0,
+      asNumber(row.saldo_total ?? row.saldoTotal, fechamentos.reduce((sum, item) => sum + item.saldo, 0)),
+    ),
+    fechamentos,
+  };
+}
+
+export async function finalizarFechamento(
+  input: FinalizarFechamentoInput,
+): Promise<FinalizarFechamentoResult> {
+  const snapshots = buildFechamentoDocumentSnapshotParams(input.customization);
+  const pagamento = input.pagamentoInicial;
+  const env = await callRPC<unknown>('finalizar_fechamento', {
+    p_id_fechamentos: input.id,
+    p_fk_clientes: input.clienteId,
+    p_mes: input.mes,
+    p_ano: input.ano,
+    p_periodo: input.periodo,
+    p_label: input.label,
+    p_valor_total: input.valorTotal,
+    p_dados_json: input.dadosJson,
+    p_pdf_url: input.pdfUrl ?? null,
+    p_chave_idempotencia: input.idempotencyKey,
+    ...snapshots,
+    p_recebimento_valor: pagamento?.valor ?? null,
+    p_recebimento_data: pagamento?.dataEfetiva ?? null,
+    p_recebimento_conta: pagamento?.contaId ?? null,
+    p_recebimento_forma: pagamento?.formaPagamento ?? null,
+    p_recebimento_observacoes: pagamento?.observacoes ?? null,
+    p_recebimento_idempotencia: pagamento?.idempotencyKey ?? null,
+  });
+  const row = isRecord(env.dados) ? env.dados : env;
+  const id = asString(row.id_fechamentos ?? row.id, '');
+  if (!id) throw new Error('[finalizar_fechamento] Resposta sem identificador do fechamento.');
+  const status = row.status === 'PAGO'
+    ? 'PAGO'
+    : row.status === 'PARCIAL'
+      ? 'PARCIAL'
+      : 'PENDENTE';
+  return {
+    id,
+    movimentoId: typeof (row.movimento_id ?? row.id_movimento) === 'string'
+      ? String(row.movimento_id ?? row.id_movimento)
+      : null,
+    status,
+    valorRecebido: Math.max(0, asNumber(row.valor_recebido ?? row.valor_realizado)),
+    valorAberto: Math.max(0, asNumber(row.valor_aberto, input.valorTotal)),
+    idempotentRetry: row.idempotent_retry === true,
+  };
+}
+
+export async function atualizarFechamentoPdf(
+  idFechamento: string,
+  pdfUrl: string,
+  options: { expectedValorRecebido: number },
 ) {
-  await callMutationRPC('update_fechamento', { p_id_fechamentos: idFechamentos, ...dados });
+  const expected = options.expectedValorRecebido;
+  if (!Number.isFinite(expected) || expected < 0) {
+    throw new Error('[atualizarFechamentoPdf] Valor recebido esperado inválido.');
+  }
+  await callMutationRPC('atualizar_pdf_fechamento_seguro', {
+    p_id_fechamentos: idFechamento,
+    p_pdf_url: pdfUrl,
+    p_valor_recebido_esperado: expected,
+  });
 }
 
 function asJsonRecord(value: unknown): Record<string, unknown> | null {
@@ -329,23 +532,6 @@ export async function registrarAcaoFechamento(params: {
   await callMutationRPC('registrar_acao_fechamento', params);
 }
 
-/** Marca o fechamento como pago e cascateia o recebimento para as O.S. pendentes dele. */
-export async function marcarFechamentoPago(
-  idFechamentos: string,
-  params: { pagoEm: string; pagoCom?: string | null },
-) {
-  await callMutationRPC('marcar_fechamento_pago', {
-    p_id_fechamentos: idFechamentos,
-    p_pago_em: params.pagoEm,
-    p_pago_com: params.pagoCom ?? null,
-  });
-}
-
-/** Estorna o pagamento do fechamento e reverte as O.S. pagas por esta cascata. */
-export async function estornarFechamentoPago(idFechamentos: string) {
-  await callMutationRPC('estornar_fechamento_pago', { p_id_fechamentos: idFechamentos });
-}
-
 export async function getNotaDetalhesParaFechamento(idNota: string): Promise<NotaDetalhesResult | null> {
   try {
     const env = await callRPC('get_nota_servico_detalhes', { p_id_nota_servico: idNota });
@@ -359,6 +545,7 @@ export async function getNotaDetalhesParaFechamento(idNota: string): Promise<Not
 export async function uploadFechamentoPDF(
   idFechamento: string,
   pdfBlob: Blob,
+  options?: { versionCents?: number },
 ): Promise<string> {
   if (readActiveSupportContext()) {
     throw new Error('[uploadFechamentoPDF] Uploads em modo suporte estão bloqueados.');
@@ -366,7 +553,15 @@ export async function uploadFechamentoPDF(
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.id) throw new Error('[uploadFechamentoPDF] Sessão sem usuário autenticado.');
-  const path = `${user.id}/${idFechamento}.pdf`;
+  const versionCents = options?.versionCents;
+  if (
+    versionCents !== undefined
+    && (!Number.isSafeInteger(versionCents) || versionCents < 0)
+  ) {
+    throw new Error('[uploadFechamentoPDF] Versão financeira inválida.');
+  }
+  const versionSuffix = versionCents === undefined ? '' : `-${versionCents}`;
+  const path = `${user.id}/${idFechamento}${versionSuffix}.pdf`;
   const { error } = await supabase.storage
     .from(FECHAMENTOS_BUCKET)
     .upload(path, pdfBlob, { contentType: 'application/pdf', cacheControl: '3600', upsert: true });

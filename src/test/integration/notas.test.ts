@@ -23,6 +23,22 @@ function saoPauloCalendarDate(offsetDays = 0) {
   return addCalendarDays(`${byType.year}-${byType.month}-${byType.day}`, offsetDays);
 }
 
+function closingCompetence(date: string) {
+  const [yearText, monthText] = date.split('-');
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const monthNames = [
+    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+  ];
+  return {
+    year,
+    month: monthNames[month - 1]!,
+    start: `${yearText}-${monthText}-01`,
+    end: new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10),
+  };
+}
+
 describe.skipIf(skipIntegration)('Notas de entrada — integração real com Supabase', () => {
   const createdNoteIds = new Set<string>();
   const createdClientIds = new Set<string>();
@@ -442,8 +458,10 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
   });
 
   it('vincula O.S. ao fechamento e bloqueia edição depois de gerar', async () => {
-    const { client, userId } = await signInAsTestUser();
+    const { client } = await signInAsTestUser();
     const suffix = String(Date.now()).slice(-8);
+    const competenceDate = saoPauloCalendarDate();
+    const competence = closingCompetence(competenceDate);
 
     const createdClient = await callRpc(client, 'salvar_cliente_completo', {
       p_payload: {
@@ -463,6 +481,7 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
         numero_nota: `${TEST_PREFIX} FECH-${suffix}`,
         fk_clientes: clientId,
         contato_nome: `${TEST_PREFIX} Contato Fechamento`,
+        prazo: competenceDate,
         defeito: 'Teste de fechamento',
         total_servicos: 120,
         total_produtos: 0,
@@ -520,40 +539,52 @@ describe.skipIf(skipIntegration)('Notas de entrada — integração real com Sup
       expect.objectContaining({ id_notas_servico: noteId }),
     ]));
 
-    const fechamento = await callRpc(client, 'insert_fechamento', {
+    const closingId = crypto.randomUUID();
+    const period = `${TEST_PREFIX} ${competence.month} ${competence.year} ${suffix}`;
+    const fechamento = await callRpc(client, 'finalizar_fechamento', {
+      p_id_fechamentos: closingId,
       p_fk_clientes: clientId,
-      p_mes: 'Maio',
-      p_ano: 2026,
-      p_periodo: `${TEST_PREFIX} Maio 2026 ${suffix}`,
+      p_mes: competence.month,
+      p_ano: competence.year,
+      p_periodo: period,
       p_label: `${TEST_PREFIX} Fechamento ${suffix}`,
       p_valor_total: 120,
-    });
-    expect(fechamento.status).toBe(200);
-    const closingId = fechamento.id_fechamentos as string;
-    createdClosingIds.add(closingId);
-
-    const { error: updateClosingError } = await client.schema('RetificaPremium').rpc('update_fechamento', {
-      p_id_fechamentos: closingId,
       p_dados_json: {
         gerado_em: new Date().toISOString(),
-        periodo: `${TEST_PREFIX} Maio 2026 ${suffix}`,
+        periodo: period,
         cliente: { id: clientId, nome: `${TEST_PREFIX} Cliente Fechamento ${suffix}` },
+        competencia: { modo: 'MENSAL', inicio: competence.start, fim: competence.end },
         notas: [{
           id: noteId,
           os: normalizedClosingOsNumber,
           veiculo: 'Motor fechamento',
           placa: null,
           itens: [],
+          valor_total_os: 120,
+          valor_recebido: 0,
+          saldo_aberto: 120,
           total_original: 120,
           desconto_nota: 0,
           total_com_desconto: 120,
         }],
         total_original: 120,
         total_com_desconto: 120,
+        recebimento_inicial: null,
       },
-      p_pdf_url: `${userId}/integration-${closingId}.pdf`,
+      p_pdf_url: null,
+      p_chave_idempotencia: `${TEST_PREFIX}:finalizar:${closingId}`,
+      p_fk_template_documento: null,
+      p_documento_tema_snapshot: null,
+      p_documento_config_snapshot: null,
+      p_recebimento_valor: null,
+      p_recebimento_data: null,
+      p_recebimento_conta: null,
+      p_recebimento_forma: null,
+      p_recebimento_observacoes: null,
+      p_recebimento_idempotencia: null,
     });
-    expect(updateClosingError).toBeNull();
+    expect(fechamento.status).toBe(200);
+    createdClosingIds.add(closingId);
 
     const availableAfter = await callRpc(client, 'get_notas_servico', {
       p_fk_clientes: clientId,

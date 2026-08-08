@@ -2,6 +2,10 @@ import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { FechamentoDadosJson } from '@/api/supabase/fechamentos';
 import type { ResolvedDocumentCustomization, TemplateVariableKey } from '@/services/domain/documentCustomization';
 import { getDocumentAccentColor, renderTemplateText, normalizeDocumentCompanyName } from '@/services/domain/documentCustomization';
+import {
+  getClosingFinancialSummaryDisplay,
+  type ClosingFinancialSummary,
+} from '@/components/closing/closingFinancialSummary';
 
 const MAX_ITEMS_PER_OS_BLOCK = 12;
 
@@ -84,6 +88,11 @@ const s = StyleSheet.create({
   // Rótulo e valor do total: MESMA fonte/tamanho, uma linha só (value não encolhe).
   totalLabel: { fontSize: 13, fontWeight: 700, color: '#0f6172' },
   totalValue: { fontSize: 13, fontWeight: 700, color: '#0f6172', flexShrink: 0 },
+  financialSummaryRow: { marginTop: 8, paddingTop: 8, borderTopWidth: 0.5, borderTopColor: '#cae3ea', flexDirection: 'row', gap: 8 },
+  financialSummaryItem: { flexGrow: 1, flexBasis: 0, borderRadius: 7, backgroundColor: '#ffffff', paddingVertical: 7, paddingHorizontal: 9 },
+  financialSummaryLabel: { fontSize: 7, color: '#5c7680', textTransform: 'uppercase', letterSpacing: 0.5 },
+  financialSummaryValue: { fontSize: 11, fontWeight: 700, color: '#0f6172', marginTop: 2 },
+  paidValue: { color: '#15803d' },
 
   // Footer
   pageFooter: { position: 'absolute', bottom: '7mm', left: '12mm', right: '12mm', flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 0.5, borderTopColor: '#cbd5df', paddingTop: 4 },
@@ -95,6 +104,7 @@ interface Props {
   geradoEm: string;
   accentColor?: string;
   documentSettings?: ResolvedDocumentCustomization | null;
+  financialSummary?: ClosingFinancialSummary;
 }
 
 export function ClosingPDFTemplate({
@@ -102,6 +112,7 @@ export function ClosingPDFTemplate({
   geradoEm,
   accentColor = '#0f7f95',
   documentSettings,
+  financialSummary,
 }: Props) {
   const effectiveAccent = getDocumentAccentColor(documentSettings, accentColor);
   const company = documentSettings?.company;
@@ -114,6 +125,9 @@ export function ClosingPDFTemplate({
   const clienteNome = dados.cliente?.nome ?? 'Cliente';
   const totalOriginal = Number.isFinite(dados.total_original) ? dados.total_original : 0;
   const totalComDesconto = Number.isFinite(dados.total_com_desconto) ? dados.total_com_desconto : 0;
+  const financialDisplay = financialSummary
+    ? getClosingFinancialSummaryDisplay(financialSummary)
+    : null;
   const dataFormatada = new Date(geradoEm).toLocaleDateString('pt-BR', {
     day: '2-digit', month: 'long', year: 'numeric',
   });
@@ -288,10 +302,45 @@ export function ClosingPDFTemplate({
               Subtotal: R$ {brl(totalOriginal)} · Descontos: -R$ {brl(totalOriginal - totalComDesconto)}
             </Text>
           )}
-          <View style={{ ...s.totalRow, borderTopColor: tint(effectiveAccent, 0.25) }}>
-            <Text style={{ ...s.totalLabel, color: effectiveAccent }}>Total a Pagar:</Text>
-            <Text style={{ ...s.totalValue, color: effectiveAccent }}>R$ {brl(totalComDesconto)}</Text>
-          </View>
+          {financialDisplay ? (
+            <View style={{ ...s.financialSummaryRow, borderTopColor: tint(effectiveAccent, 0.25) }}>
+              <View style={s.financialSummaryItem}>
+                <Text style={s.financialSummaryLabel}>Total</Text>
+                <Text style={{ ...s.financialSummaryValue, color: effectiveAccent }}>
+                  R$ {brl(financialDisplay.total)}
+                </Text>
+              </View>
+              <View style={s.financialSummaryItem}>
+                <Text style={s.financialSummaryLabel}>
+                  {financialDisplay.isPlanned ? 'Entrada prevista' : 'Recebido'}
+                </Text>
+                <Text style={{ ...s.financialSummaryValue, color: effectiveAccent }}>
+                  R$ {brl(financialDisplay.received)}
+                </Text>
+              </View>
+              <View style={s.financialSummaryItem}>
+                <Text style={s.financialSummaryLabel}>
+                  {financialDisplay.isPlanned
+                    ? 'Saldo apos gerar'
+                    : financialDisplay.isPaid ? 'Situação' : 'Saldo'}
+                </Text>
+                <Text
+                  style={!financialDisplay.isPlanned && financialDisplay.isPaid
+                    ? { ...s.financialSummaryValue, ...s.paidValue }
+                    : { ...s.financialSummaryValue, color: effectiveAccent }}
+                >
+                  {!financialDisplay.isPlanned && financialDisplay.isPaid
+                    ? 'Quitado'
+                    : `R$ ${brl(financialDisplay.open)}`}
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View style={{ ...s.totalRow, borderTopColor: tint(effectiveAccent, 0.25) }}>
+              <Text style={{ ...s.totalLabel, color: effectiveAccent }}>Total a Pagar:</Text>
+              <Text style={{ ...s.totalValue, color: effectiveAccent }}>R$ {brl(totalComDesconto)}</Text>
+            </View>
+          )}
         </View>
 
         {/* Page footer */}

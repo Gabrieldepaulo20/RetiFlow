@@ -84,6 +84,23 @@ function monthStart(offsetMonths: number) {
   )).toISOString().slice(0, 10);
 }
 
+function closingCompetence(date: string) {
+  const [yearText, monthText] = date.split('-');
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const monthNames = [
+    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+  ];
+  const end = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+  return {
+    year,
+    month: monthNames[month - 1]!,
+    start: `${yearText}-${monthText}-01`,
+    end,
+  };
+}
+
 function idFrom(result: RpcResult, ...keys: string[]) {
   const dados = result.dados;
   if (!dados || Array.isArray(dados)) return null;
@@ -634,6 +651,8 @@ describe.skipIf(skipIntegration)('Central Financeiro — aceite com Supabase rea
     requireFinanceiro(ctx);
 
     const suffix = String(Date.now()).slice(-8);
+    const competenceDate = saoPauloDate();
+    const competence = closingCompetence(competenceDate);
     const createdClient = await callRpc(authenticatedClient!, 'salvar_cliente_completo', {
       p_payload: {
         nome: `${FIXTURE_PREFIX} Cliente`,
@@ -651,6 +670,7 @@ describe.skipIf(skipIntegration)('Central Financeiro — aceite com Supabase rea
         numero_nota: `${FIXTURE_PREFIX} OS`,
         fk_clientes: clientId,
         contato_nome: `${FIXTURE_PREFIX} Contato`,
+        prazo: competenceDate,
         defeito: 'Teste financeiro de fechamento',
         total_servicos: 150,
         total_produtos: 0,
@@ -693,41 +713,52 @@ describe.skipIf(skipIntegration)('Central Financeiro — aceite com Supabase rea
       },
     });
 
-    const closing = await callRpc(authenticatedClient!, 'insert_fechamento', {
+    closingId = crypto.randomUUID();
+    const period = `${FIXTURE_PREFIX} Período`;
+    const closing = await callRpc(authenticatedClient!, 'finalizar_fechamento', {
+      p_id_fechamentos: closingId,
       p_fk_clientes: clientId,
-      p_mes: 'Aceite',
-      p_ano: Number(saoPauloDate().slice(0, 4)),
-      p_periodo: `${FIXTURE_PREFIX} Período`,
+      p_mes: competence.month,
+      p_ano: competence.year,
+      p_periodo: period,
       p_label: `${FIXTURE_PREFIX} Fechamento líquido`,
       p_valor_total: 120,
-    });
-    closingId = closing.id_fechamentos as string;
-    expect(closingId).toBeTruthy();
-
-    const updateClosing = await authenticatedClient!
-      .schema('RetificaPremium')
-      .rpc('update_fechamento', {
-        p_id_fechamentos: closingId,
-        p_dados_json: {
-          gerado_em: new Date().toISOString(),
-          periodo: `${FIXTURE_PREFIX} Período`,
-          cliente: { id: clientId, nome: `${FIXTURE_PREFIX} Cliente` },
-          notas: [{
-            id: noteId,
-            os: `${FIXTURE_PREFIX} OS`,
-            veiculo: 'Motor financeiro',
-            placa: null,
-            itens: [],
-            total_original: 150,
-            desconto_nota: 30,
-            total_com_desconto: 120,
-          }],
+      p_dados_json: {
+        gerado_em: new Date().toISOString(),
+        periodo: period,
+        cliente: { id: clientId, nome: `${FIXTURE_PREFIX} Cliente` },
+        competencia: { modo: 'MENSAL', inicio: competence.start, fim: competence.end },
+        notas: [{
+          id: noteId,
+          os: `${FIXTURE_PREFIX} OS`,
+          veiculo: 'Motor financeiro',
+          placa: null,
+          itens: [],
+          valor_total_os: 150,
+          valor_recebido: 0,
+          saldo_aberto: 150,
           total_original: 150,
+          desconto_nota: 20,
           total_com_desconto: 120,
-        },
-        p_pdf_url: `${RUN_ID}/${closingId}.pdf`,
-      });
-    expect(updateClosing.error).toBeNull();
+        }],
+        total_original: 150,
+        total_com_desconto: 120,
+        recebimento_inicial: null,
+      },
+      p_pdf_url: null,
+      p_chave_idempotencia: `${RUN_ID}:finalizar-fechamento`,
+      p_fk_template_documento: null,
+      p_documento_tema_snapshot: null,
+      p_documento_config_snapshot: null,
+      p_recebimento_valor: null,
+      p_recebimento_data: null,
+      p_recebimento_conta: null,
+      p_recebimento_forma: null,
+      p_recebimento_observacoes: null,
+      p_recebimento_idempotencia: null,
+    });
+    expect(closing.status).toBe(200);
+    expect(closingId).toBeTruthy();
 
     const projection = await callRpc(authenticatedClient!, 'get_financeiro_lancamentos', {
       p_data_inicio: saoPauloDate(-1),

@@ -25,6 +25,10 @@ test.describe('Fechamento Mensal', () => {
     const draftDialog = page.getByRole('dialog').filter({ hasText: /rascunho de fechamento/i });
     await expect(draftDialog).toBeVisible();
     await expect(draftDialog.getByText(/total a pagar no fechamento/i)).toBeVisible();
+    await expect(draftDialog.getByText(/recebimento ao gerar/i)).toBeVisible();
+    await draftDialog.getByRole('button', { name: '50%' }).click();
+    await expect(draftDialog.getByText(/restará/i)).toBeVisible();
+    await expect(draftDialog.getByRole('button', { name: /gerar e receber/i })).toBeVisible();
 
     await draftDialog.getByRole('button', { name: /visualizar/i }).click();
 

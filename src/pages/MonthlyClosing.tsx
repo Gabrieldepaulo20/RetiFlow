@@ -10,12 +10,8 @@ import { Badge } from '@/components/ui/badge';
 import {
   Download, Building2,
   PlusCircle, RefreshCcw, ChevronLeft, Eye, EyeOff, Sparkles, PencilLine, Printer,
-  Wallet, CheckCircle2, RotateCcw, MessageCircle,
+  Wallet, CheckCircle2, RotateCcw, MessageCircle, AlertTriangle, ArrowRight, Upload,
 } from 'lucide-react';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { formatDateBR, todayLocalISODate } from '@/lib/dates';
@@ -23,23 +19,27 @@ import { ClosingHtmlPreview } from '@/components/closing/ClosingHtmlPreview';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { createPdfPreviewWindow, downloadPdfBlob, downloadPdfUrl, openPdfInBrowser } from '@/lib/printPdf';
 import {
-  getFechamentos,
-  insertFechamento,
-  updateFechamento,
+  atualizarFechamentoPdf,
+  finalizarFechamento,
+  getAllFechamentos,
+  getFechamentosAbertosCliente,
   registrarAcaoFechamento,
   getNotaDetalhesParaFechamento,
   uploadFechamentoPDF,
   getFechamentoPDFSignedUrl,
-  buildFechamentoDocumentSnapshotParams,
   normalizeFechamentoDadosJson,
+  type FechamentoAbertoClienteItem,
+  type FechamentosAbertosCliente,
   type FechamentoListItem,
   type FechamentoDadosJson,
-  type FechamentoNota,
+  type FechamentoRecebimentoInicial,
+  type FinalizarFechamentoResult,
 } from '@/api/supabase/fechamentos';
 import {
-  estornarRecebimentoFechamento,
   getFinanceiroContas,
-  registrarRecebimentoFechamento,
+  insertFinanceiroAnexo,
+  uploadFinanceiroComprovante,
+  type FinanceiroConta,
 } from '@/api/supabase/financeiro';
 import { getNotasServico, mapStatusNome, type NotaServico } from '@/api/supabase/notas';
 import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
@@ -67,18 +67,26 @@ import {
   getPreviewItems,
   recalcItemSubtotal,
   recalcNoteTotal,
+  roundMoney,
   type ClosingDraft,
   type PreviewNote,
 } from '@/services/domain/monthlyClosingDraft';
 import {
-  acquireFinancialIdempotencyAttempt,
-  completeFinancialIdempotencyAttempt,
-} from '@/services/domain/financialIdempotency';
+  calculateInitialClosingPayment,
+  centsToMoney,
+  moneyToCents,
+  type ClosingInitialPaymentMode,
+  type ClosingInitialPaymentPlan,
+} from '@/services/domain/monthlyClosingPayment';
 import { PAYMENT_METHOD_LABELS, type IntakeNote, type NotePaymentStatus, type PaymentMethod } from '@/types';
 import { isBillableNoteStatus } from '@/services/domain/intakeNotes';
 import { toComparableTime } from '@/services/domain/dashboardFinance';
 import { readActiveSupportContext } from '@/services/auth/supportContext';
 import { FinancialValue } from '@/components/privacy/FinancialValue';
+import { ClosingPaymentDialog } from '@/components/closing/ClosingPaymentDialog';
+import type { ClosingFinancialSummary } from '@/components/closing/closingFinancialSummary';
+import { Textarea } from '@/components/ui/textarea';
+import { generateId } from '@/lib/generateId';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
@@ -97,6 +105,10 @@ const PALETTE = [
 ] as const;
 
 const CLOSING_NOTES_PAGE_SIZE = 1000;
+const MAX_PAYMENT_PROOF_SIZE = 15 * 1024 * 1024;
+const PAYMENT_PROOF_EXTENSIONS = /\.(pdf|jpe?g|png|webp)$/i;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const isValidLocalDate = (value: string) => parseDateInputValue(value) !== null;
 
 async function getAllClosingCandidateNotes(
   clientId: string,
@@ -153,12 +165,101 @@ const getClosingReceivedAmount = (closing: FechamentoListItem) => Math.min(
 const getClosingOpenAmount = (closing: FechamentoListItem) =>
   Math.max(0, Number((asNumber(closing.valor_total) - getClosingReceivedAmount(closing)).toFixed(2)));
 
-async function resolveClosingFinanceAccountId() {
-  const accounts = await getFinanceiroContas();
-  const account = accounts.find((candidate) => candidate.ativa && candidate.padrao)
-    ?? accounts.find((candidate) => candidate.ativa);
-  if (!account) throw new Error('Nenhuma conta financeira ativa foi encontrada.');
-  return account.id;
+const hasSameClosingFinancialState = (left: FechamentoListItem, right: FechamentoListItem) => (
+  moneyToCents(asNumber(left.valor_total)) === moneyToCents(asNumber(right.valor_total))
+  && moneyToCents(getClosingReceivedAmount(left)) === moneyToCents(getClosingReceivedAmount(right))
+);
+
+const toClosingFinancialSummary = (closing: FechamentoListItem): ClosingFinancialSummary => {
+  const total = Math.max(0, asNumber(closing.valor_total));
+  const received = getClosingReceivedAmount(closing);
+  const open = getClosingOpenAmount(closing);
+  return {
+    total,
+    received,
+    open,
+    status: open <= 0.004 ? 'PAGO' : received > 0 ? 'PARCIAL' : 'PENDENTE',
+  };
+};
+
+const buildInitialPaymentPlan = (draft: ClosingDraft): ClosingInitialPaymentPlan => {
+  const payment = draft.initialPayment;
+  if (payment.mode === 'CUSTOM') {
+    return { mode: 'CUSTOM', amountCents: payment.customAmountCents ?? 0 };
+  }
+  return { mode: payment.mode };
+};
+
+const validatePaymentProof = (file: File) => {
+  if (file.size > MAX_PAYMENT_PROOF_SIZE) {
+    throw new Error('O comprovante deve ter no máximo 15 MB.');
+  }
+  const allowedMime = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'].includes(file.type);
+  if (!allowedMime && !PAYMENT_PROOF_EXTENSIONS.test(file.name)) {
+    throw new Error('Envie um comprovante PDF, JPG, PNG ou WebP.');
+  }
+};
+
+function OpenClosingReminder({
+  data,
+  loading,
+  error,
+  onOpen,
+  onRetry,
+}: {
+  data: FechamentosAbertosCliente | null;
+  loading: boolean;
+  error: boolean;
+  onOpen: (item: FechamentoAbertoClienteItem) => void;
+  onRetry: () => void;
+}) {
+  if (loading) {
+    return (
+      <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-900">
+        <RefreshCcw className="mr-2 inline h-3.5 w-3.5 animate-spin" /> Conferindo saldos anteriores…
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900">
+        <span>Não foi possível conferir os fechamentos anteriores deste cliente.</span>
+        <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+          <RefreshCcw className="mr-1.5 h-3.5 w-3.5" /> Tentar novamente
+        </Button>
+      </div>
+    );
+  }
+  if (!data || data.quantidade === 0) return null;
+
+  return (
+    <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-amber-950">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold">
+            Este cliente tem {data.quantidade} fechamento{data.quantidade === 1 ? '' : 's'} anterior{data.quantidade === 1 ? '' : 'es'} em aberto
+          </p>
+          <p className="mt-0.5 text-xs text-amber-900/80">
+            Saldo anterior total: <FinancialValue>R$ {toMoney(data.saldoTotal)}</FinancialValue>. O valor não será somado ao novo fechamento.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {data.fechamentos.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onOpen(item)}
+                className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-2.5 py-1.5 text-xs font-medium hover:bg-amber-100"
+              >
+                {item.periodo} · <FinancialValue>R$ {toMoney(item.saldo)}</FinancialValue>
+                <ArrowRight className="h-3 w-3" />
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 const createDraftId = () =>
@@ -242,6 +343,14 @@ const normalizeDiscounts = (value: unknown) => {
   );
 };
 
+const isInitialPaymentMode = (value: unknown): value is ClosingInitialPaymentMode => (
+  value === 'NONE' || value === 'PERCENT_50' || value === 'PERCENT_60' || value === 'CUSTOM'
+);
+
+const isPaymentMethod = (value: unknown): value is PaymentMethod => (
+  typeof value === 'string' && Object.prototype.hasOwnProperty.call(PAYMENT_METHOD_LABELS, value)
+);
+
 const normalizeClosingDraft = (value: unknown, fallbackMonth: string, fallbackYear: string): ClosingDraft | null => {
   if (!isRecord(value)) return null;
   const id = asString(value.id, '');
@@ -257,9 +366,27 @@ const normalizeClosingDraft = (value: unknown, fallbackMonth: string, fallbackYe
   const includedNoteIds = Array.isArray(value.includedNoteIds)
     ? value.includedNoteIds.filter((noteId): noteId is string => typeof noteId === 'string')
     : notes.filter((note) => getPreviewNoteOpenAmount(note) > 0).map((note) => note.id);
+  const closingId = typeof value.closingId === 'string' && UUID_PATTERN.test(value.closingId)
+    ? value.closingId
+    : generateId();
+  const generationKey = typeof value.generationKey === 'string'
+    && value.generationKey.trim().length > 0
+    && value.generationKey.length <= 200
+    ? value.generationKey
+    : `finalizar-fechamento:${closingId}`;
+  const rawPayment = isRecord(value.initialPayment) ? value.initialPayment : {};
+  const paymentDate = typeof rawPayment.date === 'string' && isValidLocalDate(rawPayment.date)
+    ? rawPayment.date
+    : todayLocalISODate();
 
   return {
     id,
+    closingId,
+    generationKey,
+    generationStartedAt: typeof value.generationStartedAt === 'string'
+      && !Number.isNaN(new Date(value.generationStartedAt).getTime())
+      ? value.generationStartedAt
+      : null,
     clientId,
     clientName: asString(value.clientName, 'Cliente'),
     periodMode,
@@ -272,6 +399,14 @@ const normalizeClosingDraft = (value: unknown, fallbackMonth: string, fallbackYe
     notes,
     includedNoteIds,
     discounts: normalizeDiscounts(value.discounts),
+    initialPayment: {
+      mode: isInitialPaymentMode(rawPayment.mode) ? rawPayment.mode : 'NONE',
+      customAmountCents: Math.max(0, Math.trunc(asNumber(rawPayment.customAmountCents))),
+      date: paymentDate,
+      method: isPaymentMethod(rawPayment.method) ? rawPayment.method : 'PIX',
+      accountId: asString(rawPayment.accountId, ''),
+      observations: typeof rawPayment.observations === 'string' ? rawPayment.observations.slice(0, 1000) : '',
+    },
     createdAt: asString(value.createdAt, new Date().toISOString()),
     updatedAt: asString(value.updatedAt, new Date().toISOString()),
   };
@@ -336,7 +471,7 @@ function DualSpinner() {
 
 /* ── Main component ─────────────────────────────────────────────────────── */
 export default function MonthlyClosing() {
-  const { notes, clients, registrarRecebimentoNota, estornarRecebimentoNota } = useData();
+  const { notes, clients, registrarRecebimentoNota, estornarRecebimentoNota, refreshNotes } = useData();
   const { operationalUser, user, isSupportImpersonating } = useAuth();
   const { toast } = useToast();
   const { data: templateSettings } = useDocumentTemplateSettings();
@@ -355,12 +490,20 @@ export default function MonthlyClosing() {
   const [fechamentoOrdem, setFechamentoOrdem] = useState<'recentes' | 'valor'>('recentes');
   // Gerando link do WhatsApp para compartilhar o PDF do fechamento.
   const [sharingId, setSharingId] = useState<string | null>(null);
-  // Pagamento do fechamento (B2B): marcar pago + cascata.
-  const [payFechamento, setPayFechamento] = useState<FechamentoListItem | null>(null);
-  const [payData, setPayData] = useState(() => todayLocalISODate());
-  const [payForma, setPayForma] = useState<PaymentMethod>('PIX');
-  const [payAmount, setPayAmount] = useState('');
-  const [payBusy, setPayBusy] = useState(false);
+  const [paymentClosing, setPaymentClosing] = useState<FechamentoListItem | null>(null);
+  const [returnToDraftAfterPayment, setReturnToDraftAfterPayment] = useState(false);
+  const [financeAccounts, setFinanceAccounts] = useState<FinanceiroConta[]>([]);
+  const [financeAccountsError, setFinanceAccountsError] = useState(false);
+  const [loadingFinanceAccounts, setLoadingFinanceAccounts] = useState(false);
+  const [openClosings, setOpenClosings] = useState<FechamentosAbertosCliente | null>(null);
+  const [loadingOpenClosings, setLoadingOpenClosings] = useState(false);
+  const [openClosingsError, setOpenClosingsError] = useState(false);
+  const [initialPaymentProof, setInitialPaymentProof] = useState<File | null>(null);
+  const initialPaymentProofInputRef = useRef<HTMLInputElement | null>(null);
+  const fechamentosRequestRef = useRef(0);
+  const openClosingsRequestRef = useRef(0);
+  const financeAccountsRequestRef = useRef(0);
+  const generatedPreviewRequestRef = useRef(0);
   // Marcar uma O.S. do rascunho como já paga (sai do total do fechamento).
   const [payNota, setPayNota] = useState<PreviewNote | null>(null);
   const [payNotaData, setPayNotaData] = useState(() => todayLocalISODate());
@@ -378,6 +521,7 @@ export default function MonthlyClosing() {
   const [generatedPreviewFechamento, setGeneratedPreviewFechamento] = useState<FechamentoListItem | null>(null);
   const [storedPdfPreviewUrl, setStoredPdfPreviewUrl] = useState<string | null>(null);
   const [storedPdfPreviewTitle, setStoredPdfPreviewTitle] = useState<string | null>(null);
+  const [previewFinancialSummary, setPreviewFinancialSummary] = useState<ClosingFinancialSummary | undefined>();
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   // Object URL do PDF renderizado no preview (WYSIWYG). Mantido em ref para revogar
   // o anterior ao gerar um novo e no unmount, sem vazar memória.
@@ -418,6 +562,8 @@ export default function MonthlyClosing() {
   );
 
   useEffect(() => {
+    generatedPreviewRequestRef.current += 1;
+    setTemplatePreviewLoading(false);
     setFechamentos([]);
     setActiveDraftId(null);
     setDraftModalOpen(false);
@@ -426,6 +572,13 @@ export default function MonthlyClosing() {
     setGeneratedPreviewFechamento(null);
     setStoredPdfPreviewUrl(null);
     setStoredPdfPreviewTitle(null);
+    setPreviewFinancialSummary(undefined);
+    setPaymentClosing(null);
+    setReturnToDraftAfterPayment(false);
+    setOpenClosings(null);
+    setOpenClosingsError(false);
+    setFinanceAccountsError(false);
+    setInitialPaymentProof(null);
     setSelClientId('');
     setPeriodMode('month');
     setSelMonth(defaultMonth);
@@ -441,28 +594,77 @@ export default function MonthlyClosing() {
 
   /* ── Load fechamentos ── */
   const loadFechamentos = useCallback(async () => {
+    const requestId = fechamentosRequestRef.current + 1;
+    fechamentosRequestRef.current = requestId;
     if (!IS_REAL_AUTH || !currentScopeUserId) {
-      setFechamentos([]);
-      return;
+      if (requestId === fechamentosRequestRef.current) setFechamentos([]);
+      return true;
     }
     if (scopedClientIds.length === 0) {
-      setFechamentos([]);
-      return;
+      if (requestId === fechamentosRequestRef.current) setFechamentos([]);
+      return true;
     }
 
     setLoadingList(true);
     try {
-      const { dados } = await getFechamentos({ p_limite: 100 });
+      const dados = await getAllFechamentos();
+      if (requestId !== fechamentosRequestRef.current) return false;
       setFechamentos(filterFechamentosForClientScope(dados, scopedClientIds));
+      return true;
     } catch {
-      setFechamentos([]);
-      toast({ title: 'Erro ao carregar fechamentos', variant: 'destructive' });
+      if (requestId === fechamentosRequestRef.current) {
+        // Preserva a última lista válida: falha de rede não equivale a ausência.
+        toast({ title: 'Erro ao carregar fechamentos', variant: 'destructive' });
+      }
+      return false;
     } finally {
-      setLoadingList(false);
+      if (requestId === fechamentosRequestRef.current) setLoadingList(false);
     }
   }, [currentScopeUserId, scopedClientIds, toast]);
 
   useEffect(() => { void loadFechamentos(); }, [loadFechamentos]);
+
+  const loadFreshClosing = useCallback(async (fechamento: FechamentoListItem) => {
+    const dados = await getAllFechamentos({
+      ...(fechamento.cliente?.id ? { p_fk_clientes: fechamento.cliente.id } : {}),
+    });
+    const fresh = dados.find((item) => item.id_fechamentos === fechamento.id_fechamentos);
+    if (!fresh) throw new Error('O fechamento não foi encontrado ao atualizar o saldo.');
+
+    setFechamentos((current) => current.map((item) => (
+      item.id_fechamentos === fresh.id_fechamentos ? fresh : item
+    )));
+    return fresh;
+  }, []);
+
+  const loadFinanceAccounts = useCallback(async () => {
+    const requestId = financeAccountsRequestRef.current + 1;
+    financeAccountsRequestRef.current = requestId;
+    if (!IS_REAL_AUTH || !currentScopeUserId) {
+      if (requestId === financeAccountsRequestRef.current) {
+        setFinanceAccounts([]);
+        setFinanceAccountsError(false);
+      }
+      return;
+    }
+    setLoadingFinanceAccounts(true);
+    setFinanceAccountsError(false);
+    try {
+      const accounts = await getFinanceiroContas();
+      if (requestId === financeAccountsRequestRef.current) {
+        setFinanceAccounts(accounts.filter((account) => account.ativa));
+      }
+    } catch {
+      if (requestId === financeAccountsRequestRef.current) {
+        setFinanceAccounts([]);
+        setFinanceAccountsError(true);
+      }
+    } finally {
+      if (requestId === financeAccountsRequestRef.current) setLoadingFinanceAccounts(false);
+    }
+  }, [currentScopeUserId]);
+
+  useEffect(() => { void loadFinanceAccounts(); }, [loadFinanceAccounts]);
 
   useEffect(() => {
     setDraftsHydratedKey(null);
@@ -555,6 +757,8 @@ export default function MonthlyClosing() {
       ?? safeDraft.notes.filter((note) => getPreviewNoteOpenAmount(note) > 0).map((note) => note.id),
     );
     setEditingItems({});
+    setInitialPaymentProof(null);
+    if (initialPaymentProofInputRef.current) initialPaymentProofInputRef.current.value = '';
   }, [defaultCustomEndDate, defaultCustomStartDate, defaultMonth, defaultYear, scopedClientIdSet, toast]);
 
   const openDraft = useCallback((draft: ClosingDraft) => {
@@ -566,6 +770,44 @@ export default function MonthlyClosing() {
     () => drafts.find((draft) => draft.id === activeDraftId) ?? null,
     [drafts, activeDraftId],
   );
+  const defaultFinanceAccount = useMemo(
+    () => financeAccounts.find((account) => account.padrao) ?? financeAccounts[0] ?? null,
+    [financeAccounts],
+  );
+
+  const reminderClientId = activeDraft?.clientId ?? selClientId;
+  const loadOpenClosings = useCallback(async (clientId: string) => {
+    const requestId = openClosingsRequestRef.current + 1;
+    openClosingsRequestRef.current = requestId;
+    if (!IS_REAL_AUTH || !clientId) {
+      if (requestId === openClosingsRequestRef.current) {
+        setOpenClosings(null);
+        setOpenClosingsError(false);
+      }
+      return;
+    }
+    setLoadingOpenClosings(true);
+    setOpenClosingsError(false);
+    try {
+      const result = await getFechamentosAbertosCliente(clientId);
+      if (requestId === openClosingsRequestRef.current) setOpenClosings(result);
+    } catch {
+      if (requestId === openClosingsRequestRef.current) {
+        setOpenClosings((current) => current?.clienteId === clientId ? current : null);
+        setOpenClosingsError(true);
+      }
+    } finally {
+      if (requestId === openClosingsRequestRef.current) setLoadingOpenClosings(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!reminderClientId) {
+      void loadOpenClosings('');
+      return;
+    }
+    void loadOpenClosings(reminderClientId);
+  }, [loadOpenClosings, reminderClientId]);
 
   const selectedPeriodRange = useMemo(
     () => getMonthlyClosingDateRange({
@@ -584,11 +826,13 @@ export default function MonthlyClosing() {
   }, []);
 
   const closeTemplatePreview = useCallback(() => {
+    generatedPreviewRequestRef.current += 1;
     setTemplatePreviewOpen(false);
     setTemplatePreviewLoading(false);
     setGeneratedPreviewFechamento(null);
     setStoredPdfPreviewUrl(null);
     setStoredPdfPreviewTitle(null);
+    setPreviewFinancialSummary(undefined);
     if (returnToDraftAfterPreview) {
       setReturnToDraftAfterPreview(false);
       setDraftModalOpen(true);
@@ -596,6 +840,7 @@ export default function MonthlyClosing() {
   }, [returnToDraftAfterPreview]);
 
   const closeDraftModal = useCallback(() => {
+    generatedPreviewRequestRef.current += 1;
     setDraftModalOpen(false);
     setTemplatePreviewOpen(false);
     setTemplatePreviewLoading(false);
@@ -603,9 +848,14 @@ export default function MonthlyClosing() {
     setGeneratedPreviewFechamento(null);
     setStoredPdfPreviewUrl(null);
     setStoredPdfPreviewTitle(null);
+    setPreviewFinancialSummary(undefined);
   }, []);
 
-  const renderClosingPdfBlob = useCallback(async (dados: FechamentoDadosJson, geradoEm: string) => {
+  const renderClosingPdfBlob = useCallback(async (
+    dados: FechamentoDadosJson,
+    geradoEm: string,
+    financialSummary?: ClosingFinancialSummary,
+  ) => {
     const [{ pdf }, { ClosingPDFTemplate }] = await Promise.all([
       import('@react-pdf/renderer'),
       import('@/components/closing/ClosingPDFTemplate'),
@@ -617,15 +867,47 @@ export default function MonthlyClosing() {
         geradoEm={geradoEm}
         accentColor={templateSettings?.corFechamento}
         documentSettings={documentSettings}
+        financialSummary={financialSummary}
       />,
     ).toBlob();
   }, [documentSettings, templateSettings?.corFechamento]);
 
-  const openClosingPdfPreview = useCallback(async (dados: FechamentoDadosJson, title: string) => {
+  const renderStableGeneratedClosing = useCallback(async (source: FechamentoListItem) => {
+    let fresh = await loadFreshClosing(source);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const dados = normalizeFechamentoDadosJson(fresh.dados_json);
+      if (!dados) return { fresh, dados: null, blob: null };
+
+      const blob = await renderClosingPdfBlob(
+        dados,
+        dados.gerado_em ?? fresh.created_at,
+        toClosingFinancialSummary(fresh),
+      );
+      const verified = await loadFreshClosing(fresh);
+      if (hasSameClosingFinancialState(fresh, verified)) {
+        return { fresh: verified, dados, blob };
+      }
+      fresh = verified;
+    }
+    throw new Error('O saldo mudou enquanto o PDF era preparado. Tente novamente.');
+  }, [loadFreshClosing, renderClosingPdfBlob]);
+
+  const applyClosingPreviewBlob = useCallback((blob: Blob) => {
+    const url = URL.createObjectURL(blob);
+    if (previewObjectUrlRef.current) URL.revokeObjectURL(previewObjectUrlRef.current);
+    previewObjectUrlRef.current = url;
+    setStoredPdfPreviewUrl(url);
+  }, []);
+
+  const openClosingPdfPreview = useCallback(async (
+    dados: FechamentoDadosJson,
+    title: string,
+    financialSummary?: ClosingFinancialSummary,
+  ) => {
     const previewWindow = createPdfPreviewWindow(title);
     setTemplatePreviewLoading(true);
     try {
-      const blob = await renderClosingPdfBlob(dados, dados.gerado_em);
+      const blob = await renderClosingPdfBlob(dados, dados.gerado_em, financialSummary);
       const url = URL.createObjectURL(blob);
       const opened = openPdfInBrowser(url, {
         title,
@@ -653,67 +935,133 @@ export default function MonthlyClosing() {
     dados: FechamentoDadosJson,
     title: string,
     returnToDraft: boolean,
+    financialSummary?: ClosingFinancialSummary,
   ) => {
+    const requestId = generatedPreviewRequestRef.current + 1;
+    generatedPreviewRequestRef.current = requestId;
     setGeneratedPreviewFechamento(null);
     setStoredPdfPreviewUrl(null);
     setStoredPdfPreviewTitle(title);
+    setPreviewFinancialSummary(financialSummary);
     setReturnToDraftAfterPreview(returnToDraft);
     setDraftModalOpen(false);
     setTemplatePreviewOpen(true);
     setTemplatePreviewLoading(true);
     try {
-      const blob = await renderClosingPdfBlob(dados, dados.gerado_em);
-      const url = URL.createObjectURL(blob);
-      if (previewObjectUrlRef.current) URL.revokeObjectURL(previewObjectUrlRef.current);
-      previewObjectUrlRef.current = url;
-      setStoredPdfPreviewUrl(url);
+      const blob = await renderClosingPdfBlob(dados, dados.gerado_em, financialSummary);
+      if (requestId !== generatedPreviewRequestRef.current) return;
+      applyClosingPreviewBlob(blob);
     } catch {
+      if (requestId !== generatedPreviewRequestRef.current) return;
       toast({ title: 'Erro ao gerar visualização', description: 'Não foi possível montar o PDF do fechamento.', variant: 'destructive' });
     } finally {
-      setTemplatePreviewLoading(false);
+      if (requestId === generatedPreviewRequestRef.current) {
+        setTemplatePreviewLoading(false);
+      }
     }
-  }, [renderClosingPdfBlob, toast]);
+  }, [applyClosingPreviewBlob, renderClosingPdfBlob, toast]);
 
   const openDraftPreview = useCallback((draft: ClosingDraft) => {
     loadDraftIntoEditor(draft);
-    void showClosingPdfPreview(buildDadosFromDraft(draft), `Fechamento ${draft.periodLabel}`, false);
+    const totals = computeDraftTotals(draft);
+    const payment = calculateInitialClosingPayment(
+      moneyToCents(totals.totalComDesconto),
+      buildInitialPaymentPlan(draft),
+    );
+    void showClosingPdfPreview(
+      buildDadosFromDraft(draft),
+      `Fechamento ${draft.periodLabel}`,
+      false,
+      {
+        total: totals.totalComDesconto,
+        received: centsToMoney(payment.amountCents),
+        open: centsToMoney(payment.balanceCents),
+        status: payment.balanceCents === 0 && payment.amountCents > 0
+          ? 'PAGO'
+          : payment.amountCents > 0 ? 'PARCIAL' : 'PENDENTE',
+        planned: true,
+      },
+    );
   }, [loadDraftIntoEditor, showClosingPdfPreview]);
 
   const openActiveDraftPreview = useCallback(() => {
     const dados = modalPreviewDadosRef.current;
-    if (!dados) return;
-    void showClosingPdfPreview(dados, `Fechamento ${dados.periodo}`, true);
-  }, [showClosingPdfPreview]);
+    if (!dados || !activeDraft) return;
+    const payment = calculateInitialClosingPayment(
+      moneyToCents(dados.total_com_desconto),
+      buildInitialPaymentPlan(activeDraft),
+    );
+    void showClosingPdfPreview(dados, `Fechamento ${dados.periodo}`, true, {
+      total: dados.total_com_desconto,
+      received: centsToMoney(payment.amountCents),
+      open: centsToMoney(payment.balanceCents),
+      status: payment.balanceCents === 0 && payment.amountCents > 0
+        ? 'PAGO'
+        : payment.amountCents > 0 ? 'PARCIAL' : 'PENDENTE',
+      planned: true,
+    });
+  }, [activeDraft, showClosingPdfPreview]);
 
   const openGeneratedPreview = useCallback(async (fechamento: FechamentoListItem) => {
-    if (fechamento.dados_json) {
-      const dados = normalizeFechamentoDadosJson(fechamento.dados_json) ?? fechamento.dados_json;
-      await showClosingPdfPreview(dados, `Fechamento ${fechamento.periodo}`, false);
-      return;
-    }
-
-    if (fechamento.pdf_url) {
-      setTemplatePreviewLoading(true);
-      try {
-        const url = await getFechamentoPDFSignedUrl(fechamento.pdf_url, {
-          fechamentoId: fechamento.id_fechamentos,
-        });
+    const requestId = generatedPreviewRequestRef.current + 1;
+    generatedPreviewRequestRef.current = requestId;
+    setTemplatePreviewLoading(true);
+    try {
+      const rendered = await renderStableGeneratedClosing(fechamento);
+      if (requestId !== generatedPreviewRequestRef.current) return;
+      let { fresh } = rendered;
+      if (rendered.dados && rendered.blob) {
         setGeneratedPreviewFechamento(null);
-        setStoredPdfPreviewUrl(url);
-        setStoredPdfPreviewTitle(`Fechamento ${fechamento.periodo}`);
+        setStoredPdfPreviewUrl(null);
+        setStoredPdfPreviewTitle(`Fechamento ${fresh.periodo}`);
+        setPreviewFinancialSummary(toClosingFinancialSummary(fresh));
         setReturnToDraftAfterPreview(false);
         setDraftModalOpen(false);
         setTemplatePreviewOpen(true);
-      } catch {
-        toast({ title: 'Erro ao abrir visualização', description: 'Não foi possível gerar link seguro do PDF.', variant: 'destructive' });
-      } finally {
-        setTemplatePreviewLoading(false);
+        applyClosingPreviewBlob(rendered.blob);
+        return;
       }
-      return;
-    }
 
-    toast({ title: 'Visualização indisponível', description: 'Este fechamento não possui template salvo nem PDF armazenado.', variant: 'destructive' });
-  }, [toast, showClosingPdfPreview]);
+      if (fresh.pdf_url && getClosingReceivedAmount(fresh) > 0.004) {
+        throw new Error(
+          'Este fechamento legado não possui snapshot para atualizar o PDF após um recebimento.',
+        );
+      }
+
+      if (fresh.pdf_url) {
+        const url = await getFechamentoPDFSignedUrl(fresh.pdf_url, {
+          fechamentoId: fresh.id_fechamentos,
+        });
+        if (requestId !== generatedPreviewRequestRef.current) return;
+        const verified = await loadFreshClosing(fresh);
+        if (requestId !== generatedPreviewRequestRef.current) return;
+        if (!hasSameClosingFinancialState(fresh, verified)) {
+          throw new Error('O saldo mudou enquanto o PDF era preparado. Tente novamente.');
+        }
+        fresh = verified;
+        setGeneratedPreviewFechamento(null);
+        setStoredPdfPreviewUrl(url);
+        setStoredPdfPreviewTitle(`Fechamento ${fresh.periodo}`);
+        setPreviewFinancialSummary(toClosingFinancialSummary(fresh));
+        setReturnToDraftAfterPreview(false);
+        setDraftModalOpen(false);
+        setTemplatePreviewOpen(true);
+        return;
+      }
+
+      throw new Error('Este fechamento não possui template salvo nem PDF armazenado.');
+    } catch (error) {
+      if (requestId === generatedPreviewRequestRef.current) {
+        toast({
+          title: 'Erro ao abrir visualização',
+          description: error instanceof Error ? error.message : 'Tente novamente.',
+          variant: 'destructive',
+        });
+      }
+    } finally {
+      if (requestId === generatedPreviewRequestRef.current) setTemplatePreviewLoading(false);
+    }
+  }, [applyClosingPreviewBlob, loadFreshClosing, renderStableGeneratedClosing, toast]);
 
   const removeDraft = useCallback((draftId: string) => {
     setDrafts((current) => current.filter((draft) => draft.id !== draftId));
@@ -853,8 +1201,12 @@ export default function MonthlyClosing() {
       const draftClient = clients.find((entry) => entry.id === selClientId);
       const periodLabel = selectedPeriodRange.label;
       const timestamp = new Date().toISOString();
+      const closingId = generateId();
       const draft: ClosingDraft = {
         id: createDraftId(),
+        closingId,
+        generationKey: `finalizar-fechamento:${closingId}`,
+        generationStartedAt: null,
         clientId: selClientId,
         clientName: draftClient?.name ?? 'Cliente',
         periodMode,
@@ -867,6 +1219,13 @@ export default function MonthlyClosing() {
         notes: resultado,
         includedNoteIds: resultado.filter((note) => getPreviewNoteOpenAmount(note) > 0).map((note) => note.id),
         discounts: {},
+        initialPayment: {
+          mode: 'NONE',
+          date: todayLocalISODate(),
+          method: 'PIX',
+          accountId: defaultFinanceAccount?.id ?? '',
+          observations: '',
+        },
         createdAt: timestamp,
         updatedAt: timestamp,
       };
@@ -879,7 +1238,7 @@ export default function MonthlyClosing() {
     } finally {
       setLoadingPreview(false);
     }
-  }, [clients, customEndDate, customStartDate, notes, openDraft, periodMode, scopedClientIdSet, selClientId, selectedPeriodRange, toast]);
+  }, [clients, customEndDate, customStartDate, defaultFinanceAccount?.id, notes, openDraft, periodMode, scopedClientIdSet, selClientId, selectedPeriodRange, toast]);
 
   const safePreviewNotes = useMemo(
     () => (Array.isArray(previewNotes) ? previewNotes : []),
@@ -896,24 +1255,137 @@ export default function MonthlyClosing() {
       const openAmount = getPreviewNoteOpenAmount(n);
       return {
         id: n.id,
-        totalBruto: openAmount,
-        totalComDesconto: openAmount * (1 - disc / 100),
+        totalBruto: roundMoney(openAmount),
+        totalComDesconto: roundMoney(openAmount * (1 - disc / 100)),
       };
       });
   }, [safePreviewNotes, descontos, includedNoteIds]);
 
-  const grandTotal = useMemo(() => totals.reduce((a, b) => a + b.totalComDesconto, 0), [totals]);
-  const grandTotalOriginal = useMemo(() => totals.reduce((a, n) => a + n.totalBruto, 0), [totals]);
+  const grandTotal = useMemo(
+    () => roundMoney(totals.reduce((sum, item) => sum + item.totalComDesconto, 0)),
+    [totals],
+  );
+  const grandTotalOriginal = useMemo(
+    () => roundMoney(totals.reduce((sum, item) => sum + item.totalBruto, 0)),
+    [totals],
+  );
   // Partes já recebidas no período (inclusive parcial), fora do total a pagar.
   const receivedNotes = useMemo(
     () => safePreviewNotes.filter((note) => getPreviewNoteReceivedAmount(note) > 0),
     [safePreviewNotes],
   );
   const receivedTotal = useMemo(
-    () => receivedNotes.reduce((sum, note) => sum + getPreviewNoteReceivedAmount(note), 0),
+    () => roundMoney(receivedNotes.reduce((sum, note) => sum + getPreviewNoteReceivedAmount(note), 0)),
     [receivedNotes],
   );
   const includedNotesCount = totals.length;
+  const initialPaymentCalculation = useMemo(() => (
+    activeDraft
+      ? calculateInitialClosingPayment(moneyToCents(grandTotal), buildInitialPaymentPlan(activeDraft))
+      : calculateInitialClosingPayment(moneyToCents(grandTotal), { mode: 'NONE' })
+  ), [activeDraft, grandTotal]);
+  const initialPaymentAccountReady = Boolean(
+    activeDraft?.initialPayment.accountId
+    && financeAccounts.some((account) => (
+      account.ativa && account.id === activeDraft.initialPayment.accountId
+    )),
+  );
+  const initialPaymentReady = Boolean(
+    activeDraft
+    && (
+      activeDraft.initialPayment.mode === 'NONE'
+      || (
+        initialPaymentCalculation.valid
+        && isValidLocalDate(activeDraft.initialPayment.date)
+        && initialPaymentAccountReady
+      )
+    ),
+  );
+
+  const updateInitialPayment = useCallback((
+    changes: Partial<ClosingDraft['initialPayment']>,
+  ) => {
+    if (!activeDraftId) return;
+    setDrafts((current) => current.map((draft) => (
+      draft.id === activeDraftId
+        ? {
+            ...draft,
+            initialPayment: { ...draft.initialPayment, ...changes },
+            updatedAt: new Date().toISOString(),
+          }
+        : draft
+    )));
+  }, [activeDraftId]);
+
+  const selectInitialPaymentMode = useCallback((mode: ClosingInitialPaymentMode) => {
+    updateInitialPayment({
+      mode,
+      accountId: activeDraft?.initialPayment.accountId || defaultFinanceAccount?.id || '',
+      date: activeDraft?.initialPayment.date || todayLocalISODate(),
+    });
+    if (mode === 'NONE') {
+      setInitialPaymentProof(null);
+      if (initialPaymentProofInputRef.current) initialPaymentProofInputRef.current.value = '';
+    }
+  }, [activeDraft?.initialPayment.accountId, activeDraft?.initialPayment.date, defaultFinanceAccount?.id, updateInitialPayment]);
+
+  const openClosingPayments = useCallback((closing: FechamentoListItem, returnToDraft = false) => {
+    setReturnToDraftAfterPayment(returnToDraft);
+    if (returnToDraft) setDraftModalOpen(false);
+    setPaymentClosing(closing);
+  }, []);
+
+  const openReminderPayment = useCallback((item: FechamentoAbertoClienteItem) => {
+    const existing = fechamentos.find((closing) => closing.id_fechamentos === item.id);
+    const clientId = reminderClientId;
+    const clientName = clients.find((client) => client.id === clientId)?.name ?? activeDraft?.clientName ?? 'Cliente';
+    openClosingPayments(existing ?? {
+      id_fechamentos: item.id,
+      mes: '',
+      ano: 0,
+      periodo: item.periodo,
+      label: item.label,
+      valor_total: item.valorTotal,
+      valor_recebido: item.valorRecebido,
+      valorRecebido: item.valorRecebido,
+      status_pagamento: item.status,
+      pago_em: null,
+      pago_com: null,
+      versao: 1,
+      total_regeneracoes: 0,
+      total_edicoes: 0,
+      total_downloads: 0,
+      created_at: item.createdAt ?? new Date().toISOString(),
+      updated_at: null,
+      cliente: clientId ? { id: clientId, nome: clientName } : null,
+      dados_json: null,
+      pdf_url: null,
+    }, draftModalOpen);
+  }, [activeDraft?.clientName, clients, draftModalOpen, fechamentos, openClosingPayments, reminderClientId]);
+
+  const closePaymentDialog = useCallback(() => {
+    setPaymentClosing(null);
+    if (returnToDraftAfterPayment) {
+      setReturnToDraftAfterPayment(false);
+      setDraftModalOpen(true);
+    }
+  }, [returnToDraftAfterPayment]);
+
+  const handleClosingPaymentChanged = useCallback(async () => {
+    const [closingsRefresh, notesRefresh] = await Promise.allSettled([
+      loadFechamentos(),
+      refreshNotes(),
+    ]);
+    const clientId = paymentClosing?.cliente?.id ?? reminderClientId;
+    if (clientId) await loadOpenClosings(clientId);
+    if (
+      closingsRefresh.status === 'rejected'
+      || (closingsRefresh.status === 'fulfilled' && !closingsRefresh.value)
+      || notesRefresh.status === 'rejected'
+    ) {
+      throw new Error('O pagamento foi salvo, mas a lista ainda não refletiu a atualização.');
+    }
+  }, [loadFechamentos, loadOpenClosings, paymentClosing?.cliente?.id, refreshNotes, reminderClientId]);
   const modalPreviewDados = useMemo(
     () => {
       if (generatedPreviewFechamento) {
@@ -1086,62 +1558,197 @@ export default function MonthlyClosing() {
         toast({ title: 'Selecione pelo menos uma O.S.', description: 'Marque as O.S. que devem entrar neste fechamento.', variant: 'destructive' });
         return;
       }
-      const geradoEm = new Date().toISOString();
       const mesNum = parseInt(draft.month);
       const periodLabel = draft.periodLabel;
-      const dados = buildDadosFromDraft(draft);
-      const notasDados: FechamentoNota[] = dados.notas;
       const totals = computeDraftTotals(draft);
-      const pdfBlob = await renderClosingPdfBlob({ ...dados, gerado_em: geradoEm }, geradoEm);
+      if (totals.totalComDesconto <= 0) {
+        toast({
+          title: 'O fechamento precisa ter valor positivo',
+          description: 'Revise os descontos e as O.S. selecionadas antes de gerar.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      const payment = calculateInitialClosingPayment(
+        moneyToCents(totals.totalComDesconto),
+        buildInitialPaymentPlan(draft),
+      );
+      const hasInitialPayment = draft.initialPayment.mode !== 'NONE';
+      if (hasInitialPayment && !payment.valid) {
+        toast({
+          title: 'Valor da entrada inválido',
+          description: 'A primeira parcela deve ser maior que zero e não pode ultrapassar o fechamento.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      const paymentAccountReady = financeAccounts.some((account) => (
+        account.ativa && account.id === draft.initialPayment.accountId
+      ));
+      if (hasInitialPayment && (!paymentAccountReady || !isValidLocalDate(draft.initialPayment.date))) {
+        toast({
+          title: 'Complete os dados da entrada',
+          description: 'Selecione uma conta financeira ativa e uma data válida para o recebimento.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      const proof = draft.id === activeDraftId ? initialPaymentProof : null;
+      if (proof) validatePaymentProof(proof);
 
-      // 1. Insert fechamento header
-      const idFechamento = await insertFechamento({
-        p_fk_clientes: draft.clientId,
-        p_mes: MONTHS[mesNum - 1],
-        p_ano: parseInt(draft.year),
-        p_periodo: periodLabel,
-        p_label: `Fechamento ${periodLabel} — ${draft.clientName}`,
-        p_valor_total: totals.totalComDesconto,
-      });
-
-      // 2. Save snapshot
-      const pdfUrl = await uploadFechamentoPDF(idFechamento, pdfBlob);
-      if (!pdfUrl) {
-        throw new Error('O fechamento foi montado, mas o PDF não conseguiu ser salvo no storage.');
+      const geradoEm = draft.generationStartedAt ?? new Date().toISOString();
+      if (!draft.generationStartedAt) {
+        const persistedDraft = { ...draft, generationStartedAt: geradoEm };
+        const nextDrafts = drafts.map((item) => item.id === draft.id ? persistedDraft : item);
+        setDrafts(nextDrafts);
+        if (draftsStorageKey && draftsHydratedKey === draftsStorageKey) {
+          try {
+            window.localStorage.setItem(draftsStorageKey, JSON.stringify(nextDrafts));
+          } catch {
+            // O fluxo continua; o backend ainda protege o retry pela chave estável.
+          }
+        }
       }
 
-      // 3. Save immutable snapshot and link selected O.S. to this closing.
-      await updateFechamento(idFechamento, {
-        p_dados_json: {
-          ...dados,
-          gerado_em: geradoEm,
-          notas: notasDados,
-        },
-        p_pdf_url: pdfUrl,
-        ...buildFechamentoDocumentSnapshotParams(documentSettings),
-      });
+      // Não deriva da chave livre do rascunho: ela pode ter até 200 caracteres,
+      // enquanto a RPC também limita a chave da parcela a 200.
+      const initialPaymentIdempotencyKey = `parcela-inicial:${draft.closingId}`;
+      const initialPaymentData: FechamentoRecebimentoInicial | null = hasInitialPayment ? {
+        valor: centsToMoney(payment.amountCents),
+        data_efetiva: `${draft.initialPayment.date}T12:00:00-03:00`,
+        conta_id: draft.initialPayment.accountId,
+        forma_pagamento: draft.initialPayment.method,
+        observacoes: draft.initialPayment.observations.trim() || null,
+        chave_idempotencia: initialPaymentIdempotencyKey,
+      } : null;
+      const dados: FechamentoDadosJson & { competencia: NonNullable<FechamentoDadosJson['competencia']> } = {
+        ...buildDadosFromDraft(draft),
+        gerado_em: geradoEm,
+        recebimento_inicial: initialPaymentData,
+      };
+      const plannedSummary: ClosingFinancialSummary = {
+        total: totals.totalComDesconto,
+        received: centsToMoney(payment.amountCents),
+        open: centsToMoney(payment.balanceCents),
+        status: payment.balanceCents === 0 && payment.amountCents > 0
+          ? 'PAGO'
+          : payment.amountCents > 0 ? 'PARCIAL' : 'PENDENTE',
+      };
 
-      // 4. Audit action
+      // Renderizar antes da transação evita gravar um fechamento cujo snapshot não
+      // consegue produzir documento. Storage continua pós-commit por não participar
+      // da transação Postgres.
+      const warnings: string[] = [];
+      const preflightPdfBlob = await renderClosingPdfBlob(dados, geradoEm, plannedSummary);
+      const finalizeInput = {
+        id: draft.closingId,
+        clienteId: draft.clientId,
+        mes: MONTHS[mesNum - 1],
+        ano: parseInt(draft.year),
+        periodo: periodLabel,
+        label: `Fechamento ${periodLabel} — ${draft.clientName}`,
+        valorTotal: totals.totalComDesconto,
+        dadosJson: dados,
+        idempotencyKey: draft.generationKey,
+        customization: documentSettings,
+        pagamentoInicial: initialPaymentData ? {
+          valor: initialPaymentData.valor,
+          dataEfetiva: initialPaymentData.data_efetiva,
+          contaId: initialPaymentData.conta_id,
+          formaPagamento: initialPaymentData.forma_pagamento,
+          observacoes: initialPaymentData.observacoes,
+          idempotencyKey: initialPaymentData.chave_idempotencia,
+        } : null,
+      };
+
+      let result: FinalizarFechamentoResult;
+      try {
+        result = await finalizarFechamento(finalizeInput);
+      } catch (finalizeError) {
+        // Uma queda de rede pode acontecer depois do COMMIT. Repetimos uma vez
+        // o contrato completo com a mesma chave: o backend só devolve sucesso se
+        // snapshot, período, cliente, template, vínculos e pagamento coincidirem.
+        try {
+          result = await finalizarFechamento(finalizeInput);
+          warnings.push('A confirmação foi recuperada com segurança após uma interrupção de conexão.');
+        } catch {
+          throw finalizeError;
+        }
+      }
+
+      const committedSummary: ClosingFinancialSummary = {
+        total: totals.totalComDesconto,
+        received: result.valorRecebido,
+        open: result.valorAberto,
+        status: result.status,
+      };
+      try {
+        const pdfBlob = Math.abs(result.valorRecebido - plannedSummary.received) <= 0.004
+          && Math.abs(result.valorAberto - plannedSummary.open) <= 0.004
+          && result.status === plannedSummary.status
+          ? preflightPdfBlob
+          : await renderClosingPdfBlob(dados, geradoEm, committedSummary);
+        const pdfUrl = await uploadFechamentoPDF(result.id, pdfBlob, {
+          versionCents: moneyToCents(result.valorRecebido),
+        });
+        await atualizarFechamentoPdf(result.id, pdfUrl, {
+          expectedValorRecebido: result.valorRecebido,
+        });
+      } catch {
+        warnings.push('O fechamento e o pagamento foram salvos, mas o PDF ficou pendente; ele será regenerado ao compartilhar.');
+      }
+
+      if (proof && result.movimentoId) {
+        try {
+          const path = await uploadFinanceiroComprovante({ movimentoId: result.movimentoId, file: proof });
+          await insertFinanceiroAnexo({
+            movimentoId: result.movimentoId,
+            nomeArquivo: proof.name,
+            caminho: path,
+            mimeType: proof.type || null,
+            tamanhoBytes: proof.size,
+          });
+        } catch {
+          warnings.push('A parcela foi salva, mas o comprovante ficou pendente e pode ser anexado no histórico.');
+        }
+      }
+
       try {
         await registrarAcaoFechamento({
-          p_id_fechamentos: idFechamento,
+          p_id_fechamentos: result.id,
           p_tipo: 'pdf_gerado',
-          p_mensagem: `PDF gerado. Total: R$ ${totals.totalComDesconto.toFixed(2)}`,
+          p_mensagem: `Fechamento finalizado. Total: R$ ${totals.totalComDesconto.toFixed(2)}; recebido: R$ ${result.valorRecebido.toFixed(2)}.`,
         });
       } catch { /* non-blocking */ }
 
-      toast({ title: 'Fechamento gerado com sucesso!', description: 'PDF salvo no Supabase Storage.' });
-      setPreviewDados({ ...dados, gerado_em: geradoEm });
+      setPreviewDados(dados);
+      setInitialPaymentProof(null);
       removeDraft(draft.id);
       await loadFechamentos();
+      try {
+        await refreshNotes();
+      } catch {
+        warnings.push('Os dados foram salvos, mas a lista de O.S. precisa ser atualizada novamente.');
+      }
+      await loadOpenClosings(draft.clientId);
       closeDraftModal();
+      toast({
+        title: result.status === 'PAGO' ? 'Fechamento gerado e quitado' : 'Fechamento gerado com sucesso',
+        description: warnings.length > 0
+          ? warnings.join(' ')
+          : result.status === 'PARCIAL'
+            ? `Entrada salva. Restam R$ ${toMoney(result.valorAberto)}.`
+            : result.status === 'PAGO'
+              ? 'O pagamento integral foi registrado e as O.S. foram marcadas como pagas.'
+              : 'O fechamento foi salvo sem recebimento inicial.',
+      });
     } catch (err) {
       const description = err instanceof Error ? err.message : 'Tente novamente.';
       toast({ title: 'Erro ao gerar fechamento', description, variant: 'destructive' });
     } finally {
       setGenerating(false);
     }
-  }, [isSupportImpersonating, scopedClientIdSet, toast, renderClosingPdfBlob, loadFechamentos, removeDraft, closeDraftModal, documentSettings]);
+  }, [activeDraftId, closeDraftModal, documentSettings, drafts, draftsHydratedKey, draftsStorageKey, financeAccounts, initialPaymentProof, isSupportImpersonating, loadFechamentos, loadOpenClosings, refreshNotes, removeDraft, renderClosingPdfBlob, scopedClientIdSet, toast]);
 
   const handleGerar = useCallback(async () => {
     if (!activeDraft) return;
@@ -1157,29 +1764,38 @@ export default function MonthlyClosing() {
 
   /* ── Download PDF (direto para o disco, sem abrir guias) ── */
   const handleDownload = useCallback(async (fechamento: FechamentoListItem) => {
-    const filename = ['Fechamento', fechamento.cliente?.nome, fechamento.periodo]
-      .filter(Boolean)
-      .join(' ');
     setDownloadingId(fechamento.id_fechamentos);
     try {
+      const rendered = await renderStableGeneratedClosing(fechamento);
+      let { fresh } = rendered;
+      const filename = ['Fechamento', fresh.cliente?.nome, fresh.periodo]
+        .filter(Boolean)
+        .join(' ');
       // Preferimos re-renderizar do snapshot imutável (dados_json): assim o arquivo
       // baixado usa SEMPRE o template atual (ex.: "Total:") e bate 1:1 com o preview,
       // sem depender do PDF antigo salvo no Storage. pdf_url fica só como fallback.
-      if (fechamento.dados_json) {
-        const dados = normalizeFechamentoDadosJson(fechamento.dados_json) ?? fechamento.dados_json;
-        const blob = await renderClosingPdfBlob(dados, dados.gerado_em ?? fechamento.created_at);
-        downloadPdfBlob(blob, filename);
-      } else if (fechamento.pdf_url) {
-        const url = await getFechamentoPDFSignedUrl(fechamento.pdf_url, {
-          fechamentoId: fechamento.id_fechamentos,
+      if (rendered.dados && rendered.blob) {
+        downloadPdfBlob(rendered.blob, filename);
+      } else if (fresh.pdf_url && getClosingReceivedAmount(fresh) <= 0.004) {
+        const url = await getFechamentoPDFSignedUrl(fresh.pdf_url, {
+          fechamentoId: fresh.id_fechamentos,
           downloadFilename: filename,
         });
+        const verified = await loadFreshClosing(fresh);
+        if (!hasSameClosingFinancialState(fresh, verified)) {
+          throw new Error('O saldo mudou enquanto o PDF era preparado. Tente novamente.');
+        }
+        fresh = verified;
         downloadPdfUrl(url, filename);
+      } else if (fresh.pdf_url) {
+        throw new Error(
+          'Este fechamento legado não possui snapshot para atualizar o PDF após um recebimento.',
+        );
       } else {
         toast({ title: 'PDF não disponível', variant: 'destructive' });
         return;
       }
-      await registrarAcaoFechamento({ p_id_fechamentos: fechamento.id_fechamentos, p_tipo: 'baixado' }).catch(() => {});
+      await registrarAcaoFechamento({ p_id_fechamentos: fresh.id_fechamentos, p_tipo: 'baixado' }).catch(() => {});
     } catch (err) {
       toast({
         title: 'Erro ao baixar PDF',
@@ -1189,31 +1805,83 @@ export default function MonthlyClosing() {
     } finally {
       setDownloadingId(null);
     }
-  }, [renderClosingPdfBlob, toast]);
+  }, [loadFreshClosing, renderStableGeneratedClosing, toast]);
+
+  const ensureClosingPdf = useCallback(async (fechamento: FechamentoListItem) => {
+    const dados = normalizeFechamentoDadosJson(fechamento.dados_json);
+    if (!dados) {
+      if (fechamento.pdf_url && getClosingReceivedAmount(fechamento) <= 0.004) {
+        return fechamento.pdf_url;
+      }
+      if (fechamento.pdf_url) {
+        throw new Error(
+          'Este fechamento legado não possui snapshot para atualizar o PDF após um recebimento.',
+        );
+      }
+      throw new Error('Este fechamento não possui snapshot para regenerar o PDF.');
+    }
+    const blob = await renderClosingPdfBlob(
+      dados,
+      dados.gerado_em ?? fechamento.created_at,
+      toClosingFinancialSummary(fechamento),
+    );
+    const received = getClosingReceivedAmount(fechamento);
+    const path = await uploadFechamentoPDF(fechamento.id_fechamentos, blob, {
+      versionCents: moneyToCents(received),
+    });
+    await atualizarFechamentoPdf(fechamento.id_fechamentos, path, {
+      expectedValorRecebido: received,
+    });
+    setFechamentos((current) => current.map((item) => (
+      item.id_fechamentos === fechamento.id_fechamentos ? { ...item, pdf_url: path } : item
+    )));
+    return path;
+  }, [renderClosingPdfBlob]);
 
   /* ── Compartilhar no WhatsApp (link do PDF assinado, validade estendida) ── */
   const handleShareWhatsApp = useCallback(async (fechamento: FechamentoListItem) => {
-    if (!fechamento.pdf_url) {
-      toast({ title: 'Compartilhamento indisponível', description: 'Este fechamento ainda não tem PDF salvo para gerar o link.', variant: 'destructive' });
-      return;
-    }
     setSharingId(fechamento.id_fechamentos);
     try {
-      // Link válido por 7 dias para o cliente conseguir abrir com calma.
-      const url = await getFechamentoPDFSignedUrl(fechamento.pdf_url, {
-        fechamentoId: fechamento.id_fechamentos,
-        expiresIn: 60 * 60 * 24 * 7,
-      });
-      const cliente = clients.find((c) => c.id === fechamento.cliente?.id);
+      // Render, vínculo e assinatura podem demorar. A cada tentativa a RPC só
+      // vincula o PDF se o recebido ainda for o exibido e uma leitura posterior
+      // confirma que PDF, mensagem e saldo pertencem ao mesmo snapshot.
+      let freshClosing = await loadFreshClosing(fechamento);
+      let url = '';
+      let stable = false;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          const pdfPath = await ensureClosingPdf(freshClosing);
+          url = await getFechamentoPDFSignedUrl(pdfPath, {
+            fechamentoId: freshClosing.id_fechamentos,
+            expiresIn: 60 * 60 * 24 * 7,
+          });
+          const verifiedClosing = await loadFreshClosing(freshClosing);
+          if (hasSameClosingFinancialState(freshClosing, verifiedClosing)) {
+            freshClosing = verifiedClosing;
+            stable = true;
+            break;
+          }
+          freshClosing = verifiedClosing;
+        } catch (error) {
+          if (attempt === 2) throw error;
+          freshClosing = await loadFreshClosing(freshClosing);
+        }
+      }
+      if (!stable) {
+        throw new Error('O saldo mudou enquanto o PDF era preparado. Tente compartilhar novamente.');
+      }
+      const cliente = clients.find((c) => c.id === freshClosing.cliente?.id);
       const digits = (cliente?.phone ?? '').replace(/\D/g, '');
       const phone = digits ? (digits.length <= 11 ? `55${digits}` : digits) : '';
-      const mensagem = `Olá! Segue o fechamento de ${fechamento.periodo}`
-        + `${fechamento.cliente?.nome ? ` — ${fechamento.cliente.nome}` : ''}.`
-        + `\nTotal: R$ ${toMoney(fechamento.valor_total)}.`
+      const mensagem = `Olá! Segue o fechamento de ${freshClosing.periodo}`
+        + `${freshClosing.cliente?.nome ? ` — ${freshClosing.cliente.nome}` : ''}.`
+        + `\nTotal: R$ ${toMoney(freshClosing.valor_total)}.`
+        + `\nRecebido: R$ ${toMoney(getClosingReceivedAmount(freshClosing))}.`
+        + `\nSaldo: R$ ${toMoney(getClosingOpenAmount(freshClosing))}.`
         + `\n\nPDF (link válido por 7 dias): ${url}`;
       const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(mensagem)}`;
       window.open(waUrl, '_blank', 'noopener,noreferrer');
-      await registrarAcaoFechamento({ p_id_fechamentos: fechamento.id_fechamentos, p_tipo: 'compartilhado' }).catch(() => {});
+      await registrarAcaoFechamento({ p_id_fechamentos: freshClosing.id_fechamentos, p_tipo: 'compartilhado' }).catch(() => {});
     } catch (err) {
       toast({
         title: 'Erro ao gerar link do WhatsApp',
@@ -1223,91 +1891,7 @@ export default function MonthlyClosing() {
     } finally {
       setSharingId(null);
     }
-  }, [clients, toast]);
-
-  const handleMarcarPago = useCallback(async () => {
-    if (!payFechamento) return;
-    const currentReceived = getClosingReceivedAmount(payFechamento);
-    const openAmount = getClosingOpenAmount(payFechamento);
-    const amount = Number(payAmount.replace(',', '.'));
-    if (!Number.isFinite(amount) || amount <= 0 || amount > openAmount + 0.004) {
-      toast({
-        title: 'Valor de recebimento inválido',
-        description: `Informe um valor entre R$ 0,01 e R$ ${toMoney(openAmount)}.`,
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setPayBusy(true);
-    try {
-      const paidAt = new Date(`${payData}T12:00:00`).toISOString();
-      const accountId = await resolveClosingFinanceAccountId();
-      const roundedAmount = Number(amount.toFixed(2));
-      const attempt = acquireFinancialIdempotencyAttempt({
-        operation: 'receber-fechamento',
-        entityId: payFechamento.id_fechamentos,
-        fingerprint: {
-          alreadyReceived: currentReceived,
-          amount: roundedAmount,
-          paidAt: payData,
-          accountId,
-          paidWith: payForma,
-        },
-      });
-      const result = await registrarRecebimentoFechamento({
-        fechamentoId: payFechamento.id_fechamentos,
-        valor: roundedAmount,
-        dataEfetiva: paidAt,
-        contaId: accountId,
-        formaPagamento: payForma,
-        idempotencyKey: attempt.key,
-      });
-      completeFinancialIdempotencyAttempt(attempt);
-      const fullyPaid = result.status === 'PAGO'
-        || (result.valorAberto !== null && result.valorAberto <= 0.004);
-      toast({
-        title: fullyPaid ? 'Fechamento quitado' : 'Recebimento parcial registrado',
-        description: fullyPaid
-          ? 'O fechamento não possui mais saldo em aberto.'
-          : `Restam R$ ${toMoney(result.valorAberto ?? Math.max(0, openAmount - roundedAmount))} em aberto.`,
-      });
-      setPayFechamento(null);
-      await loadFechamentos();
-    } catch (err) {
-      toast({ title: 'Erro ao marcar pago', description: err instanceof Error ? err.message : 'Tente novamente.', variant: 'destructive' });
-    } finally {
-      setPayBusy(false);
-    }
-  }, [payAmount, payFechamento, payData, payForma, toast, loadFechamentos]);
-
-  const handleEstornarFechamento = useCallback(async (fechamento: FechamentoListItem) => {
-    try {
-      const motivo = 'Correção de recebimento do fechamento';
-      const attempt = acquireFinancialIdempotencyAttempt({
-        operation: 'estornar-fechamento',
-        entityId: fechamento.id_fechamentos,
-        fingerprint: {
-          received: getClosingReceivedAmount(fechamento),
-          motivo,
-        },
-      });
-      await estornarRecebimentoFechamento({
-        fechamentoId: fechamento.id_fechamentos,
-        motivo,
-        dataEfetiva: new Date().toISOString(),
-        idempotencyKey: attempt.key,
-      });
-      completeFinancialIdempotencyAttempt(attempt);
-      toast({
-        title: 'Recebimento estornado',
-        description: 'Os recebimentos financeiros deste fechamento foram revertidos.',
-      });
-      await loadFechamentos();
-    } catch (err) {
-      toast({ title: 'Erro ao estornar', description: err instanceof Error ? err.message : 'Tente novamente.', variant: 'destructive' });
-    }
-  }, [toast, loadFechamentos]);
+  }, [clients, ensureClosingPdf, loadFreshClosing, toast]);
 
   const handlePrintPreview = useCallback(async () => {
     if (storedPdfPreviewUrl) {
@@ -1331,8 +1915,12 @@ export default function MonthlyClosing() {
       return;
     }
 
-    await openClosingPdfPreview(modalPreviewDados, `Fechamento ${modalPreviewDados.periodo}`);
-  }, [modalPreviewDados, openClosingPdfPreview, storedPdfPreviewTitle, storedPdfPreviewUrl, toast]);
+    await openClosingPdfPreview(
+      modalPreviewDados,
+      `Fechamento ${modalPreviewDados.periodo}`,
+      previewFinancialSummary,
+    );
+  }, [modalPreviewDados, openClosingPdfPreview, previewFinancialSummary, storedPdfPreviewTitle, storedPdfPreviewUrl, toast]);
 
   const years = useMemo(() => {
     const y = Number(defaultYear);
@@ -1578,6 +2166,17 @@ export default function MonthlyClosing() {
               Gerar rascunho
             </Button>
           </div>
+          {selClientId && !activeDraft ? (
+            <div className="mt-3">
+              <OpenClosingReminder
+                data={openClosings}
+                loading={loadingOpenClosings}
+                error={openClosingsError}
+                onOpen={openReminderPayment}
+                onRetry={() => void loadOpenClosings(reminderClientId)}
+              />
+            </div>
+          ) : null}
           {periodMode === 'custom' && !selectedPeriodRange && (
             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
               Escolha uma data inicial e uma data final válidas. A data inicial não pode ser maior que a final.
@@ -1614,6 +2213,10 @@ export default function MonthlyClosing() {
             {drafts.map((draft, idx) => {
               const palette = PALETTE[idx % PALETTE.length];
               const totals = computeDraftTotals(draft);
+              const draftPayment = calculateInitialClosingPayment(
+                moneyToCents(totals.totalComDesconto),
+                buildInitialPaymentPlan(draft),
+              );
               const draftClientName = asString(draft.clientName, 'Cliente');
               const draftNotes = getDraftNotes(draft);
               const initials = draftClientName.slice(0, 2).toUpperCase();
@@ -1637,6 +2240,12 @@ export default function MonthlyClosing() {
                         <p className="text-xs text-muted-foreground mt-1">
                           Salvo em {new Date(draft.updatedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                         </p>
+                        {draftPayment.amountCents > 0 ? (
+                          <p className="mt-1 text-xs font-medium text-emerald-700">
+                            Ao gerar: receber <FinancialValue>R$ {toMoney(centsToMoney(draftPayment.amountCents))}</FinancialValue>
+                            {' '}· restará <FinancialValue>R$ {toMoney(centsToMoney(draftPayment.balanceCents))}</FinancialValue>
+                          </p>
+                        ) : null}
                       </div>
                       <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:grid-cols-none sm:flex sm:shrink-0 sm:flex-wrap sm:justify-end">
                         <Button size="sm" variant="outline" onClick={() => openDraft(draft)} className="justify-center">
@@ -1746,7 +2355,14 @@ export default function MonthlyClosing() {
               const descontoTotal = notasComDesconto.reduce((sum, n) => sum + (n.total_original - n.total_com_desconto), 0);
               const descontosVisiveis = descontosAbertos === f.id_fechamentos;
               return (
-                <Card key={f.id_fechamentos} className={cn('border-l-4 overflow-hidden', palette.border)}>
+                <Card
+                  key={f.id_fechamentos}
+                  className={cn(
+                    'border-l-4 overflow-hidden transition-colors',
+                    palette.border,
+                    isPago && 'bg-slate-100/80 saturate-[.6]',
+                  )}
+                >
                   <CardContent className="p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                       <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0', palette.avatar)}>
@@ -1837,52 +2453,25 @@ export default function MonthlyClosing() {
                           size="sm"
                           variant="outline"
                           onClick={() => void handleShareWhatsApp(f)}
-                          disabled={sharingId === f.id_fechamentos || !f.pdf_url}
-                          title={!f.pdf_url ? 'Sem PDF salvo para compartilhar' : 'Enviar por WhatsApp'}
+                          disabled={sharingId === f.id_fechamentos}
+                          title="Enviar por WhatsApp"
                           className="flex-1 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800 sm:flex-none"
                         >
                           {sharingId === f.id_fechamentos
                             ? <RefreshCcw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
                             : <MessageCircle className="w-3.5 h-3.5 mr-1.5" />} WhatsApp
                         </Button>
-                        {!isPago && valorEmAberto > 0 ? (
-                          <Button
-                            size="sm"
-                            onClick={() => {
-                              setPayForma('PIX');
-                              setPayData(todayLocalISODate());
-                              setPayAmount(valorEmAberto.toFixed(2));
-                              setPayFechamento(f);
-                            }}
-                            disabled={isSupportImpersonating}
-                            title={isSupportImpersonating ? 'Indisponível em modo suporte' : undefined}
-                            className="col-span-2 justify-center bg-emerald-600 text-white hover:bg-emerald-700 sm:col-span-1 sm:flex-none"
-                          >
-                            <Wallet className="w-3.5 h-3.5 mr-1.5" /> Registrar recebimento
-                          </Button>
-                        ) : null}
-                        {valorRecebido > 0 && user?.role === 'ADMIN' ? (
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button size="sm" variant="outline" disabled={isSupportImpersonating} className="col-span-2 justify-center sm:col-span-1 sm:flex-none">
-                                <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> Estornar
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Estornar recebimentos de {f.periodo}?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Todos os recebimentos financeiros vinculados a este fechamento serão revertidos.
-                                  Use somente para corrigir lançamentos.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Voltar</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => void handleEstornarFechamento(f)}>Confirmar estorno</AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        ) : null}
+                        <Button
+                          size="sm"
+                          variant={isPago ? 'outline' : 'default'}
+                          onClick={() => openClosingPayments(f)}
+                          className={cn(
+                            'col-span-2 justify-center sm:col-span-1 sm:flex-none',
+                            !isPago && 'bg-emerald-600 text-white hover:bg-emerald-700',
+                          )}
+                        >
+                          <Wallet className="w-3.5 h-3.5 mr-1.5" /> Pagamentos
+                        </Button>
                       </div>
                     </div>
                   </CardContent>
@@ -1919,7 +2508,7 @@ export default function MonthlyClosing() {
                   const disc = clampPercent(descontos[nota.id] ?? 0);
                   const valorRecebidoNota = getPreviewNoteReceivedAmount(nota);
                   const saldoAbertoNota = getPreviewNoteOpenAmount(nota);
-                  const totalComDesc = saldoAbertoNota * (1 - disc / 100);
+                  const totalComDesc = roundMoney(saldoAbertoNota * (1 - disc / 100));
                   const editing = editingItems[nota.id] ?? true;
                   const isPaid = saldoAbertoNota <= 0;
                   const isPartial = !isPaid && valorRecebidoNota > 0;
@@ -2127,6 +2716,151 @@ export default function MonthlyClosing() {
                         </div>
                       )}
                     </div>
+                    <OpenClosingReminder
+                      data={openClosings}
+                      loading={loadingOpenClosings}
+                      error={openClosingsError}
+                      onOpen={openReminderPayment}
+                      onRetry={() => void loadOpenClosings(reminderClientId)}
+                    />
+                    {activeDraft ? (
+                      <div className="space-y-4 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4 shadow-sm">
+                        <div>
+                          <p className="text-sm font-semibold text-emerald-950">Recebimento ao gerar</p>
+                          <p className="mt-0.5 text-xs text-emerald-900/70">
+                            Opcional. A entrada e o fechamento serão gravados juntos; o saldo fica para a segunda parcela.
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {([
+                            ['NONE', 'Sem entrada'],
+                            ['PERCENT_50', '50%'],
+                            ['PERCENT_60', '60%'],
+                            ['CUSTOM', 'Outro valor'],
+                          ] as const).map(([mode, label]) => (
+                            <Button
+                              key={mode}
+                              type="button"
+                              size="sm"
+                              variant={activeDraft.initialPayment.mode === mode ? 'default' : 'outline'}
+                              onClick={() => selectInitialPaymentMode(mode)}
+                            >
+                              {label}
+                            </Button>
+                          ))}
+                        </div>
+
+                        {activeDraft.initialPayment.mode !== 'NONE' ? (
+                          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                            {financeAccountsError ? (
+                              <div
+                                role="alert"
+                                className="flex flex-col gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950 sm:col-span-2 xl:col-span-1 2xl:col-span-2"
+                              >
+                                <span>Não foi possível carregar as contas financeiras. A entrada fica bloqueada até atualizar.</span>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-10 self-start border-amber-300 bg-white"
+                                  disabled={loadingFinanceAccounts}
+                                  onClick={() => void loadFinanceAccounts()}
+                                >
+                                  <RefreshCcw className={cn('mr-2 h-4 w-4', loadingFinanceAccounts && 'animate-spin')} />
+                                  Tentar novamente
+                                </Button>
+                              </div>
+                            ) : loadingFinanceAccounts && financeAccounts.length === 0 ? (
+                              <div
+                                role="status"
+                                className="rounded-xl border bg-background p-3 text-xs text-muted-foreground sm:col-span-2 xl:col-span-1 2xl:col-span-2"
+                              >
+                                Carregando contas financeiras…
+                              </div>
+                            ) : null}
+                            {activeDraft.initialPayment.mode === 'CUSTOM' ? (
+                              <div className="space-y-1.5 sm:col-span-2 xl:col-span-1 2xl:col-span-2">
+                                <label className="text-xs font-medium text-muted-foreground">Valor da primeira parcela</label>
+                                <Input
+                                  type="number"
+                                  min="0.01"
+                                  max={grandTotal}
+                                  step="0.01"
+                                  value={centsToMoney(activeDraft.initialPayment.customAmountCents ?? 0) || ''}
+                                  onChange={(event) => updateInitialPayment({ customAmountCents: moneyToCents(Number(event.target.value)) })}
+                                  placeholder="0,00"
+                                />
+                              </div>
+                            ) : null}
+                            <div className="space-y-1.5">
+                              <label className="text-xs font-medium text-muted-foreground">Conta financeira</label>
+                              <Select
+                                value={activeDraft.initialPayment.accountId}
+                                disabled={loadingFinanceAccounts || financeAccountsError}
+                                onValueChange={(accountId) => updateInitialPayment({ accountId })}
+                              >
+                                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                                <SelectContent>
+                                  {financeAccounts.map((account) => (
+                                    <SelectItem key={account.id} value={account.id}>{account.nome}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="text-xs font-medium text-muted-foreground">Forma</label>
+                              <Select value={activeDraft.initialPayment.method} onValueChange={(method) => updateInitialPayment({ method: method as PaymentMethod })}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  {(Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethod[]).map((method) => (
+                                    <SelectItem key={method} value={method}>{PAYMENT_METHOD_LABELS[method]}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="text-xs font-medium text-muted-foreground">Data</label>
+                              <Input type="date" value={activeDraft.initialPayment.date} onChange={(event) => updateInitialPayment({ date: event.target.value })} />
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="text-xs font-medium text-muted-foreground">Comprovante opcional</label>
+                              <input
+                                ref={initialPaymentProofInputRef}
+                                type="file"
+                                accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                                className="sr-only"
+                                onChange={(event) => setInitialPaymentProof(event.target.files?.[0] ?? null)}
+                              />
+                              <Button type="button" variant="outline" className="w-full justify-start overflow-hidden" onClick={() => initialPaymentProofInputRef.current?.click()}>
+                                <Upload className="mr-2 h-4 w-4 shrink-0" />
+                                <span className="truncate">{initialPaymentProof?.name ?? 'Selecionar'}</span>
+                              </Button>
+                            </div>
+                            <div className="space-y-1.5 sm:col-span-2 xl:col-span-1 2xl:col-span-2">
+                              <label className="text-xs font-medium text-muted-foreground">Observações</label>
+                              <Textarea
+                                value={activeDraft.initialPayment.observations}
+                                onChange={(event) => updateInitialPayment({ observations: event.target.value })}
+                                maxLength={1000}
+                                rows={2}
+                                placeholder="Ex.: cheque nº 1234"
+                              />
+                            </div>
+                          </div>
+                        ) : null}
+
+                        <div className="grid grid-cols-3 gap-2 rounded-xl border bg-white p-3 text-xs">
+                          <div><p className="text-muted-foreground">Total</p><p className="mt-1 font-semibold"><FinancialValue>R$ {toMoney(grandTotal)}</FinancialValue></p></div>
+                          <div><p className="text-muted-foreground">Recebido</p><p className="mt-1 font-semibold text-emerald-700"><FinancialValue>R$ {toMoney(centsToMoney(initialPaymentCalculation.amountCents))}</FinancialValue></p></div>
+                          <div><p className="text-muted-foreground">Restará</p><p className="mt-1 font-semibold text-amber-700"><FinancialValue>R$ {toMoney(centsToMoney(initialPaymentCalculation.balanceCents))}</FinancialValue></p></div>
+                        </div>
+                        {!initialPaymentReady ? (
+                          <p className="text-xs font-medium text-rose-700">
+                            Informe um valor válido, a data e a conta financeira para salvar a entrada.
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <div className="rounded-2xl border bg-background p-4 shadow-sm space-y-2 text-sm text-muted-foreground">
                       <p>1. Este popup serve para edição e revisão das O.S.</p>
                       <p>2. O botão visualizar mostra o template final em outro popup.</p>
@@ -2134,12 +2868,14 @@ export default function MonthlyClosing() {
                     </div>
                     <Button
                       onClick={handleGerar}
-                      disabled={generating || !activeDraft || includedNotesCount === 0}
+                      disabled={generating || !activeDraft || includedNotesCount === 0 || !initialPaymentReady || isSupportImpersonating}
                       className="h-12 w-full bg-destructive text-sm font-semibold text-destructive-foreground hover:bg-destructive/90"
                       size="lg"
                     >
                       <RefreshCcw className={cn('mr-2 h-4 w-4', generating && 'animate-spin')} />
-                      Gerar fechamento
+                      {activeDraft?.initialPayment.mode === 'NONE'
+                        ? 'Gerar sem entrada'
+                        : `Gerar e receber R$ ${toMoney(centsToMoney(initialPaymentCalculation.amountCents))}`}
                     </Button>
                   </div>
                 </div>
@@ -2190,6 +2926,7 @@ export default function MonthlyClosing() {
                     dados={modalPreviewDados}
                     accentColor={templateSettings?.corFechamento}
                     documentSettings={documentSettings}
+                    financialSummary={previewFinancialSummary}
                   />
                 </div>
               ) : (
@@ -2202,58 +2939,15 @@ export default function MonthlyClosing() {
         </DialogContent>
       </Dialog>
 
-      {/* Recebimento do fechamento (integral ou parcial). */}
-      <Dialog open={!!payFechamento} onOpenChange={(open) => { if (!open) setPayFechamento(null); }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Registrar recebimento do fechamento</DialogTitle>
-            <DialogDescription>
-              {payFechamento?.cliente?.nome ?? 'Cliente'} · {payFechamento?.periodo ?? ''}.
-              Total <FinancialValue>R$ {toMoney(payFechamento?.valor_total ?? 0)}</FinancialValue>
-              {' '}· recebido <FinancialValue>R$ {toMoney(payFechamento ? getClosingReceivedAmount(payFechamento) : 0)}</FinancialValue>
-              {' '}· em aberto <FinancialValue>R$ {toMoney(payFechamento ? getClosingOpenAmount(payFechamento) : 0)}</FinancialValue>.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className="text-xs font-medium text-muted-foreground">Valor recebido agora</label>
-              <Input
-                type="number"
-                min="0.01"
-                step="0.01"
-                max={payFechamento ? getClosingOpenAmount(payFechamento) : undefined}
-                value={payAmount}
-                onChange={(event) => setPayAmount(event.target.value)}
-              />
-              <p className="text-[11px] text-muted-foreground">
-                Pode ser parcial. O restante continuará claramente em aberto.
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Forma de pagamento</label>
-              <Select value={payForma} onValueChange={(v) => setPayForma(v as PaymentMethod)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {(Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethod[]).map((m) => (
-                    <SelectItem key={m} value={m}>{PAYMENT_METHOD_LABELS[m]}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Data do recebimento</label>
-              <Input type="date" value={payData} onChange={(e) => setPayData(e.target.value)} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPayFechamento(null)} disabled={payBusy}>Cancelar</Button>
-            <Button onClick={() => void handleMarcarPago()} disabled={payBusy} className="bg-emerald-600 text-white hover:bg-emerald-700">
-              {payBusy ? <RefreshCcw className="w-4 h-4 mr-2 animate-spin" /> : <Wallet className="w-4 h-4 mr-2" />}
-              Registrar recebimento
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ClosingPaymentDialog
+        closing={paymentClosing}
+        accounts={financeAccounts}
+        open={Boolean(paymentClosing)}
+        readOnly={isSupportImpersonating || Boolean(readActiveSupportContext())}
+        canReverse={user?.role === 'ADMIN'}
+        onClose={closePaymentDialog}
+        onChanged={handleClosingPaymentChanged}
+      />
 
       {/* Marcar uma O.S. do rascunho como já recebida (sai do total do fechamento) */}
       <Dialog open={!!payNota} onOpenChange={(open) => { if (!open) setPayNota(null); }}>
