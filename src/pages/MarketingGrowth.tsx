@@ -48,6 +48,8 @@ import {
   Wrench,
 } from 'lucide-react';
 import {
+  getMarketingRecentActivity,
+  getMarketingRecentActivityQueryKey,
   getMarketingResumo,
   getMarketingResumoQueryKey,
   linkMarketingLeadToClient,
@@ -55,10 +57,12 @@ import {
   type MarketingIntegrationSummary,
   type MarketingLeadItem,
   type MarketingPaidVisitor,
+  type MarketingRecentActivity,
   type MarketingResumo,
   type MarketingSearchTotals,
 } from '@/api/supabase/marketing';
 import {
+  MARKETING_RECENT_ACTIVITY_REFRESH_INTERVAL_MS,
   MARKETING_RESUMO_CACHE_TTL_MS,
   MARKETING_RESUMO_PRELOAD_PERIODS,
   MARKETING_RESUMO_REFRESH_INTERVAL_MS,
@@ -159,6 +163,42 @@ const eventLabels: Record<string, string> = {
   form_submit: 'Formulário enviado',
   generate_lead: 'Contato gerado',
   custom: 'Interação na página',
+};
+
+const journeyEventLabels: Record<string, string> = {
+  ...eventLabels,
+  engagement_5s: 'Ativo após 5 segundos',
+  engagement_10s: 'Ativo após 10 segundos',
+  session_engagement: 'Tempo ativo medido',
+  cta_impression: 'Ação exibida',
+  cta_click: 'Clique em ação',
+  quiz_start: 'Estimativa iniciada',
+  quiz_flow_selected: 'Fluxo escolhido',
+  quiz_step_view: 'Etapa visualizada',
+  quiz_step_complete: 'Etapa concluída',
+  quiz_unknown_selected: 'Não sei selecionado',
+  quiz_back: 'Voltou uma etapa',
+  quiz_file_intent: 'Pretende enviar arquivo',
+  quiz_result_view: 'Resultado visualizado',
+  quiz_estimate_state: 'Estado da estimativa',
+  quiz_whatsapp_prepared: 'Resumo para WhatsApp preparado',
+  quiz_whatsapp_click: 'WhatsApp da estimativa clicado',
+  instagram_click: 'Clique no Instagram',
+  directions_click: 'Clique em rota',
+  service_detail_click: 'Serviço acessado',
+  form_field_complete: 'Campo concluído',
+  scroll_depth: 'Profundidade de rolagem',
+};
+
+const destinationLabels: Record<string, string> = {
+  whatsapp: 'WhatsApp',
+  phone: 'Telefone',
+  estimate: 'Estimativa guiada',
+  service: 'Serviço',
+  contact: 'Contato',
+  directions: 'Como chegar',
+  video: 'Vídeo',
+  other: 'Outro destino',
 };
 
 const providerLabels: Record<string, string> = {
@@ -862,12 +902,12 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
     brief: { label: 'Saída rápida', className: 'border-rose-600 bg-rose-600 text-white' },
     unknown: { label: 'Tempo não medido', className: 'border-slate-300 bg-slate-100 text-slate-600' },
   }[level]);
-  const searchTermLabel = (visitor: (typeof allVisitors)[number]) => {
-    if (visitor.searchTerm) return visitor.searchTerm;
-    if (visitor.originType === 'paid') return 'Não informado pelo Ads';
-    if (visitor.originType === 'organic') return 'Não fornecido pelo buscador';
-    return 'Não se aplica';
-  };
+  const measurementLabel = (visitor: (typeof allVisitors)[number]) => ({
+    consented: 'Com consentimento',
+    anonymous: 'Sessão anônima',
+    mixed: 'Medição mista',
+    unknown: 'Não informada',
+  }[visitor.measurementMode ?? 'unknown']);
   const originFilters = [
     { value: 'all' as const, label: 'Tudo', count: allVisitors.length },
     { value: 'paid' as const, label: 'Google Ads', count: allVisitors.filter((visitor) => visitor.originType === 'paid').length },
@@ -881,7 +921,7 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
         <PanelHeading
           eyebrow="Jornada no site"
           title="De onde vieram e por onde passaram"
-          description="Cada linha reúne origem, página de entrada, caminho em ordem, termo capturado, tempo e resultado. O Retiflow não associa pesquisas agregadas a uma pessoa."
+          description="Cada linha reúne origem, página de entrada, caminho em ordem, modo de medição, tempo e resultado. Termos brutos não são associados à sessão individual."
           action={(
             <div className="flex max-w-full gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1" role="group" aria-label="Filtrar jornadas por origem">
               {originFilters.map((filter) => (
@@ -912,7 +952,7 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
                 <th className="w-[126px] px-3 py-2.5 font-semibold">Data e hora</th>
                 <AdsTableHead label="Origem" help={googleAdsHelp.visitorOrigin} />
                 <th className="w-[34%] px-3 py-2.5 font-semibold">Entrada e caminho</th>
-                <th className="w-[18%] px-3 py-2.5 font-semibold">Pesquisa / palavra</th>
+                <th className="w-[18%] px-3 py-2.5 font-semibold">Medição</th>
                 <AdsTableHead label="Tempo" help={googleAdsHelp.visitorDuration} align="right" />
                 <AdsTableHead label="Resultado" help={googleAdsHelp.paidVisitorStatus} />
                 <th scope="col" className="w-11 px-2 py-2"><span className="sr-only">Detalhes</span></th>
@@ -959,9 +999,7 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
                     </div>
                   </td>
                   <td className="px-3 py-2">
-                    <p className={cn('line-clamp-2 text-[11px] leading-4', visitor.searchTerm ? 'font-semibold text-slate-900' : 'text-slate-400')} title={searchTermLabel(visitor)}>
-                      {searchTermLabel(visitor)}
-                    </p>
+                    <p className="line-clamp-2 text-[11px] font-semibold leading-4 text-slate-700">{measurementLabel(visitor)}</p>
                   </td>
                   <td className="px-3 py-2 text-right">
                     <p className="font-semibold text-foreground">{formatDuration(visitor.durationSeconds)}</p>
@@ -1012,6 +1050,7 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
                                 </div>
                               </div>
                             )) : <p className="text-xs text-slate-500">Nenhuma abertura de página registrada.</p>}
+                            {visitor.pagesTruncated ? <p className="text-[10px] text-amber-700">A lista foi limitada às 100 primeiras páginas desta sessão.</p> : null}
                           </div>
                         </div>
                         <div>
@@ -1026,6 +1065,7 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
                                 <span className="shrink-0 text-[10px] text-slate-400">{formatDateTime(action.occurredAt)}</span>
                               </div>
                             )) : <p className="text-xs text-slate-500">Nenhuma ação adicional registrada.</p>}
+                            {visitor.actionsTruncated ? <p className="text-[10px] text-amber-700">A lista foi limitada às 100 primeiras ações desta sessão.</p> : null}
                           </div>
                         </div>
                       </div>
@@ -1054,7 +1094,7 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
         </div>
         <p className="mt-2.5 text-[10px] leading-4 text-slate-400 2xl:mt-4 2xl:text-xs 2xl:leading-relaxed">
           Mostrando {formatNumber(visibleVisitors.length)} de {formatNumber(allVisitors.length)} jornadas rastreadas. “Tempo ativo” é medido pelo site;
-          “entre eventos” é apenas um piso e não permite afirmar que a pessoa saiu imediatamente. Termos só aparecem quando vieram na própria sessão.
+          “entre eventos” é apenas um piso e não permite afirmar que a pessoa saiu imediatamente. Termos brutos não aparecem nesta visão individual.
         </p>
       </CardContent>
     </Card>
@@ -2329,7 +2369,7 @@ function PaidClickLedger({
                 <AdsTableHead label="Horário" />
                 <AdsTableHead label="Origem" help={googleAdsHelp.visitorOrigin} />
                 <AdsTableHead label="Tipo" help={googleAdsHelp.clicks} />
-                <AdsTableHead label="Destino, caminho e busca" help={googleAdsHelp.visitorUrl} />
+                <AdsTableHead label="Destino e caminho" help={googleAdsHelp.visitorUrl} />
                 <AdsTableHead label="Tempo" help={googleAdsHelp.visitorDuration} align="right" />
                 <AdsTableHead label="Páginas / ações" help={googleAdsHelp.paidVisitorEvents} align="right" />
                 <AdsTableHead label="Situação" help={googleAdsHelp.paidVisitorStatus} />
@@ -2375,9 +2415,6 @@ function PaidClickLedger({
                           ))}
                           {pages.length > 3 ? <span className="text-[8px] font-bold text-slate-500">+{pages.length - 3}</span> : null}
                         </div>
-                        <p className={cn('mt-1 truncate text-[9px]', visitor.searchTerm ? 'font-semibold text-slate-700' : 'text-slate-400')} title={visitor.searchTerm ?? 'Não informado pelo Google Ads'}>
-                          Busca: {visitor.searchTerm ?? 'não informada pelo Ads'}
-                        </p>
                       </td>
                       <td className="px-3 py-2 text-right">
                         <p className="font-semibold text-slate-950">{formatDuration(visitor.durationSeconds)}</p>
@@ -3060,6 +3097,322 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
   );
 }
 
+function JourneyTableCard({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <Card className="overflow-hidden rounded-2xl border-border/70 bg-card">
+      <CardContent className="p-0">
+        <div className="border-b px-4 py-3">
+          <h3 className="text-sm font-bold text-foreground">{title}</h3>
+          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{description}</p>
+        </div>
+        {children}
+      </CardContent>
+    </Card>
+  );
+}
+
+export function JourneyTab({
+  resumo,
+  recentActivity,
+  recentActivityLoading = false,
+  recentActivityError = null,
+}: {
+  resumo: MarketingResumo;
+  recentActivity?: MarketingRecentActivity;
+  recentActivityLoading?: boolean;
+  recentActivityError?: string | null;
+}) {
+  const journey = resumo.site.journey;
+  if (!journey) {
+    return (
+      <SectionEmptyState
+        icon={Activity}
+        title="Jornada ainda sem dados agregados"
+        description="Assim que a nova leitura do site estiver disponível, retenção, cliques e etapas aparecerão aqui."
+        className="min-h-[280px]"
+      />
+    );
+  }
+
+  const whatsapp = journey.contactChannels.find((item) => item.channel === 'whatsapp');
+  const phone = journey.contactChannels.find((item) => item.channel === 'phone');
+  const form = journey.contactChannels.find((item) => item.channel === 'form');
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-2.5 xl:grid-cols-4">
+        <Metric
+          label="Sessões rastreadas"
+          value={formatNumber(journey.measurement.trackedSessions)}
+          detail={`${formatNumber(journey.measurement.activeTimeMeasuredSessions)} com tempo ativo medido`}
+          help="Sessões próprias do site no período. A leitura não inclui pessoas que bloquearam ou impediram o carregamento da medição."
+          icon={Users}
+          accent="navy"
+        />
+        <Metric
+          label="Ativas em 5 segundos"
+          value={formatPercent(journey.retention.active5sRate)}
+          detail={`${formatNumber(journey.retention.active5sSessions)} de ${formatNumber(journey.retention.eligibleSessions)} sessões elegíveis`}
+          help="Sinal ativo observado após cinco segundos entre sessões com página visualizada. Ausência do sinal não prova rejeição."
+          icon={Clock3}
+          accent="gold"
+        />
+        <Metric
+          label="Ativas em 10 segundos"
+          value={formatPercent(journey.retention.active10sRate)}
+          detail={`${formatNumber(journey.retention.active10sSessions)} de ${formatNumber(journey.retention.eligibleSessions)} sessões elegíveis`}
+          help="Sinal ativo observado após dez segundos. É a base comparável para acompanhar a meta de retenção."
+          icon={Activity}
+          accent="teal"
+        />
+        <Metric
+          label="Sessões que clicaram"
+          value={formatNumber(journey.clicks.uniqueSessions)}
+          detail={`${formatNumber(journey.clicks.totalEvents)} cliques rastreados`}
+          help="Visitantes únicos que clicaram em uma ação relevante. Cliques decorativos não entram."
+          icon={MousePointerClick}
+          accent="violet"
+        />
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <div className="rounded-2xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-xs leading-5 text-sky-950">
+          <p className="font-semibold">Leitura de retenção com escopo explícito</p>
+          <p className="mt-0.5 text-sky-800">
+            “Sem sinal” significa apenas que o avanço não foi rastreado. Não é tratado como abandono confirmado nem como pessoa perdida.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant="outline" className="bg-emerald-50 text-emerald-800">WhatsApp: {formatNumber(whatsapp?.sessions)} sessões</Badge>
+          <Badge variant="outline" className="bg-sky-50 text-sky-800">Telefone: {formatNumber(phone?.sessions)} sessões</Badge>
+          <Badge variant="outline" className="bg-violet-50 text-violet-800">Formulário: {formatNumber(form?.sessions)} sessões</Badge>
+        </div>
+      </div>
+
+      <JourneyTableCard
+        title="Onde as pessoas clicaram"
+        description="Destino, componente e posição de cada ação relevante, com visitantes únicos separados por origem."
+      >
+        <div className="overflow-auto">
+          <table className="w-full min-w-[980px] text-left text-xs">
+            <thead className="border-b bg-muted/60 text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+              <tr>
+                <th className="px-3 py-3 font-semibold">Página e ação</th>
+                <th className="px-3 py-3 font-semibold">Componente / posição</th>
+                <th className="px-3 py-3 font-semibold">Destino</th>
+                <th className="px-3 py-3 font-semibold">Variante</th>
+                <th className="px-3 py-3 text-right font-semibold">Sessões</th>
+                <th className="px-3 py-3 text-right font-semibold">Pago</th>
+                <th className="px-3 py-3 text-right font-semibold">Orgânico</th>
+                <th className="px-3 py-3 text-right font-semibold">Eventos</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {journey.clicks.groups.map((item) => (
+                <tr key={`${item.eventName}-${item.pagePath}-${item.componentId}-${item.position}-${item.destinationType}-${item.destinationPath ?? 'sem-destino'}-${item.experimentId ?? 'sem-experimento'}-${item.variantId ?? 'sem-variante'}`}>
+                  <td className="px-3 py-3">
+                    <p className="font-semibold text-foreground">{item.pagePath}</p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">{journeyEventLabels[item.eventName] ?? item.eventName}</p>
+                  </td>
+                  <td className="px-3 py-3">
+                    <p className="font-medium text-foreground">{item.componentId === 'not_informed' ? 'Não informado' : item.componentId}</p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">{item.position === 'not_informed' ? 'posição não informada' : item.position}</p>
+                  </td>
+                  <td className="px-3 py-3">
+                    <p className="font-medium">{destinationLabels[item.destinationType] ?? item.destinationType}</p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">{item.destinationPath ?? 'destino externo ou não informado'}</p>
+                  </td>
+                  <td className="px-3 py-3">{item.experimentId && item.variantId ? `${item.experimentId} · ${item.variantId}` : 'Sem experimento'}</td>
+                  <td className="px-3 py-3 text-right font-semibold">{formatNumber(item.sessions)}</td>
+                  <td className="px-3 py-3 text-right">{formatNumber(item.paidSessions)}</td>
+                  <td className="px-3 py-3 text-right">{formatNumber(item.organicSessions)}</td>
+                  <td className="px-3 py-3 text-right">{formatNumber(item.events)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {journey.clicks.groups.length === 0 ? (
+            <p className="p-8 text-center text-sm text-muted-foreground">Nenhum clique relevante rastreado no período.</p>
+          ) : null}
+        </div>
+        {journey.clicks.groupsTruncated ? (
+          <p className="border-t px-4 py-2 text-xs text-amber-700">Exibindo os 100 grupos mais relevantes; refine o período para analisar a cauda.</p>
+        ) : null}
+      </JourneyTableCard>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <JourneyTableCard
+          title="Abandono possível por etapa"
+          description="A coluna sem avanço aponta ausência de próxima etapa rastreada; não afirma abandono definitivo."
+        >
+          <div className="overflow-auto">
+            <table className="w-full min-w-[650px] text-left text-xs">
+              <thead className="border-b bg-muted/60 text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-3 font-semibold">Fluxo / etapa</th>
+                  <th className="px-3 py-3 text-right font-semibold">Viram</th>
+                  <th className="px-3 py-3 text-right font-semibold">Avançaram</th>
+                  <th className="px-3 py-3 text-right font-semibold">Taxa</th>
+                  <th className="px-3 py-3 text-right font-semibold">Sem avanço rastreado</th>
+                  <th className="px-3 py-3 text-right font-semibold">Voltaram</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {journey.quizSteps.map((step) => (
+                  <tr key={`${step.experimentId ?? 'sem-exp'}-${step.variantId ?? 'sem-var'}-${step.flowType ?? 'sem-fluxo'}-${step.stepId}`}>
+                    <td className="px-3 py-3">
+                      <p className="font-semibold">{step.stepId}</p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">{step.flowType ?? 'fluxo não informado'} · {step.variantId ?? 'sem variante'}</p>
+                    </td>
+                    <td className="px-3 py-3 text-right">{formatNumber(step.views)}</td>
+                    <td className="px-3 py-3 text-right font-semibold">{formatNumber(step.advancedSessions)}</td>
+                    <td className="px-3 py-3 text-right">{formatPercent(step.advanceRate)}</td>
+                    <td className="px-3 py-3 text-right text-amber-700">{formatNumber(step.possibleDropOffSessions)}</td>
+                    <td className="px-3 py-3 text-right">{formatNumber(step.backEvents)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {journey.quizSteps.length === 0 ? (
+              <p className="p-8 text-center text-sm text-muted-foreground">O quiz ainda não recebeu etapas rastreadas neste período.</p>
+            ) : null}
+            {journey.quizStepsTruncated ? (
+              <p className="border-t px-4 py-2 text-xs text-amber-700">Exibindo as primeiras 100 combinações de fluxo e etapa do recorte.</p>
+            ) : null}
+          </div>
+        </JourneyTableCard>
+
+        <JourneyTableCard
+          title="Variantes do experimento"
+          description="Resultados por visitante, sem multiplicar a conversão por quantidade de eventos."
+        >
+          <div className="overflow-auto">
+            <table className="w-full min-w-[620px] text-left text-xs">
+              <thead className="border-b bg-muted/60 text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-3 font-semibold">Experimento / variante</th>
+                  <th className="px-3 py-3 text-right font-semibold">Sessões</th>
+                  <th className="px-3 py-3 text-right font-semibold">5 s</th>
+                  <th className="px-3 py-3 text-right font-semibold">10 s</th>
+                  <th className="px-3 py-3 text-right font-semibold">Quiz iniciado</th>
+                  <th className="px-3 py-3 text-right font-semibold">Contato</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {journey.variants.map((variant) => (
+                  <tr key={`${variant.experimentId}-${variant.variantId}`}>
+                    <td className="px-3 py-3"><p className="font-semibold">{variant.variantId}</p><p className="text-[11px] text-muted-foreground">{variant.experimentId}</p></td>
+                    <td className="px-3 py-3 text-right font-semibold">{formatNumber(variant.sessions)}</td>
+                    <td className="px-3 py-3 text-right">{formatPercent(variant.active5sRate)}</td>
+                    <td className="px-3 py-3 text-right">{formatPercent(variant.active10sRate)}</td>
+                    <td className="px-3 py-3 text-right">{formatNumber(variant.quizStartSessions)}</td>
+                    <td className="px-3 py-3 text-right font-semibold text-emerald-700">{formatPercent(variant.contactRate)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {journey.variants.length === 0 ? (
+              <p className="p-8 text-center text-sm text-muted-foreground">Nenhuma variante identificada no período.</p>
+            ) : null}
+            {journey.variantsTruncated ? (
+              <p className="border-t px-4 py-2 text-xs text-amber-700">Exibindo as 50 variantes com mais sessões.</p>
+            ) : null}
+          </div>
+        </JourneyTableCard>
+      </div>
+
+      <JourneyTableCard
+        title="Retenção e contato por página"
+        description="Compara a sobrevivência ativa e a intenção de contato de cada rota do site."
+      >
+        <div className="overflow-auto">
+          <table className="w-full min-w-[800px] text-left text-xs">
+            <thead className="border-b bg-muted/60 text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+              <tr>
+                <th className="px-3 py-3 font-semibold">Página</th>
+                <th className="px-3 py-3 text-right font-semibold">Sessões</th>
+                <th className="px-3 py-3 text-right font-semibold">Visualizações</th>
+                <th className="px-3 py-3 text-right font-semibold">Ativas 5 s</th>
+                <th className="px-3 py-3 text-right font-semibold">Ativas 10 s</th>
+                <th className="px-3 py-3 text-right font-semibold">Cliques CTA</th>
+                <th className="px-3 py-3 text-right font-semibold">Contato</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {journey.pages.map((page) => (
+                <tr key={page.pagePath}>
+                  <td className="px-3 py-3 font-semibold">{page.pagePath}</td>
+                  <td className="px-3 py-3 text-right">{formatNumber(page.sessions)}</td>
+                  <td className="px-3 py-3 text-right">{formatNumber(page.views)}</td>
+                  <td className="px-3 py-3 text-right">{formatPercent(page.active5sRate)}</td>
+                  <td className="px-3 py-3 text-right">{formatPercent(page.active10sRate)}</td>
+                  <td className="px-3 py-3 text-right">{formatNumber(page.ctaClickSessions)}</td>
+                  <td className="px-3 py-3 text-right font-semibold text-emerald-700">{formatPercent(page.contactRate)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {journey.pages.length === 0 ? <p className="p-8 text-center text-sm text-muted-foreground">Nenhuma página rastreada no período.</p> : null}
+          {journey.pagesTruncated ? <p className="border-t px-4 py-2 text-xs text-amber-700">Exibindo as 100 páginas com mais sessões.</p> : null}
+        </div>
+      </JourneyTableCard>
+
+      {recentActivity || recentActivityLoading || recentActivityError ? (
+        <JourneyTableCard
+          title="Atividade recente do site"
+          description="Atualiza a cada 30 segundos somente com a aba visível. Identificadores são pseudonimizados e nenhum texto livre, telefone ou nome aparece aqui."
+        >
+          {recentActivityError ? (
+            <div role="alert" className="border-b bg-amber-50 px-4 py-3 text-xs text-amber-900">{recentActivityError}</div>
+          ) : null}
+          <div className="overflow-auto">
+            <table className="w-full min-w-[980px] text-left text-xs">
+              <thead className="border-b bg-muted/60 text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-3 font-semibold">Horário</th>
+                  <th className="px-3 py-3 font-semibold">Visita</th>
+                  <th className="px-3 py-3 font-semibold">Ação</th>
+                  <th className="px-3 py-3 font-semibold">Página</th>
+                  <th className="px-3 py-3 font-semibold">Componente / etapa</th>
+                  <th className="px-3 py-3 font-semibold">Origem</th>
+                  <th className="px-3 py-3 font-semibold">Dispositivo</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {(recentActivity?.items ?? []).map((item) => (
+                  <tr key={item.activityId}>
+                    <td className="whitespace-nowrap px-3 py-3">{formatDateTime(item.occurredAt)}</td>
+                    <td className="px-3 py-3 font-mono text-[11px]">{item.visitorToken.slice(-8)}</td>
+                    <td className="px-3 py-3"><p className="font-semibold">{journeyEventLabels[item.eventName] ?? item.eventName}</p><p className="text-[11px] text-muted-foreground">{item.contactState === 'identified' ? 'contato identificado' : item.contactState === 'intent' ? 'intenção de contato' : 'anônima'}</p></td>
+                    <td className="px-3 py-3 font-medium">{item.pagePath}</td>
+                    <td className="px-3 py-3"><p>{item.componentId ?? item.stepId ?? 'Não informado'}</p><p className="text-[11px] text-muted-foreground">{destinationLabels[item.destinationType] ?? item.destinationType}</p></td>
+                    <td className="px-3 py-3"><p className="font-medium">{item.source} / {item.medium}</p><p className="text-[11px] text-muted-foreground">{item.campaign ?? item.originType}</p></td>
+                    <td className="px-3 py-3">{item.deviceType ?? 'não informado'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {recentActivityLoading && !recentActivity?.items.length ? (
+              <div className="p-6"><Skeleton className="h-24 w-full rounded-xl" /></div>
+            ) : null}
+            {!recentActivityLoading && recentActivity && recentActivity.items.length === 0 ? (
+              <p className="p-8 text-center text-sm text-muted-foreground">Nenhuma atividade recente encontrada.</p>
+            ) : null}
+          </div>
+        </JourneyTableCard>
+      ) : null}
+    </div>
+  );
+}
+
 export function QualityTab({ resumo }: { resumo: MarketingResumo }) {
   const quality = resumo.quality;
 
@@ -3221,6 +3574,30 @@ export default function MarketingGrowth() {
     initialDataUpdatedAt: cachedResumo?.savedAt,
     retry: 1,
   });
+  const recentActivityEnabled = Boolean(
+    queryEnabled
+    && requesterUserId
+    && targetUserId
+    && hasPrivateAccess
+    && isCurrentUserMegaMaster
+    && query.data?.context?.canViewRecentActivity === true,
+  );
+  const recentActivityQuery = useQuery({
+    queryKey: getMarketingRecentActivityQueryKey(targetUserId, requesterUserId),
+    queryFn: () => getMarketingRecentActivity({
+      targetUserId: targetUserId!,
+      requesterUserId,
+      limit: 50,
+    }),
+    enabled: recentActivityEnabled,
+    staleTime: 15_000,
+    gcTime: 5 * 60_000,
+    refetchInterval: MARKETING_RECENT_ACTIVITY_REFRESH_INTERVAL_MS,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    retry: 1,
+  });
 
   useEffect(() => {
     if (!queryEnabled || !requesterUserId) return;
@@ -3288,11 +3665,14 @@ export default function MarketingGrowth() {
                 <Button
                   variant="outline"
                   className="h-9 shrink-0 border-white/15 bg-white/5 px-3 text-white hover:bg-white/10 hover:text-white"
-                  onClick={() => void query.refetch()}
-                  disabled={!queryEnabled || query.isFetching}
+                  onClick={() => {
+                    void query.refetch();
+                    if (recentActivityEnabled) void recentActivityQuery.refetch();
+                  }}
+                  disabled={!queryEnabled || query.isFetching || recentActivityQuery.isFetching}
                 >
-                  <RefreshCw className={cn('mr-2 h-4 w-4', query.isFetching && 'motion-safe:animate-spin')} />
-                  {query.isFetching ? 'Atualizando' : 'Atualizar'}
+                  <RefreshCw className={cn('mr-2 h-4 w-4', (query.isFetching || recentActivityQuery.isFetching) && 'motion-safe:animate-spin')} />
+                  {query.isFetching || recentActivityQuery.isFetching ? 'Atualizando' : 'Atualizar'}
                 </Button>
               </div>
             </div>
@@ -3378,8 +3758,9 @@ export default function MarketingGrowth() {
           hasPrivateAccess ? (
             <Tabs defaultValue="visao" className="space-y-4">
               <div className="w-full overflow-x-auto pb-1">
-                <TabsList className="grid h-auto min-w-[560px] grid-cols-5 gap-1 rounded-xl bg-muted/80 p-1 md:min-w-0">
+                <TabsList className="grid h-auto min-w-[680px] grid-cols-6 gap-1 rounded-xl bg-muted/80 p-1 md:min-w-0">
                   <TabsTrigger value="visao">Resumo</TabsTrigger>
+                  <TabsTrigger value="jornada">Jornada</TabsTrigger>
                   <TabsTrigger value="google">Google</TabsTrigger>
                   <TabsTrigger value="contatos">Contatos</TabsTrigger>
                   <TabsTrigger value="resultado">Resultados</TabsTrigger>
@@ -3387,6 +3768,18 @@ export default function MarketingGrowth() {
                 </TabsList>
               </div>
               <TabsContent value="visao"><OverviewTab resumo={query.data} /></TabsContent>
+              <TabsContent value="jornada">
+                <JourneyTab
+                  resumo={query.data}
+                  recentActivity={recentActivityQuery.data}
+                  recentActivityLoading={recentActivityEnabled && recentActivityQuery.isLoading}
+                  recentActivityError={recentActivityEnabled && recentActivityQuery.error
+                    ? recentActivityQuery.error instanceof Error
+                      ? recentActivityQuery.error.message
+                      : 'Não foi possível atualizar a atividade recente.'
+                    : null}
+                />
+              </TabsContent>
               <TabsContent value="google">
                 <Tabs defaultValue="google-ads" className="space-y-4">
                   <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-muted/60 p-1">
@@ -3410,13 +3803,15 @@ export default function MarketingGrowth() {
           ) : (
             <Tabs defaultValue="resumo" className="space-y-4">
               <div className="pb-1">
-                <TabsList className="grid h-auto w-full grid-cols-3 gap-1 rounded-xl bg-muted/80 p-1">
+                <TabsList className="grid h-auto w-full grid-cols-4 gap-1 rounded-xl bg-muted/80 p-1">
                   <TabsTrigger value="resumo">Resumo</TabsTrigger>
+                  <TabsTrigger value="jornada">Jornada</TabsTrigger>
                   <TabsTrigger value="google">Google</TabsTrigger>
                   <TabsTrigger value="contatos">Contatos</TabsTrigger>
                 </TabsList>
               </div>
               <TabsContent value="resumo"><BasicOverviewTab resumo={query.data} /></TabsContent>
+              <TabsContent value="jornada"><JourneyTab resumo={query.data} /></TabsContent>
               <TabsContent value="google"><SeoTab resumo={query.data} /></TabsContent>
               <TabsContent value="contatos"><BasicContactsTab resumo={query.data} /></TabsContent>
             </Tabs>

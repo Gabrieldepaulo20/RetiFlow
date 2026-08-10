@@ -143,30 +143,137 @@ export interface MarketingDeviceMetric {
   sessions: number;
 }
 
-export interface MarketingEventItem {
-  id_marketing_site_eventos?: string;
-  external_event_id?: string | null;
-  lead_code?: string | null;
-  event_type: string;
-  channel?: string | null;
-  occurred_at: string;
-  session_id?: string | null;
-  anonymous_id?: string | null;
-  page_path?: string | null;
-  page_title?: string | null;
-  source?: string | null;
-  medium?: string | null;
-  campaign?: string | null;
-  term?: string | null;
-  device_type?: string | null;
-  last_field?: string | null;
-  validation_reason?: string | null;
-  form_elapsed_seconds?: number | null;
-  fields_completed?: number | null;
-  duplicate_count?: number;
-  deduplicated?: boolean;
-  alert_status?: string;
-  google_click_id_type?: 'gclid' | 'gbraid' | 'wbraid' | null;
+export type MarketingJourneyDestination =
+  | 'whatsapp'
+  | 'phone'
+  | 'estimate'
+  | 'service'
+  | 'contact'
+  | 'directions'
+  | 'video'
+  | 'other';
+
+export interface MarketingJourneySummary {
+  measurement: {
+    trackedSessions: number;
+    pageViewSessions: number;
+    activeTimeMeasuredSessions: number;
+    consentedSessions: number;
+    anonymousSessions: number;
+    mixedSessions: number;
+    unknownSessions: number;
+  };
+  retention: {
+    eligibleSessions: number;
+    active5sSessions: number;
+    active10sSessions: number;
+    active5sRate: number;
+    active10sRate: number;
+    no5sSignalSessions: number;
+    no10sSignalSessions: number;
+    scope: 'tracked_sessions_only';
+  };
+  contactChannels: Array<{
+    channel: 'whatsapp' | 'phone' | 'form';
+    sessions: number;
+    events: number;
+  }>;
+  clicks: {
+    totalEvents: number;
+    uniqueSessions: number;
+    groupsTruncated: boolean;
+    groups: Array<{
+      eventName: string;
+      pagePath: string;
+      componentId: string;
+      position: string;
+      destinationType: MarketingJourneyDestination;
+      destinationPath: string | null;
+      experimentId: string | null;
+      variantId: string | null;
+      events: number;
+      sessions: number;
+      paidSessions: number;
+      organicSessions: number;
+      otherSessions: number;
+      lastOccurredAt: string;
+    }>;
+  };
+  quizStepsTruncated: boolean;
+  quizSteps: Array<{
+    experimentId: string | null;
+    variantId: string | null;
+    flowType: string | null;
+    stepId: string;
+    views: number;
+    completes: number;
+    advancedSessions: number;
+    possibleDropOffSessions: number;
+    advanceRate: number;
+    backEvents: number;
+    unknownSelections: number;
+  }>;
+  variantsTruncated: boolean;
+  variants: Array<{
+    experimentId: string;
+    variantId: string;
+    sessions: number;
+    active5sSessions: number;
+    active10sSessions: number;
+    ctaClickSessions: number;
+    quizStartSessions: number;
+    quizResultSessions: number;
+    contactSessions: number;
+    active5sRate: number;
+    active10sRate: number;
+    contactRate: number;
+  }>;
+  pagesTruncated: boolean;
+  pages: Array<{
+    pagePath: string;
+    sessions: number;
+    views: number;
+    active5sSessions: number;
+    active10sSessions: number;
+    ctaClickSessions: number;
+    quizStartSessions: number;
+    contactSessions: number;
+    active5sRate: number;
+    active10sRate: number;
+    contactRate: number;
+  }>;
+}
+
+export interface MarketingRecentActivityItem {
+  activityId: string;
+  visitorToken: string;
+  occurredAt: string;
+  eventName: string;
+  category: 'page' | 'retention' | 'cta' | 'quiz' | 'contact' | 'form' | 'other';
+  pagePath: string;
+  originType: 'paid' | 'organic' | 'other';
+  source: string;
+  medium: string;
+  campaign: string | null;
+  deviceType: string | null;
+  componentId: string | null;
+  position: string | null;
+  flowType: string | null;
+  stepId: string | null;
+  experimentId: string | null;
+  variantId: string | null;
+  estimateState: string | null;
+  destinationType: MarketingJourneyDestination;
+  destinationPath: string | null;
+  contactState: 'anonymous' | 'intent' | 'identified';
+}
+
+export interface MarketingRecentActivity {
+  items: MarketingRecentActivityItem[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  refreshAfterSeconds: 30;
+  generatedAt: string;
 }
 
 export interface MarketingLeadItem {
@@ -398,20 +505,22 @@ export interface MarketingPaidVisitor {
     title: string | null;
     occurredAt: string;
   }>;
+  pagesTruncated?: boolean;
   actions?: Array<{
     type: string;
     occurredAt: string;
     pagePath: string;
     detail: string | null;
   }>;
+  actionsTruncated?: boolean;
   engagementLevel?: 'converted' | 'contact' | 'engaged' | 'brief' | 'unknown';
   /** Se a sessão foi medida antes, depois ou nos dois momentos do consentimento opcional. */
   measurementMode?: 'anonymous' | 'consented' | 'mixed' | 'unknown';
-  leadCode: string | null;
-  leadName: string | null;
-  leadContact: string | null;
+  leadCode?: string | null;
+  leadName?: string | null;
+  leadContact?: string | null;
   convertedClient: boolean;
-  clientId: string | null;
+  clientId?: string | null;
 }
 
 /** Mesma forma de MarketingPaidVisitor — usado pelo painel "Todas as sessões" (não só pago). */
@@ -446,6 +555,7 @@ export interface MarketingResumo {
     privateToMegaMaster?: boolean;
     privateToAdministrators?: boolean;
     canManageAttribution?: boolean;
+    canViewRecentActivity?: boolean;
     accessLevel?: 'basic' | 'full';
   };
   config: MarketingConfigSummary;
@@ -453,6 +563,7 @@ export interface MarketingResumo {
   site: {
     current: MarketingSiteTotals;
     previous: Omit<MarketingSiteTotals, 'conversionRate'>;
+    journey?: MarketingJourneySummary;
     whatsapp?: MarketingSiteWhatsappSummary;
     pages: MarketingPageMetric[];
     sources: MarketingSourceMetric[];
@@ -460,7 +571,6 @@ export interface MarketingResumo {
     devices?: MarketingDeviceMetric[];
     daily: MarketingDailyMetric[];
     eventCounts?: Array<{ event: string; count: number }>;
-    recentEvents?: MarketingEventItem[];
   };
   businessProfile?: MarketingBusinessProfileSummary;
   executive?: {
@@ -571,6 +681,17 @@ export function getMarketingResumoQueryKey(
   return ['marketing-growth', requesterUserId.trim(), safePeriod, targetUserId?.trim() || 'self'] as const;
 }
 
+export function getMarketingRecentActivityQueryKey(
+  targetUserId: string | null | undefined,
+  requesterUserId: string,
+) {
+  return [
+    'marketing-recent-activity',
+    requesterUserId.trim(),
+    targetUserId?.trim() || 'self',
+  ] as const;
+}
+
 async function getAccessToken() {
   const { data, error } = await supabase.auth.getSession();
   if (error || !data.session?.access_token) {
@@ -642,6 +763,38 @@ export async function getMarketingResumo(
 
   inFlightResumoRequests.set(cacheKey, request);
   return request;
+}
+
+export async function getMarketingRecentActivity(input: {
+  targetUserId: string;
+  requesterUserId: string;
+  limit?: number;
+  cursor?: string | null;
+}) {
+  const accessToken = await getAccessToken();
+  const safeLimit = Number.isFinite(input.limit) ? Math.max(1, Math.min(50, Math.trunc(input.limit!))) : 50;
+  const { data, error } = await supabase.functions.invoke<{
+    dados?: MarketingRecentActivity;
+    error?: string;
+    mensagem?: string;
+  }>('marketing-dashboard', {
+    body: {
+      action: 'recent_activity',
+      p_target_user_id: input.targetUserId,
+      limit: safeLimit,
+      ...(input.cursor ? { cursor: input.cursor } : {}),
+    },
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (error || !data?.dados) {
+    throw new Error(data?.error ?? data?.mensagem ?? await getMarketingFunctionErrorMessage(
+      error,
+      'Não foi possível carregar a atividade recente do site.',
+    ));
+  }
+
+  return data.dados;
 }
 
 export async function linkMarketingLeadToClient(input: {

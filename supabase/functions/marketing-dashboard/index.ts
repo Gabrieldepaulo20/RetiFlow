@@ -16,6 +16,16 @@ import {
   buildMarketingVisitorSessions,
   getMarketingVisitorKey,
 } from '../_shared/marketing-visitors.ts';
+import {
+  buildMarketingJourneySummary,
+  buildMarketingRecentActivityItems,
+  createMarketingOpaqueTokenEncoder,
+  decodeMarketingRecentCursor,
+  encodeMarketingRecentCursor,
+  normalizeMarketingJourneyEvent,
+  parseMarketingRecentLimit,
+  sanitizeMarketingVisitorSessionPayload,
+} from '../_shared/marketing-journey.ts';
 
 type JsonRecord = Record<string, unknown>;
 function createServiceClient(supabaseUrl: string, serviceRoleKey: string) {
@@ -2332,12 +2342,22 @@ async function loadBasicMarketingData(
       table: 'Marketing_Site_Eventos',
       select: [
         'id_marketing_site_eventos',
+        'lead_code',
         'event_type',
         'occurred_at',
+        'session_id',
+        'anonymous_id',
         'page_path',
         'page_title',
+        'referrer',
         'source',
         'medium',
+        'campaign',
+        'term',
+        'gclid',
+        'gbraid',
+        'wbraid',
+        'device_type',
         'channel',
         'duplicate_count',
         'metadata',
@@ -2573,6 +2593,101 @@ function withoutGoogleClickIds(item: JsonRecord) {
     ...safe,
     google_click_id_type: getClickIdType(item),
   };
+}
+
+async function loadRecentMarketingActivity(
+  serviceClient: ServiceClient,
+  targetUserId: string,
+  body: JsonRecord,
+  tokenSalt: string,
+) {
+  const limit = parseMarketingRecentLimit(body.limit);
+  const rawCursor = asString(body.cursor, 500);
+  const cursor = rawCursor ? decodeMarketingRecentCursor(rawCursor) : null;
+  if (rawCursor && !cursor) {
+    return { error: 'Cursor de atividade inválido.' } as const;
+  }
+
+  const select = [
+    'id_marketing_site_eventos',
+    'lead_code',
+    'event_type',
+    'occurred_at',
+    'session_id',
+    'anonymous_id',
+    'page_path',
+    'referrer',
+    'source',
+    'medium',
+    'campaign',
+    'term',
+    'gclid',
+    'gbraid',
+    'wbraid',
+    'device_type',
+    'metadata',
+  ].join(',');
+  const batchLimit = Math.max(100, Math.min(250, (limit + 1) * 3));
+  const validRows: JsonRecord[] = [];
+  let scanCursor = cursor;
+  let lastScannedRow: JsonRecord | null = null;
+  let exhausted = false;
+
+  for (let batch = 0; batch < 5 && validRows.length <= limit; batch += 1) {
+    let query = serviceClient
+      .schema('RetificaPremium')
+      .from('Marketing_Site_Eventos')
+      .select(select)
+      .eq('fk_criado_por', targetUserId)
+      .order('occurred_at', { ascending: false })
+      .order('id_marketing_site_eventos', { ascending: false })
+      .limit(batchLimit);
+
+    if (scanCursor) {
+      query = query.or(
+        `occurred_at.lt.${scanCursor.occurredAt},and(occurred_at.eq.${scanCursor.occurredAt},id_marketing_site_eventos.lt.${scanCursor.eventId})`,
+      );
+    }
+
+    const { data, error } = await query;
+    if (error) throw new Error(`Não foi possível carregar a atividade recente: ${error.message}`);
+    const rows = (data ?? []) as unknown as JsonRecord[];
+    if (!rows.length) {
+      exhausted = true;
+      break;
+    }
+    lastScannedRow = rows.at(-1) ?? null;
+    validRows.push(...rows.filter((row) => normalizeMarketingJourneyEvent(row) !== null));
+    if (rows.length < batchLimit) {
+      exhausted = true;
+      break;
+    }
+    scanCursor = lastScannedRow
+      ? {
+        occurredAt: String(lastScannedRow.occurred_at),
+        eventId: String(lastScannedRow.id_marketing_site_eventos),
+      }
+      : null;
+  }
+
+  const pageRows = validRows.slice(0, limit);
+  const hasMore = validRows.length > limit || !exhausted;
+  const items = await buildMarketingRecentActivityItems(pageRows, { tokenSalt });
+  const cursorRow = validRows.length > limit ? pageRows.at(-1) : hasMore ? lastScannedRow : null;
+  const nextCursor = cursorRow
+    ? encodeMarketingRecentCursor({
+      occurredAt: String(cursorRow.occurred_at),
+      eventId: String(cursorRow.id_marketing_site_eventos),
+    })
+    : null;
+
+  return {
+    items,
+    nextCursor,
+    hasMore,
+    refreshAfterSeconds: 30,
+    generatedAt: new Date().toISOString(),
+  } as const;
 }
 
 function isPaidMarketingItem(item: JsonRecord) {
@@ -2812,8 +2927,29 @@ async function handleRequest(request: Request) {
       return jsonResponse({ error: 'Empresa sem o módulo Crescimento habilitado.' }, 403, request);
     }
     const targetUserId = targetUser.id_usuarios;
+    const action = asString(body.action, 40);
 
-    if (asString(body.action, 40) === 'link_client') {
+    if (action === 'recent_activity') {
+      if (!requesterIsMegaMaster) {
+        return jsonResponse({ error: 'Atividade recente é privada do Mega Master.' }, 403, request);
+      }
+      const recentActivity = await loadRecentMarketingActivity(
+        serviceClient,
+        targetUserId,
+        body,
+        serviceRoleKey,
+      );
+      if ('error' in recentActivity) {
+        return jsonResponse({ error: recentActivity.error }, 400, request);
+      }
+      return jsonResponse({
+        status: 200,
+        mensagem: 'Atividade recente carregada.',
+        dados: recentActivity,
+      }, 200, request);
+    }
+
+    if (action === 'link_client') {
       if (!canManageAttribution) {
         return jsonResponse({ error: 'Vínculo de contatos é privado do Mega Master.' }, 403, request);
       }
@@ -2834,6 +2970,7 @@ async function handleRequest(request: Request) {
         : loadBasicMarketingData(serviceClient, targetUserId, previousStartIso, currentEndExclusiveIso),
     ]);
     const internal = aggregateInternalData(periodDays, privateData.events, privateData.leads);
+    const journey = buildMarketingJourneySummary(internal.currentEvents);
     const business = aggregateBusinessData(
       periodDays,
       privateData.attributions,
@@ -2844,16 +2981,23 @@ async function handleRequest(request: Request) {
     const paidCurrentEvents = internal.currentEvents.filter((event) =>
       isPaidMarketingItem(event) && !isTechnicalPaidTest(event)
     );
+    const encodeVisitorToken = await createMarketingOpaqueTokenEncoder(serviceRoleKey);
     const paidVisitors = hasPrivateAccess
-      ? buildMarketingVisitorSessions(paidCurrentEvents, internal.currentLeads, {
+      ? await Promise.all(buildMarketingVisitorSessions(paidCurrentEvents, internal.currentLeads, {
         onlyPaid: true,
-        limit: Math.max(1, paidCurrentEvents.length),
-      })
+        limit: Math.min(200, Math.max(1, paidCurrentEvents.length)),
+      }).map((visitor) => sanitizeMarketingVisitorSessionPayload(
+        visitor as unknown as JsonRecord,
+        encodeVisitorToken,
+      )))
       : [];
     const allVisitors = hasPrivateAccess
-      ? buildMarketingVisitorSessions(internal.currentEvents, internal.currentLeads, {
-        limit: Math.max(1, internal.currentEvents.length),
-      })
+      ? await Promise.all(buildMarketingVisitorSessions(internal.currentEvents, internal.currentLeads, {
+        limit: Math.min(200, Math.max(1, internal.currentEvents.length)),
+      }).map((visitor) => sanitizeMarketingVisitorSessionPayload(
+        visitor as unknown as JsonRecord,
+        encodeVisitorToken,
+      )))
       : [];
     const countPaidAction = (type: string) =>
       paidCurrentEvents.filter((event) => event.event_type === type).length;
@@ -3121,6 +3265,7 @@ async function handleRequest(request: Request) {
             targetUserId: targetUser.id_usuarios,
             targetName: targetUser.nome,
             privateToMegaMaster: false,
+            canViewRecentActivity: false,
             accessLevel: 'basic',
           },
           config: {
@@ -3139,6 +3284,7 @@ async function handleRequest(request: Request) {
           site: {
             current: siteCurrent,
             previous: sitePrevious,
+            journey,
             whatsapp: buildSiteWhatsappSummary(internal.currentEvents),
             pages: ga4?.pages ?? internal.pages,
             sources: siteSources,
@@ -3216,6 +3362,7 @@ async function handleRequest(request: Request) {
           privateToMegaMaster: canManageAttribution,
           privateToAdministrators: true,
           canManageAttribution,
+          canViewRecentActivity: requesterIsMegaMaster,
           accessLevel: 'full',
         },
         config: {
@@ -3240,6 +3387,7 @@ async function handleRequest(request: Request) {
         site: {
           current: siteCurrent,
           previous: sitePrevious,
+          journey,
           whatsapp: buildSiteWhatsappSummary(internal.currentEvents),
           pages: ga4?.pages ?? internal.pages,
           sources: siteSources,
@@ -3247,7 +3395,6 @@ async function handleRequest(request: Request) {
           devices: ga4?.devices ?? [],
           daily: ga4?.daily ?? internal.daily,
           eventCounts: ga4?.eventCounts ?? [],
-          recentEvents: [...internal.currentEvents].reverse().slice(0, 50).map(withoutGoogleClickIds),
         },
         businessProfile,
         forms: {

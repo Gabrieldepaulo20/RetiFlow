@@ -1,5 +1,6 @@
 import type { MarketingResumo } from '@/api/supabase/marketing';
 import {
+  MARKETING_RECENT_ACTIVITY_REFRESH_INTERVAL_MS,
   MARKETING_RESUMO_PRELOAD_PERIODS,
   MARKETING_RESUMO_REFRESH_INTERVAL_MS,
   MARKETING_RESUMO_CACHE_TTL_MS,
@@ -71,6 +72,7 @@ describe('marketing growth session cache', () => {
     expect(MARKETING_RESUMO_CACHE_TTL_MS).toBe(5 * 60_000);
     expect(MARKETING_RESUMO_REFRESH_INTERVAL_MS).toBe(MARKETING_RESUMO_CACHE_TTL_MS);
     expect(MARKETING_RESUMO_PRELOAD_PERIODS).toEqual([1, 7, 30]);
+    expect(MARKETING_RECENT_ACTIVITY_REFRESH_INTERVAL_MS).toBe(30_000);
   });
 
   it('stores and reads a fresh marketing summary for the same period and target', () => {

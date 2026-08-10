@@ -1,5 +1,7 @@
 import {
   DEFAULT_MARKETING_RESUMO_PERIOD_DAYS,
+  getMarketingRecentActivity,
+  getMarketingRecentActivityQueryKey,
   getMarketingResumo,
   getMarketingResumoQueryKey,
 } from '@/api/supabase/marketing';
@@ -127,6 +129,43 @@ describe('marketing growth API', () => {
       'usuario-a',
       DEFAULT_MARKETING_RESUMO_PERIOD_DAYS,
       'self',
+    ]);
+  });
+
+  it('loads at most 50 sanitized recent activities without writing the summary cache', async () => {
+    invoke.mockResolvedValue({
+      data: {
+        dados: {
+          items: [],
+          nextCursor: null,
+          hasMore: false,
+          refreshAfterSeconds: 30,
+          generatedAt: '2026-08-10T12:00:00.000Z',
+        },
+      },
+      error: null,
+    });
+
+    const result = await getMarketingRecentActivity({
+      targetUserId: 'cliente-1',
+      requesterUserId: 'mega-master',
+      limit: 100,
+    });
+
+    expect(result.refreshAfterSeconds).toBe(30);
+    expect(invoke).toHaveBeenCalledWith('marketing-dashboard', expect.objectContaining({
+      body: {
+        action: 'recent_activity',
+        p_target_user_id: 'cliente-1',
+        limit: 50,
+      },
+      headers: { Authorization: 'Bearer token-teste' },
+    }));
+    expect(window.sessionStorage.length).toBe(0);
+    expect(getMarketingRecentActivityQueryKey(' cliente-1 ', ' mega-master ')).toEqual([
+      'marketing-recent-activity',
+      'mega-master',
+      'cliente-1',
     ]);
   });
 });

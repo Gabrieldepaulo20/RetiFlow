@@ -120,7 +120,16 @@ function safePageUrl(item: JsonRecord, pagePath: string) {
 function eventMeasurementMode(item: JsonRecord): MarketingVisitorSession['measurementMode'] {
   const metadata = eventMetadata(item);
   const raw = limitedString(metadata.measurementMode ?? metadata.measurement_mode, 30);
-  return raw === 'anonymous' || raw === 'consented' ? raw : 'unknown';
+  if (raw === 'anonymous') return 'anonymous';
+  if (
+    raw === 'consented'
+    || raw === 'analytics'
+    || raw === 'advertising'
+    || raw === 'analytics_and_advertising'
+  ) {
+    return 'consented';
+  }
+  return 'unknown';
 }
 
 function mergeMeasurementMode(

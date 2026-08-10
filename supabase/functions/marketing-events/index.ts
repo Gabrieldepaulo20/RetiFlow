@@ -1,5 +1,10 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { normalizeMarketingOccurredAt } from '../_shared/marketing-date.ts';
+import {
+  MARKETING_ACCEPTED_EVENT_TYPES,
+  normalizeMarketingEventForStorage,
+  storedMarketingEventMatches,
+} from '../_shared/marketing-event-contract.ts';
 
 const localDevOrigins = new Set([
   'http://localhost:5173',
@@ -14,22 +19,6 @@ const baseCorsHeaders = {
   'Access-Control-Expose-Headers': 'x-request-id, server-timing',
   Vary: 'Origin',
 };
-
-const allowedEventTypes = new Set([
-  'page_view',
-  'whatsapp_click',
-  'phone_click',
-  'form_view',
-  'form_start',
-  'form_abandon',
-  'form_submit_attempt',
-  'form_validation_error',
-  'form_submit_error',
-  'form_submit',
-  'lead_created',
-  'critical_page_view',
-  'custom',
-]);
 
 const allowedAlertStatuses = new Set([
   'not_required',
@@ -241,7 +230,7 @@ async function findExistingExternalEvent(
   const { data, error } = await serviceClient
     .schema('RetificaPremium')
     .from('Marketing_Site_Eventos')
-    .select('id_marketing_site_eventos, external_event_id, lead_code, event_type, alert_status, duplicate_count')
+    .select('id_marketing_site_eventos, external_event_id, lead_code, event_type, alert_status, duplicate_count, metadata')
     .eq('fk_criado_por', ownerId)
     .eq('external_event_id', externalEventId)
     .maybeSingle();
@@ -401,7 +390,7 @@ async function handleRequest(request: Request) {
     }
 
     const eventType = asString(body.eventType, 60);
-    if (!eventType || !allowedEventTypes.has(eventType)) {
+    if (!eventType || !MARKETING_ACCEPTED_EVENT_TYPES.has(eventType)) {
       return jsonResponse({ ok: false, error: 'Tipo de evento inválido.' }, 400, request);
     }
 
@@ -411,7 +400,11 @@ async function handleRequest(request: Request) {
       return jsonResponse({ ok: false, error: 'eventId e leadCode são obrigatórios.' }, 400, request);
     }
 
-    const metadata = asObject(body.metadata);
+    const normalizedStorageEvent = normalizeMarketingEventForStorage(
+      eventType,
+      asObject(body.metadata),
+    );
+    const metadata = normalizedStorageEvent.metadata;
     const occurredAt = normalizeMarketingOccurredAt(body.occurredAt);
     const source = asString(body.source, 120) ?? 'direto';
     const medium = asString(body.medium, 120);
@@ -424,7 +417,11 @@ async function handleRequest(request: Request) {
       externalEventId,
     );
     if (existingExternalEvent) {
-      if (existingExternalEvent.event_type !== eventType) {
+      if (!storedMarketingEventMatches(
+        eventType,
+        existingExternalEvent.event_type,
+        existingExternalEvent.metadata,
+      )) {
         return jsonResponse({ ok: false, error: 'eventId já utilizado por outro tipo de evento.' }, 409, request);
       }
       const storedLeadId = await ensureLeadForEvent({
@@ -493,7 +490,7 @@ async function handleRequest(request: Request) {
       fk_criado_por: config.fk_criado_por,
       external_event_id: externalEventId,
       lead_code: leadCode,
-      event_type: eventType,
+      event_type: normalizedStorageEvent.eventType,
       channel: asString(body.channel, 80),
       occurred_at: occurredAt,
       session_id: sessionId,

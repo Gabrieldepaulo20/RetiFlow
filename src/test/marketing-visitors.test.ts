@@ -172,6 +172,22 @@ describe('sessões individuais de marketing', () => {
     expect(session.actions).toEqual([]);
   });
 
+  it('mapeia os modos de consentimento v2 para a visão legada de sessões', () => {
+    for (const measurementMode of ['analytics', 'advertising', 'analytics_and_advertising']) {
+      const [session] = buildMarketingVisitorSessions([
+        {
+          session_id: `sessao-${measurementMode}`,
+          occurred_at: '2026-08-03T11:00:00.000Z',
+          page_path: '/',
+          event_type: 'page_view',
+          metadata: { measurementMode },
+        },
+      ], []);
+
+      expect(session.measurementMode).toBe('consented');
+    }
+  });
+
   it('mantém a visão paga sem orgânico e remove eventos técnicos', () => {
     const sessions = buildMarketingVisitorSessions([
       {

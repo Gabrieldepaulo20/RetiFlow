@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { MarketingResumo } from '@/api/supabase/marketing';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { ContactsTab, GoogleAdsTab, OverviewTab, QualityTab, ResultsTab, SeoTab } from '@/pages/MarketingGrowth';
+import { ContactsTab, GoogleAdsTab, JourneyTab, OverviewTab, QualityTab, ResultsTab, SeoTab } from '@/pages/MarketingGrowth';
 import { FinancialPrivacyProvider } from '@/contexts/FinancialPrivacyProvider';
 
 vi.mock('recharts', async () => {
@@ -110,6 +110,96 @@ function buildResumo(): MarketingResumo {
         ],
       },
       daily: [],
+      journey: {
+        measurement: {
+          trackedSessions: 20,
+          pageViewSessions: 18,
+          activeTimeMeasuredSessions: 15,
+          consentedSessions: 10,
+          anonymousSessions: 6,
+          mixedSessions: 2,
+          unknownSessions: 2,
+        },
+        retention: {
+          eligibleSessions: 18,
+          active5sSessions: 14,
+          active10sSessions: 11,
+          active5sRate: 77.78,
+          active10sRate: 61.11,
+          no5sSignalSessions: 4,
+          no10sSignalSessions: 7,
+          scope: 'tracked_sessions_only',
+        },
+        contactChannels: [
+          { channel: 'whatsapp', sessions: 5, events: 5 },
+          { channel: 'phone', sessions: 1, events: 1 },
+          { channel: 'form', sessions: 0, events: 0 },
+        ],
+        clicks: {
+          totalEvents: 8,
+          uniqueSessions: 6,
+          groupsTruncated: false,
+          groups: [{
+            eventName: 'cta_click',
+            pagePath: '/servicos',
+            componentId: 'services_hero_estimate',
+            position: 'hero_primary',
+            destinationType: 'estimate',
+            destinationPath: '/quanto-custa',
+            experimentId: 'hero_mobile_paid_v1',
+            variantId: 'guided_estimate',
+            events: 4,
+            sessions: 4,
+            paidSessions: 3,
+            organicSessions: 1,
+            otherSessions: 0,
+            lastOccurredAt: '2026-07-31T12:00:00.000Z',
+          }],
+        },
+        quizStepsTruncated: false,
+        quizSteps: [{
+          experimentId: 'hero_mobile_paid_v1',
+          variantId: 'guided_estimate',
+          flowType: 'symptoms',
+          stepId: 'step_1',
+          views: 4,
+          completes: 3,
+          advancedSessions: 3,
+          possibleDropOffSessions: 1,
+          advanceRate: 75,
+          backEvents: 1,
+          unknownSelections: 1,
+        }],
+        variantsTruncated: false,
+        variants: [{
+          experimentId: 'hero_mobile_paid_v1',
+          variantId: 'guided_estimate',
+          sessions: 6,
+          active5sSessions: 5,
+          active10sSessions: 4,
+          ctaClickSessions: 4,
+          quizStartSessions: 3,
+          quizResultSessions: 2,
+          contactSessions: 2,
+          active5sRate: 83.33,
+          active10sRate: 66.67,
+          contactRate: 33.33,
+        }],
+        pagesTruncated: false,
+        pages: [{
+          pagePath: '/servicos',
+          sessions: 10,
+          views: 12,
+          active5sSessions: 8,
+          active10sSessions: 6,
+          ctaClickSessions: 4,
+          quizStartSessions: 3,
+          contactSessions: 2,
+          active5sRate: 80,
+          active10sRate: 60,
+          contactRate: 20,
+        }],
+      },
       whatsapp: {
         uniqueClicks: 5,
         repeatedClicks: 1,
@@ -297,6 +387,7 @@ function buildResumo(): MarketingResumo {
             { type: 'whatsapp_click', occurredAt: '2026-07-29T10:05:00.000Z', pagePath: '/contato', detail: 'whatsapp_contato' },
           ],
           engagementLevel: 'contact',
+          measurementMode: 'consented',
           leadCode: null,
           leadName: null,
           leadContact: null,
@@ -317,6 +408,7 @@ function buildResumo(): MarketingResumo {
           originType: 'organic',
           eventCount: 1,
           actionCount: 0,
+          measurementMode: 'anonymous',
           leadCode: null,
           leadName: null,
           leadContact: null,
@@ -388,8 +480,9 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByRole('group', { name: 'Filtrar jornadas por origem' })).toBeInTheDocument();
     expect(screen.getAllByText('Google Ads').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Orgânico').length).toBeGreaterThan(0);
-    expect(screen.getByText('retífica de cabeçote')).toBeInTheDocument();
-    expect(screen.getByText('Não fornecido pelo buscador')).toBeInTheDocument();
+    expect(screen.queryByText('retífica de cabeçote')).not.toBeInTheDocument();
+    expect(screen.getByText('Com consentimento')).toBeInTheDocument();
+    expect(screen.getByText('Sessão anônima')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Jornadas das sessões do site' })).toHaveClass('max-h-[34rem]', 'overflow-auto');
     expect(screen.queryByText('Anúncio principal')).not.toBeInTheDocument();
     expect(screen.getByText('5min 00s')).toBeInTheDocument();
@@ -400,6 +493,52 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByText('Caminho completo no site')).toBeInTheDocument();
     expect(screen.getByText('Clique no WhatsApp')).toBeInTheDocument();
     expect(screen.getByText('/contato · whatsapp_contato')).toBeInTheDocument();
+  });
+
+  it('mostra a jornada agregada e a atividade recente sem PII', () => {
+    renderWithTooltips(
+      <JourneyTab
+        resumo={buildResumo()}
+        recentActivity={{
+          items: [{
+            activityId: 'activity-abcdef1234567890',
+            visitorToken: 'visitor-demo-001',
+            occurredAt: '2026-07-31T12:00:00.000Z',
+            eventName: 'cta_click',
+            category: 'cta',
+            pagePath: '/servicos',
+            originType: 'paid',
+            source: 'google',
+            medium: 'cpc',
+            campaign: 'campanha_regional',
+            deviceType: 'mobile',
+            componentId: 'services_hero_estimate',
+            position: 'hero_primary',
+            flowType: null,
+            stepId: null,
+            experimentId: 'hero_mobile_paid_v1',
+            variantId: 'guided_estimate',
+            estimateState: null,
+            destinationType: 'estimate',
+            destinationPath: '/quanto-custa',
+            contactState: 'anonymous',
+          }],
+          nextCursor: null,
+          hasMore: false,
+          refreshAfterSeconds: 30,
+          generatedAt: '2026-07-31T12:00:00.000Z',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('Ativas em 5 segundos')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Onde as pessoas clicaram' })).toBeInTheDocument();
+    expect(screen.getByText('Sem avanço rastreado')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Variantes do experimento' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Retenção e contato por página' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Atividade recente do site' })).toBeInTheDocument();
+    expect(screen.getByText('demo-001')).toBeInTheDocument();
+    expect(screen.queryByText(/nome privado|telefone privado|sessao bruta/i)).not.toBeInTheDocument();
   });
 
   it('mantém a aba Google Ads focada somente em mídia paga e explica seus KPIs', async () => {
