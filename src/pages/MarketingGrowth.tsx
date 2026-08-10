@@ -3145,6 +3145,8 @@ export function JourneyTab({
   const whatsapp = journey.contactChannels.find((item) => item.channel === 'whatsapp');
   const phone = journey.contactChannels.find((item) => item.channel === 'phone');
   const form = journey.contactChannels.find((item) => item.channel === 'form');
+  const locations = journey.locations;
+  const visibleLocationSessions = locations?.groups.reduce((total, item) => total + item.sessions, 0) ?? 0;
 
   return (
     <div className="space-y-4">
@@ -3196,6 +3198,57 @@ export function JourneyTab({
           <Badge variant="outline" className="bg-violet-50 text-violet-800">Formulário: {formatNumber(form?.sessions)} sessões</Badge>
         </div>
       </div>
+
+      <JourneyTableCard
+        title="Cidades informadas na jornada"
+        description="Somente cidades digitadas voluntariamente em sessões com consentimento analítico. Cada sessão conta uma vez e locais com menos de três sessões ficam ocultos."
+      >
+        {locations ? (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-2">
+                <MapPin className="h-4 w-4 text-emerald-700" />
+                {formatNumber(visibleLocationSessions)} sessões nos grupos exibidos
+              </span>
+              <Badge variant="outline" className="bg-emerald-50 text-emerald-800">
+                Privacidade: mínimo de {locations.minimumSessions} sessões
+              </Badge>
+            </div>
+            <div className="overflow-auto">
+              <table className="w-full min-w-[420px] text-left text-xs">
+                <thead className="border-b bg-muted/60 text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-3 font-semibold">Cidade / UF</th>
+                    <th className="px-4 py-3 text-right font-semibold">Sessões únicas</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {locations.groups.map((item) => (
+                    <tr key={`${item.city}-${item.region ?? 'sem-uf'}`}>
+                      <td className="px-4 py-3 font-semibold text-foreground">
+                        {item.city}{item.region ? ` / ${item.region}` : ''}
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold">{formatNumber(item.sessions)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {locations.groups.length === 0 ? (
+                <p className="p-8 text-center text-sm text-muted-foreground">
+                  Nenhuma cidade atingiu o mínimo de três sessões consentidas neste período.
+                </p>
+              ) : null}
+            </div>
+            {locations.groupsTruncated ? (
+              <p className="border-t px-4 py-2 text-xs text-amber-700">Exibindo as 100 cidades com mais sessões.</p>
+            ) : null}
+          </>
+        ) : (
+          <p className="p-8 text-center text-sm text-muted-foreground">
+            A leitura agregada de cidade aguarda a atualização da fonte do painel.
+          </p>
+        )}
+      </JourneyTableCard>
 
       <JourneyTableCard
         title="Onde as pessoas clicaram"

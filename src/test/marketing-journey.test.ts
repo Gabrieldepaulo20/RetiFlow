@@ -53,6 +53,63 @@ describe('agregação sanitizada da jornada do site', () => {
     });
   });
 
+  it('agrega cidade por sessão consentida e oculta grupos com menos de três sessões', () => {
+    const summary = buildMarketingJourneySummary([
+      event('sessao-rp-1', 'page_view', { measurementMode: 'analytics' }, {
+        city: 'Ribeirão Preto',
+        region: 'SP',
+      }),
+      event('sessao-rp-1', 'custom', { eventLabel: 'engagement_5s', measurementMode: 'analytics' }, {
+        city: 'Ribeirao Preto',
+        region: 'São Paulo',
+      }),
+      event('sessao-rp-2', 'page_view', { measurementMode: 'analytics' }, {
+        city: 'RIBEIRÃO PRETO',
+        region: 'São Paulo',
+      }),
+      event('sessao-rp-3', 'page_view', { measurementMode: 'analytics_and_advertising' }, {
+        city: 'ribeirão preto',
+        region: 'BR-SP',
+      }),
+      event('sessao-rp-form', 'form_submit', { measurementMode: 'analytics' }, {
+        city: 'Ribeirão Preto',
+        region: 'SP',
+      }),
+      event('sessao-sz-1', 'page_view', { measurementMode: 'analytics' }, {
+        city: 'Sertãozinho',
+        region: 'SP',
+      }),
+      event('sessao-sz-2', 'page_view', { measurementMode: 'analytics' }, {
+        city: 'Sertãozinho',
+        region: 'SP',
+      }),
+      event('sessao-advertising', 'page_view', { measurementMode: 'advertising' }, {
+        city: 'Cidade de Anúncio',
+        region: 'SP',
+      }),
+      event('sessao-invalida', 'page_view', { measurementMode: 'analytics' }, {
+        city: 'Rua 123 telefone 11999999999',
+        region: 'SP',
+      }),
+      event('sessao-conflitante', 'page_view', { measurementMode: 'analytics' }, {
+        city: 'Cravinhos',
+        region: 'SP',
+      }),
+      event('sessao-conflitante', 'custom', { eventLabel: 'engagement_5s', measurementMode: 'analytics' }, {
+        city: 'Bebedouro',
+        region: 'SP',
+      }),
+    ]);
+
+    expect(summary.locations).toEqual({
+      scope: 'analytics_consented_sessions_only',
+      minimumSessions: 3,
+      groupsTruncated: false,
+      groups: [{ city: 'Ribeirão Preto', region: 'SP', sessions: 4 }],
+    });
+    expect(JSON.stringify(summary.locations)).not.toMatch(/Sertãozinho|Cidade de Anúncio|11999999999|Cravinhos|Bebedouro/);
+  });
+
   it('mede retenção por sessão elegível e deduplica o mesmo clique de WhatsApp', () => {
     const summary = buildMarketingJourneySummary([
       event('sessao-1', 'page_view', { measurementMode: 'consented' }),
@@ -306,6 +363,8 @@ describe('agregação sanitizada da jornada do site', () => {
       medium: 'cpc<script>',
       campaign: '11999999999',
       device_type: 'mobile',
+      city: 'Ribeirão Preto',
+      region: 'SP',
     });
 
     const [item] = await buildMarketingRecentActivityItems([raw], { tokenSalt: 'sal-secreto-do-servidor' });
@@ -331,6 +390,7 @@ describe('agregação sanitizada da jornada do site', () => {
     expect(serialized).not.toContain('diagnóstico particular');
     expect(serialized).not.toContain('cliente@example.com');
     expect(serialized).not.toContain('11999999999');
+    expect(serialized).not.toContain('Ribeirão Preto');
   });
 
   it('não trata o lead_code técnico de page_view como pessoa identificada', async () => {

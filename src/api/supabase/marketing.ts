@@ -178,6 +178,16 @@ export interface MarketingJourneySummary {
     sessions: number;
     events: number;
   }>;
+  locations?: {
+    scope: 'analytics_consented_sessions_only';
+    minimumSessions: 3;
+    groupsTruncated: boolean;
+    groups: Array<{
+      city: string;
+      region: string | null;
+      sessions: number;
+    }>;
+  };
   clicks: {
     totalEvents: number;
     uniqueSessions: number;

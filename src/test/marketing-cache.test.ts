@@ -73,6 +73,9 @@ describe('marketing growth session cache', () => {
     expect(MARKETING_RESUMO_REFRESH_INTERVAL_MS).toBe(MARKETING_RESUMO_CACHE_TTL_MS);
     expect(MARKETING_RESUMO_PRELOAD_PERIODS).toEqual([1, 7, 30]);
     expect(MARKETING_RECENT_ACTIVITY_REFRESH_INTERVAL_MS).toBe(30_000);
+    expect(getMarketingResumoCacheKey(30, 'cliente-1', 'usuario-a')).toBe(
+      'retiflow:marketing-growth:v5:usuario-a:cliente-1:30',
+    );
   });
 
   it('stores and reads a fresh marketing summary for the same period and target', () => {

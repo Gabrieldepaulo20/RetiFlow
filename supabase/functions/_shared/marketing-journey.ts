@@ -51,6 +51,16 @@ export interface MarketingJourneySummary {
     sessions: number;
     events: number;
   }>;
+  locations: {
+    scope: 'analytics_consented_sessions_only';
+    minimumSessions: 3;
+    groupsTruncated: boolean;
+    groups: Array<{
+      city: string;
+      region: string | null;
+      sessions: number;
+    }>;
+  };
   clicks: {
     totalEvents: number;
     uniqueSessions: number;
@@ -372,6 +382,9 @@ interface NormalizedJourneyEvent {
   pagePath: string;
   originType: MarketingAttributionBucket;
   measurementMode: 'anonymous' | 'consented' | 'unknown';
+  analyticsConsent: boolean;
+  city: string | null;
+  region: string | null;
   componentId: string | null;
   position: string | null;
   serviceId: string | null;
@@ -382,6 +395,87 @@ interface NormalizedJourneyEvent {
   estimateState: string | null;
   destinationType: MarketingJourneyDestination;
   destinationPath: string | null;
+}
+
+const BRAZIL_STATE_UFS = new Set([
+  'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG',
+  'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
+]);
+
+const BRAZIL_STATE_NAMES = new Map([
+  ['acre', 'AC'],
+  ['alagoas', 'AL'],
+  ['amapa', 'AP'],
+  ['amazonas', 'AM'],
+  ['bahia', 'BA'],
+  ['ceara', 'CE'],
+  ['distrito federal', 'DF'],
+  ['espirito santo', 'ES'],
+  ['goias', 'GO'],
+  ['maranhao', 'MA'],
+  ['mato grosso', 'MT'],
+  ['mato grosso do sul', 'MS'],
+  ['minas gerais', 'MG'],
+  ['para', 'PA'],
+  ['paraiba', 'PB'],
+  ['parana', 'PR'],
+  ['pernambuco', 'PE'],
+  ['piaui', 'PI'],
+  ['rio de janeiro', 'RJ'],
+  ['rio grande do norte', 'RN'],
+  ['rio grande do sul', 'RS'],
+  ['rondonia', 'RO'],
+  ['roraima', 'RR'],
+  ['santa catarina', 'SC'],
+  ['sao paulo', 'SP'],
+  ['sergipe', 'SE'],
+  ['tocantins', 'TO'],
+]);
+
+const LOCATION_CONNECTORS = new Set(['da', 'das', 'de', 'do', 'dos', 'e']);
+
+function normalizedLocationKey(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLocaleLowerCase('pt-BR');
+}
+
+function titleCaseLocation(value: string) {
+  const parts = value.toLocaleLowerCase('pt-BR').split(/([\s-]+)/u);
+  let wordIndex = 0;
+  return parts.map((part) => {
+    if (!part || /^[\s-]+$/u.test(part)) return part;
+    const isConnector = wordIndex > 0 && LOCATION_CONNECTORS.has(part);
+    wordIndex += 1;
+    if (isConnector) return part;
+    const [first, ...rest] = [...part];
+    return `${first.toLocaleUpperCase('pt-BR')}${rest.join('')}`;
+  }).join('');
+}
+
+function normalizeMarketingCity(value: unknown) {
+  const normalized = limitedString(value, 60)?.normalize('NFKC').replace(/\s+/g, ' ');
+  if (!normalized || normalized.length < 2 || !/^[\p{L}\p{M} .'-]+$/u.test(normalized)) return null;
+  return {
+    key: normalizedLocationKey(normalized),
+    label: titleCaseLocation(normalized),
+  };
+}
+
+function normalizeMarketingRegion(value: unknown) {
+  const normalized = limitedString(value, 40)?.normalize('NFKC').replace(/\s+/g, ' ');
+  if (!normalized || !/^[\p{L}\p{M} -]+$/u.test(normalized)) return null;
+  const compact = normalized.toLocaleUpperCase('pt-BR').replace(/^BR[-\s]/u, '');
+  if (BRAZIL_STATE_UFS.has(compact)) return compact;
+  return BRAZIL_STATE_NAMES.get(normalizedLocationKey(normalized)) ?? null;
+}
+
+function hasAnalyticsConsent(metadata: JsonRecord) {
+  const measurement = safeDimension(metadata.measurementMode ?? metadata.measurement_mode, 40);
+  return measurement === 'analytics'
+    || measurement === 'analytics_and_advertising'
+    || measurement === 'consented';
 }
 
 export function normalizeMarketingJourneyEvent(item: JsonRecord): NormalizedJourneyEvent | null {
@@ -406,6 +500,9 @@ export function normalizeMarketingJourneyEvent(item: JsonRecord): NormalizedJour
     pagePath,
     originType: sessionOrigin(item, metadata),
     measurementMode: eventMeasurementMode(metadata),
+    analyticsConsent: hasAnalyticsConsent(metadata),
+    city: normalizeMarketingCity(item.city)?.label ?? null,
+    region: normalizeMarketingRegion(item.region),
     componentId,
     position: safeDimension(metadata.position, 100),
     serviceId,
@@ -486,6 +583,66 @@ export function buildMarketingJourneySummary(rawEvents: JsonRecord[]): Marketing
   });
   const contactSessions = new Set<string>();
   contactStats.forEach((sessions) => sessions.forEach((_stats, sessionKey) => contactSessions.add(sessionKey)));
+
+  type SessionLocation = {
+    city: string;
+    cityKey: string;
+    region: string | null;
+    conflicted: boolean;
+  };
+  const sessionLocations = new Map<string, SessionLocation>();
+  events.forEach((event) => {
+    if (!event.analyticsConsent || !event.city) return;
+    const cityKey = normalizedLocationKey(event.city);
+    const current = sessionLocations.get(event.sessionKey);
+    if (!current) {
+      sessionLocations.set(event.sessionKey, {
+        city: event.city,
+        cityKey,
+        region: event.region,
+        conflicted: false,
+      });
+      return;
+    }
+    if (current.cityKey !== cityKey) {
+      current.conflicted = true;
+      return;
+    }
+    if (current.region && event.region && current.region !== event.region) {
+      current.conflicted = true;
+      return;
+    }
+    if (!current.region && event.region) current.region = event.region;
+  });
+  const locationGroups = new Map<string, {
+    city: string;
+    region: string | null;
+    sessions: Set<string>;
+  }>();
+  sessionLocations.forEach((location, sessionKey) => {
+    if (location.conflicted) return;
+    const key = JSON.stringify([location.cityKey, location.region]);
+    const group = locationGroups.get(key) ?? {
+      city: location.city,
+      region: location.region,
+      sessions: new Set<string>(),
+    };
+    group.sessions.add(sessionKey);
+    locationGroups.set(key, group);
+  });
+  const minimumLocationSessions = 3 as const;
+  const allVisibleLocationGroups = [...locationGroups.values()]
+    .map((group) => ({
+      city: group.city,
+      region: group.region,
+      sessions: group.sessions.size,
+    }))
+    .filter((group) => group.sessions >= minimumLocationSessions)
+    .sort((left, right) => (
+      right.sessions - left.sessions
+      || (left.region ?? '').localeCompare(right.region ?? '', 'pt-BR')
+      || left.city.localeCompare(right.city, 'pt-BR')
+    ));
 
   type CanonicalClickName = 'whatsapp_click' | 'phone_click' | 'directions_click';
   const canonicalClickNames = new Set<CanonicalClickName>([
@@ -790,6 +947,12 @@ export function buildMarketingJourneySummary(rawEvents: JsonRecord[]): Marketing
       scope: 'tracked_sessions_only',
     },
     contactChannels,
+    locations: {
+      scope: 'analytics_consented_sessions_only',
+      minimumSessions: minimumLocationSessions,
+      groupsTruncated: allVisibleLocationGroups.length > 100,
+      groups: allVisibleLocationGroups.slice(0, 100),
+    },
     clicks: {
       totalEvents: clickEvents.length,
       uniqueSessions: clickSessions.size,

@@ -135,6 +135,15 @@ function buildResumo(): MarketingResumo {
           { channel: 'phone', sessions: 1, events: 1 },
           { channel: 'form', sessions: 0, events: 0 },
         ],
+        locations: {
+          scope: 'analytics_consented_sessions_only',
+          minimumSessions: 3,
+          groupsTruncated: false,
+          groups: [
+            { city: 'Ribeirão Preto', region: 'SP', sessions: 7 },
+            { city: 'Sertãozinho', region: 'SP', sessions: 3 },
+          ],
+        },
         clicks: {
           totalEvents: 8,
           uniqueSessions: 6,
@@ -532,6 +541,11 @@ describe('organização do painel Crescimento', () => {
     );
 
     expect(screen.getByText('Ativas em 5 segundos')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Cidades informadas na jornada' })).toBeInTheDocument();
+    expect(screen.getByText('Ribeirão Preto / SP')).toBeInTheDocument();
+    expect(screen.getByText('Sertãozinho / SP')).toBeInTheDocument();
+    expect(screen.getByText('10 sessões nos grupos exibidos')).toBeInTheDocument();
+    expect(screen.getByText('Privacidade: mínimo de 3 sessões')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Onde as pessoas clicaram' })).toBeInTheDocument();
     expect(screen.getByText('Sem avanço rastreado')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Variantes do experimento' })).toBeInTheDocument();
