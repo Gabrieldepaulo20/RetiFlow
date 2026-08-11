@@ -196,7 +196,19 @@ describe('MonthlyClosing support tablet visibility', () => {
     expect(mocks.documentCustomization).toHaveBeenCalledWith('closing_report', 'target-user');
   });
 
-  it('enables audited creation without an initial payment in support mode', async () => {
+  it('enables audited creation, receipts and WhatsApp in support mode', async () => {
+    mocks.getFinanceiroContas.mockResolvedValue([{
+      id: 'account-target',
+      nome: 'Caixa da retífica',
+      tipo: 'CAIXA',
+      saldoInicial: 0,
+      saldoInicialConfirmado: true,
+      dataCorte: null,
+      ativa: true,
+      padrao: true,
+      createdAt: null,
+      updatedAt: null,
+    }]);
     mocks.dataContext.mockReturnValue({
       notes: [],
       clients: [{ id: 'client-target', name: 'Sert Car', isActive: true, phone: '' }],
@@ -258,6 +270,8 @@ describe('MonthlyClosing support tablet visibility', () => {
       </MemoryRouter>,
     );
 
+    expect(await screen.findByRole('button', { name: /whatsapp/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /pagamentos/i })).toBeEnabled();
     const editDraft = await screen.findByRole('button', { name: /^editar$/i });
     fireEvent.click(editDraft);
 
@@ -265,7 +279,11 @@ describe('MonthlyClosing support tablet visibility', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Editar rascunho de fechamento' });
     expect(within(dialog).getByText('Criação controlada em modo suporte')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: /gerar sem entrada/i })).toBeEnabled();
-    expect(within(dialog).queryByText('Recebimento ao gerar')).not.toBeInTheDocument();
+    expect(within(dialog).getByText('Recebimento ao gerar')).toBeInTheDocument();
+    await waitFor(() => expect(mocks.getFinanceiroContas).toHaveBeenCalled());
+    fireEvent.click(within(dialog).getByRole('button', { name: '50%' }));
+    await waitFor(() => expect(within(dialog).getByText('Caixa da retífica')).toBeInTheDocument());
+    expect(within(dialog).getByRole('button', { name: /gerar e receber r\$ 50,00/i })).toBeEnabled();
   });
 
   it('fails closed when the visual support state has no validated active session', async () => {

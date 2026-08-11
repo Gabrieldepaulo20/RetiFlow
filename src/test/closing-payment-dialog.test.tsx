@@ -13,6 +13,8 @@ import {
 import type { FechamentoListItem } from '@/api/supabase/fechamentos';
 import { ClosingPaymentDialog } from '@/components/closing/ClosingPaymentDialog';
 import { FinancialPrivacyContext } from '@/contexts/FinancialPrivacyContext';
+import { setActiveSupportSession } from '@/services/auth/supportContext';
+import type { SupportImpersonationSession } from '@/types';
 
 const { toastMock } = vi.hoisted(() => ({ toastMock: vi.fn() }));
 
@@ -140,9 +142,28 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+function supportSession(targetId: string): SupportImpersonationSession {
+  const baseUser = {
+    email: 'support@example.com',
+    name: 'Suporte',
+    role: 'ADMIN' as const,
+    isActive: true,
+    createdAt: '2026-08-11T12:00:00.000Z',
+  };
+  return {
+    id: `session-${targetId}`,
+    reason: 'Apoio no fechamento',
+    startedAt: '2026-08-11T12:00:00.000Z',
+    expiresAt: null,
+    actorUser: { ...baseUser, id: 'actor-user' },
+    targetUser: { ...baseUser, id: targetId, email: `${targetId}@example.com` },
+  };
+}
+
 describe('ClosingPaymentDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setActiveSupportSession(null);
     window.localStorage.clear();
     window.sessionStorage.clear();
     vi.mocked(uploadFinanceiroComprovante).mockResolvedValue('usuario/parcela/comprovante.pdf');
@@ -301,7 +322,7 @@ describe('ClosingPaymentDialog', () => {
     expect(toastMock).not.toHaveBeenCalledWith(expect.objectContaining({ title: 'Não foi possível estornar' }));
   });
 
-  it('repete exatamente o mesmo estorno quando a primeira resposta se perde', async () => {
+  it('não repete automaticamente um estorno com resposta ambígua', async () => {
     vi.mocked(getParcelasFechamento).mockResolvedValue(summary('fechamento-retry-estorno', {
       valorRecebido: 500,
       valorAberto: 500,
@@ -309,15 +330,7 @@ describe('ClosingPaymentDialog', () => {
       parcelasAtivas: 1,
       parcelas: [installment()],
     }));
-    vi.mocked(estornarParcelaFechamento)
-      .mockRejectedValueOnce(new Error('resposta perdida'))
-      .mockResolvedValueOnce({
-        id: 'estorno-1',
-        movimentoId: 'estorno-1',
-        status: 'PENDENTE',
-        valorRealizado: 0,
-        valorAberto: 1000,
-      });
+    vi.mocked(estornarParcelaFechamento).mockRejectedValueOnce(new Error('resposta perdida'));
 
     render(dialogNode({ closing: closing('fechamento-retry-estorno'), canReverse: true }));
     await screen.findByText('Parcela 1');
@@ -325,13 +338,43 @@ describe('ClosingPaymentDialog', () => {
     fireEvent.change(screen.getByLabelText('Motivo do estorno'), { target: { value: 'Cheque devolvido' } });
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar estorno' }));
 
-    await waitFor(() => expect(estornarParcelaFechamento).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(estornarParcelaFechamento).toHaveBeenCalledTimes(1));
     const firstInput = vi.mocked(estornarParcelaFechamento).mock.calls[0]?.[0];
-    const retryInput = vi.mocked(estornarParcelaFechamento).mock.calls[1]?.[0];
-    expect(retryInput).toEqual(firstInput);
     expect(firstInput?.dataEfetiva).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: 'Parcela estornada' }));
-    expect(toastMock).not.toHaveBeenCalledWith(expect.objectContaining({ title: 'Não foi possível estornar' }));
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: 'Não foi possível estornar' }));
+    expect(toastMock).not.toHaveBeenCalledWith(expect.objectContaining({ title: 'Parcela estornada' }));
+  });
+
+  it('não atualiza outra empresa quando o contexto muda depois do pagamento confirmado', async () => {
+    setActiveSupportSession(supportSession('target-a'));
+    vi.mocked(getParcelasFechamento).mockResolvedValue(summary('fechamento-contexto'));
+    const committed = deferred<Awaited<ReturnType<typeof registrarParcelaFechamento>>>();
+    vi.mocked(registrarParcelaFechamento).mockReturnValue(committed.promise);
+    const onChanged = vi.fn();
+
+    render(dialogNode({ closing: closing('fechamento-contexto'), onChanged }));
+    await screen.findByLabelText('Valor recebido agora');
+    fireEvent.click(screen.getByRole('button', { name: '50%' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar parcela' }));
+    await waitFor(() => expect(registrarParcelaFechamento).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      setActiveSupportSession(supportSession('target-b'));
+      committed.resolve({
+        id: 'parcela-2',
+        movimentoId: 'parcela-2',
+        status: 'PARCIAL',
+        valorRealizado: 500,
+        valorAberto: 500,
+      });
+      await committed.promise;
+    });
+
+    await waitFor(() => expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Pagamento salvo; contexto alterado',
+    })));
+    expect(onChanged).not.toHaveBeenCalled();
+    expect(getParcelasFechamento).toHaveBeenCalledTimes(1);
   });
 
   it('preserva o último histórico válido quando uma recarga falha', async () => {

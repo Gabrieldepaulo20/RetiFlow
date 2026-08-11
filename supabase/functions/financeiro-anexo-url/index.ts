@@ -1,4 +1,4 @@
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createClient } from 'npm:@supabase/supabase-js@2.104.0';
 
 const localDevOrigins = new Set([
   'http://localhost:5173',
@@ -17,6 +17,13 @@ const FINANCEIRO_BUCKET =
   Deno.env.get('FINANCEIRO_COMPROVANTES_BUCKET') ?? 'financeiro-comprovantes';
 const DEFAULT_EXPIRES_IN_SECONDS = 60 * 10;
 const MAX_EXPIRES_IN_SECONDS = 60 * 60;
+const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+const ALLOWED_UPLOAD_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+]);
 
 type FinanceiroAnexoRow = {
   id_financeiro_anexos: string;
@@ -167,6 +174,42 @@ function responseContainsAttachment(payload: unknown, attachment: FinanceiroAnex
   ));
 }
 
+function hasAuthorizedUpload(result: unknown, input: {
+  movementId: string;
+  targetUserId: string;
+}) {
+  if (!isRecord(result) || result.status !== 200 || !isRecord(result.dados)) return false;
+  return result.dados.movement_id === input.movementId
+    && result.dados.target_user_id === input.targetUserId;
+}
+
+function sanitizeFilename(value: string) {
+  const normalized = value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120);
+  return normalized || 'comprovante';
+}
+
+function resolveMimeType(filename: string, supplied: string) {
+  const aliases: Record<string, string> = {
+    'application/x-pdf': 'application/pdf',
+    'image/jpg': 'image/jpeg',
+    'image/pjpeg': 'image/jpeg',
+  };
+  const raw = supplied.trim().toLowerCase();
+  const normalized = aliases[raw] ?? raw;
+  if (ALLOWED_UPLOAD_TYPES.has(normalized)) return normalized;
+  const lower = filename.toLowerCase();
+  if (lower.endsWith('.pdf')) return 'application/pdf';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  return '';
+}
+
 Deno.serve(async (request) => {
   const cors = getCorsHeaders(request);
   if (!cors.allowed) {
@@ -194,6 +237,9 @@ Deno.serve(async (request) => {
 
   try {
     const body = await request.json().catch(() => ({}));
+    const action = isRecord(body) && body.action === 'createUpload'
+      ? 'createUpload'
+      : 'sign';
     const attachmentId = isRecord(body) && typeof body.attachmentId === 'string'
       ? body.attachmentId.trim()
       : '';
@@ -203,13 +249,87 @@ Deno.serve(async (request) => {
     const support = isRecord(body) && isRecord(body.support) ? body.support : null;
     const expiresIn = clampExpiresIn(isRecord(body) ? body.expiresIn : undefined);
 
+    const serviceClient = createClient(auth.supabaseUrl, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const userClient = createClient(auth.supabaseUrl, auth.anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${auth.token}` } },
+    });
+
+    if (action === 'createUpload') {
+      const movementId = isRecord(body) && typeof body.movementId === 'string'
+        ? body.movementId.trim()
+        : '';
+      const fingerprint = isRecord(body) && typeof body.fingerprint === 'string'
+        ? body.fingerprint.trim().toLowerCase()
+        : '';
+      const filename = isRecord(body) && typeof body.filename === 'string'
+        ? sanitizeFilename(body.filename)
+        : '';
+      const suppliedMimeType = isRecord(body) && typeof body.mimeType === 'string'
+        ? body.mimeType
+        : '';
+      const mimeType = resolveMimeType(filename, suppliedMimeType);
+      const size = isRecord(body) ? Number(body.size) : Number.NaN;
+      const targetUserId = typeof support?.targetUserId === 'string'
+        ? support.targetUserId.trim()
+        : '';
+      const sessionId = typeof support?.sessionId === 'string'
+        ? support.sessionId.trim()
+        : '';
+      if (
+        !movementId
+        || !targetUserId
+        || !sessionId
+        || !/^[0-9a-f]{64}$/.test(fingerprint)
+        || !filename
+        || !ALLOWED_UPLOAD_TYPES.has(mimeType)
+        || !Number.isSafeInteger(size)
+        || size <= 0
+        || size > MAX_UPLOAD_BYTES
+      ) {
+        return jsonResponse({ error: 'Dados do comprovante ou sessao de suporte invalidos.' }, 400, request);
+      }
+
+      const { data: authorization, error: authorizationError } = await userClient
+        .schema('RetificaPremium')
+        .rpc('autorizar_upload_comprovante_contexto_suporte', {
+          p_id_financeiro_movimentos: movementId,
+          p_contexto_usuario_id: targetUserId,
+          p_sessao_suporte: sessionId,
+        });
+      if (authorizationError || !hasAuthorizedUpload(authorization, {
+        movementId,
+        targetUserId,
+      })) {
+        return jsonResponse({
+          error: authorizationError?.message ?? 'Upload nao autorizado para esta sessao.',
+        }, 403, request);
+      }
+
+      const path = `support/${targetUserId}/${movementId}/${fingerprint}-${filename}`;
+      const { data: signedUpload, error: signedUploadError } = await serviceClient.storage
+        .from(FINANCEIRO_BUCKET)
+        .createSignedUploadUrl(path, { upsert: false });
+      if (signedUploadError || !signedUpload?.token) {
+        return jsonResponse({
+          error: signedUploadError?.message ?? 'Nao foi possivel autorizar o upload privado.',
+        }, 500, request);
+      }
+      return jsonResponse({
+        path,
+        token: signedUpload.token,
+        filename,
+        mimeType,
+        expiresIn: 60 * 60 * 2,
+      }, 200, request);
+    }
+
     if (!attachmentId && !pathOrUrl) {
       return jsonResponse({ error: 'Informe o comprovante para gerar o link seguro.' }, 400, request);
     }
 
-    const serviceClient = createClient(auth.supabaseUrl, serviceKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
     const attachmentQuery = serviceClient
       .schema('RetificaPremium')
       .from('Financeiro_Anexos')
@@ -229,10 +349,6 @@ Deno.serve(async (request) => {
       return jsonResponse({ error: 'Comprovante não encontrado.' }, 404, request);
     }
 
-    const userClient = createClient(auth.supabaseUrl, auth.anonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-      global: { headers: { Authorization: `Bearer ${auth.token}` } },
-    });
     const isSupportRequest = Boolean(support?.targetUserId && support?.sessionId);
     const rpcName = isSupportRequest
       ? 'get_financeiro_anexos_contexto_suporte'

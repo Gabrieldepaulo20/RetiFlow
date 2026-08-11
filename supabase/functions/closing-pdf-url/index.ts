@@ -1,4 +1,4 @@
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createClient } from 'npm:@supabase/supabase-js@2.104.0';
 
 const localDevOrigins = new Set([
   'http://localhost:5173',
@@ -15,7 +15,7 @@ const baseCorsHeaders = {
 
 const FECHAMENTOS_BUCKET = Deno.env.get('FECHAMENTOS_BUCKET') ?? 'fechamentos';
 const DEFAULT_EXPIRES_IN_SECONDS = 60 * 60;
-const MAX_EXPIRES_IN_SECONDS = 60 * 60;
+const MAX_EXPIRES_IN_SECONDS = 60 * 60 * 24 * 7;
 
 type ClosingRow = {
   id_fechamentos: string;
@@ -135,6 +135,17 @@ function hasClosingInList(result: unknown, closingId: string) {
   return rows.some((row) => isRecord(row) && row.id_fechamentos === closingId);
 }
 
+function hasAuthorizedUpload(result: unknown, input: {
+  closingId: string;
+  targetUserId: string;
+  versionCents: number;
+}) {
+  if (!isRecord(result) || result.status !== 200 || !isRecord(result.dados)) return false;
+  return result.dados.closing_id === input.closingId
+    && result.dados.target_user_id === input.targetUserId
+    && Number(result.dados.received_cents) === input.versionCents;
+}
+
 async function findClosingByPdfUrl(
   serviceClient: ReturnType<typeof createClient>,
   pathOrUrl: string,
@@ -187,6 +198,9 @@ Deno.serve(async (request) => {
 
   try {
     const body = await request.json().catch(() => ({}));
+    const action = isRecord(body) && body.action === 'createUpload'
+      ? 'createUpload'
+      : 'sign';
     const closingId = isRecord(body) && typeof body.closingId === 'string' ? body.closingId.trim() : '';
     const pathOrUrl = isRecord(body) && typeof body.pathOrUrl === 'string' ? body.pathOrUrl.trim() : '';
     const support = isRecord(body) && isRecord(body.support) ? body.support : null;
@@ -197,12 +211,71 @@ Deno.serve(async (request) => {
       ? body.downloadFilename
       : undefined;
 
+    const serviceClient = createClient(auth.supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+    const userClient = createClient(auth.supabaseUrl, auth.anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${auth.token}` } },
+    });
+
+    if (action === 'createUpload') {
+      const targetUserId = typeof support?.targetUserId === 'string'
+        ? support.targetUserId.trim()
+        : '';
+      const sessionId = typeof support?.sessionId === 'string'
+        ? support.sessionId.trim()
+        : '';
+      const versionCents = isRecord(body) ? Number(body.versionCents) : Number.NaN;
+      if (
+        !closingId
+        || !targetUserId
+        || !sessionId
+        || !Number.isSafeInteger(versionCents)
+        || versionCents < 0
+      ) {
+        return jsonResponse({ error: 'Fechamento, saldo e sessao de suporte sao obrigatorios.' }, 400, request);
+      }
+
+      const { data: authorization, error: authorizationError } = await userClient
+        .schema('RetificaPremium')
+        .rpc('autorizar_upload_fechamento_contexto_suporte', {
+          p_id_fechamentos: closingId,
+          p_valor_recebido_esperado: versionCents / 100,
+          p_contexto_usuario_id: targetUserId,
+          p_sessao_suporte: sessionId,
+        });
+      if (authorizationError || !hasAuthorizedUpload(authorization, {
+        closingId,
+        targetUserId,
+        versionCents,
+      })) {
+        return jsonResponse({
+          error: authorizationError?.message ?? 'Upload nao autorizado para esta sessao.',
+        }, 403, request);
+      }
+
+      // Cada versão física é imutável. Um token de upload antigo nunca pode
+      // sobrescrever o PDF que já foi vinculado e compartilhado.
+      const path = `support/${targetUserId}/${closingId}-${versionCents}-${crypto.randomUUID()}.pdf`;
+      const { data: signedUpload, error: signedUploadError } = await serviceClient.storage
+        .from(FECHAMENTOS_BUCKET)
+        .createSignedUploadUrl(path, { upsert: false });
+      if (signedUploadError || !signedUpload?.token) {
+        return jsonResponse({
+          error: signedUploadError?.message ?? 'Nao foi possivel autorizar o upload privado.',
+        }, 500, request);
+      }
+      return jsonResponse({
+        path,
+        token: signedUpload.token,
+        expiresIn: 60 * 60 * 2,
+      }, 200, request);
+    }
+
     if (!closingId && !pathOrUrl) {
       return jsonResponse({ error: 'Informe o fechamento para gerar o link seguro.' }, 400, request);
     }
 
     const requestedStoragePath = pathOrUrl ? normalizeStoragePath(pathOrUrl) : '';
-    const serviceClient = createClient(auth.supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
     const { data: closingById, error: closingByIdError } = closingId
       ? await serviceClient
         .schema('RetificaPremium')
@@ -225,11 +298,6 @@ Deno.serve(async (request) => {
     if (requestedStoragePath && requestedStoragePath !== closingStoragePath) {
       return jsonResponse({ error: 'O PDF solicitado nao pertence a este fechamento.' }, 400, request);
     }
-
-    const userClient = createClient(auth.supabaseUrl, auth.anonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-      global: { headers: { Authorization: `Bearer ${auth.token}` } },
-    });
 
     const isSupportRequest = Boolean(support?.targetUserId && support?.sessionId);
     const rpcName = isSupportRequest ? 'get_fechamentos_contexto_suporte' : 'get_fechamentos';

@@ -1,4 +1,4 @@
-import { callRPC, type RPCEnvelope } from './_base';
+import { callRPC, callVoidRPC } from './_base';
 import { supabase } from '@/lib/supabase';
 import {
   assertActiveSupportScopeUnchanged,
@@ -344,36 +344,6 @@ export function normalizeFechamentoDadosJson(value: unknown): FechamentoDadosJso
   };
 }
 
-function rpcMessage(rpcName: string, message: string) {
-  const prefix = `[${rpcName}]`;
-  return message.startsWith(prefix) ? message : `${prefix} ${message}`;
-}
-
-async function callMutationRPC(rpcName: string, params: Record<string, unknown>) {
-  if (readActiveSupportContext()) {
-    throw new Error(
-      `[${rpcName}] Ações de escrita em modo suporte estão bloqueadas até a auditoria backend por ação estar ativa.`,
-    );
-  }
-
-  const { data, error } = await supabase.schema('RetificaPremium').rpc(rpcName, params);
-
-  if (error) {
-    throw new Error(rpcMessage(rpcName, error.message));
-  }
-
-  // Algumas RPCs legadas de fechamento são mutations que podem retornar void/null.
-  // Mantemos essa exceção isolada aqui para não afrouxar o contrato padrão de callRPC().
-  if (data === null || data === undefined) return;
-  if (typeof data !== 'object') return;
-
-  const envelope = data as Partial<RPCEnvelope>;
-  if (envelope.status === undefined) return;
-  if (envelope.status !== 200) {
-    throw new Error(rpcMessage(rpcName, envelope.mensagem ?? 'Erro desconhecido.'));
-  }
-}
-
 export async function getFechamentos(params?: {
   p_fk_clientes?: string;
   p_periodo?: string;
@@ -465,12 +435,6 @@ export async function finalizarFechamento(
   input: FinalizarFechamentoInput,
 ): Promise<FinalizarFechamentoResult> {
   const operationScope = captureActiveSupportScope();
-  if (operationScope && input.pagamentoInicial) {
-    throw new Error('[finalizar_fechamento_contexto_suporte] Crie o fechamento sem entrada no modo suporte.');
-  }
-  if (operationScope && input.pdfUrl) {
-    throw new Error('[finalizar_fechamento_contexto_suporte] O PDF persistente ainda não está habilitado no modo suporte.');
-  }
   if (
     operationScope
     && input.customization?.fkUsuarios !== operationScope.targetUserId
@@ -537,7 +501,7 @@ export async function atualizarFechamentoPdf(
   if (!Number.isFinite(expected) || expected < 0) {
     throw new Error('[atualizarFechamentoPdf] Valor recebido esperado inválido.');
   }
-  await callMutationRPC('atualizar_pdf_fechamento_seguro', {
+  await callVoidRPC('atualizar_pdf_fechamento_seguro', {
     p_id_fechamentos: idFechamento,
     p_pdf_url: pdfUrl,
     p_valor_recebido_esperado: expected,
@@ -567,7 +531,10 @@ export async function registrarAcaoFechamento(params: {
   p_tipo: string;
   p_mensagem?: string;
 }) {
-  await callMutationRPC('registrar_acao_fechamento', params);
+  await callVoidRPC('registrar_acao_fechamento', {
+    ...params,
+    p_mensagem: params.p_mensagem ?? null,
+  });
 }
 
 export async function getNotaDetalhesParaFechamento(idNota: string): Promise<NotaDetalhesResult | null> {
@@ -585,12 +552,7 @@ export async function uploadFechamentoPDF(
   pdfBlob: Blob,
   options?: { versionCents?: number },
 ): Promise<string> {
-  if (readActiveSupportContext()) {
-    throw new Error('[uploadFechamentoPDF] Uploads em modo suporte estão bloqueados.');
-  }
-
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user?.id) throw new Error('[uploadFechamentoPDF] Sessão sem usuário autenticado.');
+  const operationScope = captureActiveSupportScope();
   const versionCents = options?.versionCents;
   if (
     versionCents !== undefined
@@ -598,6 +560,32 @@ export async function uploadFechamentoPDF(
   ) {
     throw new Error('[uploadFechamentoPDF] Versão financeira inválida.');
   }
+
+  if (operationScope) {
+    if (versionCents === undefined) {
+      throw new Error('[uploadFechamentoPDF] A versão financeira é obrigatória no modo suporte.');
+    }
+    const authorization = await getFechamentoUploadAuthorization({
+      fechamentoId: idFechamento,
+      versionCents,
+      supportContext: operationScope,
+    });
+    assertActiveSupportScopeUnchanged(operationScope);
+    const { error } = await supabase.storage
+      .from(FECHAMENTOS_BUCKET)
+      .uploadToSignedUrl(authorization.path, authorization.token, pdfBlob, {
+        contentType: 'application/pdf',
+        cacheControl: '3600',
+      });
+    if (error) throw new Error(`[upload_fechamento_pdf] ${error.message}`);
+    assertActiveSupportScopeUnchanged(operationScope);
+    return authorization.path;
+  }
+
+  assertActiveSupportScopeUnchanged(operationScope);
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id) throw new Error('[uploadFechamentoPDF] Sessão sem usuário autenticado.');
+  assertActiveSupportScopeUnchanged(operationScope);
   const versionSuffix = versionCents === undefined ? '' : `-${versionCents}`;
   const path = `${user.id}/${idFechamento}${versionSuffix}.pdf`;
   const { error } = await supabase.storage
@@ -608,6 +596,7 @@ export async function uploadFechamentoPDF(
     throw new Error(`[upload_fechamento_pdf] ${error.message}`);
   }
 
+  assertActiveSupportScopeUnchanged(operationScope);
   return path;
 }
 
@@ -666,6 +655,46 @@ async function getFunctionErrorMessage(error: unknown) {
   return message;
 }
 
+async function getFechamentoUploadAuthorization(params: {
+  fechamentoId: string;
+  versionCents: number;
+  supportContext: NonNullable<ReturnType<typeof readActiveSupportContext>>;
+}) {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+  if (sessionError || !accessToken) {
+    throw new Error('Sessão Supabase não encontrada. Faça login novamente para salvar o PDF.');
+  }
+  assertActiveSupportScopeUnchanged(params.supportContext);
+
+  const { data, error } = await supabase.functions.invoke<{
+    path?: string;
+    token?: string;
+    error?: string;
+  }>('closing-pdf-url', {
+    body: {
+      action: 'createUpload',
+      closingId: params.fechamentoId,
+      versionCents: params.versionCents,
+      support: params.supportContext,
+    },
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (error) throw new Error(await getFunctionErrorMessage(error));
+  if (!data?.path || !data.token) {
+    throw new Error(data?.error ?? 'Não foi possível autorizar o upload privado do PDF.');
+  }
+  const expectedPrefix = `support/${params.supportContext.targetUserId}/${params.fechamentoId}-${params.versionCents}-`;
+  const immutableVersion = data.path.slice(expectedPrefix.length);
+  if (
+    !data.path.startsWith(expectedPrefix)
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.pdf$/i.test(immutableVersion)
+  ) {
+    throw new Error('O servidor retornou um caminho de PDF fora da sessão atendida.');
+  }
+  return { path: data.path, token: data.token };
+}
+
 async function getFechamentoPDFSignedUrlViaFunction(params: {
   pathOrUrl: string;
   fechamentoId?: string;
@@ -722,17 +751,20 @@ export async function getFechamentoPDFSignedUrl(
   }
 
   const expiresIn = options.expiresIn ?? DEFAULT_FECHAMENTO_PDF_SIGNED_URL_TTL;
-  const supportContext = readActiveSupportContext();
+  const supportContext = captureActiveSupportScope();
   if (supportContext) {
-    return getFechamentoPDFSignedUrlViaFunction({
+    const signedUrl = await getFechamentoPDFSignedUrlViaFunction({
       pathOrUrl: path,
       fechamentoId: options.fechamentoId,
       supportContext,
       expiresIn,
       downloadFilename: options.downloadFilename,
     });
+    assertActiveSupportScopeUnchanged(supportContext);
+    return signedUrl;
   }
 
+  assertActiveSupportScopeUnchanged(supportContext);
   const signOptions = options.downloadFilename
     ? { download: options.downloadFilename }
     : undefined;
@@ -741,13 +773,16 @@ export async function getFechamentoPDFSignedUrl(
     : await supabase.storage.from(FECHAMENTOS_BUCKET).createSignedUrl(path, expiresIn);
 
   if (error || !data?.signedUrl) {
-    return getFechamentoPDFSignedUrlViaFunction({
+    const signedUrl = await getFechamentoPDFSignedUrlViaFunction({
       pathOrUrl: path,
       fechamentoId: options.fechamentoId,
       expiresIn,
       downloadFilename: options.downloadFilename,
     });
+    assertActiveSupportScopeUnchanged(supportContext);
+    return signedUrl;
   }
 
+  assertActiveSupportScopeUnchanged(supportContext);
   return data.signedUrl;
 }

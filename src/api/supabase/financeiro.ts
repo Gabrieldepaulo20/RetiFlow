@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import {
   assertActiveSupportScopeUnchanged,
+  captureActiveSupportScope,
   readActiveSupportContext,
 } from '@/services/auth/supportContext';
 import { sanitizeStorageFilename } from '@/services/storage/storagePaths';
@@ -1019,22 +1020,117 @@ async function readBlobBytes(blob: Blob): Promise<ArrayBuffer> {
   });
 }
 
+async function getFunctionErrorMessage(error: unknown, fallback: string) {
+  let message = error instanceof Error ? error.message : fallback;
+  const context = typeof error === 'object' && error !== null && 'context' in error
+    ? (error as { context?: unknown }).context
+    : null;
+  if (context instanceof Response) {
+    try {
+      const parsed = JSON.parse(await context.clone().text()) as { error?: string; message?: string };
+      message = parsed.message ?? parsed.error ?? message;
+    } catch {
+      // Mantém a mensagem do SDK quando a Function não devolveu JSON.
+    }
+  }
+  return message;
+}
+
+async function getFinanceiroUploadAuthorization(input: {
+  movimentoId: string;
+  filename: string;
+  fingerprint: string;
+  file: File;
+  supportContext: NonNullable<ReturnType<typeof readActiveSupportContext>>;
+}) {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+  if (sessionError || !accessToken) {
+    throw new Error('Sessão Supabase não encontrada. Faça login novamente para salvar o comprovante.');
+  }
+  assertActiveSupportScopeUnchanged(input.supportContext);
+  const { data, error } = await supabase.functions.invoke<{
+    path?: string;
+    token?: string;
+    mimeType?: string;
+    error?: string;
+  }>('financeiro-anexo-url', {
+    body: {
+      action: 'createUpload',
+      movementId: input.movimentoId,
+      filename: input.filename,
+      fingerprint: input.fingerprint,
+      mimeType: input.file.type,
+      size: input.file.size,
+      support: input.supportContext,
+    },
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (error) {
+    throw new Error(await getFunctionErrorMessage(
+      error,
+      'Não foi possível autorizar o upload privado do comprovante.',
+    ));
+  }
+  if (!data?.path || !data.token || !data.mimeType) {
+    throw new Error(data?.error ?? 'Não foi possível autorizar o upload privado do comprovante.');
+  }
+  const expectedPrefix = `support/${input.supportContext.targetUserId}/${input.movimentoId}/${input.fingerprint}-`;
+  if (!data.path.startsWith(expectedPrefix) || data.path.slice(expectedPrefix.length).includes('/')) {
+    throw new Error('O servidor retornou um caminho de comprovante fora da sessão atendida.');
+  }
+  return { path: data.path, token: data.token, mimeType: data.mimeType };
+}
+
 export async function uploadFinanceiroComprovante(input: {
   movimentoId: string;
   file: File;
 }) {
-  if (readActiveSupportContext()) {
-    throw new Error('[uploadFinanceiroComprovante] Uploads financeiros são bloqueados em modo suporte.');
-  }
-
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
-  if (userError || !user?.id) {
-    throw new Error('[uploadFinanceiroComprovante] Sessão sem usuário autenticado.');
-  }
+  const operationScope = captureActiveSupportScope();
   const filename = sanitizeStorageFilename(input.file.name, 'comprovante');
   const bytes = await readBlobBytes(input.file);
   const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
   const fingerprint = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+
+  if (operationScope) {
+    assertActiveSupportScopeUnchanged(operationScope);
+    const authorization = await getFinanceiroUploadAuthorization({
+      movimentoId: input.movimentoId,
+      filename,
+      fingerprint,
+      file: input.file,
+      supportContext: operationScope,
+    });
+    assertActiveSupportScopeUnchanged(operationScope);
+    // Safari/tablets podem entregar File.type vazio. O storage-js usa o MIME
+    // real do Blob no multipart, então tipamos o corpo com o valor validado
+    // pelo servidor para o objeto e o metadata do anexo continuarem iguais.
+    const uploadBody = input.file.type === authorization.mimeType
+      ? input.file
+      : new Blob([input.file], { type: authorization.mimeType });
+    const { error } = await supabase.storage
+      .from(FINANCEIRO_BUCKET)
+      .uploadToSignedUrl(authorization.path, authorization.token, uploadBody, {
+        contentType: authorization.mimeType,
+        cacheControl: '3600',
+      });
+    const storageError = error as null | { message?: string; statusCode?: number | string };
+    const alreadyExists = storageError?.statusCode === 409
+      || storageError?.statusCode === '409'
+      || /already exists|resource exists|duplicate/i.test(storageError?.message ?? '');
+    if (error && !alreadyExists) {
+      throw new Error(`[uploadFinanceiroComprovante] ${error.message}`);
+    }
+    assertActiveSupportScopeUnchanged(operationScope);
+    return authorization.path;
+  }
+
+  assertActiveSupportScopeUnchanged(operationScope);
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user?.id) {
+    throw new Error('[uploadFinanceiroComprovante] Sessão sem usuário autenticado.');
+  }
+  assertActiveSupportScopeUnchanged(operationScope);
   // O conteúdo define o caminho: repetir o mesmo comprovante depois de uma
   // resposta perdida reutiliza o objeto e o INSERT de metadata é idempotente.
   const path = `${user.id}/${input.movimentoId}/${fingerprint}-${filename}`;
@@ -1050,6 +1146,7 @@ export async function uploadFinanceiroComprovante(input: {
   if (error && !alreadyExists) {
     throw new Error(`[uploadFinanceiroComprovante] ${error.message}`);
   }
+  assertActiveSupportScopeUnchanged(operationScope);
   return path;
 }
 
@@ -1079,11 +1176,13 @@ async function getFinanceiroSignedUrlViaFunction(input: {
   expiresIn: number;
   supportContext: ReturnType<typeof readActiveSupportContext>;
 }) {
+  assertActiveSupportScopeUnchanged(input.supportContext);
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
   const accessToken = sessionData.session?.access_token;
   if (sessionError || !accessToken) {
     throw new Error('Sessão Supabase não encontrada. Faça login novamente para abrir o comprovante.');
   }
+  assertActiveSupportScopeUnchanged(input.supportContext);
 
   const { data, error } = await supabase.functions.invoke<{ signedUrl?: string; error?: string }>(
     'financeiro-anexo-url',
@@ -1105,6 +1204,7 @@ async function getFinanceiroSignedUrlViaFunction(input: {
   if (!data?.signedUrl) {
     throw new Error(data?.error ?? 'Não foi possível assinar o comprovante financeiro.');
   }
+  assertActiveSupportScopeUnchanged(input.supportContext);
   return data.signedUrl;
 }
 
@@ -1117,7 +1217,8 @@ export async function getFinanceiroAnexoSignedUrl(
     throw new Error('[getFinanceiroAnexoSignedUrl] Comprovante sem caminho de Storage válido.');
   }
   const expiresIn = options.expiresIn ?? DEFAULT_SIGNED_URL_TTL;
-  const supportContext = readActiveSupportContext();
+  const supportContext = captureActiveSupportScope();
+  assertActiveSupportScopeUnchanged(supportContext);
   if (supportContext) {
     const signedUrl = await getFinanceiroSignedUrlViaFunction({
       pathOrUrl: path,
@@ -1132,12 +1233,15 @@ export async function getFinanceiroAnexoSignedUrl(
   const { data, error } = await supabase.storage
     .from(FINANCEIRO_BUCKET)
     .createSignedUrl(path, expiresIn);
+  assertActiveSupportScopeUnchanged(supportContext);
   if (!error && data?.signedUrl) return data.signedUrl;
 
-  return getFinanceiroSignedUrlViaFunction({
+  const signedUrl = await getFinanceiroSignedUrlViaFunction({
     pathOrUrl: path,
     anexoId: options.anexoId,
     expiresIn,
     supportContext: null,
   });
+  assertActiveSupportScopeUnchanged(supportContext);
+  return signedUrl;
 }

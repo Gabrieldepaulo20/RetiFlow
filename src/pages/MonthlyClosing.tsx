@@ -44,6 +44,7 @@ import {
   type FinanceiroConta,
 } from '@/api/supabase/financeiro';
 import { getNotasServico, mapStatusNome, type NotaServico } from '@/api/supabase/notas';
+import { getClienteDetalhes } from '@/api/supabase/clientes';
 import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 import {
   canLoadMonthlyClosings,
@@ -88,6 +89,7 @@ import {
   assertActiveSupportScopeUnchanged,
   captureActiveSupportScope,
   readActiveSupportContext,
+  SupportScopeChangedAfterCommitError,
 } from '@/services/auth/supportContext';
 import { FinancialValue } from '@/components/privacy/FinancialValue';
 import { ClosingPaymentDialog } from '@/components/closing/ClosingPaymentDialog';
@@ -497,7 +499,6 @@ export default function MonthlyClosing() {
   );
   const supportContextInvalid = Boolean(isSupportImpersonating || activeSupportScope)
     && !supportContextActive;
-  const supportContextRestricted = supportContextActive || supportContextInvalid;
   const documentQueriesEnabled = !supportContextInvalid && Boolean(currentScopeUserId);
   const documentQueryScope = supportContextActive ? activeSupportScope?.sessionId : null;
   const templateSettingsQuery = useDocumentTemplateSettings(
@@ -553,6 +554,7 @@ export default function MonthlyClosing() {
   const [paymentClosing, setPaymentClosing] = useState<FechamentoListItem | null>(null);
   const [returnToDraftAfterPayment, setReturnToDraftAfterPayment] = useState(false);
   const [financeAccounts, setFinanceAccounts] = useState<FinanceiroConta[]>([]);
+  const [financeAccountsScopeKey, setFinanceAccountsScopeKey] = useState<string | null>(null);
   const [financeAccountsError, setFinanceAccountsError] = useState(false);
   const [loadingFinanceAccounts, setLoadingFinanceAccounts] = useState(false);
   const [openClosings, setOpenClosings] = useState<FechamentosAbertosCliente | null>(null);
@@ -604,6 +606,14 @@ export default function MonthlyClosing() {
   const [includedNoteIds, setIncludedNoteIds] = useState<string[]>([]);
   const [editingItems, setEditingItems] = useState<Record<string, boolean>>({});
 
+  const currentFinanceAccountsScopeKey = currentScopeUserId
+    ? `${currentScopeUserId}:${documentQueryScope ?? 'self'}`
+    : null;
+  const scopedFinanceAccounts = useMemo(
+    () => financeAccountsScopeKey === currentFinanceAccountsScopeKey ? financeAccounts : [],
+    [currentFinanceAccountsScopeKey, financeAccounts, financeAccountsScopeKey],
+  );
+
   // Generation
   const [generating, setGenerating] = useState(false);
   const [previewDados, setPreviewDados] = useState<FechamentoDadosJson | null>(null);
@@ -637,7 +647,10 @@ export default function MonthlyClosing() {
     setReturnToDraftAfterPayment(false);
     setOpenClosings(null);
     setOpenClosingsError(false);
+    setFinanceAccounts([]);
+    setFinanceAccountsScopeKey(null);
     setFinanceAccountsError(false);
+    setLoadingFinanceAccounts(false);
     setInitialPaymentProof(null);
     setSelClientId('');
     setPeriodMode('month');
@@ -650,7 +663,7 @@ export default function MonthlyClosing() {
     setIncludedNoteIds([]);
     setEditingItems({});
     setPreviewDados(null);
-  }, [currentScopeUserId, defaultCustomEndDate, defaultCustomStartDate, defaultMonth, defaultYear]);
+  }, [currentScopeUserId, defaultCustomEndDate, defaultCustomStartDate, defaultMonth, defaultYear, documentQueryScope]);
 
   /* ── Load fechamentos ── */
   const loadFechamentos = useCallback(async () => {
@@ -693,9 +706,12 @@ export default function MonthlyClosing() {
   useEffect(() => { void loadFechamentos(); }, [loadFechamentos]);
 
   const loadFreshClosing = useCallback(async (fechamento: FechamentoListItem) => {
+    const operationScope = captureActiveSupportScope();
+    assertActiveSupportScopeUnchanged(operationScope);
     const dados = await getAllFechamentos({
       ...(fechamento.cliente?.id ? { p_fk_clientes: fechamento.cliente.id } : {}),
     });
+    assertActiveSupportScopeUnchanged(operationScope);
     const fresh = dados.find((item) => item.id_fechamentos === fechamento.id_fechamentos);
     if (!fresh) throw new Error('O fechamento não foi encontrado ao atualizar o saldo.');
 
@@ -708,31 +724,38 @@ export default function MonthlyClosing() {
   const loadFinanceAccounts = useCallback(async () => {
     const requestId = financeAccountsRequestRef.current + 1;
     financeAccountsRequestRef.current = requestId;
-    // A criação em suporte não aceita entrada. Não carregamos contas do ator
-    // enquanto a tela está visualmente no tenant atendido.
-    if (!IS_REAL_AUTH || !currentScopeUserId || supportContextActive || supportContextInvalid) {
+    const operationScope = captureActiveSupportScope();
+    // A RPC contextual devolve somente as contas da empresa atendida. Em um
+    // contexto divergente, mantemos a tela fail-closed.
+    if (!IS_REAL_AUTH || !currentScopeUserId || supportContextInvalid) {
       if (requestId === financeAccountsRequestRef.current) {
         setFinanceAccounts([]);
+        setFinanceAccountsScopeKey(null);
         setFinanceAccountsError(false);
+        setLoadingFinanceAccounts(false);
       }
       return;
     }
     setLoadingFinanceAccounts(true);
     setFinanceAccountsError(false);
     try {
+      assertActiveSupportScopeUnchanged(operationScope);
       const accounts = await getFinanceiroContas();
+      assertActiveSupportScopeUnchanged(operationScope);
       if (requestId === financeAccountsRequestRef.current) {
         setFinanceAccounts(accounts.filter((account) => account.ativa));
+        setFinanceAccountsScopeKey(currentFinanceAccountsScopeKey);
       }
     } catch {
       if (requestId === financeAccountsRequestRef.current) {
         setFinanceAccounts([]);
+        setFinanceAccountsScopeKey(null);
         setFinanceAccountsError(true);
       }
     } finally {
       if (requestId === financeAccountsRequestRef.current) setLoadingFinanceAccounts(false);
     }
-  }, [currentScopeUserId, supportContextActive, supportContextInvalid]);
+  }, [currentFinanceAccountsScopeKey, currentScopeUserId, supportContextInvalid]);
 
   useEffect(() => { void loadFinanceAccounts(); }, [loadFinanceAccounts]);
 
@@ -844,8 +867,8 @@ export default function MonthlyClosing() {
     [drafts, activeDraftId],
   );
   const defaultFinanceAccount = useMemo(
-    () => financeAccounts.find((account) => account.padrao) ?? financeAccounts[0] ?? null,
-    [financeAccounts],
+    () => scopedFinanceAccounts.find((account) => account.padrao) ?? scopedFinanceAccounts[0] ?? null,
+    [scopedFinanceAccounts],
   );
 
   const reminderClientId = activeDraft?.clientId ?? selClientId;
@@ -1413,7 +1436,7 @@ export default function MonthlyClosing() {
   ), [activeDraft, grandTotal]);
   const initialPaymentAccountReady = Boolean(
     activeDraft?.initialPayment.accountId
-    && financeAccounts.some((account) => (
+    && scopedFinanceAccounts.some((account) => (
       account.ativa && account.id === activeDraft.initialPayment.accountId
     )),
   );
@@ -1446,11 +1469,11 @@ export default function MonthlyClosing() {
 
   const activeDraftInitialPaymentMode = activeDraft?.initialPayment.mode;
   useEffect(() => {
-    if (!supportContextRestricted || !activeDraftInitialPaymentMode || activeDraftInitialPaymentMode === 'NONE') return;
+    if (!supportContextInvalid || !activeDraftInitialPaymentMode || activeDraftInitialPaymentMode === 'NONE') return;
     updateInitialPayment({ mode: 'NONE' });
     setInitialPaymentProof(null);
     if (initialPaymentProofInputRef.current) initialPaymentProofInputRef.current.value = '';
-  }, [activeDraftInitialPaymentMode, supportContextRestricted, updateInitialPayment]);
+  }, [activeDraftInitialPaymentMode, supportContextInvalid, updateInitialPayment]);
 
   const selectInitialPaymentMode = useCallback((mode: ClosingInitialPaymentMode) => {
     updateInitialPayment({
@@ -1648,6 +1671,14 @@ export default function MonthlyClosing() {
       toast({ title: 'O.S. marcada como recebida', description: `${payNota.os} saiu do total do fechamento e ficou como já recebida.` });
       setPayNota(null);
     } catch (error) {
+      if (error instanceof SupportScopeChangedAfterCommitError) {
+        setPayNota(null);
+        toast({
+          title: 'Recebimento salvo; contexto alterado',
+          description: error.message,
+        });
+        return;
+      }
       toast({
         title: 'Não foi possível registrar o recebimento',
         description: error instanceof Error ? error.message : 'Tente novamente.',
@@ -1670,6 +1701,13 @@ export default function MonthlyClosing() {
       setIncludedNoteIds((current) => (current.includes(note.id) ? current : [...current, note.id]));
       toast({ title: 'Recebimento desfeito', description: `${note.os} voltou para o total do fechamento.` });
     } catch (error) {
+      if (error instanceof SupportScopeChangedAfterCommitError) {
+        toast({
+          title: 'Estorno salvo; contexto alterado',
+          description: error.message,
+        });
+        return;
+      }
       toast({
         title: 'Não foi possível estornar',
         description: error instanceof Error ? error.message : 'Tente novamente.',
@@ -1696,9 +1734,6 @@ export default function MonthlyClosing() {
         )
       ) {
         throw new Error('A configuração real do documento da empresa atendida ainda não foi confirmada. Aguarde o carregamento e tente novamente.');
-      }
-      if (operationScope && draft.initialPayment.mode !== 'NONE') {
-        throw new Error('No modo suporte, crie o fechamento sem entrada. Os recebimentos continuam protegidos na sessão da empresa.');
       }
       if (!scopedClientIdSet.has(draft.clientId)) {
         toast({
@@ -1736,7 +1771,7 @@ export default function MonthlyClosing() {
         });
         return;
       }
-      const paymentAccountReady = financeAccounts.some((account) => (
+      const paymentAccountReady = scopedFinanceAccounts.some((account) => (
         account.ativa && account.id === draft.initialPayment.accountId
       ));
       if (hasInitialPayment && (!paymentAccountReady || !isValidLocalDate(draft.initialPayment.date))) {
@@ -1851,28 +1886,24 @@ export default function MonthlyClosing() {
         open: result.valorAberto,
         status: result.status,
       };
-      if (operationScope) {
-        warnings.push('No suporte, o PDF pode ser visualizado e baixado pelo snapshot; o envio por WhatsApp permanece protegido.');
-      } else {
-        try {
-          const pdfBlob = Math.abs(result.valorRecebido - plannedSummary.received) <= 0.004
-            && Math.abs(result.valorAberto - plannedSummary.open) <= 0.004
-            && result.status === plannedSummary.status
-            ? preflightPdfBlob
-            : await renderClosingPdfBlob(dados, geradoEm, committedSummary);
-          if (stopPostCommitIfScopeChanged()) return;
-          const pdfUrl = await uploadFechamentoPDF(result.id, pdfBlob, {
-            versionCents: moneyToCents(result.valorRecebido),
-          });
-          if (stopPostCommitIfScopeChanged()) return;
-          await atualizarFechamentoPdf(result.id, pdfUrl, {
-            expectedValorRecebido: result.valorRecebido,
-          });
-          if (stopPostCommitIfScopeChanged()) return;
-        } catch {
-          if (stopPostCommitIfScopeChanged()) return;
-          warnings.push('O fechamento e o pagamento foram salvos, mas o PDF ficou pendente; ele será regenerado ao compartilhar.');
-        }
+      try {
+        const pdfBlob = Math.abs(result.valorRecebido - plannedSummary.received) <= 0.004
+          && Math.abs(result.valorAberto - plannedSummary.open) <= 0.004
+          && result.status === plannedSummary.status
+          ? preflightPdfBlob
+          : await renderClosingPdfBlob(dados, geradoEm, committedSummary);
+        if (stopPostCommitIfScopeChanged()) return;
+        const pdfUrl = await uploadFechamentoPDF(result.id, pdfBlob, {
+          versionCents: moneyToCents(result.valorRecebido),
+        });
+        if (stopPostCommitIfScopeChanged()) return;
+        await atualizarFechamentoPdf(result.id, pdfUrl, {
+          expectedValorRecebido: result.valorRecebido,
+        });
+        if (stopPostCommitIfScopeChanged()) return;
+      } catch {
+        if (stopPostCommitIfScopeChanged()) return;
+        warnings.push('O fechamento e o pagamento foram salvos, mas o PDF ficou pendente; ele será regenerado ao compartilhar.');
       }
 
       if (stopPostCommitIfScopeChanged()) return;
@@ -1895,16 +1926,16 @@ export default function MonthlyClosing() {
       }
 
       if (stopPostCommitIfScopeChanged()) return;
-      if (!operationScope) {
-        try {
-          await registrarAcaoFechamento({
-            p_id_fechamentos: result.id,
-            p_tipo: 'pdf_gerado',
-            p_mensagem: `Fechamento finalizado. Total: R$ ${totals.totalComDesconto.toFixed(2)}; recebido: R$ ${result.valorRecebido.toFixed(2)}.`,
-          });
-        } catch { /* non-blocking */ }
-        if (stopPostCommitIfScopeChanged()) return;
+      try {
+        await registrarAcaoFechamento({
+          p_id_fechamentos: result.id,
+          p_tipo: 'pdf_gerado',
+          p_mensagem: `Fechamento finalizado. Total: R$ ${totals.totalComDesconto.toFixed(2)}; recebido: R$ ${result.valorRecebido.toFixed(2)}.`,
+        });
+      } catch {
+        warnings.push('O fechamento foi salvo, mas o registro complementar de geração do PDF ficou pendente.');
       }
+      if (stopPostCommitIfScopeChanged()) return;
 
       if (stopPostCommitIfScopeChanged()) return;
       setPreviewDados(dados);
@@ -1937,7 +1968,7 @@ export default function MonthlyClosing() {
     } finally {
       setGenerating(false);
     }
-  }, [activeDraftId, closeDraftModal, documentSettings, drafts, draftsHydratedKey, draftsStorageKey, financeAccounts, initialPaymentProof, isSupportImpersonating, loadFechamentos, loadOpenClosings, refreshNotes, removeDraft, renderClosingPdfBlob, scopedClientIdSet, supportContextActive, supportContextInvalid, supportDocumentSettingsReady, templateSettings?.fkUsuarios, toast]);
+  }, [activeDraftId, closeDraftModal, documentSettings, drafts, draftsHydratedKey, draftsStorageKey, initialPaymentProof, isSupportImpersonating, loadFechamentos, loadOpenClosings, refreshNotes, removeDraft, renderClosingPdfBlob, scopedClientIdSet, scopedFinanceAccounts, supportContextActive, supportContextInvalid, supportDocumentSettingsReady, templateSettings?.fkUsuarios, toast]);
 
   const handleGerar = useCallback(async () => {
     if (!activeDraft) return;
@@ -1961,9 +1992,33 @@ export default function MonthlyClosing() {
       });
       return;
     }
+    const operationScope = captureActiveSupportScope();
+    if (supportContextInvalid || (isSupportImpersonating && !operationScope)) {
+      toast({
+        title: 'Sessão de suporte ainda não validada',
+        description: 'Aguarde a confirmação da empresa atendida antes de baixar o PDF.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const auditDownload = async (closingId: string) => {
+      try {
+        await registrarAcaoFechamento({ p_id_fechamentos: closingId, p_tipo: 'baixado' });
+      } catch (error) {
+        if (operationScope) {
+          throw new Error(
+            `O PDF não foi baixado porque a auditoria do suporte falhou. ${error instanceof Error ? error.message : 'Tente novamente.'}`,
+          );
+        }
+      }
+      assertActiveSupportScopeUnchanged(operationScope);
+    };
+
     setDownloadingId(fechamento.id_fechamentos);
     try {
+      assertActiveSupportScopeUnchanged(operationScope);
       const rendered = await renderStableGeneratedClosing(fechamento);
+      assertActiveSupportScopeUnchanged(operationScope);
       let { fresh } = rendered;
       const filename = ['Fechamento', fresh.cliente?.nome, fresh.periodo]
         .filter(Boolean)
@@ -1972,17 +2027,21 @@ export default function MonthlyClosing() {
       // baixado usa SEMPRE o template atual (ex.: "Total:") e bate 1:1 com o preview,
       // sem depender do PDF antigo salvo no Storage. pdf_url fica só como fallback.
       if (rendered.dados && rendered.blob) {
+        await auditDownload(fresh.id_fechamentos);
         downloadPdfBlob(rendered.blob, filename);
       } else if (fresh.pdf_url && getClosingReceivedAmount(fresh) <= 0.004) {
         const url = await getFechamentoPDFSignedUrl(fresh.pdf_url, {
           fechamentoId: fresh.id_fechamentos,
           downloadFilename: filename,
         });
+        assertActiveSupportScopeUnchanged(operationScope);
         const verified = await loadFreshClosing(fresh);
+        assertActiveSupportScopeUnchanged(operationScope);
         if (!hasSameClosingFinancialState(fresh, verified)) {
           throw new Error('O saldo mudou enquanto o PDF era preparado. Tente novamente.');
         }
         fresh = verified;
+        await auditDownload(fresh.id_fechamentos);
         downloadPdfUrl(url, filename);
       } else if (fresh.pdf_url) {
         throw new Error(
@@ -1992,7 +2051,6 @@ export default function MonthlyClosing() {
         toast({ title: 'PDF não disponível', variant: 'destructive' });
         return;
       }
-      await registrarAcaoFechamento({ p_id_fechamentos: fresh.id_fechamentos, p_tipo: 'baixado' }).catch(() => {});
     } catch (err) {
       toast({
         title: 'Erro ao baixar PDF',
@@ -2002,9 +2060,11 @@ export default function MonthlyClosing() {
     } finally {
       setDownloadingId(null);
     }
-  }, [loadFreshClosing, renderStableGeneratedClosing, supportDocumentSettingsReady, toast]);
+  }, [isSupportImpersonating, loadFreshClosing, renderStableGeneratedClosing, supportContextInvalid, supportDocumentSettingsReady, toast]);
 
   const ensureClosingPdf = useCallback(async (fechamento: FechamentoListItem) => {
+    const operationScope = captureActiveSupportScope();
+    assertActiveSupportScopeUnchanged(operationScope);
     const dados = normalizeFechamentoDadosJson(fechamento.dados_json);
     if (!dados) {
       if (fechamento.pdf_url && getClosingReceivedAmount(fechamento) <= 0.004) {
@@ -2022,13 +2082,16 @@ export default function MonthlyClosing() {
       dados.gerado_em ?? fechamento.created_at,
       toClosingFinancialSummary(fechamento),
     );
+    assertActiveSupportScopeUnchanged(operationScope);
     const received = getClosingReceivedAmount(fechamento);
     const path = await uploadFechamentoPDF(fechamento.id_fechamentos, blob, {
       versionCents: moneyToCents(received),
     });
+    assertActiveSupportScopeUnchanged(operationScope);
     await atualizarFechamentoPdf(fechamento.id_fechamentos, path, {
       expectedValorRecebido: received,
     });
+    assertActiveSupportScopeUnchanged(operationScope);
     setFechamentos((current) => current.map((item) => (
       item.id_fechamentos === fechamento.id_fechamentos ? { ...item, pdf_url: path } : item
     )));
@@ -2037,22 +2100,54 @@ export default function MonthlyClosing() {
 
   /* ── Compartilhar no WhatsApp (link do PDF assinado, validade estendida) ── */
   const handleShareWhatsApp = useCallback(async (fechamento: FechamentoListItem) => {
+    if (!supportDocumentSettingsReady) {
+      toast({
+        title: 'Documento da empresa ainda não confirmado',
+        description: 'Aguarde o template real carregar antes de preparar o WhatsApp.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const operationScope = captureActiveSupportScope();
+    if (supportContextInvalid || (isSupportImpersonating && !operationScope)) {
+      toast({
+        title: 'Sessão de suporte ainda não validada',
+        description: 'Aguarde a confirmação da empresa atendida antes de preparar o WhatsApp.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const pendingWindow = window.open('about:blank', '_blank');
+    if (!pendingWindow) {
+      toast({
+        title: 'Pop-up bloqueado',
+        description: 'Permita pop-ups para abrir o WhatsApp no tablet ou navegador.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    pendingWindow.opener = null;
     setSharingId(fechamento.id_fechamentos);
     try {
+      assertActiveSupportScopeUnchanged(operationScope);
       // Render, vínculo e assinatura podem demorar. A cada tentativa a RPC só
       // vincula o PDF se o recebido ainda for o exibido e uma leitura posterior
       // confirma que PDF, mensagem e saldo pertencem ao mesmo snapshot.
       let freshClosing = await loadFreshClosing(fechamento);
+      assertActiveSupportScopeUnchanged(operationScope);
       let url = '';
       let stable = false;
       for (let attempt = 0; attempt < 3; attempt += 1) {
         try {
           const pdfPath = await ensureClosingPdf(freshClosing);
+          assertActiveSupportScopeUnchanged(operationScope);
           url = await getFechamentoPDFSignedUrl(pdfPath, {
             fechamentoId: freshClosing.id_fechamentos,
             expiresIn: 60 * 60 * 24 * 7,
           });
+          assertActiveSupportScopeUnchanged(operationScope);
           const verifiedClosing = await loadFreshClosing(freshClosing);
+          assertActiveSupportScopeUnchanged(operationScope);
           if (hasSameClosingFinancialState(freshClosing, verifiedClosing)) {
             freshClosing = verifiedClosing;
             stable = true;
@@ -2060,15 +2155,30 @@ export default function MonthlyClosing() {
           }
           freshClosing = verifiedClosing;
         } catch (error) {
+          assertActiveSupportScopeUnchanged(operationScope);
           if (attempt === 2) throw error;
           freshClosing = await loadFreshClosing(freshClosing);
+          assertActiveSupportScopeUnchanged(operationScope);
         }
       }
       if (!stable) {
         throw new Error('O saldo mudou enquanto o PDF era preparado. Tente compartilhar novamente.');
       }
-      const cliente = clients.find((c) => c.id === freshClosing.cliente?.id);
-      const digits = (cliente?.phone ?? '').replace(/\D/g, '');
+      const clientId = freshClosing.cliente?.id;
+      const cliente = clients.find((c) => c.id === clientId);
+      let clientPhone = cliente?.phone ?? '';
+      if (!clientPhone && clientId) {
+        const details = await getClienteDetalhes(clientId);
+        assertActiveSupportScopeUnchanged(operationScope);
+        const contacts = Array.isArray(details.contatos) ? details.contatos : [];
+        const phoneContact = contacts.find((contact) => {
+          if (!contact || typeof contact !== 'object') return false;
+          const type = String((contact as Record<string, unknown>).tipo ?? '').toLowerCase();
+          return type.includes('telefone') || type.includes('celular') || type.includes('whatsapp');
+        }) as Record<string, unknown> | undefined;
+        clientPhone = typeof phoneContact?.valor === 'string' ? phoneContact.valor : '';
+      }
+      const digits = clientPhone.replace(/\D/g, '');
       const phone = digits ? (digits.length <= 11 ? `55${digits}` : digits) : '';
       const mensagem = `Olá! Segue o fechamento de ${freshClosing.periodo}`
         + `${freshClosing.cliente?.nome ? ` — ${freshClosing.cliente.nome}` : ''}.`
@@ -2077,9 +2187,29 @@ export default function MonthlyClosing() {
         + `\nSaldo: R$ ${toMoney(getClosingOpenAmount(freshClosing))}.`
         + `\n\nPDF (link válido por 7 dias): ${url}`;
       const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(mensagem)}`;
-      window.open(waUrl, '_blank', 'noopener,noreferrer');
-      await registrarAcaoFechamento({ p_id_fechamentos: freshClosing.id_fechamentos, p_tipo: 'compartilhado' }).catch(() => {});
+      try {
+        await registrarAcaoFechamento({
+          p_id_fechamentos: freshClosing.id_fechamentos,
+          p_tipo: 'compartilhado',
+          p_mensagem: 'Link privado do fechamento preparado para abertura no WhatsApp.',
+        });
+      } catch (error) {
+        // No suporte, a auditoria faz parte da autorização operacional. No
+        // fluxo normal ela continua complementar e não pode bloquear o cliente.
+        if (operationScope) {
+          throw new Error(
+            `O WhatsApp não foi aberto porque a auditoria do suporte falhou. ${error instanceof Error ? error.message : 'Tente novamente.'}`,
+          );
+        }
+      }
+      assertActiveSupportScopeUnchanged(operationScope);
+      pendingWindow.location.href = waUrl;
+      toast({
+        title: 'WhatsApp aberto',
+        description: 'O link do fechamento foi preparado e auditado. Confirme o envio no WhatsApp.',
+      });
     } catch (err) {
+      pendingWindow.close();
       toast({
         title: 'Erro ao gerar link do WhatsApp',
         description: err instanceof Error ? err.message : 'Tente novamente.',
@@ -2088,7 +2218,7 @@ export default function MonthlyClosing() {
     } finally {
       setSharingId(null);
     }
-  }, [clients, ensureClosingPdf, loadFreshClosing, toast]);
+  }, [clients, ensureClosingPdf, isSupportImpersonating, loadFreshClosing, supportContextInvalid, supportDocumentSettingsReady, toast]);
 
   const handlePrintPreview = useCallback(async () => {
     if (storedPdfPreviewUrl) {
@@ -2681,10 +2811,12 @@ export default function MonthlyClosing() {
                           size="sm"
                           variant="outline"
                           onClick={() => void handleShareWhatsApp(f)}
-                          disabled={supportContextRestricted || sharingId === f.id_fechamentos}
-                          title={supportContextRestricted
-                            ? 'O envio por WhatsApp permanece protegido no modo suporte'
-                            : 'Enviar por WhatsApp'}
+                          disabled={supportContextInvalid || !supportDocumentSettingsReady || sharingId === f.id_fechamentos}
+                          title={supportContextInvalid
+                            ? 'Aguarde a validação da sessão de suporte'
+                            : !supportDocumentSettingsReady
+                              ? 'Aguarde o documento real da empresa'
+                              : 'Abrir no WhatsApp'}
                           className="flex-1 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800 sm:flex-none"
                         >
                           {sharingId === f.id_fechamentos
@@ -2797,8 +2929,8 @@ export default function MonthlyClosing() {
                               size="sm"
                               className="h-8 border-amber-200 text-amber-700 hover:bg-amber-50 hover:text-amber-800"
                               onClick={() => desfazerNotaPaga(nota)}
-                              disabled={supportContextRestricted}
-                              title={supportContextRestricted ? 'Estornos permanecem protegidos no modo suporte' : undefined}
+                              disabled={supportContextInvalid}
+                              title={supportContextInvalid ? 'Aguarde a validação da sessão de suporte' : undefined}
                             >
                               <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Desfazer
                             </Button>
@@ -2808,8 +2940,8 @@ export default function MonthlyClosing() {
                               size="sm"
                               className="h-8 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
                               onClick={() => { setPayNotaForma('PIX'); setPayNotaData(todayLocalISODate()); setPayNota(nota); }}
-                              disabled={supportContextRestricted}
-                              title={supportContextRestricted ? 'Recebimentos permanecem protegidos no modo suporte' : undefined}
+                              disabled={supportContextInvalid}
+                              title={supportContextInvalid ? 'Aguarde a validação da sessão de suporte' : undefined}
                             >
                               <Wallet className="mr-1.5 h-3.5 w-3.5" /> {isPartial ? 'Quitar saldo' : 'Marcar paga'}
                             </Button>
@@ -2949,43 +3081,50 @@ export default function MonthlyClosing() {
                       onOpen={openReminderPayment}
                       onRetry={() => void loadOpenClosings(reminderClientId)}
                     />
+                    {supportContextActive ? (
+                      <div
+                        role="note"
+                        className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 text-sm text-blue-950 shadow-sm"
+                      >
+                        <p className="font-semibold">
+                          {supportDocumentSettingsReady
+                            ? 'Criação controlada em modo suporte'
+                            : supportDocumentSettingsError
+                              ? 'Falha ao carregar o documento da empresa atendida'
+                              : 'Validando o documento da empresa atendida'}
+                        </p>
+                        <p className="mt-1 text-xs leading-relaxed text-blue-900/80">
+                          {supportDocumentSettingsReady
+                            ? 'Fechamentos, entradas, parcelas, estornos, comprovantes, PDF e WhatsApp usam a empresa atendida e registram o Mega Master e a sessão de suporte.'
+                            : supportDocumentSettingsError
+                              ? 'Tente carregar novamente. A geração de documentos continua bloqueada para não usar dados de outra empresa.'
+                              : 'A geração será liberada somente depois que o template real da empresa for confirmado pelo servidor.'}
+                        </p>
+                        {supportDocumentSettingsError ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="mt-3 border-blue-300 bg-white"
+                            onClick={retrySupportDocumentSettings}
+                            disabled={supportDocumentSettingsRefreshing}
+                          >
+                            <RefreshCcw className={cn('mr-2 h-4 w-4', supportDocumentSettingsRefreshing && 'animate-spin')} />
+                            Tentar novamente
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : null}
                     {activeDraft ? (
-                      supportContextRestricted ? (
+                      supportContextInvalid ? (
                         <div
                           role="note"
                           className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 text-sm text-blue-950 shadow-sm"
                         >
-                          <p className="font-semibold">
-                            {supportContextActive && supportDocumentSettingsReady
-                              ? 'Criação controlada em modo suporte'
-                              : supportDocumentSettingsError
-                                ? 'Falha ao carregar o documento da empresa atendida'
-                              : supportContextActive
-                                ? 'Validando o documento da empresa atendida'
-                                : 'Sessão de suporte ainda não validada'}
-                          </p>
+                          <p className="font-semibold">Sessão de suporte ainda não validada</p>
                           <p className="mt-1 text-xs leading-relaxed text-blue-900/80">
-                            {supportContextActive && supportDocumentSettingsReady
-                              ? 'O fechamento será criado sem entrada e ficará registrado com o operador, a empresa atendida e a sessão de suporte. Recebimentos e envio por WhatsApp continuam protegidos.'
-                              : supportDocumentSettingsError
-                                ? 'Tente carregar novamente. A criação continua bloqueada para não usar dados de outra empresa.'
-                              : supportContextActive
-                                ? 'A criação será liberada somente depois que o template real do alvo for confirmado pelo servidor.'
-                                : 'A leitura e a criação permanecem bloqueadas até o ator, o alvo e a sessão ativa voltarem a coincidir.'}
+                            A leitura e as ações permanecem bloqueadas até o operador, a empresa atendida e a sessão ativa voltarem a coincidir.
                           </p>
-                          {supportDocumentSettingsError ? (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="mt-3 border-blue-300 bg-white"
-                              onClick={retrySupportDocumentSettings}
-                              disabled={supportDocumentSettingsRefreshing}
-                            >
-                              <RefreshCcw className={cn('mr-2 h-4 w-4', supportDocumentSettingsRefreshing && 'animate-spin')} />
-                              Tentar novamente
-                            </Button>
-                          ) : null}
                         </div>
                       ) : (
                         <div className="space-y-4 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4 shadow-sm">
@@ -3034,7 +3173,7 @@ export default function MonthlyClosing() {
                                   Tentar novamente
                                 </Button>
                               </div>
-                            ) : loadingFinanceAccounts && financeAccounts.length === 0 ? (
+                            ) : loadingFinanceAccounts && scopedFinanceAccounts.length === 0 ? (
                               <div
                                 role="status"
                                 className="rounded-xl border bg-background p-3 text-xs text-muted-foreground sm:col-span-2 xl:col-span-1 2xl:col-span-2"
@@ -3065,7 +3204,7 @@ export default function MonthlyClosing() {
                               >
                                 <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                                 <SelectContent>
-                                  {financeAccounts.map((account) => (
+                                  {scopedFinanceAccounts.map((account) => (
                                     <SelectItem key={account.id} value={account.id}>{account.nome}</SelectItem>
                                   ))}
                                 </SelectContent>
@@ -3206,10 +3345,10 @@ export default function MonthlyClosing() {
 
       <ClosingPaymentDialog
         closing={paymentClosing}
-        accounts={financeAccounts}
+        accounts={scopedFinanceAccounts}
         open={Boolean(paymentClosing)}
-        readOnly={supportContextRestricted}
-        canReverse={user?.role === 'ADMIN'}
+        readOnly={supportContextInvalid}
+        canReverse={supportContextActive || user?.role === 'ADMIN'}
         onClose={closePaymentDialog}
         onChanged={handleClosingPaymentChanged}
       />

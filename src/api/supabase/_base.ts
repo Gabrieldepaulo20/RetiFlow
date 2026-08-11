@@ -11,6 +11,14 @@ export interface RPCEnvelope<T = unknown> {
   [key: string]: unknown;
 }
 
+/** Mantém o SQLSTATE/PostgREST code para decisões seguras de retry. */
+export class RPCError extends Error {
+  constructor(message: string, public readonly code?: string) {
+    super(message);
+    this.name = 'RPCError';
+  }
+}
+
 const SUPPORT_CONTEXT_RPC_MAP: Record<string, string> = {
   // Leituras
   get_clientes: 'get_clientes_contexto_suporte',
@@ -53,8 +61,16 @@ const SUPPORT_CONTEXT_RPC_MAP: Record<string, string> = {
   update_categoria_conta_pagar: 'update_categoria_conta_pagar_contexto_suporte',
   update_conta_pagar: 'update_conta_pagar_contexto_suporte',
   update_fornecedor: 'update_fornecedor_contexto_suporte',
-  // Escrita — Fechamento (sem entrada/PDF; validado e auditado no servidor)
+  // Escritas — Fechamento/recebimentos auditados no tenant da sessão
   finalizar_fechamento: 'finalizar_fechamento_contexto_suporte',
+  registrar_recebimento_nota: 'registrar_recebimento_nota_contexto_suporte',
+  estornar_recebimento_nota: 'estornar_recebimento_nota_contexto_suporte',
+  registrar_recebimento_fechamento: 'registrar_recebimento_fechamento_contexto_suporte',
+  registrar_parcela_fechamento: 'registrar_parcela_fechamento_contexto_suporte',
+  estornar_parcela_fechamento: 'estornar_parcela_fechamento_contexto_suporte',
+  insert_financeiro_anexo: 'insert_financeiro_anexo_contexto_suporte',
+  atualizar_pdf_fechamento_seguro: 'atualizar_pdf_fechamento_seguro_contexto_suporte',
+  registrar_acao_fechamento: 'registrar_acao_fechamento_contexto_suporte',
   // Escritas — Notas de Serviço
   nova_nota: 'nova_nota_contexto_suporte',
   update_nota_servico: 'update_nota_servico_contexto_suporte',
@@ -71,12 +87,8 @@ const SUPPORT_CONTEXT_RPC_MAP: Record<string, string> = {
 const SUPPORT_BLOCKED_WRITE_RPCS = new Set([
   // Sem variante de contexto, o log seria atribuído ao Mega Master em vez da empresa atendida.
   'insert_log',
-  // Central Financeiro — suporte é estritamente somente leitura
-  'registrar_recebimento_nota',
-  'registrar_recebimento_fechamento',
-  'registrar_parcela_fechamento',
-  'estornar_parcela_fechamento',
-  'estornar_recebimento_nota',
+  // Central Financeiro — escritas fora do fluxo auditado de Fechamento
+  // continuam bloqueadas até terem wrappers contextuais próprios.
   'estornar_recebimento_fechamento',
   'registrar_pagamento_conta',
   'criar_recebivel_manual',
@@ -88,15 +100,12 @@ const SUPPORT_BLOCKED_WRITE_RPCS = new Set([
   'salvar_modelo_recorrente',
   'inativar_modelo_recorrente',
   'gerar_contas_recorrentes',
-  'insert_financeiro_anexo',
   // Faturas e fechamentos — sem variante de suporte
   'cancelar_fatura',
   'insert_fatura',
   'insert_fechamento',
   'atualizar_pdf_fechamento',
-  'atualizar_pdf_fechamento_seguro',
   'insert_sugestao_email',
-  'registrar_acao_fechamento',
   'marcar_fechamento_pago',
   'estornar_fechamento_pago',
   'update_fatura',
@@ -149,8 +158,12 @@ export async function callRPC<T = unknown>(
   const { data, error } = await supabase.schema('RetificaPremium').rpc(contextualCall.rpcName, contextualCall.params);
 
   if (error) {
-    const err = new Error(`[${contextualCall.rpcName}] ${error.message}`);
-    logError(err, contextualCall.rpcName);
+    const prefix = `[${contextualCall.rpcName}]`;
+    const err = new RPCError(
+      error.message.startsWith(prefix) ? error.message : `${prefix} ${error.message}`,
+      error.code,
+    );
+    logError(err);
     throw err;
   }
 
@@ -158,13 +171,15 @@ export async function callRPC<T = unknown>(
 
   if (!envelope || envelope.status === undefined) {
     const err = new Error(`[${contextualCall.rpcName}] Resposta inesperada do servidor.`);
-    logError(err, contextualCall.rpcName);
+    logError(err);
     throw err;
   }
 
   if (envelope.status !== 200) {
-    const err = new Error(`[${contextualCall.rpcName}] ${envelope.mensagem ?? 'Erro desconhecido.'}`);
-    logError(err, contextualCall.rpcName);
+    const message = envelope.mensagem ?? 'Erro desconhecido.';
+    const prefix = `[${contextualCall.rpcName}]`;
+    const err = new Error(message.startsWith(prefix) ? message : `${prefix} ${message}`);
+    logError(err);
     throw err;
   }
 
@@ -188,8 +203,12 @@ export async function callVoidRPC(
   const { data, error } = await supabase.schema('RetificaPremium').rpc(contextualCall.rpcName, contextualCall.params);
 
   if (error) {
-    const err = new Error(`[${contextualCall.rpcName}] ${error.message}`);
-    logError(err, contextualCall.rpcName);
+    const prefix = `[${contextualCall.rpcName}]`;
+    const err = new RPCError(
+      error.message.startsWith(prefix) ? error.message : `${prefix} ${error.message}`,
+      error.code,
+    );
+    logError(err);
     throw err;
   }
 
@@ -198,8 +217,10 @@ export async function callVoidRPC(
   const envelope = data as Partial<RPCEnvelope>;
   if (envelope.status === undefined) return;
   if (envelope.status !== 200) {
-    const err = new Error(`[${contextualCall.rpcName}] ${envelope.mensagem ?? 'Erro desconhecido.'}`);
-    logError(err, contextualCall.rpcName);
+    const message = envelope.mensagem ?? 'Erro desconhecido.';
+    const prefix = `[${contextualCall.rpcName}]`;
+    const err = new Error(message.startsWith(prefix) ? message : `${prefix} ${message}`);
+    logError(err);
     throw err;
   }
 }

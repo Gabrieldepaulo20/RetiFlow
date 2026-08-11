@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   from: vi.fn(),
   upload: vi.fn(),
+  uploadToSignedUrl: vi.fn(),
   createSignedUrl: vi.fn(),
   getUser: vi.fn(),
   getSession: vi.fn(),
@@ -220,6 +221,7 @@ describe('Supabase Financeiro RPCs', () => {
     mocks.rpc.mockReset();
     mocks.from.mockReset();
     mocks.upload.mockReset();
+    mocks.uploadToSignedUrl.mockReset();
     mocks.createSignedUrl.mockReset();
     mocks.getUser.mockReset();
     mocks.getSession.mockReset();
@@ -227,6 +229,7 @@ describe('Supabase Financeiro RPCs', () => {
     mocks.logError.mockReset();
     mocks.from.mockReturnValue({
       upload: mocks.upload,
+      uploadToSignedUrl: mocks.uploadToSignedUrl,
       createSignedUrl: mocks.createSignedUrl,
     });
     mocks.getUser.mockResolvedValue({
@@ -893,7 +896,7 @@ describe('Supabase Financeiro RPCs', () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it('mantém pagamento e upload estritamente somente leitura em modo suporte', async () => {
+  it('mantém pagamento de conta sem contrato auditado bloqueado em modo suporte', async () => {
     activateSupportContext();
 
     await expect(registrarPagamentoConta({
@@ -904,16 +907,81 @@ describe('Supabase Financeiro RPCs', () => {
       idempotencyKey: 'support-must-not-write',
     })).rejects.toThrow('Ações de escrita em modo suporte estão bloqueadas');
 
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    expect(mocks.uploadToSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it('faz upload assinado do comprovante no path autorizado da empresa atendida', async () => {
+    activateSupportContext();
+
     const file = new File(['comprovante'], 'comprovante.pdf', {
       type: 'application/pdf',
     });
+    const fingerprint = '6740b51e9485359429d72f76cc248a5c29ebb264bd3d41eb78ac546be2382491';
+    const path = `support/22222222-2222-4222-8222-222222222222/movimento-1/${fingerprint}-comprovante.pdf`;
+    mocks.invoke.mockResolvedValue({
+      data: {
+        path,
+        token: 'signed-upload-token',
+        mimeType: 'application/pdf',
+      },
+      error: null,
+    });
+    mocks.uploadToSignedUrl.mockResolvedValue({ data: { path }, error: null });
+
     await expect(uploadFinanceiroComprovante({
       movimentoId: 'movimento-1',
       file,
-    })).rejects.toThrow('Uploads financeiros são bloqueados em modo suporte');
+    })).resolves.toBe(path);
 
-    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith('financeiro-anexo-url', {
+      body: {
+        action: 'createUpload',
+        movementId: 'movimento-1',
+        filename: 'comprovante.pdf',
+        fingerprint,
+        mimeType: 'application/pdf',
+        size: 11,
+        support: {
+          sessionId: '11111111-1111-4111-8111-111111111111',
+          targetUserId: '22222222-2222-4222-8222-222222222222',
+        },
+      },
+      headers: { Authorization: 'Bearer access-token-test' },
+    });
+    expect(mocks.from).toHaveBeenCalledWith('financeiro-comprovantes');
+    expect(mocks.uploadToSignedUrl).toHaveBeenCalledWith(
+      path,
+      'signed-upload-token',
+      file,
+      { contentType: 'application/pdf', cacheControl: '3600' },
+    );
     expect(mocks.upload).not.toHaveBeenCalled();
+  });
+
+  it('tipa o Blob com o MIME autorizado quando o tablet envia File.type vazio', async () => {
+    activateSupportContext();
+
+    const file = new File(['comprovante'], 'comprovante.pdf', { type: '' });
+    const fingerprint = '6740b51e9485359429d72f76cc248a5c29ebb264bd3d41eb78ac546be2382491';
+    const path = `support/22222222-2222-4222-8222-222222222222/movimento-1/${fingerprint}-comprovante.pdf`;
+    mocks.invoke.mockResolvedValue({
+      data: {
+        path,
+        token: 'signed-upload-token',
+        mimeType: 'application/pdf',
+      },
+      error: null,
+    });
+    mocks.uploadToSignedUrl.mockResolvedValue({ data: { path }, error: null });
+
+    await uploadFinanceiroComprovante({ movimentoId: 'movimento-1', file });
+
+    const uploadedBody = mocks.uploadToSignedUrl.mock.calls[0]?.[2];
+    expect(uploadedBody).toBeInstanceOf(Blob);
+    expect(uploadedBody).not.toBe(file);
+    expect((uploadedBody as Blob).type).toBe('application/pdf');
   });
 
   it('faz upload privado com caminho segregado e sem sobrescrever comprovante', async () => {

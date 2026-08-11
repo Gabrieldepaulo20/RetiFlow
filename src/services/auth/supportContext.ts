@@ -9,6 +9,20 @@ export interface StoredSupportContext {
 
 export type ActiveSupportScopeSnapshot = StoredSupportContext | null;
 
+/**
+ * A gravação foi confirmada pelo backend, mas a aba trocou/encerrou o contexto
+ * antes de atualizar o estado local. Consumidores devem tratar este caso como
+ * sucesso confirmado e interromper apenas os passos posteriores.
+ */
+export class SupportScopeChangedAfterCommitError extends Error {
+  constructor(action: string) {
+    super(
+      `${action} foi salvo, mas o contexto de suporte mudou durante a resposta. Reabra a empresa correta para atualizar os dados.`,
+    );
+    this.name = 'SupportScopeChangedAfterCommitError';
+  }
+}
+
 let activeSupportSession: SupportImpersonationSession | null = null;
 
 function parseSupportSession(raw: string | null) {

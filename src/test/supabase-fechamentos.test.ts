@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   rpc: vi.fn(),
   upload: vi.fn(),
+  uploadToSignedUrl: vi.fn(),
 }));
 
 vi.mock('@/lib/supabase', () => ({
@@ -130,7 +131,12 @@ describe('Fechamentos Supabase mutations', () => {
     mocks.invoke.mockReset();
     mocks.rpc.mockReset();
     mocks.upload.mockReset();
-    mocks.from.mockReturnValue({ createSignedUrl: mocks.createSignedUrl, upload: mocks.upload });
+    mocks.uploadToSignedUrl.mockReset();
+    mocks.from.mockReturnValue({
+      createSignedUrl: mocks.createSignedUrl,
+      upload: mocks.upload,
+      uploadToSignedUrl: mocks.uploadToSignedUrl,
+    });
     mocks.getUser.mockResolvedValue({ data: { user: { id: 'usuario-1' } }, error: null });
     mocks.getSession.mockResolvedValue({
       data: { session: { access_token: 'access-token-test' } },
@@ -151,6 +157,7 @@ describe('Fechamentos Supabase mutations', () => {
     expect(mocks.rpc).toHaveBeenCalledWith('registrar_acao_fechamento', {
       p_id_fechamentos: 'fechamento-1',
       p_tipo: 'baixado',
+      p_mensagem: null,
     });
   });
 
@@ -191,16 +198,24 @@ describe('Fechamentos Supabase mutations', () => {
       .toThrow('[registrar_acao_fechamento] permissão negada');
   });
 
-  it('blocks direct closing mutations while support context is active', async () => {
+  it('maps closing action logging to the audited support-context RPC', async () => {
     activateSupportContext();
+    mocks.rpc.mockResolvedValue({ data: null, error: null });
 
     await expect(registrarAcaoFechamento({
       p_id_fechamentos: 'fechamento-1',
       p_tipo: 'baixado',
-    }))
-      .rejects
-      .toThrow('Ações de escrita em modo suporte estão bloqueadas');
-    expect(mocks.rpc).not.toHaveBeenCalled();
+    })).resolves.toBeUndefined();
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      'registrar_acao_fechamento_contexto_suporte',
+      {
+        p_id_fechamentos: 'fechamento-1',
+        p_tipo: 'baixado',
+        p_mensagem: null,
+        p_contexto_usuario_id: '22222222-2222-4222-8222-222222222222',
+        p_sessao_suporte: '11111111-1111-4111-8111-111111111111',
+      },
+    );
   });
 
   it('normalizes partial closing JSON returned by the RPC', async () => {
@@ -494,13 +509,51 @@ describe('Fechamentos Supabase mutations', () => {
     );
   });
 
-  it('bloqueia entrada financeira antes da RPC em modo suporte', async () => {
+  it('libera entrada inicial pela RPC auditada do tenant em modo suporte', async () => {
     activateSupportContext();
+    const supportInput: FinalizarFechamentoInput = {
+      ...finalizarInput,
+      customization: {
+        fkUsuarios: '22222222-2222-4222-8222-222222222222',
+      } as FinalizarFechamentoInput['customization'],
+    };
+    mocks.rpc.mockResolvedValue({
+      data: {
+        status: 200,
+        mensagem: 'ok',
+        dados: {
+          id_fechamentos: FINAL_CLOSING_ID,
+          movimento_id: 'movimento-parcela-1',
+          status: 'PARCIAL',
+          valor_recebido: 600,
+          valor_aberto: 400,
+          idempotent_retry: false,
+        },
+      },
+      error: null,
+    });
 
-    await expect(finalizarFechamento(finalizarInput))
-      .rejects
-      .toThrow('Crie o fechamento sem entrada no modo suporte');
-    expect(mocks.rpc).not.toHaveBeenCalled();
+    await expect(finalizarFechamento(supportInput)).resolves.toMatchObject({
+      id: FINAL_CLOSING_ID,
+      movimentoId: 'movimento-parcela-1',
+      status: 'PARCIAL',
+      valorRecebido: 600,
+      valorAberto: 400,
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      'finalizar_fechamento_contexto_suporte',
+      expect.objectContaining({
+        p_id_fechamentos: FINAL_CLOSING_ID,
+        p_recebimento_valor: 600,
+        p_recebimento_data: FINAL_PAYMENT_DATE,
+        p_recebimento_conta: FINAL_ACCOUNT_ID,
+        p_recebimento_forma: 'CHEQUE',
+        p_recebimento_observacoes: 'Primeiro cheque',
+        p_recebimento_idempotencia: 'parcela-inicial-fechamento-novo-1',
+        p_contexto_usuario_id: '22222222-2222-4222-8222-222222222222',
+        p_sessao_suporte: '11111111-1111-4111-8111-111111111111',
+      }),
+    );
   });
 
   it('bloqueia template de outra empresa antes da RPC em modo suporte', async () => {
@@ -594,6 +647,44 @@ describe('Fechamentos Supabase mutations', () => {
       blob,
       { contentType: 'application/pdf', cacheControl: '3600', upsert: true },
     );
+  });
+
+  it('faz upload assinado do PDF no path autorizado da empresa atendida', async () => {
+    activateSupportContext();
+    const blob = new Blob(['pdf'], { type: 'application/pdf' });
+    const path = 'support/22222222-2222-4222-8222-222222222222/fechamento-novo-1-60000-eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee.pdf';
+    mocks.invoke.mockResolvedValue({
+      data: { path, token: 'signed-upload-token' },
+      error: null,
+    });
+    mocks.uploadToSignedUrl.mockResolvedValue({ data: { path }, error: null });
+
+    await expect(uploadFechamentoPDF(
+      'fechamento-novo-1',
+      blob,
+      { versionCents: 60000 },
+    )).resolves.toBe(path);
+
+    expect(mocks.invoke).toHaveBeenCalledWith('closing-pdf-url', {
+      body: {
+        action: 'createUpload',
+        closingId: 'fechamento-novo-1',
+        versionCents: 60000,
+        support: {
+          sessionId: '11111111-1111-4111-8111-111111111111',
+          targetUserId: '22222222-2222-4222-8222-222222222222',
+        },
+      },
+      headers: { Authorization: 'Bearer access-token-test' },
+    });
+    expect(mocks.from).toHaveBeenCalledWith('fechamentos');
+    expect(mocks.uploadToSignedUrl).toHaveBeenCalledWith(
+      path,
+      'signed-upload-token',
+      blob,
+      { contentType: 'application/pdf', cacheControl: '3600' },
+    );
+    expect(mocks.upload).not.toHaveBeenCalled();
   });
 
   it('keeps closing previews safe when dados_json is malformed', () => {

@@ -52,6 +52,11 @@ import {
 } from '@/services/domain/financialIdempotency';
 import { parseDateInputValue } from '@/services/domain/monthlyClosing';
 import {
+  assertActiveSupportScopeUnchanged,
+  captureActiveSupportScope,
+  SupportScopeChangedAfterCommitError,
+} from '@/services/auth/supportContext';
+import {
   calculateInitialClosingPayment,
   centsToMoney,
   moneyToCents,
@@ -141,9 +146,12 @@ export function ClosingPaymentDialog({
     const requestedClosingId = closingId;
     const requestId = loadRequestIdRef.current + 1;
     loadRequestIdRef.current = requestId;
+    const operationScope = captureActiveSupportScope();
     setLoading(true);
     try {
+      assertActiveSupportScopeUnchanged(operationScope);
       const next = await getParcelasFechamento(requestedClosingId);
+      assertActiveSupportScopeUnchanged(operationScope);
       if (
         requestId !== loadRequestIdRef.current
         || activeClosingIdRef.current !== requestedClosingId
@@ -225,6 +233,7 @@ export function ClosingPaymentDialog({
 
   const handleReceive = async () => {
     if (!closing || !summary) return;
+    const operationScope = captureActiveSupportScope();
     const value = parseMoney(amount);
     if (!parseDateInputValue(date)) {
       toast({ title: 'Informe uma data válida', variant: 'destructive' });
@@ -270,6 +279,7 @@ export function ClosingPaymentDialog({
       let result: Awaited<ReturnType<typeof registrarParcelaFechamento>>;
       const rounded = centsToMoney(valueCents);
       try {
+        assertActiveSupportScopeUnchanged(operationScope);
         const attempt = acquireFinancialIdempotencyAttempt({
           operation: 'parcela-fechamento',
           entityId: closing.id_fechamentos,
@@ -293,7 +303,16 @@ export function ClosingPaymentDialog({
           idempotencyKey: attempt.key,
         });
         completeFinancialIdempotencyAttempt(attempt);
+        try {
+          assertActiveSupportScopeUnchanged(operationScope);
+        } catch {
+          throw new SupportScopeChangedAfterCommitError('A parcela');
+        }
       } catch (error) {
+        if (error instanceof SupportScopeChangedAfterCommitError) {
+          toast({ title: 'Pagamento salvo; contexto alterado', description: error.message });
+          return;
+        }
         toast({
           title: 'Não foi possível registrar a parcela',
           description: error instanceof Error ? error.message : 'O saldo pode ter mudado em outra sessão. Recarregue e tente novamente.',
@@ -309,7 +328,9 @@ export function ClosingPaymentDialog({
           proofWarning = true;
         } else {
           try {
+            assertActiveSupportScopeUnchanged(operationScope);
             const path = await uploadFinanceiroComprovante({ movimentoId: result.movimentoId, file: proof });
+            assertActiveSupportScopeUnchanged(operationScope);
             await insertFinanceiroAnexo({
               movimentoId: result.movimentoId,
               nomeArquivo: proof.name,
@@ -317,12 +338,31 @@ export function ClosingPaymentDialog({
               mimeType: proof.type || null,
               tamanhoBytes: proof.size,
             });
-          } catch {
+            assertActiveSupportScopeUnchanged(operationScope);
+          } catch (error) {
+            try {
+              assertActiveSupportScopeUnchanged(operationScope);
+            } catch {
+              toast({
+                title: 'Pagamento salvo; contexto alterado',
+                description: new SupportScopeChangedAfterCommitError('A parcela').message,
+              });
+              return;
+            }
             proofWarning = true;
           }
         }
       }
 
+      try {
+        assertActiveSupportScopeUnchanged(operationScope);
+      } catch {
+        toast({
+          title: 'Pagamento salvo; contexto alterado',
+          description: new SupportScopeChangedAfterCommitError('A parcela').message,
+        });
+        return;
+      }
       toast({
         title: result.status === 'PAGO' ? 'Fechamento quitado' : 'Parcela registrada',
         description: proofWarning
@@ -339,6 +379,15 @@ export function ClosingPaymentDialog({
         load({ resetAmount: true, notifyError: false }),
         Promise.resolve().then(() => onChanged()),
       ]);
+      try {
+        assertActiveSupportScopeUnchanged(operationScope);
+      } catch {
+        toast({
+          title: 'Pagamento salvo; contexto alterado',
+          description: new SupportScopeChangedAfterCommitError('A parcela').message,
+        });
+        return;
+      }
       if (
         dialogRefresh.status === 'rejected'
         || (dialogRefresh.status === 'fulfilled' && !dialogRefresh.value)
@@ -359,9 +408,11 @@ export function ClosingPaymentDialog({
       toast({ title: 'Informe um motivo com pelo menos 5 caracteres.', variant: 'destructive' });
       return;
     }
+    const operationScope = captureActiveSupportScope();
     setBusy(true);
     try {
       try {
+        assertActiveSupportScopeUnchanged(operationScope);
         const effectiveAt = reverseEffectiveAt ?? new Date().toISOString();
         if (!reverseEffectiveAt) setReverseEffectiveAt(effectiveAt);
         const attempt = acquireFinancialIdempotencyAttempt({
@@ -380,16 +431,20 @@ export function ClosingPaymentDialog({
           dataEfetiva: effectiveAt,
           idempotencyKey: attempt.key,
         };
-        try {
-          await estornarParcelaFechamento(reverseInput);
-        } catch {
-          // A primeira resposta pode ter se perdido depois do COMMIT. A segunda
-          // chamada repete chave, data e payload exatamente; o backend decide se
-          // é o retry idempotente ou uma falha real.
-          await estornarParcelaFechamento(reverseInput);
-        }
+        // Uma falha ambígua pode ser repetida manualmente com a mesma chave.
+        // Não repetimos automaticamente erros de negócio nem cruzamos sessão.
+        await estornarParcelaFechamento(reverseInput);
         completeFinancialIdempotencyAttempt(attempt);
+        try {
+          assertActiveSupportScopeUnchanged(operationScope);
+        } catch {
+          throw new SupportScopeChangedAfterCommitError('O estorno da parcela');
+        }
       } catch (error) {
+        if (error instanceof SupportScopeChangedAfterCommitError) {
+          toast({ title: 'Estorno salvo; contexto alterado', description: error.message });
+          return;
+        }
         toast({
           title: 'Não foi possível estornar',
           description: error instanceof Error ? error.message : 'Tente novamente.',
@@ -411,6 +466,15 @@ export function ClosingPaymentDialog({
         load({ resetAmount: true, notifyError: false }),
         Promise.resolve().then(() => onChanged()),
       ]);
+      try {
+        assertActiveSupportScopeUnchanged(operationScope);
+      } catch {
+        toast({
+          title: 'Estorno salvo; contexto alterado',
+          description: new SupportScopeChangedAfterCommitError('O estorno da parcela').message,
+        });
+        return;
+      }
       if (
         dialogRefresh.status === 'rejected'
         || (dialogRefresh.status === 'fulfilled' && !dialogRefresh.value)
@@ -427,15 +491,25 @@ export function ClosingPaymentDialog({
   };
 
   const openAttachment = async (attachment: FechamentoParcela['anexos'][number]) => {
-    const pendingWindow = window.open('', '_blank');
-    if (pendingWindow) pendingWindow.opener = null;
+    const operationScope = captureActiveSupportScope();
+    const pendingWindow = window.open('about:blank', '_blank');
+    if (!pendingWindow) {
+      toast({
+        title: 'Pop-up bloqueado',
+        description: 'Permita pop-ups para abrir o comprovante.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    pendingWindow.opener = null;
     setOpeningAttachmentId(attachment.id);
     try {
+      assertActiveSupportScopeUnchanged(operationScope);
       const signedUrl = await getFinanceiroAnexoSignedUrl(attachment.caminho, { anexoId: attachment.id });
-      if (pendingWindow) pendingWindow.location.href = signedUrl;
-      else window.open(signedUrl, '_blank', 'noopener,noreferrer');
+      assertActiveSupportScopeUnchanged(operationScope);
+      pendingWindow.location.href = signedUrl;
     } catch (error) {
-      pendingWindow?.close();
+      pendingWindow.close();
       toast({
         title: 'Não foi possível abrir o comprovante',
         description: error instanceof Error ? error.message : 'Tente novamente.',
@@ -458,9 +532,12 @@ export function ClosingPaymentDialog({
       return;
     }
 
+    const operationScope = captureActiveSupportScope();
     setAttachingMovementId(movementId);
     try {
+      assertActiveSupportScopeUnchanged(operationScope);
       const path = await uploadFinanceiroComprovante({ movimentoId: movementId, file });
+      assertActiveSupportScopeUnchanged(operationScope);
       await insertFinanceiroAnexo({
         movimentoId: movementId,
         nomeArquivo: file.name,
@@ -468,9 +545,18 @@ export function ClosingPaymentDialog({
         mimeType: file.type || null,
         tamanhoBytes: file.size,
       });
+      try {
+        assertActiveSupportScopeUnchanged(operationScope);
+      } catch {
+        throw new SupportScopeChangedAfterCommitError('O comprovante');
+      }
       toast({ title: 'Comprovante anexado', description: 'O arquivo ficou guardado no histórico desta parcela.' });
       await load();
     } catch (error) {
+      if (error instanceof SupportScopeChangedAfterCommitError) {
+        toast({ title: 'Comprovante salvo; contexto alterado', description: error.message });
+        return;
+      }
       toast({
         title: 'Não foi possível anexar o comprovante',
         description: error instanceof Error ? error.message : 'Tente novamente.',

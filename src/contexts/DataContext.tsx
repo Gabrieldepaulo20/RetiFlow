@@ -67,6 +67,7 @@ import {
   registrarPagamentoConta as registrarPagamentoContaFinanceiro,
   registrarRecebimentoNota as registrarRecebimentoNotaFinanceiro,
 } from '@/api/supabase/financeiro';
+import { RPCError } from '@/api/supabase/_base';
 import { getCategorias, updateCategoria, type Categoria } from '@/api/supabase/categorias';
 import { getFornecedores, type Fornecedor } from '@/api/supabase/fornecedores';
 import { insertLog } from '@/api/supabase/logs';
@@ -90,6 +91,7 @@ import {
 import {
   assertActiveSupportScopeUnchanged,
   captureActiveSupportScope,
+  SupportScopeChangedAfterCommitError,
 } from '@/services/auth/supportContext';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
@@ -958,7 +960,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
 
     if (IS_REAL_AUTH) {
+      const operationScope = captureActiveSupportScope();
+      assertActiveSupportScopeUnchanged(operationScope);
       const accountId = await resolveFinanceAccountId(opts.accountId);
+      assertActiveSupportScopeUnchanged(operationScope);
       const attempt = acquireFinancialIdempotencyAttempt({
         operation: 'receber-os',
         entityId: id,
@@ -971,6 +976,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           observations: opts.observations ?? null,
         },
       });
+      assertActiveSupportScopeUnchanged(operationScope);
       const result = await registrarRecebimentoNotaFinanceiro({
         notaId: id,
         valor: amount,
@@ -981,6 +987,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         idempotencyKey: attempt.key,
       });
       completeFinancialIdempotencyAttempt(attempt);
+      try {
+        assertActiveSupportScopeUnchanged(operationScope);
+      } catch {
+        throw new SupportScopeChangedAfterCommitError('O recebimento da O.S.');
+      }
       void queryClient.invalidateQueries({ queryKey: ['financeiro'] });
       const totalReceived = result.valorRealizado ?? Number((alreadyReceived + amount).toFixed(2));
       const paymentStatus = result.status === 'PAGO' || totalReceived >= note.totalAmount
@@ -1026,6 +1037,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
 
     if (IS_REAL_AUTH) {
+      const operationScope = captureActiveSupportScope();
       const attempt = acquireFinancialIdempotencyAttempt({
         operation: 'estornar-os',
         entityId: id,
@@ -1034,13 +1046,29 @@ export function DataProvider({ children }: { children: ReactNode }) {
           motivo,
         },
       });
-      await estornarRecebimentoNotaFinanceiro({
-        notaId: id,
-        motivo,
-        dataEfetiva: changedAt,
-        idempotencyKey: attempt.key,
-      });
+      assertActiveSupportScopeUnchanged(operationScope);
+      try {
+        await estornarRecebimentoNotaFinanceiro({
+          notaId: id,
+          motivo,
+          dataEfetiva: changedAt,
+          idempotencyKey: attempt.key,
+        });
+      } catch (error) {
+        // P4094 declara que a tentativa antiga ficou obsoleta porque surgiu
+        // outro recebimento. Ela não é ambígua: liberamos a chave para que a
+        // próxima ação use um identificador novo e revalide o estado atual.
+        if (error instanceof RPCError && error.code === 'P4094') {
+          completeFinancialIdempotencyAttempt(attempt);
+        }
+        throw error;
+      }
       completeFinancialIdempotencyAttempt(attempt);
+      try {
+        assertActiveSupportScopeUnchanged(operationScope);
+      } catch {
+        throw new SupportScopeChangedAfterCommitError('O estorno da O.S.');
+      }
       void queryClient.invalidateQueries({ queryKey: ['financeiro'] });
     }
     setNotes((previous) => previous.map((candidate) => (

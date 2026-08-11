@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { callRPC, callVoidRPC, extractDados } from '@/api/supabase/_base';
+import { callRPC, callVoidRPC, extractDados, RPCError } from '@/api/supabase/_base';
 import {
   setActiveSupportSession,
   SUPPORT_SESSION_STORAGE_KEY,
@@ -80,6 +80,19 @@ describe('Supabase RPC base wrapper', () => {
 
     await expect(callRPC('get_algo')).rejects.toThrow('[get_algo] JWT expired');
     expect(mocks.logError).toHaveBeenCalledOnce();
+  });
+
+  it('preserves the SQLSTATE so terminal conflicts can renew idempotency safely', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: null,
+      error: { code: 'P4094', message: 'A tentativa ficou obsoleta.' },
+    });
+
+    await expect(callRPC('estornar_recebimento_nota')).rejects.toMatchObject({
+      name: 'RPCError',
+      code: 'P4094',
+      message: '[estornar_recebimento_nota] A tentativa ficou obsoleta.',
+    } satisfies Partial<RPCError>);
   });
 
   it('throws when the RPC does not return a valid envelope', async () => {
@@ -320,18 +333,81 @@ describe('Supabase RPC base wrapper', () => {
     });
   });
 
-  it('keeps PDF, payment and reversal writes blocked in support mode', async () => {
+  it('maps closing receipts, reversals, proofs and audit writes to support-context RPCs', async () => {
+    setActiveSupportSession(makeActiveSupportSession('operar fechamento completo'));
+    mocks.rpc.mockResolvedValue({
+      data: { status: 200, mensagem: 'ok', dados: {} },
+      error: null,
+    });
+
+    const writes = [
+      {
+        rpcName: 'registrar_recebimento_nota',
+        supportRpcName: 'registrar_recebimento_nota_contexto_suporte',
+        params: { p_id_notas_servico: 'nota-1', p_valor: 100 },
+      },
+      {
+        rpcName: 'estornar_recebimento_nota',
+        supportRpcName: 'estornar_recebimento_nota_contexto_suporte',
+        params: { p_id_notas_servico: 'nota-1', p_motivo: 'Correção' },
+      },
+      {
+        rpcName: 'registrar_recebimento_fechamento',
+        supportRpcName: 'registrar_recebimento_fechamento_contexto_suporte',
+        params: { p_id_fechamentos: 'fechamento-1', p_valor: 100 },
+      },
+      {
+        rpcName: 'registrar_parcela_fechamento',
+        supportRpcName: 'registrar_parcela_fechamento_contexto_suporte',
+        params: { p_id_fechamentos: 'fechamento-1', p_valor: 400 },
+      },
+      {
+        rpcName: 'estornar_parcela_fechamento',
+        supportRpcName: 'estornar_parcela_fechamento_contexto_suporte',
+        params: {
+          p_id_fechamentos: 'fechamento-1',
+          p_id_financeiro_movimentos: 'movimento-2',
+        },
+      },
+      {
+        rpcName: 'insert_financeiro_anexo',
+        supportRpcName: 'insert_financeiro_anexo_contexto_suporte',
+        params: { p_fk_financeiro_movimentos: 'movimento-2', p_caminho: 'support/comprovante.pdf' },
+      },
+      {
+        rpcName: 'atualizar_pdf_fechamento_seguro',
+        supportRpcName: 'atualizar_pdf_fechamento_seguro_contexto_suporte',
+        params: {
+          p_id_fechamentos: 'fechamento-1',
+          p_pdf_url: 'support/fechamento-0.pdf',
+          p_valor_recebido_esperado: 0,
+        },
+      },
+      {
+        rpcName: 'registrar_acao_fechamento',
+        supportRpcName: 'registrar_acao_fechamento_contexto_suporte',
+        params: { p_id_fechamentos: 'fechamento-1', p_tipo: 'baixado', p_mensagem: null },
+      },
+    ];
+
+    for (const { rpcName, supportRpcName, params } of writes) {
+      mocks.rpc.mockClear();
+      await callRPC(rpcName, params);
+      expect(mocks.rpc).toHaveBeenCalledWith(supportRpcName, {
+        ...params,
+        p_contexto_usuario_id: '22222222-2222-4222-8222-222222222222',
+        p_sessao_suporte: '11111111-1111-4111-8111-111111111111',
+      });
+    }
+  });
+
+  it('keeps writes without an audited support contract blocked', async () => {
     setActiveSupportSession(makeActiveSupportSession('validar bloqueio financeiro'));
 
     const writes = [
       ['atualizar_pdf_fechamento', { p_id_fechamentos: 'fechamento-1', p_pdf_url: 'arquivo.pdf' }],
-      ['atualizar_pdf_fechamento_seguro', {
-        p_id_fechamentos: 'fechamento-1',
-        p_pdf_url: 'arquivo-0.pdf',
-        p_valor_recebido_esperado: 0,
-      }],
-      ['registrar_parcela_fechamento', { p_id_fechamentos: 'fechamento-1', p_valor: 400 }],
-      ['estornar_parcela_fechamento', { p_id_fechamentos: 'fechamento-1', p_id_financeiro_movimentos: 'movimento-2' }],
+      ['estornar_recebimento_fechamento', { p_id_fechamentos: 'fechamento-1' }],
+      ['registrar_pagamento_conta', { p_id_contas_pagar: 'conta-1', p_valor: 100 }],
     ] as const;
 
     for (const [rpcName, params] of writes) {
