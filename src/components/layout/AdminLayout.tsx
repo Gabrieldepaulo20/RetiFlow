@@ -143,7 +143,7 @@ export default function AdminLayout() {
       )}
 
       {/* Main */}
-      <div className={cn('flex-1 flex flex-col min-h-screen', !isMobile && (collapsed ? 'ml-[68px]' : 'ml-60'))}>
+      <div className={cn('flex min-h-screen min-w-0 flex-1 flex-col', !isMobile && (collapsed ? 'ml-[68px]' : 'ml-60'))}>
         {/* Top bar */}
         <header className="h-14 border-b bg-card flex items-center px-4 gap-3 sticky top-0 z-30">
           {isMobile && (

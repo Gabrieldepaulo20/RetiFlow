@@ -1,4 +1,5 @@
 import { createServiceClient } from './client';
+import { INTEGRATION_TEST_AUTH_MARKER } from './integrationUserSafety';
 
 /**
  * Prefixo usado em todos os registros criados por testes de integração.
@@ -14,7 +15,7 @@ export const TEST_CATEGORY_ID = 'b80ff39d-4da4-4553-8bc4-20a47fecd5ce';
 
 const AUTH_PAGE_SIZE = 1000;
 
-async function findAuthUserByEmail(email: string) {
+export async function findAuthUserByEmail(email: string) {
   const service = createServiceClient();
   let page = 1;
 
@@ -144,14 +145,18 @@ async function deleteInternalUserRowsByEmail(email: string): Promise<void> {
     }
   }
 
-  const { error: modulesError } = await service
-    .schema('RetificaPremium')
-    .from('Modulos')
-    .delete()
-    .in('fk_usuarios', ids);
+  const userOwnedTables = ['Logs', 'Usuarios_Presenca', 'Modulos'] as const;
 
-  if (modulesError) {
-    throw new Error(`[seed] Falha ao remover módulos do usuário de teste: ${modulesError.message}`);
+  for (const table of userOwnedTables) {
+    const { error } = await service
+      .schema('RetificaPremium')
+      .from(table)
+      .delete()
+      .in('fk_usuarios', ids);
+
+    if (error) {
+      throw new Error(`[seed] Falha ao remover ${table} do usuário de teste: ${error.message}`);
+    }
   }
 
   const { error: deleteError } = await service
@@ -179,6 +184,9 @@ export async function ensureTestUser(email: string, password: string): Promise<s
   let authId: string;
 
   if (existing) {
+    if (existing.app_metadata?.[INTEGRATION_TEST_AUTH_MARKER] !== true) {
+      throw new Error('[seed] Conta Auth preexistente não está marcada como fixture de integração.');
+    }
     authId = existing.id;
   } else {
     // Remove resíduos de execuções anteriores que falharam entre Usuarios/Auth.
@@ -188,6 +196,7 @@ export async function ensureTestUser(email: string, password: string): Promise<s
       email,
       password,
       email_confirm: true,
+      app_metadata: { [INTEGRATION_TEST_AUTH_MARKER]: true },
     });
     if (error || !data.user) {
       throw new Error(`[seed] Falha ao criar usuário de teste: ${error?.message}`);
@@ -227,6 +236,19 @@ export async function deleteTestUser(email: string): Promise<void> {
 
   await deleteInternalUserRowsByEmail(email);
 
+  const { count: remainingProfiles, error: remainingProfilesError } = await service
+    .schema('RetificaPremium')
+    .from('Usuarios')
+    .select('id_usuarios', { count: 'exact', head: true })
+    .eq('email', email);
+
+  if (remainingProfilesError) {
+    throw new Error(`[seed] Falha ao confirmar remoção do usuário interno: ${remainingProfilesError.message}`);
+  }
+  if ((remainingProfiles ?? 0) > 0) {
+    throw new Error('[seed] Usuário interno permaneceu após exclusão.');
+  }
+
   // Remove de auth.users e confirma o resultado para não deixar resíduos.
   const user = await findAuthUserByEmail(email);
   if (user) {
@@ -237,7 +259,7 @@ export async function deleteTestUser(email: string): Promise<void> {
 
     const remainingUser = await findAuthUserByEmail(email);
     if (remainingUser) {
-      throw new Error(`[seed] Usuário do Auth permaneceu após exclusão: ${email}`);
+      throw new Error('[seed] Usuário do Auth permaneceu após exclusão.');
     }
   }
 }

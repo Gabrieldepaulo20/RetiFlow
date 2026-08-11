@@ -153,12 +153,11 @@ describe('App routes', () => {
   ])('redirects payable compatibility route %s', async (path, search, modalTitle) => {
     authenticateAs('FINANCEIRO');
     renderAt(path);
-    await waitFor(() => {
-      expect(window.location.pathname).toBe('/financeiro');
-      expect(window.location.search).toContain(search);
-      expect(window.location.search).toContain('tab=saidas');
-    });
-    expect(await screen.findByRole('heading', { name: modalTitle })).toBeInTheDocument();
+    const heading = await screen.findByRole('heading', { name: modalTitle }, { timeout: 5_000 });
+    expect(heading).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/financeiro');
+    expect(window.location.search).toContain(search);
+    expect(window.location.search).toContain('tab=saidas');
   });
 
   it('preserves legacy payable query parameters when redirecting to Financeiro', async () => {

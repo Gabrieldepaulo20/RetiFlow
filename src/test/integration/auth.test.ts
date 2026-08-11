@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { createAnonClient, getTestEnv } from './helpers/client';
 import { ensureTestUser } from './helpers/seed';
 import { getIntegrationEnvStatus, warnIntegrationSkipped } from './helpers/env';
@@ -25,11 +25,6 @@ describe.skipIf(skipIntegration)('Auth — integração real com Supabase', () =
     testEmail = env.testUserEmail;
     testPassword = env.testUserPassword;
     await ensureTestUser(testEmail, testPassword);
-  });
-
-  afterAll(async () => {
-    // Não deletamos o usuário aqui pois contas-pagar.test.ts também o usa.
-    // A deleção final fica em contas-pagar.test.ts afterAll.
   });
 
   it('login com credenciais válidas retorna sessão com JWT', async () => {

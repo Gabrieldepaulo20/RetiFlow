@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
@@ -64,18 +64,20 @@ const MODULE_DEFS: { key: AppModuleKey; label: string; description: string; icon
   { key: 'admin', label: 'Admin', description: 'Usuários e permissões administrativas.', icon: Shield },
 ];
 
-const SETTINGS_TABS = new Set([
-  'empresa',
-  'aparencia',
-  'modelos',
-  'temas',
-  'historico',
-  'modulos',
-  'status',
-  'plano-contas',
-  'seguranca',
-  'usuarios',
-]);
+const SETTINGS_TAB_ITEMS = [
+  { key: 'empresa', label: 'Dados da empresa', icon: Building2 },
+  { key: 'aparencia', label: 'Aparência', icon: Palette },
+  { key: 'modelos', label: 'Modelos', icon: FileText },
+  { key: 'temas', label: 'Temas', icon: Palette },
+  { key: 'historico', label: 'Histórico', icon: FileClock },
+  { key: 'modulos', label: 'Módulos', icon: LayoutGrid },
+  { key: 'status', label: 'Status & Fluxo', icon: Workflow },
+  { key: 'plano-contas', label: 'Plano de contas', icon: Calculator },
+  { key: 'seguranca', label: 'Segurança', icon: Lock },
+  { key: 'usuarios', label: 'Usuários', icon: Users },
+] as const;
+
+const SETTINGS_TABS = new Set<string>(SETTINGS_TAB_ITEMS.map((item) => item.key));
 
 export default function SettingsPage() {
   const { user, refreshProfile } = useAuth();
@@ -92,6 +94,17 @@ export default function SettingsPage() {
   const [selectedResetUserId, setSelectedResetUserId] = useState('');
   const [resetConfirmationEmail, setResetConfirmationEmail] = useState('');
   const [resetSending, setResetSending] = useState(false);
+  const tabsListRef = useRef<HTMLDivElement>(null);
+  const [tabRailEdges, setTabRailEdges] = useState({ left: false, right: false });
+
+  const updateTabRailEdges = useCallback(() => {
+    const rail = tabsListRef.current;
+    if (!rail) return;
+    setTabRailEdges({
+      left: rail.scrollLeft > 2,
+      right: rail.scrollLeft + rail.clientWidth < rail.scrollWidth - 2,
+    });
+  }, []);
 
   useEffect(() => {
     if (selectedSettingsUserId) return;
@@ -109,6 +122,42 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!selectedResetUserId && systemUsers.length > 0) setSelectedResetUserId(systemUsers[0].id);
   }, [selectedResetUserId, systemUsers]);
+
+  useEffect(() => {
+    const rail = tabsListRef.current;
+    if (!rail) return undefined;
+
+    const frame = window.requestAnimationFrame(updateTabRailEdges);
+    const resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(updateTabRailEdges);
+    resizeObserver?.observe(rail);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      resizeObserver?.disconnect();
+    };
+  }, [updateTabRailEdges]);
+
+  useEffect(() => {
+    const rail = tabsListRef.current;
+    const selectedTab = rail?.querySelector<HTMLElement>(`[data-settings-tab="${activeTab}"]`);
+    if (!rail || !selectedTab) return undefined;
+
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    const left = selectedTab.offsetLeft - ((rail.clientWidth - selectedTab.offsetWidth) / 2);
+    const nextLeft = Math.max(0, left);
+    if (typeof rail.scrollTo === 'function') {
+      rail.scrollTo({
+        left: nextLeft,
+        behavior: reducedMotion ? 'auto' : 'smooth',
+      });
+    } else {
+      rail.scrollLeft = nextLeft;
+    }
+    const frame = window.requestAnimationFrame(updateTabRailEdges);
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeTab, updateTabRailEdges]);
 
   const selectedSettingsUser = useMemo(
     () => systemUsers.find((candidate) => candidate.id === selectedSettingsUserId) ?? user ?? null,
@@ -246,7 +295,7 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 sm:space-y-6">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
         <div className="text-center sm:text-left">
           <h1 className="text-2xl font-display font-bold">Configurações</h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -254,7 +303,7 @@ export default function SettingsPage() {
           </p>
         </div>
         {isSuperAdmin && (
-          <div className="w-full space-y-2 lg:w-[360px]">
+          <div className="w-full space-y-2 xl:w-[360px]">
             <Label>Conta configurada</Label>
             <Select value={selectedSettingsUserId} onValueChange={setSelectedSettingsUserId} disabled={usersLoading || systemUsers.length === 0}>
               <SelectTrigger>
@@ -290,18 +339,35 @@ export default function SettingsPage() {
       )}
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
-        <TabsList className="flex h-auto w-full flex-nowrap justify-start gap-1 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible lg:pb-0">
-          <TabsTrigger value="empresa" className="shrink-0 gap-1.5"><Building2 className="h-4 w-4" /> Dados da empresa</TabsTrigger>
-          <TabsTrigger value="aparencia" className="shrink-0 gap-1.5"><Palette className="h-4 w-4" /> Aparência</TabsTrigger>
-          <TabsTrigger value="modelos" className="shrink-0 gap-1.5"><FileText className="h-4 w-4" /> Modelos</TabsTrigger>
-          <TabsTrigger value="temas" className="shrink-0 gap-1.5"><Palette className="h-4 w-4" /> Temas</TabsTrigger>
-          <TabsTrigger value="historico" className="shrink-0 gap-1.5"><FileClock className="h-4 w-4" /> Histórico</TabsTrigger>
-          <TabsTrigger value="modulos" className="shrink-0 gap-1.5"><LayoutGrid className="h-4 w-4" /> Módulos</TabsTrigger>
-          <TabsTrigger value="status" className="shrink-0 gap-1.5"><Workflow className="h-4 w-4" /> Status & Fluxo</TabsTrigger>
-          <TabsTrigger value="plano-contas" className="shrink-0 gap-1.5"><Calculator className="h-4 w-4" /> Plano de contas</TabsTrigger>
-          <TabsTrigger value="seguranca" className="shrink-0 gap-1.5"><Lock className="h-4 w-4" /> Segurança</TabsTrigger>
-          <TabsTrigger value="usuarios" className="shrink-0 gap-1.5"><Users className="h-4 w-4" /> Usuários</TabsTrigger>
-        </TabsList>
+        <div className="relative min-w-0" data-settings-tab-rail>
+          <TabsList
+            ref={tabsListRef}
+            aria-label="Seções de configurações"
+            onScroll={updateTabRailEdges}
+            className="flex h-auto min-h-12 w-full min-w-0 snap-x snap-proximity flex-nowrap justify-start gap-1 overflow-x-auto overscroll-x-contain rounded-xl bg-muted/80 p-1 pb-2 scroll-px-1 scroll-smooth touch-pan-x motion-reduce:scroll-auto [scrollbar-width:thin]"
+          >
+            {SETTINGS_TAB_ITEMS.map((item) => {
+              const Icon = item.icon;
+              return (
+                <TabsTrigger
+                  key={item.key}
+                  value={item.key}
+                  data-settings-tab={item.key}
+                  className="min-h-11 shrink-0 snap-start gap-1.5 rounded-lg px-3"
+                >
+                  <Icon className="h-4 w-4" />
+                  {item.label}
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+          {tabRailEdges.left ? (
+            <div className="pointer-events-none absolute inset-y-0 left-0 w-8 rounded-l-xl bg-gradient-to-r from-background via-background/85 to-transparent" />
+          ) : null}
+          {tabRailEdges.right ? (
+            <div className="pointer-events-none absolute inset-y-0 right-0 w-8 rounded-r-xl bg-gradient-to-l from-background via-background/85 to-transparent" />
+          ) : null}
+        </div>
 
         <TabsContent value="empresa">
           <CompanySettingsPanel targetUserId={targetUserId} targetUserName={selectedSettingsUser?.name} />
@@ -415,7 +481,7 @@ function ModulesPanel({
           </AlertDescription>
         </Alert>
 
-        <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-2 sm:gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px] sm:gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
           <div className="space-y-2">
             <Label>Cliente / usuário</Label>
             <Select value={selectedModuleUserId} onValueChange={setSelectedModuleUserId} disabled={usersLoading || systemUsers.length === 0}>
@@ -446,7 +512,7 @@ function ModulesPanel({
             Carregando usuários e permissões...
           </div>
         ) : selectedModuleUser ? (
-          <div className="grid grid-cols-2 gap-2 sm:gap-3">
+          <div className="grid gap-2 sm:grid-cols-2 sm:gap-3">
             {MODULE_DEFS.map((module) => {
               const Icon = module.icon;
               const modules = getModulesForUser(selectedModuleUser);
@@ -597,7 +663,7 @@ function SecurityPanel({
               A troca de senha nesta tela ainda não conversa com o provedor real de autenticação.
             </AlertDescription>
           </Alert>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-1 sm:gap-3">
+          <div className="grid gap-2 sm:grid-cols-2 sm:gap-3">
             <div className="space-y-1.5 sm:space-y-2">
               <Label className="text-xs sm:text-sm">Senha Atual</Label>
               <Input type="password" disabled placeholder="••••••••" className="h-9" />

@@ -254,7 +254,7 @@ export function DocumentTemplatesPanel({ targetUserId }: DocumentTemplatesPanelP
               <TextareaField label="Termos" value={draft.termsText} maxLength={900} onChange={(value) => setField('termsText', value)} />
               <TextareaField label="Rodapé" value={draft.footerText} maxLength={500} onChange={(value) => setField('footerText', value)} />
 
-              <div className="grid grid-cols-3 gap-2 sm:gap-4">
+              <div className="grid gap-2 sm:grid-cols-3 sm:gap-4">
                 <SelectField
                   label="Layout"
                   value={draft.layoutStyle}

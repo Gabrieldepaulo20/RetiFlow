@@ -60,7 +60,7 @@ export function PlanoDeContasPanel() {
           </div>
         ) : null}
 
-        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           {CLASSES.map((classe) => (
             <div key={classe} className="rounded-lg border border-border/60 px-2.5 py-1.5">
               <p className="text-xs font-semibold text-foreground">{PAYABLE_CATEGORY_CLASS_LABELS[classe]}</p>
@@ -73,17 +73,19 @@ export function PlanoDeContasPanel() {
           {categories.map((category) => {
             const Icon = getCategoryIcon(category.icon);
             return (
-              <div key={category.id} className="flex items-center gap-3 px-3 py-2.5">
-                <span className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', category.color)}>
-                  <Icon className="h-3.5 w-3.5" />
-                </span>
-                <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{category.name}</span>
+              <div key={category.id} className="flex flex-col gap-2 px-3 py-3 sm:flex-row sm:items-center sm:gap-3">
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', category.color)}>
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{category.name}</span>
+                </div>
                 <Select
                   value={category.classe ?? ''}
                   onValueChange={(value) => handleChange(category.id, value as PayableCategoryClass)}
                   disabled={isSupportImpersonating || savingId === category.id}
                 >
-                  <SelectTrigger className="h-8 w-[150px] text-xs">
+                  <SelectTrigger className="h-11 w-full text-xs sm:w-[180px]">
                     <SelectValue placeholder="A classificar" />
                   </SelectTrigger>
                   <SelectContent>
