@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SupportImpersonationSession, SystemUser } from '@/types';
 
@@ -105,6 +105,9 @@ function Probe() {
       <span data-testid="support-session">{auth.supportSession?.id ?? 'none'}</span>
       <span data-testid="support-reason">{auth.supportSession?.reason ?? 'none'}</span>
       <span data-testid="operational-user">{auth.operationalUser?.id ?? 'none'}</span>
+      <span data-testid="support-issue">{auth.supportSessionIssue ?? 'none'}</span>
+      <button type="button" onClick={auth.retrySupportImpersonation}>retry-support</button>
+      <button type="button" onClick={() => void auth.endSupportImpersonation()}>end-support</button>
     </div>
   );
 }
@@ -293,40 +296,103 @@ describe('AuthProvider support-session authority', () => {
         },
       },
     },
-  ])('clears the candidate when validation returns $name', async ({ response }) => {
+  ])('blocks both tenant and Mega Master data when validation returns $name', async ({ response }) => {
     mocks.callAdminUsersFunction.mockResolvedValue(response);
 
     await mountWithStoredCandidate();
 
     await waitFor(() => {
       expect(screen.getByTestId('auth-loading')).toHaveTextContent('false');
-      expect(screen.getByTestId('support-validating')).toHaveTextContent('false');
+      expect(screen.getByTestId('support-validating')).toHaveTextContent('true');
+      expect(screen.getByTestId('support-issue')).not.toHaveTextContent('none');
     });
 
     expect(screen.getByTestId('support-session')).toHaveTextContent('none');
     expect(screen.getByTestId('operational-user')).toHaveTextContent(ACTOR.id);
     expect(supportContext.readActiveSupportContext()).toBeNull();
-    expect(window.sessionStorage.getItem('support.impersonation')).toBeNull();
+    expect(JSON.parse(
+      window.sessionStorage.getItem('support.impersonation') ?? 'null',
+    )).toMatchObject({
+      id: CANDIDATE.id,
+      actorUser: { id: ACTOR.id },
+      targetUser: { id: TARGET.id },
+    });
   });
 
-  it('clears the candidate when server validation fails', async () => {
-    mocks.callAdminUsersFunction.mockRejectedValue(
-      new Error('Falha de rede durante a validação'),
-    );
+  it('preserves an inactive candidate on transient restore failure and retries without falling back to Mega Master data', async () => {
+    mocks.callAdminUsersFunction
+      .mockRejectedValueOnce(new Error('Falha de rede durante a validação'))
+      .mockResolvedValueOnce({
+        mensagem: 'Sessão de suporte validada.',
+        supportSession: CANONICAL_SESSION,
+      });
 
     await mountWithStoredCandidate();
 
     await waitFor(() => {
       expect(screen.getByTestId('auth-loading')).toHaveTextContent('false');
-      expect(screen.getByTestId('support-validating')).toHaveTextContent('false');
+      expect(mocks.callAdminUsersFunction).toHaveBeenCalledTimes(1);
     });
 
     expect(screen.getByTestId('support-session')).toHaveTextContent('none');
+    expect(screen.getByTestId('support-validating')).toHaveTextContent('true');
+    expect(screen.getByTestId('support-issue')).toHaveTextContent('none');
     expect(supportContext.readActiveSupportContext()).toBeNull();
-    expect(window.sessionStorage.getItem('support.impersonation')).toBeNull();
+    expect(window.sessionStorage.getItem('support.impersonation')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'retry-support' }));
+
+    await waitFor(() => {
+      expect(mocks.callAdminUsersFunction).toHaveBeenCalledTimes(2);
+      expect(screen.getByTestId('support-session')).toHaveTextContent(CANDIDATE.id);
+      expect(screen.getByTestId('operational-user')).toHaveTextContent(TARGET.id);
+    });
   });
 
-  it('revalidates an active session on focus and clears it when the server revokes it', async () => {
+  it('keeps an active support session through a transient focus validation failure', async () => {
+    mocks.callAdminUsersFunction
+      .mockResolvedValueOnce({
+        mensagem: 'Sessão de suporte validada.',
+        supportSession: CANONICAL_SESSION,
+      })
+      .mockRejectedValueOnce(new Error('Load failed'))
+      .mockResolvedValueOnce({
+        mensagem: 'Sessão de suporte validada.',
+        supportSession: CANONICAL_SESSION,
+      });
+
+    await mountWithStoredCandidate();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('support-session')).toHaveTextContent(CANDIDATE.id);
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.callAdminUsersFunction).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('support-session')).toHaveTextContent(CANDIDATE.id);
+    expect(screen.getByTestId('operational-user')).toHaveTextContent(TARGET.id);
+    expect(supportContext.readActiveSupportContext()).toEqual({
+      sessionId: CANDIDATE.id,
+      targetUserId: TARGET.id,
+    });
+    expect(window.sessionStorage.getItem('support.impersonation')).toBeTruthy();
+
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.callAdminUsersFunction).toHaveBeenCalledTimes(3);
+    expect(screen.getByTestId('support-session')).toHaveTextContent(CANDIDATE.id);
+  });
+
+  it('blocks the screen instead of revealing Mega Master data when the server revokes an active session', async () => {
     mocks.callAdminUsersFunction
       .mockResolvedValueOnce({
         mensagem: 'Sessão de suporte validada.',
@@ -353,7 +419,38 @@ describe('AuthProvider support-session authority', () => {
       expect(screen.getByTestId('support-session')).toHaveTextContent('none');
     });
 
+    expect(screen.getByTestId('support-validating')).toHaveTextContent('true');
+    expect(screen.getByTestId('support-issue')).not.toHaveTextContent('none');
+    expect(supportContext.readActiveSupportContext()).toBeNull();
+    expect(window.sessionStorage.getItem('support.impersonation')).toBeTruthy();
+  });
+
+  it('clears runtime and storage only after explicit support exit', async () => {
+    mocks.callAdminUsersFunction
+      .mockResolvedValueOnce({
+        mensagem: 'Sessão de suporte validada.',
+        supportSession: CANONICAL_SESSION,
+      })
+      .mockResolvedValueOnce({ mensagem: 'Modo suporte encerrado.' });
+
+    await mountWithStoredCandidate();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('support-session')).toHaveTextContent(CANDIDATE.id);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'end-support' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('support-session')).toHaveTextContent('none');
+      expect(screen.getByTestId('support-validating')).toHaveTextContent('false');
+    });
+
     expect(supportContext.readActiveSupportContext()).toBeNull();
     expect(window.sessionStorage.getItem('support.impersonation')).toBeNull();
+    expect(mocks.callAdminUsersFunction).toHaveBeenLastCalledWith({
+      action: 'end_support_impersonation',
+      sessionId: CANDIDATE.id,
+    });
   });
 });

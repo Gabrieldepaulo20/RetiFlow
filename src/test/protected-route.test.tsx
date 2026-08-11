@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
@@ -19,8 +19,10 @@ const authBase = {
   supportSession: null,
   isSupportImpersonating: false,
   isSupportSessionValidating: false,
+  supportSessionIssue: null,
   startSupportImpersonation: vi.fn(),
   endSupportImpersonation: vi.fn(),
+  retrySupportImpersonation: vi.fn(),
   completeMfaLogin: vi.fn(),
   // false → força revalidação (necessário para testes que esperam o spinner)
   isProfileFresh: vi.fn().mockReturnValue(false),
@@ -198,6 +200,39 @@ describe('ProtectedRoute', () => {
     expect(screen.getByText('Validando modo suporte')).toBeInTheDocument();
     expect(screen.queryByText('closing-page')).not.toBeInTheDocument();
     expect(screen.queryByText('access-denied')).not.toBeInTheDocument();
+  });
+
+  it('blocks tenant and Mega Master data until an interrupted support session is retried or explicitly exited', () => {
+    const retrySupportImpersonation = vi.fn();
+    mockedUseAuth.mockReturnValue({
+      ...authBase,
+      realUser: adminUser,
+      authMode: 'real',
+      user: adminUser,
+      session: null,
+      isSupportSessionValidating: true,
+      supportSessionIssue: 'A sessão de suporte foi interrompida no servidor.',
+      retrySupportImpersonation,
+      isAuthLoading: false,
+      profileError: null,
+      isAuthenticated: true,
+      login: vi.fn(),
+      logout: vi.fn(),
+      retryAuth: vi.fn(),
+      refreshProfile: vi.fn().mockResolvedValue(true),
+      can: vi.fn(),
+      canAccessModule: vi.fn(() => true),
+      isAdmin: true,
+    });
+
+    renderProtectedRoute();
+
+    expect(screen.getByText('Modo suporte pausado')).toBeInTheDocument();
+    expect(screen.queryByText('closing-page')).not.toBeInTheDocument();
+    expect(screen.queryByText('access-denied')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar reconectar' }));
+    expect(retrySupportImpersonation).toHaveBeenCalledTimes(1);
   });
 
   it('redirects authenticated users without module access to the denied page', () => {

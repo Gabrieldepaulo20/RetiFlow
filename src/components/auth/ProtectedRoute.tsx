@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Navigate, Outlet, useLocation } from 'react-router-dom';
-import { RefreshCw, WifiOff } from 'lucide-react';
+import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { LogOut, RefreshCw, ShieldAlert, WifiOff } from 'lucide-react';
 import { AppModuleKey, UserRole } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { LoadingScreen } from '@/components/ui/loading-screen';
@@ -22,6 +22,9 @@ export default function ProtectedRoute({ moduleKey, allowedRoles, redirectTo, me
     isAuthLoading,
     isSupportImpersonating,
     isSupportSessionValidating,
+    supportSessionIssue,
+    retrySupportImpersonation,
+    endSupportImpersonation,
     realUser,
     user,
     profileError,
@@ -30,8 +33,10 @@ export default function ProtectedRoute({ moduleKey, allowedRoles, redirectTo, me
     isProfileFresh,
   } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const loginPath = moduleKey === 'admin' ? '/admin/login' : '/login';
   const [profileRecoveryAttempts, setProfileRecoveryAttempts] = useState(0);
+  const [isEndingSuspendedSupport, setIsEndingSuspendedSupport] = useState(false);
   const shouldRevalidateRoute = authMode === 'real'
     && isAuthenticated
     && Boolean(moduleKey)
@@ -69,6 +74,50 @@ export default function ProtectedRoute({ moduleKey, allowedRoles, redirectTo, me
         // Uma falha transitória preserva o perfil atual; o próximo ciclo tenta de novo.
       });
   }, [isProfileFresh, location.pathname, moduleKey, refreshProfile, shouldRevalidateRoute, user?.id]);
+
+  const exitSuspendedSupport = async () => {
+    if (isEndingSuspendedSupport) return;
+    setIsEndingSuspendedSupport(true);
+    try {
+      await endSupportImpersonation();
+    } finally {
+      setIsEndingSuspendedSupport(false);
+      navigate('/admin/usuarios', { replace: true });
+    }
+  };
+
+  if (supportSessionIssue) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center p-6 text-center">
+        <div className="w-full max-w-md space-y-5 rounded-[28px] border border-amber-200/70 bg-card/95 px-7 py-7 shadow-sm backdrop-blur-sm">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-100">
+            <ShieldAlert className="h-5 w-5 text-amber-700" />
+          </div>
+          <div className="space-y-2">
+            <p className="text-base font-semibold text-foreground">Modo suporte pausado</p>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {supportSessionIssue}
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Button size="sm" onClick={retrySupportImpersonation}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Tentar reconectar
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={isEndingSuspendedSupport}
+              onClick={() => void exitSuspendedSupport()}
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              {isEndingSuspendedSupport ? 'Saindo...' : 'Sair do modo suporte'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (isAuthLoading || isSupportSessionValidating) {
     return (

@@ -115,6 +115,7 @@ function SupportSessionRedirect() {
   const {
     realUser,
     isSupportImpersonating,
+    isSupportSessionValidating,
     canAccessModule,
   } = useAuth();
   const navigate = useNavigate();
@@ -126,12 +127,13 @@ function SupportSessionRedirect() {
     if (
       wasSupporting
       && !isSupportImpersonating
+      && !isSupportSessionValidating
       && realUser?.role === 'ADMIN'
       && canAccessModule('admin')
     ) {
       navigate('/admin/usuarios', { replace: true });
     }
-  }, [canAccessModule, isSupportImpersonating, navigate, realUser?.role]);
+  }, [canAccessModule, isSupportImpersonating, isSupportSessionValidating, navigate, realUser?.role]);
 
   return null;
 }

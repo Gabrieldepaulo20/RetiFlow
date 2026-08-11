@@ -28,6 +28,8 @@ import { clearAllCachedMarketingResumo } from '@/api/supabase/marketingCache';
 import { queryClient } from '@/lib/queryClient';
 
 const AUTH_SESSION_STORAGE_KEY = 'auth.session';
+const SUPPORT_VALIDATION_RETRY_DELAY_MS = 3_000;
+const SUPPORT_VALIDATION_RETRY_MAX_DELAY_MS = 30_000;
 export const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
 interface LoginResult {
@@ -49,6 +51,7 @@ interface AuthContextType {
   supportSession: SupportImpersonationSession | null;
   isSupportImpersonating: boolean;
   isSupportSessionValidating: boolean;
+  supportSessionIssue: string | null;
   isAuthLoading: boolean;
   profileError: string | null;
   isAuthenticated: boolean;
@@ -56,6 +59,7 @@ interface AuthContextType {
   logout: () => void;
   startSupportImpersonation: (targetUserId: string, reason: string) => Promise<SupportImpersonationSession>;
   endSupportImpersonation: () => Promise<void>;
+  retrySupportImpersonation: () => void;
   retryAuth: () => void;
   refreshProfile: (options?: { keepCurrentSessionOnTransientError?: boolean; force?: boolean }) => Promise<boolean>;
   isProfileFresh: () => boolean;
@@ -139,6 +143,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [storedSupportCandidate, setStoredSupportCandidate] = useState<SupportImpersonationSession | null>(
     () => IS_REAL_AUTH ? readStoredSupportSession() : null,
   );
+  const [supportSessionIssue, setSupportSessionIssue] = useState<string | null>(null);
+  const [supportValidationRetryVersion, setSupportValidationRetryVersion] = useState(0);
   const [isAuthLoading, setIsAuthLoading] = useState(IS_REAL_AUTH);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [moduleAccessVersion, setModuleAccessVersion] = useState(0);
@@ -157,10 +163,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setActiveSupportSession(null);
     setSupportSession(null);
     setStoredSupportCandidate(null);
+    setSupportSessionIssue(null);
+    setSupportValidationRetryVersion(0);
     writeStoredSupportSession(null);
     queryClient.clear();
     clearAllCachedMarketingResumo();
   }, []);
+
+  const suspendSupportState = useCallback((
+    candidate: SupportImpersonationSession,
+    message: string,
+  ) => {
+    validatedSupportSessionKey.current = null;
+    setActiveSupportSession(null);
+    setSupportSession(null);
+    setStoredSupportCandidate(candidate);
+    setSupportSessionIssue(message);
+    writeStoredSupportSession(candidate);
+    queryClient.clear();
+    clearAllCachedMarketingResumo();
+  }, []);
+
+  const retrySupportImpersonation = useCallback(() => {
+    if (!storedSupportCandidate) return;
+    validatedSupportSessionKey.current = null;
+    setSupportSessionIssue(null);
+    setSupportValidationRetryVersion((version) => version + 1);
+  }, [storedSupportCandidate]);
 
   useEffect(() => {
     const currentUserId = session?.user.id ?? null;
@@ -203,6 +232,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    if (supportSessionIssue) return;
+
     if (!IS_REAL_AUTH) {
       setActiveSupportSession(storedSupportCandidate);
       setSupportSession(storedSupportCandidate);
@@ -219,6 +250,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     validatedSupportSessionKey.current = validationKey;
     let cancelled = false;
+    let retryTimer: number | undefined;
 
     void withTimeout(callAdminUsersFunction({
       action: 'validate_support_impersonation',
@@ -235,7 +267,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       );
 
       if (!validated || !responseMatchesRequest) {
-        throw new Error('Sessão de suporte retornada pelo servidor é inválida.');
+        suspendSupportState(
+          storedSupportCandidate,
+          'A sessão não foi confirmada pelo servidor. Os dados da empresa continuam bloqueados e você só voltará ao Mega Master ao sair do modo suporte.',
+        );
+        return;
       }
 
       queryClient.clear();
@@ -243,19 +279,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setActiveSupportSession(validated);
       setSupportSession(validated);
       setStoredSupportCandidate(null);
+      setSupportSessionIssue(null);
+      setSupportValidationRetryVersion(0);
       writeStoredSupportSession(validated);
     }).catch(() => {
       if (cancelled) return;
-      clearSupportState();
+      // Falha de rede, timeout ou indisponibilidade da Function não encerra uma
+      // sessão de suporte. O candidato segue sem autoridade até uma resposta
+      // canônica do servidor e é tentado novamente automaticamente.
+      if (validatedSupportSessionKey.current === validationKey) {
+        validatedSupportSessionKey.current = null;
+      }
+      retryTimer = window.setTimeout(() => {
+        if (!cancelled) {
+          setSupportValidationRetryVersion((version) => version + 1);
+        }
+      }, Math.min(
+        SUPPORT_VALIDATION_RETRY_DELAY_MS * (2 ** Math.min(supportValidationRetryVersion, 4)),
+        SUPPORT_VALIDATION_RETRY_MAX_DELAY_MS,
+      ));
     });
 
     return () => {
       cancelled = true;
+      if (retryTimer) window.clearTimeout(retryTimer);
       if (validatedSupportSessionKey.current === validationKey) {
         validatedSupportSessionKey.current = null;
       }
     };
-  }, [clearSupportState, isAuthLoading, session?.user, storedSupportCandidate]);
+  }, [
+    clearSupportState,
+    isAuthLoading,
+    session?.user,
+    storedSupportCandidate,
+    supportSessionIssue,
+    supportValidationRetryVersion,
+    suspendSupportState,
+  ]);
+
+  useEffect(() => {
+    if (!IS_REAL_AUTH || !storedSupportCandidate || supportSessionIssue) return undefined;
+    if (typeof window === 'undefined') return undefined;
+
+    const retryWhenConnectionReturns = () => {
+      if (validatedSupportSessionKey.current) return;
+      setSupportValidationRetryVersion((version) => version + 1);
+    };
+
+    window.addEventListener('online', retryWhenConnectionReturns);
+    window.addEventListener('focus', retryWhenConnectionReturns);
+    return () => {
+      window.removeEventListener('online', retryWhenConnectionReturns);
+      window.removeEventListener('focus', retryWhenConnectionReturns);
+    };
+  }, [storedSupportCandidate, supportSessionIssue]);
 
   useEffect(() => {
     if (
@@ -290,11 +367,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           && validated.actorUser.id === session.user.id
           && validated.targetUser.id === supportSession.targetUser.id,
         );
-        if (!stillMatches) clearSupportState();
+        if (!stillMatches) {
+          suspendSupportState(
+            supportSession,
+            'A sessão de suporte foi encerrada ou substituída no servidor. Os dados da empresa foram bloqueados e você só voltará ao Mega Master ao sair do modo suporte.',
+          );
+        }
       } catch {
-        // Sem confirmação do servidor, a aba deixa de manter dados do alvo
-        // carregados. O operador pode iniciar uma nova sessão pelo painel Admin.
-        if (!cancelled) clearSupportState();
+        // O contexto já foi validado e continua sendo enviado a todas as RPCs.
+        // Uma falha transitória ao retomar o tablet não pode trocar silenciosamente
+        // para o usuário Mega Master; o próximo foco/intervalo valida de novo.
       } finally {
         validationInFlight = false;
       }
@@ -322,10 +404,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [
-    clearSupportState,
     isAuthLoading,
     session?.user,
     supportSession,
+    suspendSupportState,
   ]);
 
   const applyProfileResult = useCallback((
@@ -699,6 +781,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setActiveSupportSession(result.supportSession);
     setSupportSession(result.supportSession);
     setStoredSupportCandidate(null);
+    setSupportSessionIssue(null);
+    setSupportValidationRetryVersion(0);
     writeStoredSupportSession(result.supportSession);
     queryClient.clear();
     clearAllCachedMarketingResumo();
@@ -706,7 +790,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const endSupportImpersonation = useCallback(async () => {
-    const current = supportSession;
+    const current = supportSession ?? storedSupportCandidate;
+    const wasSuspended = Boolean(supportSessionIssue);
     // A aba perde a autoridade do alvo imediatamente. A confirmação remota é
     // feita depois e nunca mantém dados do cliente visíveis por falha de rede.
     clearSupportState();
@@ -718,12 +803,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           sessionId: current.id,
         });
       } catch {
+        if (wasSuspended) return;
         throw new Error(
           'Você saiu desta aba, mas o servidor não confirmou o encerramento. Não opere outra aba em modo suporte até a conexão voltar.',
         );
       }
     }
-  }, [clearSupportState, supportSession]);
+  }, [clearSupportState, storedSupportCandidate, supportSession, supportSessionIssue]);
 
   const can = useCallback((permission: Permission) => hasPermission(user, permission), [user]);
 
@@ -747,6 +833,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       supportSession,
       isSupportImpersonating: Boolean(realUser && supportSession),
       isSupportSessionValidating: Boolean(IS_REAL_AUTH && storedSupportCandidate),
+      supportSessionIssue,
       isAuthLoading,
       profileError,
       isAuthenticated: Boolean(realUser),
@@ -754,6 +841,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       startSupportImpersonation,
       endSupportImpersonation,
+      retrySupportImpersonation,
       retryAuth,
       refreshProfile,
       isProfileFresh,
@@ -763,7 +851,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAdmin: realUser?.role === 'ADMIN',
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [authMode, realUser, user, operationalUser, supportTargetUser, session, supportSession, storedSupportCandidate, isAuthLoading, profileError, login, logout, startSupportImpersonation, endSupportImpersonation, retryAuth, refreshProfile, isProfileFresh, completeMfaLogin, can, canAccessModule, moduleAccessVersion],
+    [authMode, realUser, user, operationalUser, supportTargetUser, session, supportSession, storedSupportCandidate, supportSessionIssue, isAuthLoading, profileError, login, logout, startSupportImpersonation, endSupportImpersonation, retrySupportImpersonation, retryAuth, refreshProfile, isProfileFresh, completeMfaLogin, can, canAccessModule, moduleAccessVersion],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
