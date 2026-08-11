@@ -9,10 +9,14 @@ const DEFAULT_FECHAMENTO_PDF_SIGNED_URL_TTL = 60 * 60;
 /* ── Types ──────────────────────────────────────────────────────────────── */
 
 export interface FechamentoItem {
+  /** UUID da linha original da O.S.; usado para auditoria do desconto. */
+  id?: string;
   descricao: string;
   quantidade: number;
   preco_unitario: number;
+  desconto_original?: number;
   desconto_porcentagem: number;
+  subtotal_original?: number;
   subtotal: number;
 }
 
@@ -199,12 +203,17 @@ function asNumber(value: unknown, fallback = 0) {
 
 function normalizeFechamentoItem(value: unknown): FechamentoItem | null {
   if (!isRecord(value)) return null;
+  const descontoPorcentagem = asNumber(value.desconto_porcentagem);
+  const subtotal = asNumber(value.subtotal);
   return {
+    id: typeof value.id === 'string' && value.id.trim() ? value.id : undefined,
     descricao: asString(value.descricao, 'Serviço realizado'),
     quantidade: asNumber(value.quantidade),
     preco_unitario: asNumber(value.preco_unitario),
-    desconto_porcentagem: asNumber(value.desconto_porcentagem),
-    subtotal: asNumber(value.subtotal),
+    desconto_original: asNumber(value.desconto_original, descontoPorcentagem),
+    desconto_porcentagem: descontoPorcentagem,
+    subtotal_original: asNumber(value.subtotal_original, subtotal),
+    subtotal,
   };
 }
 

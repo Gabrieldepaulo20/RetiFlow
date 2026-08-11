@@ -27,8 +27,8 @@ function makeFechamento(id: string, clienteId: string | null): FechamentoListIte
 
 describe('monthly closing tenant isolation helpers', () => {
   it('scopes local draft storage by current operational user', () => {
-    expect(getMonthlyClosingDraftsStorageKey('user-a')).toBe('retiflow:monthly-closing-drafts:v2:user-a');
-    expect(getMonthlyClosingDraftsStorageKey('user-b')).toBe('retiflow:monthly-closing-drafts:v2:user-b');
+    expect(getMonthlyClosingDraftsStorageKey('user-a')).toBe('retiflow:monthly-closing-drafts:v3:user-a');
+    expect(getMonthlyClosingDraftsStorageKey('user-b')).toBe('retiflow:monthly-closing-drafts:v3:user-b');
     expect(getMonthlyClosingDraftsStorageKey(null)).toBeNull();
   });
 

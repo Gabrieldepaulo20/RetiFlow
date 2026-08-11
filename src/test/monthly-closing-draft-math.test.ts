@@ -29,7 +29,9 @@ const makeNote = (overrides: Partial<PreviewNote> & { id: string }): PreviewNote
       descricao: 'Serviço',
       quantidade: 1,
       preco_unitario: overrides.total ?? 100,
+      desconto_original: 0,
       desconto_porcentagem: 0,
+      subtotal_original: overrides.total ?? 100,
       subtotal: overrides.total ?? 100,
     },
   ],
@@ -76,11 +78,11 @@ describe('roundMoney / clampPercent', () => {
 
 describe('recalcItemSubtotal / recalcNoteTotal', () => {
   it('aplica desconto percentual do item e nunca produz subtotal negativo', () => {
-    expect(recalcItemSubtotal({ id: 'i', descricao: 'x', quantidade: 2, preco_unitario: 50, desconto_porcentagem: 10, subtotal: 0 })).toBe(90);
+    expect(recalcItemSubtotal({ id: 'i', descricao: 'x', quantidade: 2, preco_unitario: 50, desconto_original: 0, desconto_porcentagem: 10, subtotal_original: 100, subtotal: 0 })).toBe(90);
     // desconto acima de 100 é clampado — não inverte o sinal do subtotal
-    expect(recalcItemSubtotal({ id: 'i', descricao: 'x', quantidade: 2, preco_unitario: 50, desconto_porcentagem: 150, subtotal: 0 })).toBe(0);
+    expect(recalcItemSubtotal({ id: 'i', descricao: 'x', quantidade: 2, preco_unitario: 50, desconto_original: 0, desconto_porcentagem: 150, subtotal_original: 100, subtotal: 0 })).toBe(0);
     // quantidade/preço negativos são tratados como zero
-    expect(recalcItemSubtotal({ id: 'i', descricao: 'x', quantidade: -1, preco_unitario: 50, desconto_porcentagem: 0, subtotal: 0 })).toBe(0);
+    expect(recalcItemSubtotal({ id: 'i', descricao: 'x', quantidade: -1, preco_unitario: 50, desconto_original: 0, desconto_porcentagem: 0, subtotal_original: 0, subtotal: 0 })).toBe(0);
   });
 
   it('soma itens e devolve 0 para lista vazia', () => {
@@ -96,18 +98,69 @@ describe('recalcItemSubtotal / recalcNoteTotal', () => {
 });
 
 describe('computeDraftTotals', () => {
-  it('soma O.S. incluídas e aplica desconto por O.S.', () => {
+  it('preserva o total original e desconta apenas uma linha da O.S.', () => {
+    const note = makeNote({
+      id: 'os-6434',
+      total: 850,
+      itens: [
+        {
+          id: 'valvulas', descricao: 'Válvulas de Escape', quantidade: 1, preco_unitario: 170,
+          desconto_original: 0, desconto_porcentagem: 0, subtotal_original: 170, subtotal: 170,
+        },
+        {
+          id: 'sede', descricao: 'Sede de Escape', quantidade: 1, preco_unitario: 120,
+          desconto_original: 0, desconto_porcentagem: 0, subtotal_original: 120, subtotal: 120,
+        },
+        {
+          id: 'retifica', descricao: 'Retífica completa', quantidade: 1, preco_unitario: 560,
+          desconto_original: 0, desconto_porcentagem: 5, subtotal_original: 560, subtotal: 532,
+        },
+      ],
+    });
+    const draft = makeDraft({ notes: [note] });
+
+    expect(computeDraftTotals(draft)).toEqual({ totalOriginal: 850, totalComDesconto: 822 });
+    expect(buildDadosFromDraft(draft).notas[0]).toMatchObject({
+      valor_total_os: 850,
+      total_original: 850,
+      total_com_desconto: 822,
+      desconto_nota: 0,
+    });
+  });
+
+  it('soma O.S. incluídas e aplica desconto somente no item escolhido', () => {
     const draft = makeDraft({
-      notes: [makeNote({ id: 'n1', total: 100 }), makeNote({ id: 'n2', total: 200 })],
-      discounts: { n2: 50 },
+      notes: [
+        makeNote({ id: 'n1', total: 100 }),
+        makeNote({
+          id: 'n2',
+          total: 200,
+          itens: [{
+            id: 'n2-item-0',
+            descricao: 'Item escolhido',
+            quantidade: 1,
+            preco_unitario: 200,
+            desconto_original: 0,
+            desconto_porcentagem: 50,
+            subtotal_original: 200,
+            subtotal: 100,
+          }],
+        }),
+      ],
     });
     expect(computeDraftTotals(draft)).toEqual({ totalOriginal: 300, totalComDesconto: 200 });
   });
 
-  it('nunca gera total negativo mesmo com desconto fora da faixa no estado vivo', () => {
+  it('nunca gera total negativo mesmo com desconto de item fora da faixa no estado vivo', () => {
     const draft = makeDraft({
-      notes: [makeNote({ id: 'n1', total: 100 })],
-      discounts: { n1: 150 },
+      notes: [makeNote({
+        id: 'n1',
+        total: 100,
+        itens: [{
+          id: 'n1-item-0', descricao: 'Item', quantidade: 1, preco_unitario: 100,
+          desconto_original: 0, desconto_porcentagem: 150, subtotal_original: 100, subtotal: 0,
+        }],
+      })],
     });
     const totals = computeDraftTotals(draft);
     expect(totals.totalComDesconto).toBe(0);
@@ -131,11 +184,15 @@ describe('computeDraftTotals', () => {
     // 33.33 com 10% = 29.997 → 30.00 por O.S.; 3 O.S. = 90.00 exato
     const draft = makeDraft({
       notes: [
-        makeNote({ id: 'n1', total: 33.33 }),
-        makeNote({ id: 'n2', total: 33.33 }),
-        makeNote({ id: 'n3', total: 33.33 }),
+        ...['n1', 'n2', 'n3'].map((id) => makeNote({
+          id,
+          total: 33.33,
+          itens: [{
+            id: `${id}-item-0`, descricao: 'Item', quantidade: 1, preco_unitario: 33.33,
+            desconto_original: 0, desconto_porcentagem: 10, subtotal_original: 33.33, subtotal: 29.997,
+          }],
+        })),
       ],
-      discounts: { n1: 10, n2: 10, n3: 10 },
     });
     expect(computeDraftTotals(draft).totalComDesconto).toBe(90);
   });
@@ -146,18 +203,19 @@ describe('computeDraftTotals', () => {
       total: 500,
       paymentStatus: 'PARCIAL',
       valorRecebido: 175,
+      itens: [{
+        id: 'parcial-item-0', descricao: 'Item', quantidade: 1, preco_unitario: 500,
+        desconto_original: 0, desconto_porcentagem: 10, subtotal_original: 500, subtotal: 450,
+      }],
     });
-    const draft = makeDraft({
-      notes: [partial],
-      discounts: { parcial: 10 },
-    });
+    const draft = makeDraft({ notes: [partial] });
 
     expect(getPreviewNoteReceivedAmount(partial)).toBe(175);
     expect(getPreviewNoteOpenAmount(partial)).toBe(325);
     expect(getIncludedDraftNotes(draft).map((note) => note.id)).toEqual(['parcial']);
     expect(computeDraftTotals(draft)).toEqual({
       totalOriginal: 325,
-      totalComDesconto: 292.5,
+      totalComDesconto: 275,
     });
   });
 });
@@ -166,11 +224,22 @@ describe('buildDadosFromDraft', () => {
   it('gera snapshot consistente: soma das O.S. bate exatamente com o total consolidado', () => {
     const draft = makeDraft({
       notes: [
-        makeNote({ id: 'n1', total: 150.55 }),
-        makeNote({ id: 'n2', total: 99.99 }),
+        makeNote({
+          id: 'n1', total: 150.55,
+          itens: [{
+            id: 'n1-item-0', descricao: 'Item', quantidade: 1, preco_unitario: 150.55,
+            desconto_original: 0, desconto_porcentagem: 7, subtotal_original: 150.55, subtotal: 140.0115,
+          }],
+        }),
+        makeNote({
+          id: 'n2', total: 99.99,
+          itens: [{
+            id: 'n2-item-0', descricao: 'Item', quantidade: 1, preco_unitario: 99.99,
+            desconto_original: 0, desconto_porcentagem: 3.5, subtotal_original: 99.99, subtotal: 96.49035,
+          }],
+        }),
         makeNote({ id: 'n3', total: 500, paymentStatus: 'PAGO', pagoEm: '2026-06-20T12:00:00Z' }),
       ],
-      discounts: { n1: 7, n2: 3.5 },
     });
 
     const dados = buildDadosFromDraft(draft);
@@ -195,13 +264,19 @@ describe('buildDadosFromDraft', () => {
     expect(dados.notas[1].total_com_desconto).toBe(96.49);  // 99.99  * 0.965 = 96.49035
   });
 
-  it('clampa desconto fora da faixa também no snapshot persistido', () => {
+  it('clampa desconto de item fora da faixa também no snapshot persistido', () => {
     const draft = makeDraft({
-      notes: [makeNote({ id: 'n1', total: 100 })],
-      discounts: { n1: 999 },
+      notes: [makeNote({
+        id: 'n1', total: 100,
+        itens: [{
+          id: 'n1-item-0', descricao: 'Item', quantidade: 1, preco_unitario: 100,
+          desconto_original: 0, desconto_porcentagem: 999, subtotal_original: 100, subtotal: 0,
+        }],
+      })],
     });
     const dados = buildDadosFromDraft(draft);
-    expect(dados.notas[0].desconto_nota).toBe(100);
+    expect(dados.notas[0].desconto_nota).toBe(0);
+    expect(dados.notas[0].itens[0].desconto_porcentagem).toBe(100);
     expect(dados.notas[0].total_com_desconto).toBe(0);
     expect(dados.total_com_desconto).toBe(0);
   });
@@ -217,7 +292,9 @@ describe('buildDadosFromDraft', () => {
             descricao: 'Servico com desconto por linha',
             quantidade: 2,
             preco_unitario: 50,
+            desconto_original: 10,
             desconto_porcentagem: 10,
+            subtotal_original: 90,
             subtotal: 90,
           }],
         }),

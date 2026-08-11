@@ -24,6 +24,7 @@ import { buildWhatsAppUrl, openExternalUrl } from '@/lib/browserShare';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
 import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 import { createPdfPreviewWindow, openPdfInBrowser } from '@/lib/printPdf';
+import { NoteClosingReference } from '@/components/notes/NoteClosingReference';
 
 const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
 
@@ -218,6 +219,13 @@ export default function IntakeNoteDetail() {
           <Button variant="outline" size="sm" onClick={handleWhatsAppShare} className="gap-1.5">
             <Share2 className="w-4 h-4" /> WhatsApp
           </Button>
+          {note.closingId ? (
+            <NoteClosingReference
+              noteId={note.id}
+              closingId={note.closingId}
+              clientId={note.clientId}
+            />
+          ) : null}
           {canGoBack && (
             <Button variant="outline" size="sm" onClick={goBack} className="gap-1.5" disabled={isChangingStatus}>
               <ChevronLeft className="w-4 h-4" /> Voltar status

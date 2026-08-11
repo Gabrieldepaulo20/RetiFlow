@@ -87,6 +87,7 @@ import { useToast } from '@/hooks/use-toast';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
 import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 import { createPdfPreviewWindow, openPdfInBrowser } from '@/lib/printPdf';
+import { NoteClosingReference } from '@/components/notes/NoteClosingReference';
 
 /** Main workflow statuses for timeline display */
 const MAIN_FLOW: NoteStatus[] = [
@@ -1003,6 +1004,15 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                 <span className="hidden sm:inline">Ver O.S. completa</span>
                 <span className="sm:hidden">Detalhes</span>
               </Button>
+              {note.closingId ? (
+                <NoteClosingReference
+                  noteId={note.id}
+                  closingId={note.closingId}
+                  clientId={note.clientId}
+                  compact
+                  onBeforeNavigate={onClose}
+                />
+              ) : null}
               {(pdfDados || IS_REAL_AUTH) && noteId && (
                 <Button
                   variant="outline"

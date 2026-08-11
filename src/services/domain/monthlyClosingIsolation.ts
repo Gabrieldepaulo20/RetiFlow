@@ -1,6 +1,9 @@
 import type { FechamentoListItem } from '@/api/supabase/fechamentos';
 
-const DRAFTS_STORAGE_PREFIX = 'retiflow:monthly-closing-drafts:v2';
+// v3 separa o total original da O.S. dos descontos negociados por item.
+// Rascunhos v2 não carregam a base imutável de cada linha e não podem ser
+// convertidos com segurança sem consultar novamente o banco.
+const DRAFTS_STORAGE_PREFIX = 'retiflow:monthly-closing-drafts:v3';
 
 export function getMonthlyClosingDraftsStorageKey(scopeUserId: string | null | undefined) {
   if (!scopeUserId) return null;

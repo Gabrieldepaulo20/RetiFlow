@@ -15,7 +15,11 @@ export interface PreviewItem {
   descricao: string;
   quantidade: number;
   preco_unitario: number;
+  /** Desconto que já fazia parte da O.S. antes de montar o fechamento. */
+  desconto_original: number;
   desconto_porcentagem: number;
+  /** Subtotal líquido persistido na O.S.; nunca muda durante o fechamento. */
+  subtotal_original: number;
   subtotal: number;
 }
 
@@ -123,12 +127,31 @@ export const getIncludedDraftNotes = (draft: Pick<ClosingDraft, 'notes' | 'inclu
   return base.filter((note) => getPreviewNoteOpenAmount(note) > 0);
 };
 
-/** Desconto por O.S. sempre clampado 0–100, mesmo que o estado vivo traga valor fora da faixa. */
-const getNoteDiscountPercent = (draft: Pick<ClosingDraft, 'discounts'>, noteId: string) =>
-  clampPercent(draft.discounts[noteId] ?? 0);
+/**
+ * Calcula o saldo final usando somente os descontos por item.
+ *
+ * `note.total` continua sendo o total original persistido da O.S. e, por isso,
+ * nunca pode ser recalculado no editor do fechamento. A diferença entre o
+ * subtotal atual e o subtotal original dos itens representa apenas o desconto
+ * adicional negociado para este fechamento.
+ */
+export const getPreviewNoteDiscountedOpenAmount = (note: PreviewNote) => {
+  const openAmount = getPreviewNoteOpenAmount(note);
+  const items = getPreviewItems(note);
+  if (items.length === 0) return openAmount;
 
-const noteTotalComDesconto = (draft: Pick<ClosingDraft, 'discounts'>, note: PreviewNote) =>
-  roundMoney(getPreviewNoteOpenAmount(note) * (1 - getNoteDiscountPercent(draft, note.id) / 100));
+  const originalItemsTotal = roundMoney(items.reduce(
+    (sum, item) => sum + Math.max(0, Number(item.subtotal_original) || 0),
+    0,
+  ));
+  const discountedItemsTotal = roundMoney(items.reduce(
+    (sum, item) => sum + recalcItemSubtotal(item),
+    0,
+  ));
+  const itemAdjustment = roundMoney(discountedItemsTotal - originalItemsTotal);
+
+  return roundMoney(Math.min(openAmount, Math.max(0, openAmount + itemAdjustment)));
+};
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -169,7 +192,7 @@ export const computeDraftTotals = (draft: Pick<ClosingDraft, 'notes' | 'discount
     includedNotes.reduce((sum, note) => sum + getPreviewNoteOpenAmount(note), 0),
   );
   const totalComDesconto = roundMoney(
-    includedNotes.reduce((sum, note) => sum + noteTotalComDesconto(draft, note), 0),
+    includedNotes.reduce((sum, note) => sum + getPreviewNoteDiscountedOpenAmount(note), 0),
   );
   return { totalOriginal, totalComDesconto };
 };
@@ -191,13 +214,21 @@ export const buildDadosFromDraft = (
         os: note.os,
         veiculo: note.veiculo,
         placa: note.placa,
-        itens: getPreviewItems(note),
+        itens: getPreviewItems(note).map((item) => {
+          const safeItem = {
+            ...item,
+            desconto_original: clampPercent(item.desconto_original),
+            desconto_porcentagem: clampPercent(item.desconto_porcentagem),
+            subtotal_original: roundMoney(Math.max(0, item.subtotal_original)),
+          };
+          return { ...safeItem, subtotal: roundMoney(recalcItemSubtotal(safeItem)) };
+        }),
         valor_total_os: roundMoney(note.total),
         valor_recebido: valorRecebido,
         saldo_aberto: saldoAberto,
         total_original: saldoAberto,
-        desconto_nota: getNoteDiscountPercent(draft, note.id),
-        total_com_desconto: noteTotalComDesconto(draft, note),
+        desconto_nota: 0,
+        total_com_desconto: getPreviewNoteDiscountedOpenAmount(note),
       };
     }),
     total_original: totals.totalOriginal,

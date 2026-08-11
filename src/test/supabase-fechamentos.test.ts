@@ -540,6 +540,39 @@ describe('Fechamentos Supabase mutations', () => {
     expect(normalized?.total_ja_recebido).toBe(175);
   });
 
+  it('preserves the immutable item baseline used to audit line discounts', () => {
+    const normalized = normalizeFechamentoDadosJson({
+      periodo: 'Julho 2026',
+      cliente: { id: 'cliente-1', nome: 'Cliente A' },
+      notas: [{
+        id: 'nota-1',
+        os: 'OS-1',
+        veiculo: 'Gol',
+        itens: [{
+          id: 'item-1',
+          descricao: 'Retífica completa',
+          quantidade: 1,
+          preco_unitario: 560,
+          desconto_original: 0,
+          desconto_porcentagem: 5,
+          subtotal_original: 560,
+          subtotal: 532,
+        }],
+        total_original: 560,
+        desconto_nota: 0,
+        total_com_desconto: 532,
+      }],
+    });
+
+    expect(normalized?.notas[0]?.itens[0]).toMatchObject({
+      id: 'item-1',
+      desconto_original: 0,
+      desconto_porcentagem: 5,
+      subtotal_original: 560,
+      subtotal: 532,
+    });
+  });
+
   it('creates a signed URL directly for stored closing PDFs', async () => {
     mocks.createSignedUrl.mockResolvedValue({
       data: { signedUrl: 'https://signed.example/fechamento.pdf' },

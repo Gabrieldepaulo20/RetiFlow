@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
@@ -62,11 +63,11 @@ import {
   computeDraftTotals,
   getDraftNotes,
   getIncludedDraftNotes,
+  getPreviewNoteDiscountedOpenAmount,
   getPreviewNoteOpenAmount,
   getPreviewNoteReceivedAmount,
   getPreviewItems,
   recalcItemSubtotal,
-  recalcNoteTotal,
   roundMoney,
   type ClosingDraft,
   type PreviewNote,
@@ -282,13 +283,17 @@ const normalizePreviewItem = (value: unknown, fallbackId: string): PreviewNote['
   const precoUnitario = asNumber(value.preco_unitario);
   const descontoPorcentagem = clampPercent(asNumber(value.desconto_porcentagem));
   const subtotal = asNumber(value.subtotal, quantidade * precoUnitario * (1 - descontoPorcentagem / 100));
+  const descontoOriginal = clampPercent(asNumber(value.desconto_original, descontoPorcentagem));
+  const subtotalOriginal = asNumber(value.subtotal_original, subtotal);
 
   return {
     id: asString(value.id, fallbackId),
     descricao: asString(value.descricao, 'Serviço realizado'),
     quantidade,
     preco_unitario: precoUnitario,
+    desconto_original: descontoOriginal,
     desconto_porcentagem: descontoPorcentagem,
+    subtotal_original: subtotalOriginal,
     subtotal,
   };
 };
@@ -330,7 +335,9 @@ const normalizePreviewNote = (value: unknown): PreviewNote | null => {
       descricao: 'Serviços realizados',
       quantidade: 1,
       preco_unitario: total,
+      desconto_original: 0,
       desconto_porcentagem: 0,
+      subtotal_original: total,
       subtotal: total,
     }],
   };
@@ -471,6 +478,7 @@ function DualSpinner() {
 
 /* ── Main component ─────────────────────────────────────────────────────── */
 export default function MonthlyClosing() {
+  const [searchParams] = useSearchParams();
   const { notes, clients, registrarRecebimentoNota, estornarRecebimentoNota, refreshNotes } = useData();
   const { operationalUser, user, isSupportImpersonating } = useAuth();
   const { toast } = useToast();
@@ -504,6 +512,7 @@ export default function MonthlyClosing() {
   const openClosingsRequestRef = useRef(0);
   const financeAccountsRequestRef = useRef(0);
   const generatedPreviewRequestRef = useRef(0);
+  const directClosingHandledRef = useRef<string | null>(null);
   // Marcar uma O.S. do rascunho como já paga (sai do total do fechamento).
   const [payNota, setPayNota] = useState<PreviewNote | null>(null);
   const [payNotaData, setPayNotaData] = useState(() => todayLocalISODate());
@@ -1063,6 +1072,15 @@ export default function MonthlyClosing() {
     }
   }, [applyClosingPreviewBlob, loadFreshClosing, renderStableGeneratedClosing, toast]);
 
+  const directClosingId = searchParams.get('fechamento');
+  useEffect(() => {
+    if (!directClosingId || loadingList || directClosingHandledRef.current === directClosingId) return;
+    const closing = fechamentos.find((item) => item.id_fechamentos === directClosingId);
+    if (!closing) return;
+    directClosingHandledRef.current = directClosingId;
+    void openGeneratedPreview(closing);
+  }, [directClosingId, fechamentos, loadingList, openGeneratedPreview]);
+
   const removeDraft = useCallback((draftId: string) => {
     setDrafts((current) => current.filter((draft) => draft.id !== draftId));
     if (activeDraftId === draftId) {
@@ -1161,7 +1179,9 @@ export default function MonthlyClosing() {
           descricao: 'Serviços realizados',
           quantidade: 1,
           preco_unitario: nota.totalAmount,
+          desconto_original: 0,
           desconto_porcentagem: 0,
+          subtotal_original: nota.totalAmount,
           subtotal: nota.totalAmount,
         };
         return {
@@ -1186,7 +1206,9 @@ export default function MonthlyClosing() {
                   descricao: asString(i.descricao, 'Serviço realizado'),
                   quantidade,
                   preco_unitario: precoUnitario,
+                  desconto_original: descontoPorcentagem,
                   desconto_porcentagem: descontoPorcentagem,
+                  subtotal_original: asNumber(i.subtotal_item, quantidade * precoUnitario * (1 - descontoPorcentagem / 100)),
                   subtotal: asNumber(i.subtotal_item, quantidade * precoUnitario * (1 - descontoPorcentagem / 100)),
                 };
               })
@@ -1251,15 +1273,14 @@ export default function MonthlyClosing() {
     return safePreviewNotes
       .filter((note) => included.has(note.id) && getPreviewNoteOpenAmount(note) > 0)
       .map((n) => {
-      const disc = clampPercent(descontos[n.id] ?? 0);
       const openAmount = getPreviewNoteOpenAmount(n);
       return {
         id: n.id,
         totalBruto: roundMoney(openAmount),
-        totalComDesconto: roundMoney(openAmount * (1 - disc / 100)),
+        totalComDesconto: getPreviewNoteDiscountedOpenAmount(n),
       };
       });
-  }, [safePreviewNotes, descontos, includedNoteIds]);
+  }, [safePreviewNotes, includedNoteIds]);
 
   const grandTotal = useMemo(
     () => roundMoney(totals.reduce((sum, item) => sum + item.totalComDesconto, 0)),
@@ -1450,28 +1471,37 @@ export default function MonthlyClosing() {
   const updatePreviewItem = useCallback((
     noteId: string,
     itemId: string,
-    field: 'descricao' | 'quantidade' | 'preco_unitario' | 'desconto_porcentagem',
     value: string,
   ) => {
     setPreviewNotes((current) => current.map((note) => {
       if (note.id !== noteId) return note;
       const itens = note.itens.map((item) => {
         if (item.id !== itemId) return item;
-        if (field === 'descricao') {
-          return { ...item, descricao: value };
-        }
         const numeric = parseFloat(value.replace(',', '.'));
-        const safe = Number.isFinite(numeric) ? numeric : 0;
-        const changedItem = {
-          ...item,
-          [field]: field === 'desconto_porcentagem' ? clampPercent(safe) : Math.max(0, safe),
-        };
-        const nextItem = canDiscountPreviewItem(changedItem)
-          ? changedItem
-          : { ...changedItem, desconto_porcentagem: 0 };
+        const nextDiscount = Number.isFinite(numeric)
+          ? clampPercent(Math.max(item.desconto_original, numeric))
+          : item.desconto_original;
+        const nextItem = { ...item, desconto_porcentagem: nextDiscount };
         return { ...nextItem, subtotal: recalcItemSubtotal(nextItem) };
       });
-      return { ...note, itens, total: recalcNoteTotal(itens) };
+      // `note.total` é o valor original persistido da O.S. A edição do
+      // fechamento altera apenas o subtotal líquido dos itens no snapshot.
+      return { ...note, itens };
+    }));
+  }, []);
+
+  const resetPreviewItemDiscount = useCallback((
+    noteId: string,
+    itemId: string,
+  ) => {
+    setPreviewNotes((current) => current.map((note) => {
+      if (note.id !== noteId) return note;
+      const itens = note.itens.map((item) => {
+        if (item.id !== itemId) return item;
+        const nextItem = { ...item, desconto_porcentagem: item.desconto_original };
+        return { ...nextItem, subtotal: item.subtotal_original };
+      });
+      return { ...note, itens };
     }));
   }, []);
 
@@ -2505,20 +2535,15 @@ export default function MonthlyClosing() {
               <div className="grid min-h-full gap-0 xl:grid-cols-[minmax(0,1fr)_280px]">
                 <div className="p-4 sm:p-5 space-y-4">
                 {safePreviewNotes.map((nota) => {
-                  const disc = clampPercent(descontos[nota.id] ?? 0);
                   const valorRecebidoNota = getPreviewNoteReceivedAmount(nota);
                   const saldoAbertoNota = getPreviewNoteOpenAmount(nota);
-                  const totalComDesc = roundMoney(saldoAbertoNota * (1 - disc / 100));
+                  const totalComDesc = getPreviewNoteDiscountedOpenAmount(nota);
                   const editing = editingItems[nota.id] ?? true;
                   const isPaid = saldoAbertoNota <= 0;
                   const isPartial = !isPaid && valorRecebidoNota > 0;
                   const included = !isPaid && includedNoteIds.includes(nota.id);
                   const itens = getPreviewItems(nota);
-                  const itensBruto = itens.reduce((sum, item) => (
-                    sum + (Math.max(0, item.quantidade) * Math.max(0, item.preco_unitario))
-                  ), 0);
-                  const descontoItens = Math.max(0, itensBruto - nota.total);
-                  const descontoFinalOs = Math.max(0, saldoAbertoNota - totalComDesc);
+                  const descontoItens = roundMoney(Math.max(0, saldoAbertoNota - totalComDesc));
                   return (
                     <Card
                       key={nota.id}
@@ -2588,7 +2613,7 @@ export default function MonthlyClosing() {
                           {!isPaid && (
                             <Button variant="outline" size="sm" className="h-8" onClick={() => setEditingItems((prev) => ({ ...prev, [nota.id]: !editing }))}>
                               {editing ? <EyeOff className="mr-1.5 h-3.5 w-3.5" /> : <PencilLine className="mr-1.5 h-3.5 w-3.5" />}
-                              {editing ? 'Recolher' : 'Editar'}
+                              {editing ? 'Recolher' : 'Descontos'}
                             </Button>
                           )}
                           <div className="text-right">
@@ -2623,27 +2648,15 @@ export default function MonthlyClosing() {
                               >
                                 <div className="min-w-0">
                                   <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Descrição</p>
-                                  {editing ? (
-                                    <Input value={item.descricao} onChange={(e) => updatePreviewItem(nota.id, item.id, 'descricao', e.target.value)} className="h-8 text-xs" />
-                                  ) : (
-                                    <span className="break-words">{item.descricao}</span>
-                                  )}
+                                  <span className="break-words">{item.descricao}</span>
                                 </div>
                                 <div>
                                   <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Qtd</p>
-                                  {editing ? (
-                                    <Input type="number" min="0" step="1" value={item.quantidade} onChange={(e) => updatePreviewItem(nota.id, item.id, 'quantidade', e.target.value)} className="h-8 text-xs text-center" />
-                                  ) : (
-                                    <p className="lg:text-center">{item.quantidade}</p>
-                                  )}
+                                  <p className="lg:text-center">{item.quantidade}</p>
                                 </div>
                                 <div>
                                   <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Unit.</p>
-                                  {editing ? (
-                                    <Input type="number" min="0" step="0.01" value={item.preco_unitario} onChange={(e) => updatePreviewItem(nota.id, item.id, 'preco_unitario', e.target.value)} className="h-8 text-xs lg:text-right" />
-                                  ) : (
-                                    <p className="lg:text-right"><FinancialValue>R$ {toMoney(item.preco_unitario)}</FinancialValue></p>
-                                  )}
+                                  <p className="lg:text-right"><FinancialValue>R$ {toMoney(item.preco_unitario)}</FinancialValue></p>
                                 </div>
                                 <div>
                                   <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Desc. %</p>
@@ -2651,12 +2664,12 @@ export default function MonthlyClosing() {
                                     <div className="relative">
                                       <Input
                                         type="number"
-                                        min="0"
+                                        min={item.desconto_original}
                                         max="100"
                                         step="0.01"
-                                        value={canApplyItemDiscount ? item.desconto_porcentagem : ''}
+                                        value={canApplyItemDiscount && item.desconto_porcentagem > 0 ? item.desconto_porcentagem : ''}
                                         disabled={!canApplyItemDiscount}
-                                        onChange={(e) => updatePreviewItem(nota.id, item.id, 'desconto_porcentagem', e.target.value)}
+                                        onChange={(e) => updatePreviewItem(nota.id, item.id, e.target.value)}
                                         placeholder={canApplyItemDiscount ? '0' : '-'}
                                         className="h-8 pr-6 text-xs disabled:opacity-60 lg:text-right"
                                       />
@@ -2670,6 +2683,20 @@ export default function MonthlyClosing() {
                                   {canApplyItemDiscount && descontoItem > 0 ? (
                                     <p className="mt-1 text-[10px] font-medium text-emerald-700 lg:text-right"><FinancialValue>-R$ {toMoney(descontoItem)}</FinancialValue></p>
                                   ) : null}
+                                  {editing && item.desconto_original > 0 ? (
+                                    <p className="mt-1 text-[10px] text-muted-foreground lg:text-right">
+                                      O.S.: {item.desconto_original}%
+                                    </p>
+                                  ) : null}
+                                  {editing && item.desconto_porcentagem > item.desconto_original ? (
+                                    <button
+                                      type="button"
+                                      className="mt-1 text-[10px] text-muted-foreground underline-offset-2 hover:underline lg:ml-auto lg:block"
+                                      onClick={() => resetPreviewItemDiscount(nota.id, item.id)}
+                                    >
+                                      Restaurar
+                                    </button>
+                                  ) : null}
                                 </div>
                                 <div>
                                   <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Total item</p>
@@ -2680,14 +2707,9 @@ export default function MonthlyClosing() {
                           })}
                         </div>
                         <div className="px-4 py-3 bg-muted/20 border-t border-border/30 flex items-center justify-between gap-4 flex-wrap">
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-                            <span>Desconto final da O.S. inteira:</span>
-                            <Input type="number" min="0" max="100" step="1" value={descontos[nota.id] ?? ''} onChange={(e) => setDescontos((prev) => ({ ...prev, [nota.id]: clampPercent(parseFloat(e.target.value) || 0) }))} placeholder="0" className="w-20 h-8 text-xs text-center" />
-                            <span>%</span>
-                          </div>
+                          <p className="text-xs text-muted-foreground">O desconto é aplicado somente nos itens escolhidos acima.</p>
                           <div className="text-right text-xs">
-                            {descontoItens > 0 ? <p className="text-muted-foreground">Itens: <FinancialValue>-R$ {toMoney(descontoItens)}</FinancialValue></p> : null}
-                            {descontoFinalOs > 0 ? <p className="text-muted-foreground">Final: <FinancialValue>-R$ {toMoney(descontoFinalOs)}</FinancialValue></p> : null}
+                            {descontoItens > 0 ? <p className="font-medium text-emerald-700">Desconto aplicado: <FinancialValue>-R$ {toMoney(descontoItens)}</FinancialValue></p> : null}
                             <p className="font-bold"><FinancialValue>R$ {toMoney(totalComDesc)}</FinancialValue></p>
                           </div>
                         </div>
