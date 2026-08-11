@@ -440,6 +440,120 @@ describe('Fechamentos Supabase mutations', () => {
     expect(mocks.rpc).toHaveBeenNthCalledWith(2, 'finalizar_fechamento', expectedParams);
   });
 
+  it('finaliza sem entrada pela RPC auditada do tenant em modo suporte', async () => {
+    activateSupportContext();
+    const supportInput: FinalizarFechamentoInput = {
+      ...finalizarInput,
+      dadosJson: {
+        ...finalizarInput.dadosJson,
+        recebimento_inicial: null,
+      },
+      pagamentoInicial: null,
+      customization: {
+        fkUsuarios: '22222222-2222-4222-8222-222222222222',
+      } as FinalizarFechamentoInput['customization'],
+    };
+    mocks.rpc.mockResolvedValue({
+      data: {
+        status: 200,
+        mensagem: 'ok',
+        dados: {
+          id_fechamentos: FINAL_CLOSING_ID,
+          movimento_id: null,
+          status: 'PENDENTE',
+          valor_recebido: 0,
+          valor_aberto: 1_000,
+          idempotent_retry: false,
+        },
+      },
+      error: null,
+    });
+
+    await expect(finalizarFechamento(supportInput)).resolves.toEqual({
+      id: FINAL_CLOSING_ID,
+      movimentoId: null,
+      status: 'PENDENTE',
+      valorRecebido: 0,
+      valorAberto: 1_000,
+      idempotentRetry: false,
+    });
+
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      'finalizar_fechamento_contexto_suporte',
+      expect.objectContaining({
+        p_id_fechamentos: FINAL_CLOSING_ID,
+        p_recebimento_valor: null,
+        p_recebimento_data: null,
+        p_recebimento_conta: null,
+        p_recebimento_forma: null,
+        p_recebimento_observacoes: null,
+        p_recebimento_idempotencia: null,
+        p_contexto_usuario_id: '22222222-2222-4222-8222-222222222222',
+        p_sessao_suporte: '11111111-1111-4111-8111-111111111111',
+      }),
+    );
+  });
+
+  it('bloqueia entrada financeira antes da RPC em modo suporte', async () => {
+    activateSupportContext();
+
+    await expect(finalizarFechamento(finalizarInput))
+      .rejects
+      .toThrow('Crie o fechamento sem entrada no modo suporte');
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it('bloqueia template de outra empresa antes da RPC em modo suporte', async () => {
+    activateSupportContext();
+    const supportInput: FinalizarFechamentoInput = {
+      ...finalizarInput,
+      dadosJson: { ...finalizarInput.dadosJson, recebimento_inicial: null },
+      pagamentoInicial: null,
+      customization: {
+        fkUsuarios: 'outro-tenant',
+      } as FinalizarFechamentoInput['customization'],
+    };
+
+    await expect(finalizarFechamento(supportInput))
+      .rejects
+      .toThrow('O template real da empresa atendida ainda não foi confirmado');
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it('confirma o commit sem continuar no novo escopo se a sessão mudar durante a resposta', async () => {
+    activateSupportContext();
+    const supportInput: FinalizarFechamentoInput = {
+      ...finalizarInput,
+      dadosJson: { ...finalizarInput.dadosJson, recebimento_inicial: null },
+      pagamentoInicial: null,
+      customization: {
+        fkUsuarios: '22222222-2222-4222-8222-222222222222',
+      } as FinalizarFechamentoInput['customization'],
+    };
+    mocks.rpc.mockImplementation(async () => {
+      setActiveSupportSession(null);
+      return {
+        data: {
+          status: 200,
+          mensagem: 'ok',
+          dados: {
+            id_fechamentos: FINAL_CLOSING_ID,
+            status: 'PENDENTE',
+            valor_recebido: 0,
+            valor_aberto: 1_000,
+            idempotent_retry: false,
+          },
+        },
+        error: null,
+      };
+    });
+
+    await expect(finalizarFechamento(supportInput)).resolves.toMatchObject({
+      id: FINAL_CLOSING_ID,
+      supportScopeChangedAfterCommit: true,
+    });
+  });
+
   it('rejeita resposta de finalização sem identificador', async () => {
     mocks.rpc.mockResolvedValue({
       data: { status: 200, mensagem: 'ok', dados: { status: 'PENDENTE' } },

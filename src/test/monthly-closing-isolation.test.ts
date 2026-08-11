@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { FechamentoListItem } from '@/api/supabase/fechamentos';
 import {
+  canLoadMonthlyClosings,
   filterFechamentosForClientScope,
   getMonthlyClosingDraftsStorageKey,
+  scopeMonthlyClosings,
 } from '@/services/domain/monthlyClosingIsolation';
 
 function makeFechamento(id: string, clienteId: string | null): FechamentoListItem {
@@ -46,5 +48,27 @@ describe('monthly closing tenant isolation helpers', () => {
 
   it('returns no closings until the client scope is known', () => {
     expect(filterFechamentosForClientScope([makeFechamento('closing-1', 'client-1')], [])).toEqual([]);
+  });
+
+  it('loads and preserves a server-scoped support list before clients finish loading', () => {
+    const fechamento = makeFechamento('closing-support', 'client-target');
+
+    expect(canLoadMonthlyClosings({
+      realAuth: true,
+      scopeUserId: 'target-user',
+      supportContextActive: true,
+      scopedClientIds: [],
+    })).toBe(true);
+    expect(scopeMonthlyClosings([fechamento], [], true)).toEqual([fechamento]);
+  });
+
+  it('keeps normal sessions fail-closed while the client scope is empty', () => {
+    expect(canLoadMonthlyClosings({
+      realAuth: true,
+      scopeUserId: 'normal-user',
+      supportContextActive: false,
+      scopedClientIds: [],
+    })).toBe(false);
+    expect(scopeMonthlyClosings([makeFechamento('closing-1', 'client-1')], [], false)).toEqual([]);
   });
 });

@@ -24,6 +24,8 @@ const SUPPORT_CONTEXT_RPC_MAP: Record<string, string> = {
   get_fechamentos: 'get_fechamentos_contexto_suporte',
   get_fechamentos_abertos_cliente: 'get_fechamentos_abertos_cliente_contexto_suporte',
   get_parcelas_fechamento: 'get_parcelas_fechamento_contexto_suporte',
+  get_configuracao_modelo_usuario: 'get_configuracao_modelo_usuario_contexto_suporte',
+  resolver_configuracao_documento: 'resolver_configuracao_documento_contexto_suporte',
   get_sugestoes_email: 'get_sugestoes_email_contexto_suporte',
   get_gmail_connection_status: 'get_gmail_connection_status_contexto_suporte',
   // Leituras — Central Financeiro
@@ -51,6 +53,8 @@ const SUPPORT_CONTEXT_RPC_MAP: Record<string, string> = {
   update_categoria_conta_pagar: 'update_categoria_conta_pagar_contexto_suporte',
   update_conta_pagar: 'update_conta_pagar_contexto_suporte',
   update_fornecedor: 'update_fornecedor_contexto_suporte',
+  // Escrita — Fechamento (sem entrada/PDF; validado e auditado no servidor)
+  finalizar_fechamento: 'finalizar_fechamento_contexto_suporte',
   // Escritas — Notas de Serviço
   nova_nota: 'nova_nota_contexto_suporte',
   update_nota_servico: 'update_nota_servico_contexto_suporte',
@@ -89,7 +93,6 @@ const SUPPORT_BLOCKED_WRITE_RPCS = new Set([
   'cancelar_fatura',
   'insert_fatura',
   'insert_fechamento',
-  'finalizar_fechamento',
   'atualizar_pdf_fechamento',
   'atualizar_pdf_fechamento_seguro',
   'insert_sugestao_email',

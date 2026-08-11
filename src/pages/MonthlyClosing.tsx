@@ -12,10 +12,11 @@ import {
   Download, Building2,
   PlusCircle, RefreshCcw, ChevronLeft, Eye, EyeOff, Sparkles, PencilLine, Printer,
   Wallet, CheckCircle2, RotateCcw, MessageCircle, AlertTriangle, ArrowRight, Upload,
+  Clock3,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { formatDateBR, todayLocalISODate } from '@/lib/dates';
+import { formatDatabaseDateTimeBR, formatDateBR, todayLocalISODate } from '@/lib/dates';
 import { ClosingHtmlPreview } from '@/components/closing/ClosingHtmlPreview';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { createPdfPreviewWindow, downloadPdfBlob, downloadPdfUrl, openPdfInBrowser } from '@/lib/printPdf';
@@ -45,8 +46,9 @@ import {
 import { getNotasServico, mapStatusNome, type NotaServico } from '@/api/supabase/notas';
 import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 import {
-  filterFechamentosForClientScope,
+  canLoadMonthlyClosings,
   getMonthlyClosingDraftsStorageKey,
+  scopeMonthlyClosings,
 } from '@/services/domain/monthlyClosingIsolation';
 import {
   getClosingCompetenceDate,
@@ -82,7 +84,11 @@ import {
 import { PAYMENT_METHOD_LABELS, type IntakeNote, type NotePaymentStatus, type PaymentMethod } from '@/types';
 import { isBillableNoteStatus } from '@/services/domain/intakeNotes';
 import { toComparableTime } from '@/services/domain/dashboardFinance';
-import { readActiveSupportContext } from '@/services/auth/supportContext';
+import {
+  assertActiveSupportScopeUnchanged,
+  captureActiveSupportScope,
+  readActiveSupportContext,
+} from '@/services/auth/supportContext';
 import { FinancialValue } from '@/components/privacy/FinancialValue';
 import { ClosingPaymentDialog } from '@/components/closing/ClosingPaymentDialog';
 import type { ClosingFinancialSummary } from '@/components/closing/closingFinancialSummary';
@@ -482,8 +488,54 @@ export default function MonthlyClosing() {
   const { notes, clients, registrarRecebimentoNota, estornarRecebimentoNota, refreshNotes } = useData();
   const { operationalUser, user, isSupportImpersonating } = useAuth();
   const { toast } = useToast();
-  const { data: templateSettings } = useDocumentTemplateSettings();
-  const { data: documentSettings } = useDocumentCustomization('closing_report');
+  const currentScopeUserId = IS_REAL_AUTH ? operationalUser?.id ?? null : 'development';
+  const activeSupportScope = readActiveSupportContext();
+  const supportContextActive = Boolean(
+    isSupportImpersonating
+    && currentScopeUserId
+    && activeSupportScope?.targetUserId === currentScopeUserId,
+  );
+  const supportContextInvalid = Boolean(isSupportImpersonating || activeSupportScope)
+    && !supportContextActive;
+  const supportContextRestricted = supportContextActive || supportContextInvalid;
+  const documentQueriesEnabled = !supportContextInvalid && Boolean(currentScopeUserId);
+  const documentQueryScope = supportContextActive ? activeSupportScope?.sessionId : null;
+  const templateSettingsQuery = useDocumentTemplateSettings(
+    currentScopeUserId,
+    documentQueriesEnabled,
+    documentQueryScope,
+  );
+  const documentSettingsQuery = useDocumentCustomization(
+    'closing_report',
+    currentScopeUserId,
+    documentQueriesEnabled,
+    documentQueryScope,
+  );
+  const { data: templateSettings } = templateSettingsQuery;
+  const { data: documentSettings } = documentSettingsQuery;
+  const supportDocumentSettingsReady = !supportContextActive
+    ? !supportContextInvalid
+    : Boolean(
+        !templateSettingsQuery.isPlaceholderData
+        && !templateSettingsQuery.isError
+        && templateSettings?.fkUsuarios === currentScopeUserId
+        && !documentSettingsQuery.isPlaceholderData
+        && !documentSettingsQuery.isError
+        && documentSettings?.fkUsuarios === currentScopeUserId,
+      );
+  const supportDocumentSettingsError = Boolean(
+    supportContextActive
+    && (templateSettingsQuery.isError || documentSettingsQuery.isError),
+  );
+  const supportDocumentSettingsRefreshing = Boolean(
+    templateSettingsQuery.isFetching || documentSettingsQuery.isFetching,
+  );
+  const retrySupportDocumentSettings = useCallback(() => {
+    void Promise.all([
+      templateSettingsQuery.refetch(),
+      documentSettingsQuery.refetch(),
+    ]);
+  }, [documentSettingsQuery, templateSettingsQuery]);
 
   const now = new Date();
   const defaultMonth = String(now.getMonth() + 1);
@@ -556,7 +608,6 @@ export default function MonthlyClosing() {
   const [generating, setGenerating] = useState(false);
   const [previewDados, setPreviewDados] = useState<FechamentoDadosJson | null>(null);
 
-  const currentScopeUserId = IS_REAL_AUTH ? operationalUser?.id ?? null : 'development';
   const draftsStorageKey = useMemo(
     () => getMonthlyClosingDraftsStorageKey(currentScopeUserId),
     [currentScopeUserId],
@@ -605,11 +656,16 @@ export default function MonthlyClosing() {
   const loadFechamentos = useCallback(async () => {
     const requestId = fechamentosRequestRef.current + 1;
     fechamentosRequestRef.current = requestId;
-    if (!IS_REAL_AUTH || !currentScopeUserId) {
+    if (supportContextInvalid) {
       if (requestId === fechamentosRequestRef.current) setFechamentos([]);
       return true;
     }
-    if (scopedClientIds.length === 0) {
+    if (!canLoadMonthlyClosings({
+      realAuth: IS_REAL_AUTH,
+      scopeUserId: currentScopeUserId,
+      supportContextActive,
+      scopedClientIds,
+    })) {
       if (requestId === fechamentosRequestRef.current) setFechamentos([]);
       return true;
     }
@@ -618,7 +674,10 @@ export default function MonthlyClosing() {
     try {
       const dados = await getAllFechamentos();
       if (requestId !== fechamentosRequestRef.current) return false;
-      setFechamentos(filterFechamentosForClientScope(dados, scopedClientIds));
+      // A RPC de suporte ja resolve sessao/alvo e filtra pelo dono do cliente.
+      // Nao depender da carga assíncrona de clientes evita o falso estado vazio
+      // observado em tablets. Fora do suporte, o filtro local segue fail-closed.
+      setFechamentos(scopeMonthlyClosings(dados, scopedClientIds, supportContextActive));
       return true;
     } catch {
       if (requestId === fechamentosRequestRef.current) {
@@ -629,7 +688,7 @@ export default function MonthlyClosing() {
     } finally {
       if (requestId === fechamentosRequestRef.current) setLoadingList(false);
     }
-  }, [currentScopeUserId, scopedClientIds, toast]);
+  }, [currentScopeUserId, scopedClientIds, supportContextActive, supportContextInvalid, toast]);
 
   useEffect(() => { void loadFechamentos(); }, [loadFechamentos]);
 
@@ -649,7 +708,9 @@ export default function MonthlyClosing() {
   const loadFinanceAccounts = useCallback(async () => {
     const requestId = financeAccountsRequestRef.current + 1;
     financeAccountsRequestRef.current = requestId;
-    if (!IS_REAL_AUTH || !currentScopeUserId) {
+    // A criação em suporte não aceita entrada. Não carregamos contas do ator
+    // enquanto a tela está visualmente no tenant atendido.
+    if (!IS_REAL_AUTH || !currentScopeUserId || supportContextActive || supportContextInvalid) {
       if (requestId === financeAccountsRequestRef.current) {
         setFinanceAccounts([]);
         setFinanceAccountsError(false);
@@ -671,7 +732,7 @@ export default function MonthlyClosing() {
     } finally {
       if (requestId === financeAccountsRequestRef.current) setLoadingFinanceAccounts(false);
     }
-  }, [currentScopeUserId]);
+  }, [currentScopeUserId, supportContextActive, supportContextInvalid]);
 
   useEffect(() => { void loadFinanceAccounts(); }, [loadFinanceAccounts]);
 
@@ -731,16 +792,18 @@ export default function MonthlyClosing() {
         description: 'Este rascunho estava incompleto e não pôde ser aberto com segurança.',
         variant: 'destructive',
       });
-      return;
+      return null;
     }
 
     if (!scopedClientIdSet.has(safeDraft.clientId)) {
       toast({
-        title: 'Rascunho fora do escopo atual',
-        description: 'Este rascunho pertence a outra conta ou cliente e foi bloqueado nesta sessão.',
+        title: scopedClientIdSet.size === 0 ? 'Clientes ainda não carregados' : 'Rascunho fora do escopo atual',
+        description: scopedClientIdSet.size === 0
+          ? 'Aguarde a carga dos clientes da empresa atendida e tente novamente.'
+          : 'Este rascunho pertence a outra conta ou cliente e foi bloqueado nesta sessão.',
         variant: 'destructive',
       });
-      return;
+      return null;
     }
 
     setActiveDraftId(safeDraft.id);
@@ -768,10 +831,11 @@ export default function MonthlyClosing() {
     setEditingItems({});
     setInitialPaymentProof(null);
     if (initialPaymentProofInputRef.current) initialPaymentProofInputRef.current.value = '';
+    return safeDraft;
   }, [defaultCustomEndDate, defaultCustomStartDate, defaultMonth, defaultYear, scopedClientIdSet, toast]);
 
   const openDraft = useCallback((draft: ClosingDraft) => {
-    loadDraftIntoEditor(draft);
+    if (!loadDraftIntoEditor(draft)) return;
     setDraftModalOpen(true);
   }, [loadDraftIntoEditor]);
 
@@ -788,7 +852,7 @@ export default function MonthlyClosing() {
   const loadOpenClosings = useCallback(async (clientId: string) => {
     const requestId = openClosingsRequestRef.current + 1;
     openClosingsRequestRef.current = requestId;
-    if (!IS_REAL_AUTH || !clientId) {
+    if (!IS_REAL_AUTH || !clientId || supportContextInvalid) {
       if (requestId === openClosingsRequestRef.current) {
         setOpenClosings(null);
         setOpenClosingsError(false);
@@ -808,7 +872,7 @@ export default function MonthlyClosing() {
     } finally {
       if (requestId === openClosingsRequestRef.current) setLoadingOpenClosings(false);
     }
-  }, []);
+  }, [supportContextInvalid]);
 
   useEffect(() => {
     if (!reminderClientId) {
@@ -971,15 +1035,24 @@ export default function MonthlyClosing() {
   }, [applyClosingPreviewBlob, renderClosingPdfBlob, toast]);
 
   const openDraftPreview = useCallback((draft: ClosingDraft) => {
-    loadDraftIntoEditor(draft);
-    const totals = computeDraftTotals(draft);
+    if (!supportDocumentSettingsReady) {
+      toast({
+        title: 'Documento da empresa ainda não confirmado',
+        description: 'Aguarde o template real carregar antes de visualizar o fechamento.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const safeDraft = loadDraftIntoEditor(draft);
+    if (!safeDraft) return;
+    const totals = computeDraftTotals(safeDraft);
     const payment = calculateInitialClosingPayment(
       moneyToCents(totals.totalComDesconto),
-      buildInitialPaymentPlan(draft),
+      buildInitialPaymentPlan(safeDraft),
     );
     void showClosingPdfPreview(
-      buildDadosFromDraft(draft),
-      `Fechamento ${draft.periodLabel}`,
+      buildDadosFromDraft(safeDraft),
+      `Fechamento ${safeDraft.periodLabel}`,
       false,
       {
         total: totals.totalComDesconto,
@@ -991,9 +1064,10 @@ export default function MonthlyClosing() {
         planned: true,
       },
     );
-  }, [loadDraftIntoEditor, showClosingPdfPreview]);
+  }, [loadDraftIntoEditor, showClosingPdfPreview, supportDocumentSettingsReady, toast]);
 
   const openActiveDraftPreview = useCallback(() => {
+    if (!supportDocumentSettingsReady) return;
     const dados = modalPreviewDadosRef.current;
     if (!dados || !activeDraft) return;
     const payment = calculateInitialClosingPayment(
@@ -1009,9 +1083,17 @@ export default function MonthlyClosing() {
         : payment.amountCents > 0 ? 'PARCIAL' : 'PENDENTE',
       planned: true,
     });
-  }, [activeDraft, showClosingPdfPreview]);
+  }, [activeDraft, showClosingPdfPreview, supportDocumentSettingsReady]);
 
   const openGeneratedPreview = useCallback(async (fechamento: FechamentoListItem) => {
+    if (!supportDocumentSettingsReady) {
+      toast({
+        title: 'Documento da empresa ainda não confirmado',
+        description: 'Aguarde o template real carregar antes de visualizar o fechamento.',
+        variant: 'destructive',
+      });
+      return;
+    }
     const requestId = generatedPreviewRequestRef.current + 1;
     generatedPreviewRequestRef.current = requestId;
     setTemplatePreviewLoading(true);
@@ -1070,16 +1152,16 @@ export default function MonthlyClosing() {
     } finally {
       if (requestId === generatedPreviewRequestRef.current) setTemplatePreviewLoading(false);
     }
-  }, [applyClosingPreviewBlob, loadFreshClosing, renderStableGeneratedClosing, toast]);
+  }, [applyClosingPreviewBlob, loadFreshClosing, renderStableGeneratedClosing, supportDocumentSettingsReady, toast]);
 
   const directClosingId = searchParams.get('fechamento');
   useEffect(() => {
-    if (!directClosingId || loadingList || directClosingHandledRef.current === directClosingId) return;
+    if (!supportDocumentSettingsReady || !directClosingId || loadingList || directClosingHandledRef.current === directClosingId) return;
     const closing = fechamentos.find((item) => item.id_fechamentos === directClosingId);
     if (!closing) return;
     directClosingHandledRef.current = directClosingId;
     void openGeneratedPreview(closing);
-  }, [directClosingId, fechamentos, loadingList, openGeneratedPreview]);
+  }, [directClosingId, fechamentos, loadingList, openGeneratedPreview, supportDocumentSettingsReady]);
 
   const removeDraft = useCallback((draftId: string) => {
     setDrafts((current) => current.filter((draft) => draft.id !== draftId));
@@ -1091,6 +1173,26 @@ export default function MonthlyClosing() {
 
   /* ── Build local draft ── */
   const handleBuildPreview = useCallback(async () => {
+    if (supportContextInvalid) {
+      toast({
+        title: 'Sessão de suporte ainda não validada',
+        description: 'Aguarde a confirmação do alvo antes de consultar ou criar um rascunho.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const operationScope = captureActiveSupportScope();
+    if (
+      supportContextActive
+      && operationScope?.targetUserId !== currentScopeUserId
+    ) {
+      toast({
+        title: 'Sessão de suporte divergente',
+        description: 'Atualize a página antes de consultar as O.S. da empresa atendida.',
+        variant: 'destructive',
+      });
+      return;
+    }
     if (!selClientId) { toast({ title: 'Selecione um cliente', variant: 'destructive' }); return; }
     if (!scopedClientIdSet.has(selClientId)) {
       toast({
@@ -1108,7 +1210,6 @@ export default function MonthlyClosing() {
     setLoadingPreview(true);
     try {
       const localClosingIdByNoteId = new Map(notes.map((note) => [note.id, note.closingId ?? null]));
-      const supportContextActive = Boolean(readActiveSupportContext());
       const notasFiltradas = IS_REAL_AUTH
         ? (await getAllClosingCandidateNotes(selClientId, supportContextActive)).filter((note) => {
             const closingId = note.fk_fechamentos ?? localClosingIdByNoteId.get(note.id_notas_servico);
@@ -1162,6 +1263,7 @@ export default function MonthlyClosing() {
             valorRecebido: asNumber(note.valorRecebido),
             pagoEm: note.paidAt ?? null,
           }));
+      assertActiveSupportScopeUnchanged(operationScope);
 
       if (notasFiltradas.length === 0) {
         toast({ title: 'Nenhuma O.S. faturável entregue neste período', variant: 'destructive' });
@@ -1172,7 +1274,9 @@ export default function MonthlyClosing() {
       // concorrência limitada elimina a espera sequencial sem saturar a
       // instância pequena do Supabase em fechamentos grandes.
       const resultado = await mapWithConcurrency(notasFiltradas, 6, async (nota): Promise<PreviewNote> => {
+        assertActiveSupportScopeUnchanged(operationScope);
         const det = IS_REAL_AUTH ? await getNotaDetalhesParaFechamento(nota.id) : null;
+        assertActiveSupportScopeUnchanged(operationScope);
         const itensServico = Array.isArray(det?.itens_servico) ? det.itens_servico : [];
         const fallbackItem = {
           id: `${nota.id}-fallback`,
@@ -1215,6 +1319,8 @@ export default function MonthlyClosing() {
             : [fallbackItem],
         };
       });
+
+      assertActiveSupportScopeUnchanged(operationScope);
 
       setPreviewNotes(resultado);
       setDescontos({});
@@ -1260,7 +1366,7 @@ export default function MonthlyClosing() {
     } finally {
       setLoadingPreview(false);
     }
-  }, [clients, customEndDate, customStartDate, defaultFinanceAccount?.id, notes, openDraft, periodMode, scopedClientIdSet, selClientId, selectedPeriodRange, toast]);
+  }, [clients, currentScopeUserId, customEndDate, customStartDate, defaultFinanceAccount?.id, notes, openDraft, periodMode, scopedClientIdSet, selClientId, selectedPeriodRange, supportContextActive, supportContextInvalid, toast]);
 
   const safePreviewNotes = useMemo(
     () => (Array.isArray(previewNotes) ? previewNotes : []),
@@ -1337,6 +1443,14 @@ export default function MonthlyClosing() {
         : draft
     )));
   }, [activeDraftId]);
+
+  const activeDraftInitialPaymentMode = activeDraft?.initialPayment.mode;
+  useEffect(() => {
+    if (!supportContextRestricted || !activeDraftInitialPaymentMode || activeDraftInitialPaymentMode === 'NONE') return;
+    updateInitialPayment({ mode: 'NONE' });
+    setInitialPaymentProof(null);
+    if (initialPaymentProofInputRef.current) initialPaymentProofInputRef.current.value = '';
+  }, [activeDraftInitialPaymentMode, supportContextRestricted, updateInitialPayment]);
 
   const selectInitialPaymentMode = useCallback((mode: ClosingInitialPaymentMode) => {
     updateInitialPayment({
@@ -1568,13 +1682,23 @@ export default function MonthlyClosing() {
   const generateDraft = useCallback(async (draft: ClosingDraft) => {
     setGenerating(true);
     try {
-      if (isSupportImpersonating || readActiveSupportContext()) {
-        toast({
-          title: 'Geração bloqueada em modo suporte',
-          description: 'Você pode revisar o rascunho em suporte, mas a gravação do fechamento precisa ser feita na sessão real da Retífica Premium.',
-          variant: 'destructive',
-        });
-        return;
+      const operationScope = captureActiveSupportScope();
+      if (supportContextInvalid || (isSupportImpersonating && !operationScope)) {
+        throw new Error('A sessão de suporte ainda não foi validada. Aguarde a confirmação do contexto e tente novamente.');
+      }
+      if (
+        operationScope
+        && (
+          !supportContextActive
+          || !supportDocumentSettingsReady
+          || templateSettings?.fkUsuarios !== operationScope.targetUserId
+          || documentSettings?.fkUsuarios !== operationScope.targetUserId
+        )
+      ) {
+        throw new Error('A configuração real do documento da empresa atendida ainda não foi confirmada. Aguarde o carregamento e tente novamente.');
+      }
+      if (operationScope && draft.initialPayment.mode !== 'NONE') {
+        throw new Error('No modo suporte, crie o fechamento sem entrada. Os recebimentos continuam protegidos na sessão da empresa.');
       }
       if (!scopedClientIdSet.has(draft.clientId)) {
         toast({
@@ -1670,6 +1794,7 @@ export default function MonthlyClosing() {
       // da transação Postgres.
       const warnings: string[] = [];
       const preflightPdfBlob = await renderClosingPdfBlob(dados, geradoEm, plannedSummary);
+      assertActiveSupportScopeUnchanged(operationScope);
       const finalizeInput = {
         id: draft.closingId,
         clienteId: draft.clientId,
@@ -1691,19 +1816,33 @@ export default function MonthlyClosing() {
         } : null,
       };
 
-      let result: FinalizarFechamentoResult;
-      try {
-        result = await finalizarFechamento(finalizeInput);
-      } catch (finalizeError) {
-        // Uma queda de rede pode acontecer depois do COMMIT. Repetimos uma vez
-        // o contrato completo com a mesma chave: o backend só devolve sucesso se
-        // snapshot, período, cliente, template, vínculos e pagamento coincidirem.
-        try {
-          result = await finalizarFechamento(finalizeInput);
-          warnings.push('A confirmação foi recuperada com segurança após uma interrupção de conexão.');
-        } catch {
-          throw finalizeError;
+      // Erros de negócio e de transporte chegam hoje pelo mesmo contrato.
+      // Não repetimos automaticamente: o rascunho e a chave estável permitem
+      // uma nova tentativa manual idempotente sem correr o risco de trocar o
+      // tenant entre chamadas.
+      const result: FinalizarFechamentoResult = await finalizarFechamento(finalizeInput);
+
+      const stopPostCommitIfScopeChanged = () => {
+        let changed = result.supportScopeChangedAfterCommit === true;
+        if (!changed) {
+          try {
+            assertActiveSupportScopeUnchanged(operationScope);
+          } catch {
+            changed = true;
+          }
         }
+        if (!changed) return false;
+
+        closeDraftModal();
+        toast({
+          title: 'Fechamento gravado; contexto alterado',
+          description: 'O servidor confirmou a criação, mas a sessão de suporte mudou durante a resposta. Reabra a empresa correta para atualizar a lista.',
+        });
+        return true;
+      };
+
+      if (stopPostCommitIfScopeChanged()) {
+        return;
       }
 
       const committedSummary: ClosingFinancialSummary = {
@@ -1712,25 +1851,35 @@ export default function MonthlyClosing() {
         open: result.valorAberto,
         status: result.status,
       };
-      try {
-        const pdfBlob = Math.abs(result.valorRecebido - plannedSummary.received) <= 0.004
-          && Math.abs(result.valorAberto - plannedSummary.open) <= 0.004
-          && result.status === plannedSummary.status
-          ? preflightPdfBlob
-          : await renderClosingPdfBlob(dados, geradoEm, committedSummary);
-        const pdfUrl = await uploadFechamentoPDF(result.id, pdfBlob, {
-          versionCents: moneyToCents(result.valorRecebido),
-        });
-        await atualizarFechamentoPdf(result.id, pdfUrl, {
-          expectedValorRecebido: result.valorRecebido,
-        });
-      } catch {
-        warnings.push('O fechamento e o pagamento foram salvos, mas o PDF ficou pendente; ele será regenerado ao compartilhar.');
+      if (operationScope) {
+        warnings.push('No suporte, o PDF pode ser visualizado e baixado pelo snapshot; o envio por WhatsApp permanece protegido.');
+      } else {
+        try {
+          const pdfBlob = Math.abs(result.valorRecebido - plannedSummary.received) <= 0.004
+            && Math.abs(result.valorAberto - plannedSummary.open) <= 0.004
+            && result.status === plannedSummary.status
+            ? preflightPdfBlob
+            : await renderClosingPdfBlob(dados, geradoEm, committedSummary);
+          if (stopPostCommitIfScopeChanged()) return;
+          const pdfUrl = await uploadFechamentoPDF(result.id, pdfBlob, {
+            versionCents: moneyToCents(result.valorRecebido),
+          });
+          if (stopPostCommitIfScopeChanged()) return;
+          await atualizarFechamentoPdf(result.id, pdfUrl, {
+            expectedValorRecebido: result.valorRecebido,
+          });
+          if (stopPostCommitIfScopeChanged()) return;
+        } catch {
+          if (stopPostCommitIfScopeChanged()) return;
+          warnings.push('O fechamento e o pagamento foram salvos, mas o PDF ficou pendente; ele será regenerado ao compartilhar.');
+        }
       }
 
+      if (stopPostCommitIfScopeChanged()) return;
       if (proof && result.movimentoId) {
         try {
           const path = await uploadFinanceiroComprovante({ movimentoId: result.movimentoId, file: proof });
+          if (stopPostCommitIfScopeChanged()) return;
           await insertFinanceiroAnexo({
             movimentoId: result.movimentoId,
             nomeArquivo: proof.name,
@@ -1738,29 +1887,39 @@ export default function MonthlyClosing() {
             mimeType: proof.type || null,
             tamanhoBytes: proof.size,
           });
+          if (stopPostCommitIfScopeChanged()) return;
         } catch {
+          if (stopPostCommitIfScopeChanged()) return;
           warnings.push('A parcela foi salva, mas o comprovante ficou pendente e pode ser anexado no histórico.');
         }
       }
 
-      try {
-        await registrarAcaoFechamento({
-          p_id_fechamentos: result.id,
-          p_tipo: 'pdf_gerado',
-          p_mensagem: `Fechamento finalizado. Total: R$ ${totals.totalComDesconto.toFixed(2)}; recebido: R$ ${result.valorRecebido.toFixed(2)}.`,
-        });
-      } catch { /* non-blocking */ }
+      if (stopPostCommitIfScopeChanged()) return;
+      if (!operationScope) {
+        try {
+          await registrarAcaoFechamento({
+            p_id_fechamentos: result.id,
+            p_tipo: 'pdf_gerado',
+            p_mensagem: `Fechamento finalizado. Total: R$ ${totals.totalComDesconto.toFixed(2)}; recebido: R$ ${result.valorRecebido.toFixed(2)}.`,
+          });
+        } catch { /* non-blocking */ }
+        if (stopPostCommitIfScopeChanged()) return;
+      }
 
+      if (stopPostCommitIfScopeChanged()) return;
       setPreviewDados(dados);
       setInitialPaymentProof(null);
       removeDraft(draft.id);
       await loadFechamentos();
+      if (stopPostCommitIfScopeChanged()) return;
       try {
         await refreshNotes();
       } catch {
         warnings.push('Os dados foram salvos, mas a lista de O.S. precisa ser atualizada novamente.');
       }
+      if (stopPostCommitIfScopeChanged()) return;
       await loadOpenClosings(draft.clientId);
+      if (stopPostCommitIfScopeChanged()) return;
       closeDraftModal();
       toast({
         title: result.status === 'PAGO' ? 'Fechamento gerado e quitado' : 'Fechamento gerado com sucesso',
@@ -1778,7 +1937,7 @@ export default function MonthlyClosing() {
     } finally {
       setGenerating(false);
     }
-  }, [activeDraftId, closeDraftModal, documentSettings, drafts, draftsHydratedKey, draftsStorageKey, financeAccounts, initialPaymentProof, isSupportImpersonating, loadFechamentos, loadOpenClosings, refreshNotes, removeDraft, renderClosingPdfBlob, scopedClientIdSet, toast]);
+  }, [activeDraftId, closeDraftModal, documentSettings, drafts, draftsHydratedKey, draftsStorageKey, financeAccounts, initialPaymentProof, isSupportImpersonating, loadFechamentos, loadOpenClosings, refreshNotes, removeDraft, renderClosingPdfBlob, scopedClientIdSet, supportContextActive, supportContextInvalid, supportDocumentSettingsReady, templateSettings?.fkUsuarios, toast]);
 
   const handleGerar = useCallback(async () => {
     if (!activeDraft) return;
@@ -1794,6 +1953,14 @@ export default function MonthlyClosing() {
 
   /* ── Download PDF (direto para o disco, sem abrir guias) ── */
   const handleDownload = useCallback(async (fechamento: FechamentoListItem) => {
+    if (!supportDocumentSettingsReady) {
+      toast({
+        title: 'Documento da empresa ainda não confirmado',
+        description: 'Aguarde o template real carregar antes de baixar o fechamento.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setDownloadingId(fechamento.id_fechamentos);
     try {
       const rendered = await renderStableGeneratedClosing(fechamento);
@@ -1835,7 +2002,7 @@ export default function MonthlyClosing() {
     } finally {
       setDownloadingId(null);
     }
-  }, [loadFreshClosing, renderStableGeneratedClosing, toast]);
+  }, [loadFreshClosing, renderStableGeneratedClosing, supportDocumentSettingsReady, toast]);
 
   const ensureClosingPdf = useCallback(async (fechamento: FechamentoListItem) => {
     const dados = normalizeFechamentoDadosJson(fechamento.dados_json);
@@ -2004,6 +2171,10 @@ export default function MonthlyClosing() {
 
   useEffect(() => {
     if (!selClientId) return;
+    // Um rascunho salvo já foi validado contra o escopo em openDraft(). A
+    // lista de O.S. do DataContext pode ainda estar hidratando no tablet; não
+    // apague a seleção do modal durante essa janela.
+    if (activeDraftId) return;
     if (clientsForSelectedPeriod.some(({ client }) => client.id === selClientId)) return;
     setSelClientId('');
     setActiveDraftId(null);
@@ -2011,7 +2182,7 @@ export default function MonthlyClosing() {
     setDescontos({});
     setIncludedNoteIds([]);
     setEditingItems({});
-  }, [clientsForSelectedPeriod, selClientId]);
+  }, [activeDraftId, clientsForSelectedPeriod, selClientId]);
 
   const clearCurrentDraftSelection = useCallback(() => {
     setSelClientId('');
@@ -2089,6 +2260,28 @@ export default function MonthlyClosing() {
           </Button>
         </div>
       </div>
+
+      {supportDocumentSettingsError ? (
+        <div role="alert" className="flex flex-col gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-950 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-semibold">Não foi possível carregar o documento da empresa atendida</p>
+            <p className="mt-0.5 text-xs text-red-900/80">
+              A visualização, o download e a criação permanecem bloqueados para evitar usar dados de outra empresa.
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={retrySupportDocumentSettings}
+            disabled={supportDocumentSettingsRefreshing}
+            className="shrink-0 border-red-300 bg-white hover:bg-red-100"
+          >
+            <RefreshCcw className={cn('mr-2 h-4 w-4', supportDocumentSettingsRefreshing && 'animate-spin')} />
+            Tentar novamente
+          </Button>
+        </div>
+      ) : null}
 
       <Card>
         <CardContent className="p-3 sm:p-4">
@@ -2281,10 +2474,10 @@ export default function MonthlyClosing() {
                         <Button size="sm" variant="outline" onClick={() => openDraft(draft)} className="justify-center">
                           <PencilLine className="w-3.5 h-3.5 mr-1.5" /> Editar
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => openDraftPreview(draft)} className="justify-center">
+                        <Button size="sm" variant="outline" onClick={() => openDraftPreview(draft)} disabled={!supportDocumentSettingsReady} className="justify-center">
                           <Eye className="w-3.5 h-3.5 mr-1.5" /> Visualizar
                         </Button>
-                        <Button size="sm" onClick={() => void generateDraft(draft)} disabled={generating} className="col-span-2 justify-center sm:col-span-1">
+                        <Button size="sm" onClick={() => void generateDraft(draft)} disabled={generating || !supportDocumentSettingsReady} className="col-span-2 justify-center sm:col-span-1">
                           <RefreshCcw className="w-3.5 h-3.5 mr-1.5" /> Gerar fechamento
                         </Button>
                         <Button size="sm" variant="ghost" onClick={() => removeDraft(draft.id)} className="col-span-2 justify-center text-muted-foreground sm:col-span-1">
@@ -2457,6 +2650,10 @@ export default function MonthlyClosing() {
                             )}
                           </div>
                         )}
+                        <p className="mt-1.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+                          <Clock3 className="h-3 w-3 shrink-0" aria-hidden="true" />
+                          Criado em {formatDatabaseDateTimeBR(f.created_at) ?? 'data não registrada'}
+                        </p>
                       </div>
                       <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:shrink-0">
                         <Button
@@ -2464,6 +2661,7 @@ export default function MonthlyClosing() {
                           variant="outline"
                           aria-label={`Visualizar template do fechamento ${f.periodo}`}
                           onClick={() => void openGeneratedPreview(f)}
+                          disabled={!supportDocumentSettingsReady}
                           className="flex-1 border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 sm:flex-none"
                         >
                           <Eye className="w-3.5 h-3.5 mr-1.5" /> Visualizar
@@ -2472,7 +2670,7 @@ export default function MonthlyClosing() {
                           size="sm"
                           variant="outline"
                           onClick={() => handleDownload(f)}
-                          disabled={downloadingId === f.id_fechamentos}
+                          disabled={!supportDocumentSettingsReady || downloadingId === f.id_fechamentos}
                           className="flex-1 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800 sm:flex-none"
                         >
                           {downloadingId === f.id_fechamentos
@@ -2483,8 +2681,10 @@ export default function MonthlyClosing() {
                           size="sm"
                           variant="outline"
                           onClick={() => void handleShareWhatsApp(f)}
-                          disabled={sharingId === f.id_fechamentos}
-                          title="Enviar por WhatsApp"
+                          disabled={supportContextRestricted || sharingId === f.id_fechamentos}
+                          title={supportContextRestricted
+                            ? 'O envio por WhatsApp permanece protegido no modo suporte'
+                            : 'Enviar por WhatsApp'}
                           className="flex-1 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800 sm:flex-none"
                         >
                           {sharingId === f.id_fechamentos
@@ -2524,7 +2724,7 @@ export default function MonthlyClosing() {
                   <p className="text-sm text-muted-foreground">{activeDraft?.periodLabel ?? '—'}</p>
                 </div>
                 <div className="flex flex-wrap gap-2 xl:justify-end">
-                  <Button variant="outline" onClick={openActiveDraftPreview} disabled={!modalPreviewDados}>
+                  <Button variant="outline" onClick={openActiveDraftPreview} disabled={!modalPreviewDados || !supportDocumentSettingsReady}>
                     <Eye className="w-4 h-4 mr-2" /> Visualizar
                   </Button>
                 </div>
@@ -2597,6 +2797,8 @@ export default function MonthlyClosing() {
                               size="sm"
                               className="h-8 border-amber-200 text-amber-700 hover:bg-amber-50 hover:text-amber-800"
                               onClick={() => desfazerNotaPaga(nota)}
+                              disabled={supportContextRestricted}
+                              title={supportContextRestricted ? 'Estornos permanecem protegidos no modo suporte' : undefined}
                             >
                               <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Desfazer
                             </Button>
@@ -2606,6 +2808,8 @@ export default function MonthlyClosing() {
                               size="sm"
                               className="h-8 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
                               onClick={() => { setPayNotaForma('PIX'); setPayNotaData(todayLocalISODate()); setPayNota(nota); }}
+                              disabled={supportContextRestricted}
+                              title={supportContextRestricted ? 'Recebimentos permanecem protegidos no modo suporte' : undefined}
                             >
                               <Wallet className="mr-1.5 h-3.5 w-3.5" /> {isPartial ? 'Quitar saldo' : 'Marcar paga'}
                             </Button>
@@ -2746,7 +2950,45 @@ export default function MonthlyClosing() {
                       onRetry={() => void loadOpenClosings(reminderClientId)}
                     />
                     {activeDraft ? (
-                      <div className="space-y-4 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4 shadow-sm">
+                      supportContextRestricted ? (
+                        <div
+                          role="note"
+                          className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 text-sm text-blue-950 shadow-sm"
+                        >
+                          <p className="font-semibold">
+                            {supportContextActive && supportDocumentSettingsReady
+                              ? 'Criação controlada em modo suporte'
+                              : supportDocumentSettingsError
+                                ? 'Falha ao carregar o documento da empresa atendida'
+                              : supportContextActive
+                                ? 'Validando o documento da empresa atendida'
+                                : 'Sessão de suporte ainda não validada'}
+                          </p>
+                          <p className="mt-1 text-xs leading-relaxed text-blue-900/80">
+                            {supportContextActive && supportDocumentSettingsReady
+                              ? 'O fechamento será criado sem entrada e ficará registrado com o operador, a empresa atendida e a sessão de suporte. Recebimentos e envio por WhatsApp continuam protegidos.'
+                              : supportDocumentSettingsError
+                                ? 'Tente carregar novamente. A criação continua bloqueada para não usar dados de outra empresa.'
+                              : supportContextActive
+                                ? 'A criação será liberada somente depois que o template real do alvo for confirmado pelo servidor.'
+                                : 'A leitura e a criação permanecem bloqueadas até o ator, o alvo e a sessão ativa voltarem a coincidir.'}
+                          </p>
+                          {supportDocumentSettingsError ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="mt-3 border-blue-300 bg-white"
+                              onClick={retrySupportDocumentSettings}
+                              disabled={supportDocumentSettingsRefreshing}
+                            >
+                              <RefreshCcw className={cn('mr-2 h-4 w-4', supportDocumentSettingsRefreshing && 'animate-spin')} />
+                              Tentar novamente
+                            </Button>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <div className="space-y-4 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4 shadow-sm">
                         <div>
                           <p className="text-sm font-semibold text-emerald-950">Recebimento ao gerar</p>
                           <p className="mt-0.5 text-xs text-emerald-900/70">
@@ -2881,7 +3123,8 @@ export default function MonthlyClosing() {
                             Informe um valor válido, a data e a conta financeira para salvar a entrada.
                           </p>
                         ) : null}
-                      </div>
+                        </div>
+                      )
                     ) : null}
                     <div className="rounded-2xl border bg-background p-4 shadow-sm space-y-2 text-sm text-muted-foreground">
                       <p>1. Este popup serve para edição e revisão das O.S.</p>
@@ -2890,7 +3133,7 @@ export default function MonthlyClosing() {
                     </div>
                     <Button
                       onClick={handleGerar}
-                      disabled={generating || !activeDraft || includedNotesCount === 0 || !initialPaymentReady || isSupportImpersonating}
+                      disabled={generating || !activeDraft || includedNotesCount === 0 || !initialPaymentReady || !supportDocumentSettingsReady}
                       className="h-12 w-full bg-destructive text-sm font-semibold text-destructive-foreground hover:bg-destructive/90"
                       size="lg"
                     >
@@ -2965,7 +3208,7 @@ export default function MonthlyClosing() {
         closing={paymentClosing}
         accounts={financeAccounts}
         open={Boolean(paymentClosing)}
-        readOnly={isSupportImpersonating || Boolean(readActiveSupportContext())}
+        readOnly={supportContextRestricted}
         canReverse={user?.role === 'ADMIN'}
         onClose={closePaymentDialog}
         onChanged={handleClosingPaymentChanged}

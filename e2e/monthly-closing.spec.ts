@@ -46,4 +46,38 @@ test.describe('Fechamento Mensal', () => {
     await expect(page.getByRole('button', { name: /selecionar data final do fechamento/i })).toBeVisible();
     await expect(page.getByText(/fechamento de \d{2}\/\d{2}\/\d{4} a \d{2}\/\d{2}\/\d{4}/i)).toBeVisible();
   });
+
+  test('mantém o fechamento utilizável em tablet 1280x800 sem corte horizontal', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Fechamento Mensal' })).toBeVisible();
+
+    const pageOverflow = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }));
+    expect(pageOverflow.scrollWidth).toBeLessThanOrEqual(pageOverflow.clientWidth);
+
+    await page.getByRole('combobox', { name: /mês do fechamento/i }).click();
+    await page.getByRole('option', { name: /fevereiro/i }).click();
+    await page.getByRole('combobox', { name: /cliente do fechamento/i }).click();
+    await page.getByRole('option', { name: /Ana Paula Ferreira/i }).click();
+    await page.getByRole('button', { name: /gerar rascunho/i }).click();
+
+    const draftDialog = page.getByRole('dialog').filter({ hasText: /rascunho de fechamento/i });
+    await expect(draftDialog).toBeVisible();
+    const dialogBox = await draftDialog.boundingBox();
+    expect(dialogBox).not.toBeNull();
+    expect((dialogBox?.x ?? 0) + (dialogBox?.width ?? 0)).toBeLessThanOrEqual(1280);
+
+    const generateButton = draftDialog.getByRole('button', { name: /gerar sem entrada/i });
+    await generateButton.scrollIntoViewIfNeeded();
+    await expect(generateButton).toBeVisible();
+
+    const dialogOverflow = await draftDialog.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }));
+    expect(dialogOverflow.scrollWidth).toBeLessThanOrEqual(dialogOverflow.clientWidth);
+  });
 });

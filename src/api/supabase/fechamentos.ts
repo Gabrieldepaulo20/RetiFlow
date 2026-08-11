@@ -1,6 +1,10 @@
 import { callRPC, type RPCEnvelope } from './_base';
 import { supabase } from '@/lib/supabase';
-import { readActiveSupportContext } from '@/services/auth/supportContext';
+import {
+  assertActiveSupportScopeUnchanged,
+  captureActiveSupportScope,
+  readActiveSupportContext,
+} from '@/services/auth/supportContext';
 import type { ResolvedDocumentCustomization } from '@/services/domain/documentCustomization';
 
 const FECHAMENTOS_BUCKET = 'fechamentos';
@@ -159,6 +163,8 @@ export interface FinalizarFechamentoResult {
   valorRecebido: number;
   valorAberto: number;
   idempotentRetry: boolean;
+  /** A RPC confirmou o commit, mas a aba saiu/trocou de escopo antes da resposta. */
+  supportScopeChangedAfterCommit?: boolean;
 }
 
 export interface NotaDetalhesItem {
@@ -458,6 +464,19 @@ export async function getFechamentosAbertosCliente(
 export async function finalizarFechamento(
   input: FinalizarFechamentoInput,
 ): Promise<FinalizarFechamentoResult> {
+  const operationScope = captureActiveSupportScope();
+  if (operationScope && input.pagamentoInicial) {
+    throw new Error('[finalizar_fechamento_contexto_suporte] Crie o fechamento sem entrada no modo suporte.');
+  }
+  if (operationScope && input.pdfUrl) {
+    throw new Error('[finalizar_fechamento_contexto_suporte] O PDF persistente ainda não está habilitado no modo suporte.');
+  }
+  if (
+    operationScope
+    && input.customization?.fkUsuarios !== operationScope.targetUserId
+  ) {
+    throw new Error('[finalizar_fechamento_contexto_suporte] O template real da empresa atendida ainda não foi confirmado.');
+  }
   const snapshots = buildFechamentoDocumentSnapshotParams(input.customization);
   const pagamento = input.pagamentoInicial;
   const env = await callRPC<unknown>('finalizar_fechamento', {
@@ -479,6 +498,15 @@ export async function finalizarFechamento(
     p_recebimento_observacoes: pagamento?.observacoes ?? null,
     p_recebimento_idempotencia: pagamento?.idempotencyKey ?? null,
   });
+  let supportScopeChangedAfterCommit = false;
+  try {
+    assertActiveSupportScopeUnchanged(operationScope);
+  } catch {
+    // A resposta da RPC já comprova o commit. A camada de tela não deve fazer
+    // novas leituras/escritas no escopo que entrou enquanto a chamada estava
+    // em voo, mas também não pode anunciar a operação confirmada como falha.
+    supportScopeChangedAfterCommit = true;
+  }
   const row = isRecord(env.dados) ? env.dados : env;
   const id = asString(row.id_fechamentos ?? row.id, '');
   if (!id) throw new Error('[finalizar_fechamento] Resposta sem identificador do fechamento.');
@@ -496,6 +524,7 @@ export async function finalizarFechamento(
     valorRecebido: Math.max(0, asNumber(row.valor_recebido ?? row.valor_realizado)),
     valorAberto: Math.max(0, asNumber(row.valor_aberto, input.valorTotal)),
     idempotentRetry: row.idempotent_retry === true,
+    ...(supportScopeChangedAfterCommit ? { supportScopeChangedAfterCommit: true } : {}),
   };
 }
 

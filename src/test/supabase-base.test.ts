@@ -156,6 +156,44 @@ describe('Supabase RPC base wrapper', () => {
     });
   });
 
+  it('loads closing document settings through the validated support session', async () => {
+    setActiveSupportSession(makeActiveSupportSession('validar template do fechamento'));
+    mocks.rpc.mockResolvedValue({
+      data: { status: 200, mensagem: 'ok', dados: {} },
+      error: null,
+    });
+
+    await callRPC('get_configuracao_modelo_usuario', {
+      p_fk_usuarios: '22222222-2222-4222-8222-222222222222',
+    });
+    await callRPC('resolver_configuracao_documento', {
+      p_fk_usuarios: '22222222-2222-4222-8222-222222222222',
+      p_document_type: 'closing_report',
+      p_generated_at: null,
+    });
+
+    expect(mocks.rpc).toHaveBeenNthCalledWith(
+      1,
+      'get_configuracao_modelo_usuario_contexto_suporte',
+      {
+        p_fk_usuarios: '22222222-2222-4222-8222-222222222222',
+        p_contexto_usuario_id: '22222222-2222-4222-8222-222222222222',
+        p_sessao_suporte: '11111111-1111-4111-8111-111111111111',
+      },
+    );
+    expect(mocks.rpc).toHaveBeenNthCalledWith(
+      2,
+      'resolver_configuracao_documento_contexto_suporte',
+      {
+        p_fk_usuarios: '22222222-2222-4222-8222-222222222222',
+        p_document_type: 'closing_report',
+        p_generated_at: null,
+        p_contexto_usuario_id: '22222222-2222-4222-8222-222222222222',
+        p_sessao_suporte: '11111111-1111-4111-8111-111111111111',
+      },
+    );
+  });
+
   it('maps the new closing reads to audited support-context RPCs', async () => {
     setActiveSupportSession(makeActiveSupportSession('validar parcelas do fechamento'));
     mocks.rpc.mockResolvedValue({
@@ -255,18 +293,37 @@ describe('Supabase RPC base wrapper', () => {
   it('keeps unsupported writes blocked while a support context is active', async () => {
     setActiveSupportSession(makeActiveSupportSession('validar cliente'));
 
-    // Fechamentos não têm variante de suporte e devem continuar bloqueados
+    // O contrato legado continua sem variante auditada.
     await expect(callRPC('insert_fechamento', { p_payload: {} })).rejects.toThrow(
       'Ações de escrita em modo suporte estão bloqueadas',
     );
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it('blocks every new closing write before reaching Supabase in support mode', async () => {
+  it('maps closing finalization to the audited support-context RPC', async () => {
+    setActiveSupportSession(makeActiveSupportSession('criar fechamento sem entrada'));
+    mocks.rpc.mockResolvedValue({
+      data: { status: 200, mensagem: 'ok', dados: { id_fechamentos: 'fechamento-1' } },
+      error: null,
+    });
+
+    await callRPC('finalizar_fechamento', {
+      p_id_fechamentos: 'fechamento-1',
+      p_recebimento_valor: null,
+    });
+
+    expect(mocks.rpc).toHaveBeenCalledWith('finalizar_fechamento_contexto_suporte', {
+      p_id_fechamentos: 'fechamento-1',
+      p_recebimento_valor: null,
+      p_contexto_usuario_id: '22222222-2222-4222-8222-222222222222',
+      p_sessao_suporte: '11111111-1111-4111-8111-111111111111',
+    });
+  });
+
+  it('keeps PDF, payment and reversal writes blocked in support mode', async () => {
     setActiveSupportSession(makeActiveSupportSession('validar bloqueio financeiro'));
 
     const writes = [
-      ['finalizar_fechamento', { p_id_fechamentos: 'fechamento-1' }],
       ['atualizar_pdf_fechamento', { p_id_fechamentos: 'fechamento-1', p_pdf_url: 'arquivo.pdf' }],
       ['atualizar_pdf_fechamento_seguro', {
         p_id_fechamentos: 'fechamento-1',

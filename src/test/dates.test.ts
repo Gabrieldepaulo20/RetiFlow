@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { formatDateBR, formatDateTimeShortBR, todayLocalISODate } from '@/lib/dates';
+import {
+  formatDatabaseDateTimeBR,
+  formatDateBR,
+  formatDateTimeShortBR,
+  todayLocalISODate,
+} from '@/lib/dates';
 
 describe('formatDateBR', () => {
   it('formats valid ISO timestamps as pt-BR dates', () => {
@@ -28,6 +33,26 @@ describe('formatDateTimeShortBR', () => {
     expect(formatDateTimeShortBR(null)).toBeNull();
     expect(formatDateTimeShortBR(undefined)).toBeNull();
     expect(formatDateTimeShortBR('garbage')).toBeNull();
+  });
+});
+
+describe('formatDatabaseDateTimeBR', () => {
+  it('preserves the Sao Paulo wall clock returned by timestamp without time zone', () => {
+    expect(formatDatabaseDateTimeBR('2026-08-11T11:26:48.363927'))
+      .toBe('11/08/2026 às 11:26');
+    expect(formatDatabaseDateTimeBR('2026-08-11 11:26:48'))
+      .toBe('11/08/2026 às 11:26');
+  });
+
+  it('converts explicitly zoned instants to Sao Paulo time', () => {
+    expect(formatDatabaseDateTimeBR('2026-08-11T14:26:48.000Z'))
+      .toBe('11/08/2026 às 11:26');
+  });
+
+  it('returns null for missing, malformed or impossible timestamps', () => {
+    expect(formatDatabaseDateTimeBR(null)).toBeNull();
+    expect(formatDatabaseDateTimeBR('not-a-date')).toBeNull();
+    expect(formatDatabaseDateTimeBR('2026-02-30T11:26:48')).toBeNull();
   });
 });
 

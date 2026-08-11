@@ -22,3 +22,29 @@ export function filterFechamentosForClientScope(
     return Boolean(clienteId && allowedClientIds.has(clienteId));
   });
 }
+
+export function canLoadMonthlyClosings(params: {
+  realAuth: boolean;
+  scopeUserId: string | null | undefined;
+  supportContextActive: boolean;
+  scopedClientIds: Iterable<string>;
+}) {
+  if (!params.realAuth || !params.scopeUserId) return false;
+  if (params.supportContextActive) return true;
+  return new Set(params.scopedClientIds).size > 0;
+}
+
+/**
+ * Em suporte, a resposta já veio de uma RPC que valida sessão/alvo e restringe
+ * os fechamentos pelo dono do cliente. Fora dele, mantemos a segunda barreira
+ * local e falhamos fechado enquanto o escopo de clientes não estiver pronto.
+ */
+export function scopeMonthlyClosings(
+  fechamentos: FechamentoListItem[],
+  scopedClientIds: Iterable<string>,
+  supportContextActive: boolean,
+) {
+  return supportContextActive
+    ? fechamentos
+    : filterFechamentosForClientScope(fechamentos, scopedClientIds);
+}
