@@ -36,8 +36,8 @@ export default function IntakeNoteDetail() {
   const { user, can } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { data: templateSettings } = useDocumentTemplateSettings();
-  const { data: documentSettings } = useDocumentCustomization('entry_note');
+  const templateSettingsQuery = useDocumentTemplateSettings();
+  const documentSettingsQuery = useDocumentCustomization('entry_note');
   const [showPreview, setShowPreview] = useState(false);
   const [isChangingStatus, setIsChangingStatus] = useState(false);
   const [realDetalhes, setRealDetalhes] = useState<NotaServicoDetalhes | null>(null);
@@ -180,11 +180,16 @@ export default function IntakeNoteDetail() {
                     previewWindow,
                   });
                 } else if (source) {
-                  const blob = await generateNotaPdfBlob(source, templateSettings ? {
-                    accentColor: templateSettings.corDocumento,
-                    templateMode: templateSettings.osModelo,
-                    documentSettings,
-                  } : undefined);
+                  const [scopedTemplateSettings, scopedDocumentSettings] = await Promise.all([
+                    templateSettingsQuery.requireData(),
+                    documentSettingsQuery.requireData(),
+                  ]);
+                  const blob = await generateNotaPdfBlob(source, {
+                    accentColor: scopedTemplateSettings.corDocumento,
+                    templateMode: scopedTemplateSettings.osModelo,
+                    documentSettings: scopedDocumentSettings,
+                    expectedUserId: scopedDocumentSettings.fkUsuarios,
+                  });
                   const url = URL.createObjectURL(blob);
                   openPdfInBrowser(url, {
                     title: `O.S. ${note.number}`,
@@ -592,7 +597,6 @@ export default function IntakeNoteDetail() {
             services={svcs}
             products={prds}
             dados={realDetalhes}
-            documentSettings={documentSettings}
           />
         </Suspense>
       )}

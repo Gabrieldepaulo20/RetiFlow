@@ -88,8 +88,8 @@ export default function IntakeNotes() {
   const { notes, clients, getServicesForNote, getProductsForNote } = useOperationalData();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { data: templateSettings } = useDocumentTemplateSettings();
-  const { data: documentSettings } = useDocumentCustomization('entry_note');
+  const templateSettingsQuery = useDocumentTemplateSettings();
+  const documentSettingsQuery = useDocumentCustomization('entry_note');
   const [urlParams] = useSearchParams();
   const currentMonthInput = useMemo(() => getCurrentIntakeMonthInput(), []);
   const [search, setSearch] = useState('');
@@ -516,13 +516,18 @@ export default function IntakeNotes() {
         throw new Error('Não foi possível carregar os dados atuais da O.S.');
       }
 
-      const blob = await generateNotaPdfBlob(detalhes, templateSettings ? {
-        accentColor: templateSettings.corDocumento,
-        templateMode: templateSettings.osModelo,
-        documentSettings,
-      } : undefined);
-      const path = await uploadNotaPDF(blob, note.number);
-      await updateNotaPdfUrl(note.id, path, documentSettings);
+      const [scopedTemplateSettings, scopedDocumentSettings] = await Promise.all([
+        templateSettingsQuery.requireData(),
+        documentSettingsQuery.requireData(),
+      ]);
+      const blob = await generateNotaPdfBlob(detalhes, {
+        accentColor: scopedTemplateSettings.corDocumento,
+        templateMode: scopedTemplateSettings.osModelo,
+        documentSettings: scopedDocumentSettings,
+        expectedUserId: scopedDocumentSettings.fkUsuarios,
+      });
+      const path = await uploadNotaPDF(blob, note.number, scopedDocumentSettings.fkUsuarios);
+      await updateNotaPdfUrl(note.id, path, scopedDocumentSettings);
 
       const url = URL.createObjectURL(blob);
       openPdfInBrowser(url, {
@@ -1460,7 +1465,6 @@ export default function IntakeNotes() {
               products={previewProducts}
               dados={previewDetalhes}
               loadingDados={previewDetalhesLoading}
-              documentSettings={documentSettings}
             />
           </Suspense>
         )}

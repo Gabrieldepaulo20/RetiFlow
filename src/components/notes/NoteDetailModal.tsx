@@ -196,8 +196,8 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
   const { user, can } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { data: templateSettings } = useDocumentTemplateSettings();
-  const { data: documentSettings } = useDocumentCustomization('entry_note');
+  const templateSettingsQuery = useDocumentTemplateSettings();
+  const documentSettingsQuery = useDocumentCustomization('entry_note');
 
   const [realItens, setRealItens] = useState<NotaServicoDetalhesItem[]>([]);
   const [realDetalhes, setRealDetalhes] = useState<NotaServicoDetalhes | null>(null);
@@ -1199,11 +1199,16 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                         previewWindow,
                       });
                     } else {
-                      const blob = await generateNotaPdfBlob(pdfDados, templateSettings ? {
-                        accentColor: templateSettings.corDocumento,
-                        templateMode: templateSettings.osModelo,
-                        documentSettings,
-                      } : undefined);
+                      const [scopedTemplateSettings, scopedDocumentSettings] = await Promise.all([
+                        templateSettingsQuery.requireData(),
+                        documentSettingsQuery.requireData(),
+                      ]);
+                      const blob = await generateNotaPdfBlob(pdfDados, {
+                        accentColor: scopedTemplateSettings.corDocumento,
+                        templateMode: scopedTemplateSettings.osModelo,
+                        documentSettings: scopedDocumentSettings,
+                        expectedUserId: scopedDocumentSettings.fkUsuarios,
+                      });
                       const url = URL.createObjectURL(blob);
                       openPdfInBrowser(url, {
                         title: `O.S. ${pdfDados.cabecalho.os_numero}`,

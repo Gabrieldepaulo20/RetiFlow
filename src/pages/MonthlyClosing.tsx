@@ -514,19 +514,25 @@ export default function MonthlyClosing() {
   );
   const { data: templateSettings } = templateSettingsQuery;
   const { data: documentSettings } = documentSettingsQuery;
-  const supportDocumentSettingsReady = !supportContextActive
-    ? !supportContextInvalid
-    : Boolean(
-        !templateSettingsQuery.isPlaceholderData
-        && !templateSettingsQuery.isError
-        && templateSettings?.fkUsuarios === currentScopeUserId
-        && !documentSettingsQuery.isPlaceholderData
-        && !documentSettingsQuery.isError
-        && documentSettings?.fkUsuarios === currentScopeUserId,
-      );
+  const supportDocumentSettingsReady = Boolean(
+    !supportContextInvalid
+    && documentQueriesEnabled
+    && currentScopeUserId
+    && templateSettingsQuery.isReady
+    && templateSettingsQuery.expectedUserId === currentScopeUserId
+    && templateSettings?.fkUsuarios === currentScopeUserId
+    && documentSettingsQuery.isReady
+    && documentSettingsQuery.expectedUserId === currentScopeUserId
+    && documentSettings?.fkUsuarios === currentScopeUserId,
+  );
   const supportDocumentSettingsError = Boolean(
-    supportContextActive
-    && (templateSettingsQuery.isError || documentSettingsQuery.isError),
+    documentQueriesEnabled
+    && (
+      templateSettingsQuery.isError
+      || templateSettingsQuery.isScopeMismatch
+      || documentSettingsQuery.isError
+      || documentSettingsQuery.isScopeMismatch
+    ),
   );
   const supportDocumentSettingsRefreshing = Boolean(
     templateSettingsQuery.isFetching || documentSettingsQuery.isFetching,
@@ -952,7 +958,9 @@ export default function MonthlyClosing() {
     geradoEm: string,
     financialSummary?: ClosingFinancialSummary,
   ) => {
-    const [{ pdf }, { ClosingPDFTemplate }] = await Promise.all([
+    const [verifiedTemplateSettings, verifiedDocumentSettings, { pdf }, { ClosingPDFTemplate }] = await Promise.all([
+      templateSettingsQuery.requireData(),
+      documentSettingsQuery.requireData(),
       import('@react-pdf/renderer'),
       import('@/components/closing/ClosingPDFTemplate'),
     ]);
@@ -961,12 +969,12 @@ export default function MonthlyClosing() {
       <ClosingPDFTemplate
         dados={dados}
         geradoEm={geradoEm}
-        accentColor={templateSettings?.corFechamento}
-        documentSettings={documentSettings}
+        accentColor={verifiedTemplateSettings.corFechamento}
+        documentSettings={verifiedDocumentSettings}
         financialSummary={financialSummary}
       />,
     ).toBlob();
-  }, [documentSettings, templateSettings?.corFechamento]);
+  }, [documentSettingsQuery, templateSettingsQuery]);
 
   const renderStableGeneratedClosing = useCallback(async (source: FechamentoListItem) => {
     let fresh = await loadFreshClosing(source);

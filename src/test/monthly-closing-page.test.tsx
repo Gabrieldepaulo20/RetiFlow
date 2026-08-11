@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  authContext: vi.fn(),
   dataContext: vi.fn(),
   getAllFechamentos: vi.fn(),
   getFinanceiroContas: vi.fn(),
@@ -13,26 +14,28 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({
-  useAuth: () => ({
-    user: {
+  useAuth: () => mocks.authContext(),
+}));
+
+const buildSupportAuthContext = () => ({
+  user: {
       id: 'actor-user',
-      email: 'gabrielwilliam208@gmail.com',
+      email: 'mega-master@example.com',
       name: 'Gabriel',
       role: 'ADMIN',
       isActive: true,
       createdAt: '2026-01-01T00:00:00.000Z',
-    },
-    operationalUser: {
-      id: 'target-user',
-      email: 'retifica@example.com',
-      name: 'Retífica atendida',
-      role: 'ADMIN',
-      isActive: true,
-      createdAt: '2026-01-01T00:00:00.000Z',
-    },
-    isSupportImpersonating: true,
-  }),
-}));
+  },
+  operationalUser: {
+    id: 'target-user',
+    email: 'retifica@example.com',
+    name: 'Retífica atendida',
+    role: 'ADMIN',
+    isActive: true,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  },
+  isSupportImpersonating: true,
+});
 
 vi.mock('@/contexts/DataContext', () => ({
   useData: () => mocks.dataContext(),
@@ -99,7 +102,7 @@ describe('MonthlyClosing support tablet visibility', () => {
       expiresAt: null,
       actorUser: {
         id: 'actor-user',
-        email: 'gabrielwilliam208@gmail.com',
+        email: 'mega-master@example.com',
         name: 'Gabriel',
         role: 'ADMIN',
         isActive: true,
@@ -115,12 +118,14 @@ describe('MonthlyClosing support tablet visibility', () => {
       },
     });
     mocks.getAllFechamentos.mockReset();
+    mocks.authContext.mockReset();
     mocks.dataContext.mockReset();
     mocks.getFinanceiroContas.mockReset();
     mocks.templateSettings.mockReset();
     mocks.documentCustomization.mockReset();
     mocks.toast.mockReset();
     mocks.getFinanceiroContas.mockResolvedValue([]);
+    mocks.authContext.mockReturnValue(buildSupportAuthContext());
     mocks.dataContext.mockReturnValue({
       notes: [],
       clients: [],
@@ -128,27 +133,37 @@ describe('MonthlyClosing support tablet visibility', () => {
       estornarRecebimentoNota: vi.fn(),
       refreshNotes: vi.fn().mockResolvedValue(undefined),
     });
+    const templateSettings = {
+      fkUsuarios: 'target-user',
+      osModelo: 'auto',
+      corDocumento: '#1a7a8a',
+      fechamentoModelo: 'moderno',
+      corFechamento: '#0f7f95',
+      updatedAt: null,
+    };
     mocks.templateSettings.mockReturnValue({
-      data: {
-        fkUsuarios: 'target-user',
-        osModelo: 'auto',
-        corDocumento: '#1a7a8a',
-        fechamentoModelo: 'moderno',
-        corFechamento: '#0f7f95',
-        updatedAt: null,
-      },
+      data: templateSettings,
+      expectedUserId: 'target-user',
+      isReady: true,
+      isScopeMismatch: false,
+      requireData: vi.fn().mockResolvedValue(templateSettings),
       isPlaceholderData: false,
       isError: false,
     });
-    mocks.documentCustomization.mockReturnValue({
-      data: {
+    const documentCustomization = {
         fkUsuarios: 'target-user',
-        documentType: 'closing_report',
-        company: {},
-        template: null,
-        theme: null,
-        resolvedConfig: {},
-      },
+      documentType: 'closing_report',
+      company: {},
+      template: null,
+      theme: null,
+      resolvedConfig: {},
+    };
+    mocks.documentCustomization.mockReturnValue({
+      data: documentCustomization,
+      expectedUserId: 'target-user',
+      isReady: true,
+      isScopeMismatch: false,
+      requireData: vi.fn().mockResolvedValue(documentCustomization),
       isPlaceholderData: false,
       isError: false,
     });
@@ -298,5 +313,54 @@ describe('MonthlyClosing support tablet visibility', () => {
     expect(await screen.findByText('Nenhum fechamento gerado ainda.')).toBeInTheDocument();
     expect(mocks.getAllFechamentos).not.toHaveBeenCalled();
     expect(screen.queryByText('Sert Car')).not.toBeInTheDocument();
+  });
+
+  it('keeps document actions blocked in normal mode until the tenant identity is validated', async () => {
+    setActiveSupportSession(null);
+    const tenantUser = buildSupportAuthContext().operationalUser;
+    mocks.authContext.mockReturnValue({
+      user: tenantUser,
+      operationalUser: tenantUser,
+      isSupportImpersonating: false,
+    });
+    mocks.dataContext.mockReturnValue({
+      notes: [],
+      clients: [{ id: 'client-target', name: 'Sert Car', isActive: true, phone: '' }],
+      registrarRecebimentoNota: vi.fn(),
+      estornarRecebimentoNota: vi.fn(),
+      refreshNotes: vi.fn().mockResolvedValue(undefined),
+    });
+    mocks.templateSettings.mockReturnValue({
+      data: { fkUsuarios: 'target-user' },
+      expectedUserId: 'target-user',
+      isReady: false,
+      isScopeMismatch: false,
+      isPlaceholderData: true,
+      isError: false,
+      isFetching: true,
+      refetch: vi.fn(),
+      requireData: vi.fn(),
+    });
+    mocks.documentCustomization.mockReturnValue({
+      data: { fkUsuarios: 'target-user' },
+      expectedUserId: 'target-user',
+      isReady: false,
+      isScopeMismatch: false,
+      isPlaceholderData: true,
+      isError: false,
+      isFetching: true,
+      refetch: vi.fn(),
+      requireData: vi.fn(),
+    });
+
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <MonthlyClosing />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Sert Car')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /pdf/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /whatsapp/i })).toBeDisabled();
   });
 });

@@ -95,6 +95,17 @@
 }
 
 @layer utilities {
+  .gawi-sidebar-theme {
+    --sidebar-background: 256 53% 27%;
+    --sidebar-foreground: 244 100% 89%;
+    --sidebar-primary: 244 100% 72%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 262 52% 34%;
+    --sidebar-accent-foreground: 249 100% 97%;
+    --sidebar-border: 245 84% 64%;
+    --sidebar-ring: 244 100% 72%;
+  }
+
   /*
    * Keep fixed desktop/tablet sidebars painted for the largest viewport.
    * Mobile browsers resize the visual viewport while their address/tab bars

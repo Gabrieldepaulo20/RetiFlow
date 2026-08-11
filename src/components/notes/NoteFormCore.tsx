@@ -195,8 +195,8 @@ export default function NoteFormCore({
   } = useData();
   const { user } = useAuth();
   const { toast } = useToast();
-  const { data: templateSettings } = useDocumentTemplateSettings();
-  const { data: documentSettings } = useDocumentCustomization('entry_note');
+  const templateSettingsQuery = useDocumentTemplateSettings();
+  const documentSettingsQuery = useDocumentCustomization('entry_note');
 
   const isEditing = Boolean(editingNote);
   const isLocked = editingNote ? FINAL_STATUSES.has(editingNote.status) : false;
@@ -691,13 +691,18 @@ export default function NoteFormCore({
         try {
           const detalhes = await getNotaServicoDetalhes(editingNote.id);
           if (detalhes) {
-            const blob = await generateNotaPdfBlob(detalhes, templateSettings ? {
-              accentColor: templateSettings.corDocumento,
-              templateMode: templateSettings.osModelo,
-              documentSettings,
-            } : undefined);
-            const url = await uploadNotaPDF(blob, editingNote.number);
-            await updateNotaPdfUrl(editingNote.id, url, documentSettings);
+            const [scopedTemplateSettings, scopedDocumentSettings] = await Promise.all([
+              templateSettingsQuery.requireData(),
+              documentSettingsQuery.requireData(),
+            ]);
+            const blob = await generateNotaPdfBlob(detalhes, {
+              accentColor: scopedTemplateSettings.corDocumento,
+              templateMode: scopedTemplateSettings.osModelo,
+              documentSettings: scopedDocumentSettings,
+              expectedUserId: scopedDocumentSettings.fkUsuarios,
+            });
+            const url = await uploadNotaPDF(blob, editingNote.number, scopedDocumentSettings.fkUsuarios);
+            await updateNotaPdfUrl(editingNote.id, url, scopedDocumentSettings);
             await updateNote(editingNote.id, { pdfUrl: url });
           } else {
             console.error('[PDF] getNotaServicoDetalhes retornou null para', editingNote.id);
@@ -772,13 +777,18 @@ export default function NoteFormCore({
         try {
           const detalhes = await getNotaServicoDetalhes(note.id);
           if (detalhes) {
-            const blob = await generateNotaPdfBlob(detalhes, templateSettings ? {
-              accentColor: templateSettings.corDocumento,
-              templateMode: templateSettings.osModelo,
-              documentSettings,
-            } : undefined);
-            const url = await uploadNotaPDF(blob, note.number);
-            await updateNotaPdfUrl(note.id, url, documentSettings);
+            const [scopedTemplateSettings, scopedDocumentSettings] = await Promise.all([
+              templateSettingsQuery.requireData(),
+              documentSettingsQuery.requireData(),
+            ]);
+            const blob = await generateNotaPdfBlob(detalhes, {
+              accentColor: scopedTemplateSettings.corDocumento,
+              templateMode: scopedTemplateSettings.osModelo,
+              documentSettings: scopedDocumentSettings,
+              expectedUserId: scopedDocumentSettings.fkUsuarios,
+            });
+            const url = await uploadNotaPDF(blob, note.number, scopedDocumentSettings.fkUsuarios);
+            await updateNotaPdfUrl(note.id, url, scopedDocumentSettings);
             await updateNote(note.id, { pdfUrl: url });
           } else {
             console.error('[PDF] getNotaServicoDetalhes retornou null para', note.id);

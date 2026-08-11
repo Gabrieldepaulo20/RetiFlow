@@ -220,6 +220,8 @@ export default function AppLayout() {
   const canWarmMarketing = Boolean(user && canAccessModule('marketing'));
   const hasPrivateMarketingAccess = hasFullMarketingAccess(realUser);
   const isCurrentUserMegaMaster = isSuperAdmin(realUser);
+  const isGawiOperationalPortal = isCurrentUserMegaMaster && !isSupportImpersonating;
+  const operationalBrandName = isGawiOperationalPortal ? 'GAWI' : 'Retífica Premium';
   const { data: marketingWarmupUsers = [] } = useSystemUsersQuery({
     enabled: canWarmMarketing && isAdmin && hasPrivateMarketingAccess && isCurrentUserMegaMaster,
   });
@@ -282,7 +284,11 @@ export default function AppLayout() {
         <div className="w-9 h-9 rounded-lg bg-sidebar-primary flex items-center justify-center flex-shrink-0">
           <Wrench className="w-5 h-5 text-sidebar-primary-foreground" />
         </div>
-        {!collapsed && <span className="font-display font-bold text-sidebar-primary-foreground text-lg">Retífica Premium</span>}
+        {!collapsed && (
+          <span className="font-display text-lg font-bold text-sidebar-primary-foreground" data-operational-brand>
+            {operationalBrandName}
+          </span>
+        )}
       </div>
       <nav className="mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-3">
         {navItems.filter(isModuleVisible).map(item => {
@@ -401,12 +407,16 @@ export default function AppLayout() {
       {!isMobile && (
         <aside className={cn(
           'viewport-sidebar fixed left-0 top-0 z-40 flex flex-col bg-sidebar transition-[width] duration-300 ease-out',
+          isGawiOperationalPortal && 'gawi-sidebar-theme',
           collapsed ? 'w-[68px]' : 'w-64'
-        )} data-layout-sidebar>
+        )} data-layout-sidebar data-operational-brand-scope={isGawiOperationalPortal ? 'gawi' : 'tenant'}>
           <NavContent />
           <button
+            type="button"
             onClick={() => setCollapsed(!collapsed)}
             className="absolute -right-3 top-20 w-6 h-6 rounded-full bg-card border flex items-center justify-center shadow-sm hover:bg-muted"
+            aria-label={collapsed ? 'Expandir menu operacional' : 'Recolher menu operacional'}
+            aria-expanded={!collapsed}
           >
             {collapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronLeft className="w-3 h-3" />}
           </button>
@@ -433,7 +443,14 @@ export default function AppLayout() {
                   <Menu className="w-5 h-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-[min(86vw,18rem)] p-0 bg-sidebar border-sidebar-border">
+              <SheetContent
+                side="left"
+                className={cn(
+                  'w-[min(86vw,18rem)] border-sidebar-border bg-sidebar p-0',
+                  isGawiOperationalPortal && 'gawi-sidebar-theme',
+                )}
+                data-operational-brand-scope={isGawiOperationalPortal ? 'gawi' : 'tenant'}
+              >
                 <SheetTitle className="sr-only">Menu de navegação operacional</SheetTitle>
                 <NavContent onNav={() => setMobileMenuOpen(false)} />
               </SheetContent>

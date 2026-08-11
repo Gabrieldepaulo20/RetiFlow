@@ -13,6 +13,8 @@ test.describe('Modo suporte persistente no tablet', () => {
       ) as { user?: Record<string, unknown> } | null;
       if (!storedAuth?.user) throw new Error('Sessão administrativa mock ausente.');
 
+      storedAuth.user.email = 'gabrielwilliam208@gmail.com';
+      storedAuth.user.name = 'Gabriel Mega Master';
       storedAuth.user.moduleAccess = {
         admin: true,
         dashboard: true,
@@ -66,6 +68,13 @@ test.describe('Modo suporte persistente no tablet', () => {
       ['/financeiro', 'Financeiro'],
     ] as const;
 
+    await expect(page.locator('[data-operational-brand]')).toHaveText('Retífica Premium');
+    await expect(page.locator('[data-layout-sidebar]')).toHaveAttribute('data-operational-brand-scope', 'tenant');
+    await expect(page.locator('[data-layout-sidebar]')).not.toHaveClass(/gawi-sidebar-theme/);
+    await expect.poll(() => page.locator('[data-layout-sidebar]').evaluate(
+      (element) => getComputedStyle(element).getPropertyValue('--sidebar-background').trim(),
+    )).toBe('215 32% 13%');
+
     for (const [path, heading] of routes) {
       await page.goto(path);
       await expect(page).toHaveURL(path);
@@ -91,6 +100,11 @@ test.describe('Modo suporte persistente no tablet', () => {
 
     await supportButton.click();
     await expect(page).toHaveURL('/admin/usuarios');
+    await expect(page.locator('[data-layout-sidebar]')).toHaveClass(/gawi-sidebar-theme/);
+    await expect(page.getByText('GAWI', { exact: true })).toBeVisible();
+    await expect.poll(() => page.locator('[data-layout-sidebar]').evaluate(
+      (element) => getComputedStyle(element).getPropertyValue('--sidebar-background').trim(),
+    )).toBe('256 53% 27%');
     await expect.poll(async () => page.evaluate(
       () => window.sessionStorage.getItem('support.impersonation'),
     )).toBeNull();

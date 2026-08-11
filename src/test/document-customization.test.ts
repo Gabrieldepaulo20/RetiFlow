@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildDocumentCompanyPresentation,
   buildFallbackResolvedCustomization,
   containsUnsafeTemplateContent,
   extractTemplateVariables,
   getDefaultDocumentTemplateConfig,
   getInvalidTemplateVariables,
+  isDocumentCustomizationForUser,
   normalizeDocumentCompanyName,
   isHexColor,
   normalizeDocumentTemplateConfig,
@@ -74,14 +76,65 @@ describe('document customization domain helpers', () => {
     expect(fallback.fkUsuarios).toBe('user-1');
     expect(fallback.documentType).toBe('closing_report');
     expect(fallback.template).toBeNull();
-    expect(fallback.company.nomeFantasia).toBe('Retífica Premium');
+    expect(fallback.company.nomeFantasia).toBe('Empresa');
+    expect(fallback.company.telefone).toBe('');
     expect(fallback.resolvedConfig.title).toBe('Fechamento');
   });
 
   it('normalizes service document branding text', () => {
-    expect(normalizeDocumentCompanyName('GAWI')).toBe('Retífica Premium');
+    expect(normalizeDocumentCompanyName('GAWI')).toBe('GAWI');
     expect(normalizeDocumentCompanyName('Retifica Premium')).toBe('Retífica Premium');
+    expect(normalizeDocumentCompanyName('')).toBe('Empresa');
     expect(normalizeServiceOrderText('ordem de servico')).toBe('ordem de serviço');
     expect(normalizeServiceOrderText('ORDEM DE SERVICO')).toBe('ORDEM DE SERVIÇO');
+  });
+
+  it('builds company headers without injecting another tenant data', () => {
+    const gawi = buildFallbackResolvedCustomization('entry_note', 'tenant-gawi');
+    gawi.company.nomeFantasia = 'GAWI';
+    gawi.company.email = 'contato@gawi.test';
+
+    expect(buildDocumentCompanyPresentation(gawi.company)).toEqual({
+      name: 'GAWI',
+      address: '',
+      contactLine: 'contato@gawi.test',
+      site: '',
+    });
+
+    expect(buildDocumentCompanyPresentation(null)).toEqual({
+      name: 'Empresa',
+      address: '',
+      contactLine: '',
+      site: '',
+    });
+  });
+
+  it('accepts document identity only when every record belongs to the active company', () => {
+    const customization = buildFallbackResolvedCustomization('entry_note', 'tenant-retifica');
+    expect(isDocumentCustomizationForUser(customization, 'tenant-retifica', 'entry_note')).toBe(true);
+    expect(isDocumentCustomizationForUser(customization, 'tenant-retifica', 'closing_report')).toBe(false);
+
+    expect(isDocumentCustomizationForUser({
+      ...customization,
+      company: { ...customization.company, fkUsuarios: 'tenant-gawi' },
+    }, 'tenant-retifica')).toBe(false);
+
+    expect(isDocumentCustomizationForUser({
+      ...customization,
+      template: {
+        id: 'template-gawi',
+        fkUsuarios: 'tenant-gawi',
+        documentType: 'entry_note',
+        name: 'Modelo GAWI',
+        status: 'active',
+        version: 1,
+        config: {},
+        createdBy: null,
+        createdAt: '2026-08-11T12:00:00.000Z',
+        updatedAt: '2026-08-11T12:00:00.000Z',
+        publishedAt: '2026-08-11T12:00:00.000Z',
+        archivedAt: null,
+      },
+    }, 'tenant-retifica')).toBe(false);
   });
 });

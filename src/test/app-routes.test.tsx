@@ -128,10 +128,23 @@ describe('App routes', () => {
       name: 'Gabriel Mega Master',
     });
 
-    renderAt('/dashboard');
+    const { container } = renderAt('/dashboard');
 
     expect(await findDashboardHeading()).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /configurações/i })).toHaveAttribute('href', '/configuracoes');
+    expect(container.querySelector('[data-operational-brand]')).toHaveTextContent('GAWI');
+    expect(container.querySelector('[data-layout-sidebar]')).toHaveAttribute('data-operational-brand-scope', 'gawi');
+    expect(container.querySelector('[data-layout-sidebar]')).toHaveClass('gawi-sidebar-theme');
+  });
+
+  it('keeps tenant branding out of the Mega Master theme', async () => {
+    authenticateAs('FINANCEIRO');
+    const { container } = renderAt('/dashboard');
+
+    expect(await findDashboardHeading()).toBeInTheDocument();
+    expect(container.querySelector('[data-operational-brand]')).toHaveTextContent('Retífica Premium');
+    expect(container.querySelector('[data-layout-sidebar]')).toHaveAttribute('data-operational-brand-scope', 'tenant');
+    expect(container.querySelector('[data-layout-sidebar]')).not.toHaveClass('gawi-sidebar-theme');
   });
 
   it.each([
@@ -189,6 +202,15 @@ describe('App routes', () => {
     authenticateAs('ADMIN');
     renderAt(path);
     expect(await findElement()).toBeInTheDocument();
+  });
+
+  it('uses the purple GAWI identity in the administrative portal', async () => {
+    authenticateAs('ADMIN');
+    const { container } = renderAt('/admin');
+
+    expect(await screen.findByRole('heading', { name: 'Painel Administrativo' })).toBeInTheDocument();
+    expect(container.querySelector('[data-layout-sidebar]')).toHaveClass('gawi-sidebar-theme');
+    expect(screen.getByText('GAWI')).toBeInTheDocument();
   });
 
   it('exibe uma ação textual azul para acessar um usuário em modo suporte', async () => {

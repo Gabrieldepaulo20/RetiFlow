@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
 import type { NotaServicoDetalhes } from '@/api/supabase/notas';
+import { buildFallbackResolvedCustomization } from '@/services/domain/documentCustomization';
 
 const mocks = vi.hoisted(() => ({
   toBlob: vi.fn(async () => new Blob(['%PDF-1.4'], { type: 'application/pdf' })),
@@ -28,7 +29,7 @@ function makeDetalhes(): NotaServicoDetalhes {
       total: 100,
       total_servicos: 100,
       total_produtos: 0,
-      criado_por_usuario: null,
+      criado_por_usuario: 'tenant-1',
       pdf_url: null,
       cliente: {
         id: 'cliente-1',
@@ -67,7 +68,10 @@ describe('generateNotaPdfBlob', () => {
   it('loads react-pdf lazily and returns the generated blob', async () => {
     mocks.pdf.mockReturnValue({ toBlob: mocks.toBlob });
 
-    const blob = await generateNotaPdfBlob(makeDetalhes());
+    const blob = await generateNotaPdfBlob(makeDetalhes(), {
+      documentSettings: buildFallbackResolvedCustomization('entry_note', 'tenant-1'),
+      expectedUserId: 'tenant-1',
+    });
 
     expect(blob).toBeInstanceOf(Blob);
     expect(blob.type).toBe('application/pdf');

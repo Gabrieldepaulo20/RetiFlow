@@ -56,6 +56,7 @@ describe('Notas Supabase PDF storage helpers', () => {
       error: null,
     });
     mocks.getPerfil.mockResolvedValue({
+      id_usuarios: 'tenant-1',
       nome: 'Retífica Premium',
       email: 'retificapremium5@gmail.com',
     });
@@ -203,7 +204,11 @@ describe('Notas Supabase PDF storage helpers', () => {
     const { uploadNotaPDF } = await import('@/api/supabase/notas');
     mocks.upload.mockResolvedValue({ data: { path: 'retifica-premium/2026/junho/10 (Quarta-feira)/OS-123.pdf' }, error: null });
 
-    const path = await uploadNotaPDF(new Blob(['%PDF-1.4 test'], { type: 'application/pdf' }), 'OS-123');
+    const path = await uploadNotaPDF(
+      new Blob(['%PDF-1.4 test'], { type: 'application/pdf' }),
+      'OS-123',
+      'tenant-1',
+    );
 
     expect(path).toMatch(/^retifica-premium\/\d{4}\/(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\/\d{2} \((?:Domingo|Segunda-feira|Terca-feira|Quarta-feira|Quinta-feira|Sexta-feira|Sabado)\)\/OS-123\.pdf$/);
     expect(path.startsWith('http')).toBe(false);
@@ -217,6 +222,18 @@ describe('Notas Supabase PDF storage helpers', () => {
         upsert: true,
       },
     );
+  });
+
+  it('uploadNotaPDF refuses to save a target-company PDF under the authenticated operator', async () => {
+    const { uploadNotaPDF } = await import('@/api/supabase/notas');
+
+    await expect(uploadNotaPDF(
+      new Blob(['%PDF-1.4 test'], { type: 'application/pdf' }),
+      'OS-124',
+      'another-tenant',
+    )).rejects.toThrow(/empresa ativa mudou/i);
+
+    expect(mocks.upload).not.toHaveBeenCalled();
   });
 });
 

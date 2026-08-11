@@ -26,12 +26,12 @@ describe('Supabase company settings wrappers', () => {
     mocks.callRPC.mockReset();
   });
 
-  it('keeps Retifica Premium as the safe default company settings', () => {
+  it('keeps the local fallback tenant-neutral', () => {
     expect(DEFAULT_USER_COMPANY_SETTINGS).toMatchObject({
-      razaoSocial: 'Retífica Premium',
-      nomeFantasia: 'Retífica Premium',
+      razaoSocial: '',
+      nomeFantasia: 'Empresa',
       cnpj: '',
-      telefone: '(16) 3524-4661',
+      telefone: '',
       email: '',
     });
   });

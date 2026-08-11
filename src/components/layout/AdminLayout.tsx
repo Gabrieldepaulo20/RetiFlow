@@ -58,13 +58,13 @@ export default function AdminLayout() {
   const NavContent = ({ onNav }: { onNav?: () => void }) => (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="p-4 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
-          <Shield className="w-5 h-5 text-primary" />
+        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-sidebar-primary/20">
+          <Shield className="h-5 w-5 text-sidebar-primary" />
         </div>
         {(!collapsed || isMobile) && (
           <div>
-            <span className="font-display font-bold text-sidebar-primary-foreground text-base">GAWI Admin</span>
-            <p className="text-[10px] text-sidebar-foreground/50">Gestão de empresas</p>
+            <span className="font-display text-base font-bold text-sidebar-primary-foreground">GAWI</span>
+            <p className="text-[10px] text-sidebar-foreground/60">Administração da plataforma</p>
           </div>
         )}
       </div>
@@ -108,7 +108,7 @@ export default function AdminLayout() {
       <div className="shrink-0 border-t border-sidebar-border p-3">
         <div className={cn('flex items-center gap-3', collapsed && !isMobile && 'justify-center')}>
           <Avatar className="w-9 h-9">
-            <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold tracking-wide">{initials}</AvatarFallback>
+            <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-sm font-semibold tracking-wide">{initials}</AvatarFallback>
           </Avatar>
           {(!collapsed || isMobile) && (
             <div className="flex-1 min-w-0">
@@ -126,7 +126,7 @@ export default function AdminLayout() {
       {/* Desktop Sidebar */}
       {!isMobile && (
         <aside className={cn(
-          'viewport-sidebar fixed left-0 top-0 z-40 flex flex-col bg-sidebar transition-[width] duration-300 ease-out',
+          'gawi-sidebar-theme viewport-sidebar fixed left-0 top-0 z-40 flex flex-col bg-sidebar transition-[width] duration-300 ease-out',
           collapsed ? 'w-[68px]' : 'w-60'
         )} data-layout-sidebar data-sidebar-collapsed={collapsed ? 'true' : 'false'}>
           <NavContent />
@@ -153,7 +153,7 @@ export default function AdminLayout() {
                   <Menu className="w-5 h-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-[min(86vw,18rem)] p-0 bg-sidebar border-sidebar-border">
+              <SheetContent side="left" className="gawi-sidebar-theme w-[min(86vw,18rem)] border-sidebar-border bg-sidebar p-0">
                 <SheetTitle className="sr-only">Menu de navegação administrativa</SheetTitle>
                 <NavContent onNav={() => {}} />
               </SheetContent>

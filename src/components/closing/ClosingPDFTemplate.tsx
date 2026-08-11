@@ -117,8 +117,7 @@ export function ClosingPDFTemplate({
   const effectiveAccent = getDocumentAccentColor(documentSettings, accentColor);
   const company = documentSettings?.company;
   const config = documentSettings?.resolvedConfig;
-  // Normaliza o nome: nunca deixar vazar placeholder de dev (ex.: "GAWI") no
-  // documento do cliente — cai para "Retífica Premium".
+  // Corrige apenas a grafia sem substituir a identidade configurada do tenant.
   const companyName = normalizeDocumentCompanyName(company?.nomeFantasia);
   const notas = Array.isArray(dados.notas) ? dados.notas : [];
   const recebidas = Array.isArray(dados.recebidas) ? dados.recebidas : [];

@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { IntakeNote, IntakeProduct, IntakeService, FINAL_STATUSES } from '@/types';
 import { Client } from '@/types';
-import { Download, Printer, Share2 } from 'lucide-react';
+import { AlertTriangle, Download, Printer, RefreshCw, Share2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { buildCustomerAddressLabel } from '@/services/domain/customers';
 import { cn } from '@/lib/utils';
@@ -24,8 +24,8 @@ import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/u
 import type { OsTemplateMode } from '@/api/supabase/modelos';
 import type { ResolvedDocumentCustomization, TemplateVariableKey } from '@/services/domain/documentCustomization';
 import {
+  buildDocumentCompanyPresentation,
   getDocumentAccentColor,
-  normalizeDocumentCompanyName,
   normalizeServiceOrderText,
   renderTemplateText,
 } from '@/services/domain/documentCustomization';
@@ -34,6 +34,7 @@ import { formatCepForDisplay, formatDocumentForDisplay } from '@/services/domain
 
 const MAX_ROWS = NOTA_PRINT_MAX_ROWS;
 const LONG_MAX_ROWS = NOTA_PRINT_LONG_MAX_ROWS;
+const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
 interface OSPreviewModalProps {
   open: boolean;
@@ -44,7 +45,6 @@ interface OSPreviewModalProps {
   products: IntakeProduct[];
   accentColor?: string;
   templateMode?: OsTemplateMode;
-  documentSettings?: ResolvedDocumentCustomization | null;
   dados?: NotaServicoDetalhes | null;
   loadingDados?: boolean;
 }
@@ -207,17 +207,10 @@ function PreviewVia({
   const config = documentSettings?.resolvedConfig;
   const company = documentSettings?.company;
   const effectiveAccent = getDocumentAccentColor(documentSettings, accentColor);
-  const companyName = normalizeDocumentCompanyName(company?.nomeFantasia);
+  const companyPresentation = buildDocumentCompanyPresentation(company);
+  const companyName = companyPresentation.name;
   const subtitle = normalizeServiceOrderText(config?.subtitle, 'RETÍFICA DE CABEÇOTE');
   const documentTitle = normalizeServiceOrderText(config?.title, 'Ordem de Serviço');
-  const companyAddress = [company?.endereco, company?.cidade && company?.estado ? `${company.cidade}/${company.estado}` : company?.cidade]
-    .filter(Boolean)
-    .join(' · ');
-  const contactLine = [
-    company?.cep ? `CEP ${company.cep}` : '',
-    company?.telefone || company?.whatsapp || '',
-    company?.email || '',
-  ].filter(Boolean).join(' · ');
   const templateVariables: Partial<Record<TemplateVariableKey, string | number | null | undefined>> = {
     company_name: companyName,
     company_phone: company?.telefone,
@@ -268,9 +261,9 @@ function PreviewVia({
           )}
           {config?.showCompanyData !== false && (
             <>
-              <p className="my-0.5 font-medium">{companyAddress || 'Av. Fioravante Magro, 1059'}</p>
-              <p className="my-0.5">{contactLine || 'Jardim Boa Vista · Sertãozinho/SP'}</p>
-              {company?.site && <p className="my-0.5">{company.site}</p>}
+              {companyPresentation.address && <p className="my-0.5 font-medium">{companyPresentation.address}</p>}
+              {companyPresentation.contactLine && <p className="my-0.5">{companyPresentation.contactLine}</p>}
+              {companyPresentation.site && <p className="my-0.5">{companyPresentation.site}</p>}
             </>
           )}
         </div>
@@ -499,16 +492,22 @@ export default function OSPreviewModal({
   products,
   accentColor,
   templateMode,
-  documentSettings,
   dados,
   loadingDados = false,
 }: OSPreviewModalProps) {
   const { toast } = useToast();
   const [busyAction, setBusyAction] = useState<'download' | 'print' | null>(null);
   const [previewViewportRef, previewViewportSize] = useElementSize<HTMLDivElement>();
-  const { data: savedTemplate } = useDocumentTemplateSettings(null, open && (!accentColor || !templateMode));
-  const { data: resolvedDocumentSettings } = useDocumentCustomization('entry_note', null, open && !documentSettings);
-  const effectiveDocumentSettings = documentSettings ?? resolvedDocumentSettings ?? null;
+  const templateSettingsQuery = useDocumentTemplateSettings(null, open && (!accentColor || !templateMode));
+  const documentSettingsQuery = useDocumentCustomization('entry_note', null, open);
+  const savedTemplate = templateSettingsQuery.data;
+  const needsStoredTemplate = !accentColor || !templateMode;
+  const documentIdentityReady = documentSettingsQuery.isReady
+    && (!needsStoredTemplate || templateSettingsQuery.isReady);
+  const documentIdentityError = documentSettingsQuery.isError
+    || documentSettingsQuery.isScopeMismatch
+    || (needsStoredTemplate && (templateSettingsQuery.isError || templateSettingsQuery.isScopeMismatch));
+  const effectiveDocumentSettings = documentSettingsQuery.isReady ? documentSettingsQuery.data : null;
   const effectiveAccentColor = accentColor ?? getDocumentAccentColor(effectiveDocumentSettings, savedTemplate?.corDocumento ?? '#1a7a8a');
   const effectiveTemplateMode = templateMode ?? savedTemplate?.osModelo ?? 'auto';
 
@@ -516,6 +515,12 @@ export default function OSPreviewModal({
     () => dados ?? buildPdfDados(note, client, services, products),
     [dados, note, client, services, products],
   );
+  const documentOwnerReady = !IS_REAL_AUTH || Boolean(
+    documentSettingsQuery.expectedUserId
+    && pdfDados.cabecalho.criado_por_usuario === documentSettingsQuery.expectedUserId,
+  );
+  const documentPreviewReady = documentIdentityReady && documentOwnerReady;
+  const documentValidationError = documentIdentityError || !documentOwnerReady;
   const usePortraitLayout = effectiveTemplateMode === 'a4_vertical' || (effectiveTemplateMode === 'auto' && pdfDados.itens_servico.length > MAX_ROWS);
   const pageLayout = usePortraitLayout ? NOTA_PRINT_PORTRAIT_PAGE : NOTA_PRINT_PAGE;
   const pageMaxRows = usePortraitLayout ? LONG_MAX_ROWS : MAX_ROWS;
@@ -527,7 +532,7 @@ export default function OSPreviewModal({
 
     return itemPages.flatMap((items, index) => [
       { items, copyLabel: 'Via cliente', key: `cliente-${index}` },
-      { items, copyLabel: 'Via retífica', key: `retifica-${index}` },
+      { items, copyLabel: 'Via empresa', key: `empresa-${index}` },
     ]);
   }, [itemPages, usePortraitLayout]);
   const previewScale = useMemo(() => {
@@ -550,10 +555,15 @@ export default function OSPreviewModal({
   }), [pageLayout.height, pageLayout.width, previewScale]);
 
   const buildBlobUrl = async () => {
+    const scopedDocumentSettings = await documentSettingsQuery.requireData();
+    const scopedTemplate = (!accentColor || !templateMode)
+      ? await templateSettingsQuery.requireData()
+      : savedTemplate;
     const blob = await generateNotaPdfBlob(pdfDados, {
-      accentColor: effectiveAccentColor,
-      templateMode: effectiveTemplateMode,
-      documentSettings: effectiveDocumentSettings,
+      accentColor: accentColor ?? getDocumentAccentColor(scopedDocumentSettings, scopedTemplate.corDocumento),
+      templateMode: templateMode ?? scopedTemplate.osModelo,
+      documentSettings: scopedDocumentSettings,
+      expectedUserId: scopedDocumentSettings.fkUsuarios,
     });
     return URL.createObjectURL(blob);
   };
@@ -645,15 +655,15 @@ export default function OSPreviewModal({
               </DialogTitle>
               <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">
                 {usePortraitLayout
-                  ? `Formato A4 vertical — ${previewPages.length} página(s), com via do cliente e da retífica.`
+                  ? `Formato A4 vertical — ${previewPages.length} página(s), com via do cliente e da empresa.`
                   : 'Visualização rápida no formato final da O.S.'}
               </p>
             </div>
             <div className="flex min-w-0 flex-wrap items-center gap-2 md:justify-end">
-              <Button variant="outline" size="sm" onClick={() => void handlePrint()} disabled={busyAction !== null}>
+              <Button variant="outline" size="sm" onClick={() => void handlePrint()} disabled={busyAction !== null || !documentPreviewReady}>
                 <Printer className="w-4 h-4 mr-1.5" /> Abrir PDF
               </Button>
-              <Button variant="outline" size="sm" onClick={() => void handleDownload()} disabled={busyAction !== null}>
+              <Button variant="outline" size="sm" onClick={() => void handleDownload()} disabled={busyAction !== null || !documentPreviewReady}>
                 <Download className="w-4 h-4 mr-1.5" /> Baixar PDF
               </Button>
               <Button variant="outline" size="sm" onClick={() => void handleShare()}>
@@ -667,6 +677,42 @@ export default function OSPreviewModal({
           {loadingDados && !dados ? (
             <div className="flex min-h-full items-center justify-center text-sm font-medium text-muted-foreground">
               Carregando serviços da O.S...
+            </div>
+          ) : !documentPreviewReady ? (
+            <div
+              className="flex min-h-full flex-col items-center justify-center gap-3 px-6 text-center"
+              data-document-identity-state={documentValidationError ? 'error' : 'loading'}
+            >
+              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                {documentValidationError
+                  ? <AlertTriangle className="h-5 w-5" />
+                  : <RefreshCw className="h-5 w-5 animate-spin" />}
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-foreground">
+                  {!documentOwnerReady
+                    ? 'A empresa responsável por esta O.S. não pôde ser validada'
+                    : documentIdentityError
+                      ? 'Não foi possível validar a identidade da empresa'
+                    : 'Validando a identidade da empresa...'}
+                </p>
+                <p className="mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">
+                  A O.S. só é exibida e gerada depois que nome, contato e modelo forem confirmados para esta empresa.
+                </p>
+              </div>
+              {documentIdentityError && documentOwnerReady ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void documentSettingsQuery.refetch();
+                    if (needsStoredTemplate) void templateSettingsQuery.refetch();
+                  }}
+                >
+                  <RefreshCw className="mr-1.5 h-4 w-4" /> Tentar novamente
+                </Button>
+              ) : null}
             </div>
           ) : (
             <div className="flex min-h-full w-full flex-col items-center justify-start gap-3">

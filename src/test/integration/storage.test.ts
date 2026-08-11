@@ -270,9 +270,10 @@ describe.skipIf(skipIntegration)('Storage — PDFs e anexos privados com signed 
   it('uploadNotaPDF salva path privado e getNotaPDFSignedUrl permite leitura real', async () => {
     const { testUserEmail, testUserPassword } = getTestEnv();
     const service = createServiceClient();
-    const [{ supabase }, notasApi] = await Promise.all([
+    const [{ supabase }, notasApi, authApi] = await Promise.all([
       import('@/lib/supabase'),
       import('@/api/supabase/notas'),
+      import('@/api/supabase/auth'),
     ]);
 
     const bucket = await service.storage.getBucket('notas');
@@ -285,10 +286,11 @@ describe.skipIf(skipIntegration)('Storage — PDFs e anexos privados com signed 
       password: testUserPassword,
     });
     expect(login.error).toBeNull();
+    const perfil = await authApi.getPerfil();
 
     const osNumero = `OS-INT-${crypto.randomUUID()}`;
     const pdfBlob = new Blob(['%PDF-1.4\n% integration test nota\n'], { type: 'application/pdf' });
-    const path = await notasApi.uploadNotaPDF(pdfBlob, osNumero);
+    const path = await notasApi.uploadNotaPDF(pdfBlob, osNumero, perfil.id_usuarios);
     notaPaths.push(path);
 
     expect(path).toMatch(/^[a-z0-9-]+\/\d{4}\/(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\/\d{2} \((?:Domingo|Segunda-feira|Terca-feira|Quarta-feira|Quinta-feira|Sexta-feira|Sabado)\)\/OS-INT-/);

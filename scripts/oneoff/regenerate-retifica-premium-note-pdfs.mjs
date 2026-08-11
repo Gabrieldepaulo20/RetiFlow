@@ -627,6 +627,7 @@ async function main() {
       const buffer = await pdfInstanceToBuffer(pdf(React.createElement(NotaPDFTemplate, {
         dados,
         documentSettings: settingsForNote,
+        expectedUserId: owner.id_usuarios,
         accentColor: settingsForNote.resolvedConfig.theme.primaryColor,
       })));
 

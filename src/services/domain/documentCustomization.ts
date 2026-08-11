@@ -145,9 +145,9 @@ export const DOCUMENT_TYPE_OPTIONS: Array<{ value: DocumentType; label: string; 
 export const ACTIVE_DOCUMENT_TYPES: DocumentType[] = ['entry_note', 'closing_report'];
 
 export const TEMPLATE_VARIABLES = [
-  { key: 'company_name', label: 'Nome da empresa', fallback: 'Retífica Premium' },
-  { key: 'company_phone', label: 'Telefone da empresa', fallback: '(16) 3524-4661' },
-  { key: 'company_whatsapp', label: 'WhatsApp da empresa', fallback: '(16) 3524-4661' },
+  { key: 'company_name', label: 'Nome da empresa', fallback: 'Empresa' },
+  { key: 'company_phone', label: 'Telefone da empresa', fallback: '' },
+  { key: 'company_whatsapp', label: 'WhatsApp da empresa', fallback: '' },
   { key: 'customer_name', label: 'Cliente', fallback: 'João da Silva' },
   { key: 'vehicle_plate', label: 'Placa', fallback: 'ABC1D23' },
   { key: 'service_order_number', label: 'Número da O.S.', fallback: 'OS-99' },
@@ -375,11 +375,59 @@ export function normalizeDocumentCompanyName(value: string | null | undefined) {
   const trimmed = sanitizeDocumentText(value, 120);
   const normalized = stripAccents(trimmed).toLowerCase();
 
-  if (!trimmed || normalized === 'gawi' || normalized === 'retifica premium') {
+  if (normalized === 'retifica premium') {
     return 'Retífica Premium';
   }
 
-  return trimmed;
+  return trimmed || 'Empresa';
+}
+
+export function buildDocumentCompanyPresentation(
+  company: CompanyDocumentSettings | null | undefined,
+) {
+  const city = sanitizeDocumentText(company?.cidade, 120);
+  const state = sanitizeDocumentText(company?.estado, 20);
+  const address = [
+    sanitizeDocumentText(company?.endereco, 220),
+    city && state ? `${city}/${state}` : city,
+  ].filter(Boolean).join(' · ');
+  const contactLine = [
+    company?.cep ? `CEP ${sanitizeDocumentText(company.cep, 20)}` : '',
+    sanitizeDocumentText(company?.telefone || company?.whatsapp, 60),
+    sanitizeDocumentText(company?.email, 160),
+  ].filter(Boolean).join(' · ');
+
+  return {
+    name: normalizeDocumentCompanyName(company?.nomeFantasia),
+    address,
+    contactLine,
+    site: sanitizeDocumentText(company?.site, 200),
+  };
+}
+
+export function isDocumentCustomizationForUser(
+  customization: ResolvedDocumentCustomization | null | undefined,
+  expectedUserId: string | null | undefined,
+  expectedDocumentType?: DocumentType,
+) {
+  const expected = expectedUserId?.trim();
+  if (!customization || !expected) return false;
+
+  return customization.fkUsuarios === expected
+    && customization.company.fkUsuarios === expected
+    && (!expectedDocumentType || customization.documentType === expectedDocumentType)
+    && (!customization.template || customization.template.fkUsuarios === expected)
+    && (!customization.theme || customization.theme.fkUsuarios === expected);
+}
+
+export function assertDocumentCustomizationForUser(
+  customization: ResolvedDocumentCustomization | null | undefined,
+  expectedUserId: string | null | undefined,
+  expectedDocumentType?: DocumentType,
+): asserts customization is ResolvedDocumentCustomization {
+  if (!isDocumentCustomizationForUser(customization, expectedUserId, expectedDocumentType)) {
+    throw new Error('A identidade visual da empresa ainda não foi validada para este acesso. Tente novamente.');
+  }
 }
 
 export function normalizeServiceOrderText(value: string | null | undefined, fallback = 'Ordem de Serviço') {
@@ -540,8 +588,8 @@ export function validateDocumentTemplateConfig(config: PartialDocumentTemplateCo
 export function buildFallbackCompanySettings(fkUsuarios = 'current'): CompanyDocumentSettings {
   return {
     fkUsuarios,
-    razaoSocial: 'Retífica Premium',
-    nomeFantasia: 'Retífica Premium',
+    razaoSocial: '',
+    nomeFantasia: 'Empresa',
     cnpj: '',
     inscricaoEstadual: '',
     inscricaoMunicipal: '',
@@ -549,7 +597,7 @@ export function buildFallbackCompanySettings(fkUsuarios = 'current'): CompanyDoc
     cidade: '',
     estado: '',
     cep: '',
-    telefone: '(16) 3524-4661',
+    telefone: '',
     whatsapp: '',
     email: '',
     site: '',
@@ -557,8 +605,8 @@ export function buildFallbackCompanySettings(fkUsuarios = 'current'): CompanyDoc
     horarioAtendimento: '',
     mensagemAtendimento: '',
     observacaoDocumentos: '',
-    brandPrimaryColor: '#1a7a8a',
-    brandSecondaryColor: '#0f7f95',
+    brandPrimaryColor: '#475569',
+    brandSecondaryColor: '#334155',
     updatedAt: null,
   };
 }

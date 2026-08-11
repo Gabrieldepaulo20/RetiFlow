@@ -2,6 +2,7 @@ import { callRPC } from './_base';
 import { NoteStatus, NotePaymentStatus, NoteType, IntakeNote, STATUS_LABELS, toPaymentMethod } from '@/types';
 import {
   assertActiveSupportScopeUnchanged,
+  captureActiveSupportScope,
   readActiveSupportContext,
 } from '@/services/auth/supportContext';
 import { getPerfil } from './auth';
@@ -324,15 +325,21 @@ export async function getNotaPDFSignedUrl(
   return data.signedUrl;
 }
 
-export async function uploadNotaPDF(blob: Blob, osNumero: string): Promise<string> {
-  if (readActiveSupportContext()) {
+export async function uploadNotaPDF(blob: Blob, osNumero: string, expectedUserId: string): Promise<string> {
+  const operationScope = captureActiveSupportScope();
+  if (operationScope) {
     throw new Error('[uploadNotaPDF] Upload de PDF em modo suporte exige auditoria backend por ação.');
   }
 
   const { supabase } = await import('@/lib/supabase');
   const { data: { user } } = await supabase.auth.getUser();
+  assertActiveSupportScopeUnchanged(operationScope);
   if (!user?.id) throw new Error('[uploadNotaPDF] Sessão sem usuário autenticado.');
   const perfil = await getPerfil();
+  assertActiveSupportScopeUnchanged(operationScope);
+  if (perfil.id_usuarios !== expectedUserId) {
+    throw new Error('[uploadNotaPDF] A empresa ativa mudou antes do upload. A gravação foi interrompida.');
+  }
   const path = buildNotePdfStoragePath({
     tenantName: perfil.nome || perfil.email || user.id,
     osNumero,
@@ -343,6 +350,7 @@ export async function uploadNotaPDF(blob: Blob, osNumero: string): Promise<strin
     upsert: true,
   });
   if (error) throw new Error(`[uploadNotaPDF] ${error.message}`);
+  assertActiveSupportScopeUnchanged(operationScope);
   return path;
 }
 

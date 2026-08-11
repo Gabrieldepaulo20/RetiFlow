@@ -4,8 +4,9 @@ import type { NotaServicoDetalhes, NotaServicoDetalhesItem } from '@/api/supabas
 import type { OsTemplateMode } from '@/api/supabase/modelos';
 import type { ResolvedDocumentCustomization, TemplateVariableKey } from '@/services/domain/documentCustomization';
 import {
+  buildDocumentCompanyPresentation,
   getDocumentAccentColor,
-  normalizeDocumentCompanyName,
+  isDocumentCustomizationForUser,
   normalizeServiceOrderText,
   renderTemplateText,
 } from '@/services/domain/documentCustomization';
@@ -398,16 +399,9 @@ function Via({
   const company = documentSettings?.company;
   const effectiveAccent = getDocumentAccentColor(documentSettings, accentColor);
   const documentTitle = normalizeServiceOrderText(resolvedConfig?.title, 'ORDEM DE SERVIÇO');
-  const companyName = normalizeDocumentCompanyName(company?.nomeFantasia);
+  const companyPresentation = buildDocumentCompanyPresentation(company);
+  const companyName = companyPresentation.name;
   const companySubtitle = normalizeServiceOrderText(resolvedConfig?.subtitle, 'RETÍFICA DE CABEÇOTE');
-  const companyAddress = [company?.endereco, company?.cidade && company?.estado ? `${company.cidade}/${company.estado}` : company?.cidade]
-    .filter(Boolean)
-    .join(' · ');
-  const contactLine = [
-    company?.cep ? `CEP ${company.cep}` : '',
-    company?.telefone || company?.whatsapp || '',
-    company?.email || '',
-  ].filter(Boolean).join(' · ');
   const templateVariables: Partial<Record<TemplateVariableKey, string | number | null | undefined>> = {
     company_name: companyName,
     company_phone: company?.telefone,
@@ -444,9 +438,9 @@ function Via({
           {copyLabel && <Text style={[styles.headerInfo, styles.headerInfoStrong]}>{copyLabel.toUpperCase()}</Text>}
           {resolvedConfig?.showCompanyData !== false && (
             <>
-              <Text style={[styles.headerInfo, styles.headerInfoStrong]}>{companyAddress || 'Av. Fioravante Magro, 1059'}</Text>
-              <Text style={styles.headerInfo}>{contactLine || 'Jardim Boa Vista · Sertãozinho/SP'}</Text>
-              {company?.site && <Text style={styles.headerInfo}>{company.site}</Text>}
+              {companyPresentation.address && <Text style={[styles.headerInfo, styles.headerInfoStrong]}>{companyPresentation.address}</Text>}
+              {companyPresentation.contactLine && <Text style={styles.headerInfo}>{companyPresentation.contactLine}</Text>}
+              {companyPresentation.site && <Text style={styles.headerInfo}>{companyPresentation.site}</Text>}
             </>
           )}
         </View>
@@ -575,6 +569,7 @@ interface Props {
   accentColor?: string;
   templateMode?: OsTemplateMode;
   documentSettings?: ResolvedDocumentCustomization | null;
+  expectedUserId: string;
 }
 
 export function NotaPDFTemplate({
@@ -582,13 +577,24 @@ export function NotaPDFTemplate({
   accentColor = '#1a7a8a',
   templateMode = 'auto',
   documentSettings,
+  expectedUserId,
 }: Props) {
-  const effectiveAccent = getDocumentAccentColor(documentSettings, accentColor);
+  if (
+    dados.cabecalho.criado_por_usuario
+    && dados.cabecalho.criado_por_usuario !== expectedUserId
+  ) {
+    throw new Error('A O.S. não pertence à empresa usada para gerar este PDF.');
+  }
+
+  const scopedDocumentSettings = isDocumentCustomizationForUser(documentSettings, expectedUserId, 'entry_note')
+    ? documentSettings
+    : null;
+  const effectiveAccent = getDocumentAccentColor(scopedDocumentSettings, accentColor);
   const usePortraitLayout = templateMode === 'a4_vertical' || (templateMode === 'auto' && dados.itens_servico.length > MAX_ROWS);
   const itemPages = chunkItems(dados.itens_servico, usePortraitLayout ? LONG_MAX_ROWS : MAX_ROWS);
   const portraitPages = itemPages.flatMap((itens, index) => [
     { itens, copyLabel: 'Via cliente', key: `cliente-${index}` },
-    { itens, copyLabel: 'Via retífica', key: `retifica-${index}` },
+    { itens, copyLabel: 'Via empresa', key: `empresa-${index}` },
   ]);
 
   return (
@@ -609,14 +615,14 @@ export function NotaPDFTemplate({
                 fullPage
                 copyLabel={page.copyLabel ?? undefined}
                 accentColor={effectiveAccent}
-                documentSettings={documentSettings}
+                documentSettings={scopedDocumentSettings}
               />
             </View>
           ) : (
             <View style={styles.notaContainer}>
-              <Via dados={dados} itens={page.itens} accentColor={effectiveAccent} documentSettings={documentSettings} />
+              <Via dados={dados} itens={page.itens} accentColor={effectiveAccent} documentSettings={scopedDocumentSettings} />
               <View style={styles.divider} />
-              <Via dados={dados} itens={page.itens} accentColor={effectiveAccent} documentSettings={documentSettings} />
+              <Via dados={dados} itens={page.itens} accentColor={effectiveAccent} documentSettings={scopedDocumentSettings} />
             </View>
           )}
         </Page>
