@@ -27,6 +27,7 @@ export default defineConfig({
       VITE_SUPABASE_URL: 'https://example.supabase.co',
       VITE_SUPABASE_ANON_KEY: 'e2e-anon-key',
       VITE_AUTH_MODE: 'mock',
+      VITE_SUPER_ADMIN_EMAILS: 'gabrielwilliam208@gmail.com',
     },
   },
 });

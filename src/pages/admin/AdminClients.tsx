@@ -13,6 +13,7 @@ import {
   Loader2,
   LogIn,
   Mail,
+  MoreHorizontal,
   Palette,
   Phone,
   Power,
@@ -44,6 +45,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -842,7 +850,7 @@ export default function AdminClients() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-display font-bold text-foreground">Usuários do Sistema</h1>
@@ -905,7 +913,13 @@ export default function AdminClients() {
           </Alert>
         ) : null}
 
-      <div className={cn('grid grid-cols-1 gap-4 sm:grid-cols-2', isCurrentUserMegaMaster ? 'xl:grid-cols-4' : 'lg:grid-cols-3')}>
+      <div
+        className={cn(
+          'grid grid-cols-2 gap-2 sm:gap-3',
+          isCurrentUserMegaMaster ? 'md:grid-cols-4' : 'md:grid-cols-3',
+        )}
+        data-admin-users-stats
+      >
         {[
           { label: 'Total', value: systemUsers.length, color: 'text-foreground' },
           { label: 'Ativos', value: activeCount, color: 'text-success' },
@@ -913,7 +927,7 @@ export default function AdminClients() {
           ...(isCurrentUserMegaMaster ? [{ label: 'Online agora', value: onlineCount, color: 'text-emerald-600' }] : []),
         ].map((stat) => (
           <Card key={stat.label}>
-            <CardContent className="p-4 text-center">
+            <CardContent className="p-3 text-center sm:p-4">
               <p className="text-xs text-muted-foreground font-medium">{stat.label}</p>
               <p className={`text-2xl font-display font-bold ${stat.color}`}>{stat.value}</p>
             </CardContent>
@@ -927,6 +941,7 @@ export default function AdminClients() {
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
+            aria-label="Buscar usuários por nome ou e-mail"
             placeholder="Buscar por nome ou e-mail..."
             className="pl-10 h-11 rounded-xl"
           />
@@ -938,7 +953,8 @@ export default function AdminClients() {
               variant={statusFilter === filter ? 'default' : 'outline'}
               size="sm"
               onClick={() => setStatusFilter(filter)}
-              className="rounded-xl"
+              aria-pressed={statusFilter === filter}
+              className="min-h-10 rounded-xl"
             >
               {filter === 'all' ? 'Todos' : filter === 'active' ? 'Ativos' : 'Inativos'}
             </Button>
@@ -964,9 +980,15 @@ export default function AdminClients() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.03 }}
             >
-              <Card className={cn('transition-all duration-200 hover:shadow-md', !user.isActive && 'opacity-60')}>
+              <Card
+                className={cn(
+                  'transition-all duration-200 hover:shadow-md',
+                  !user.isActive && 'border-dashed bg-muted/20',
+                )}
+                data-admin-user-card={user.id}
+              >
                 <CardContent className="p-0">
-                  <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:gap-4">
+                  <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:gap-4 sm:p-4">
                     <div
                       className={cn(
                         'w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0',
@@ -1009,16 +1031,20 @@ export default function AdminClients() {
                       <p className="text-xs text-muted-foreground truncate">{user.email}</p>
                     </div>
 
-                    <div className="hidden sm:flex items-center gap-1.5">
+                    <div className="hidden shrink-0 items-center gap-1.5 md:flex">
                       <Badge variant="outline" className="text-[10px] gap-1">
                         <LayoutGrid className="w-3 h-3" />
                         {activeModules} módulos
                       </Badge>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
+                    <div
+                      className="flex w-full flex-wrap items-center justify-end gap-2 border-t border-border/60 pt-3 sm:w-auto sm:border-0 sm:pt-0"
+                      data-admin-user-actions={user.id}
+                    >
                       {canUseSensitiveAdminActions ? (
                         <>
+                          <div className="hidden items-center gap-1 min-[1400px]:flex">
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
@@ -1027,6 +1053,7 @@ export default function AdminClients() {
                                 className="h-8 w-8"
                                 disabled={isMutatingUser || isProtectedMegaMaster}
                                 onClick={() => setShowModulesDialog(user.id)}
+                                aria-label={`Configurar módulos de ${user.name}`}
                               >
                                 <LayoutGrid className="w-4 h-4" />
                               </Button>
@@ -1041,6 +1068,7 @@ export default function AdminClients() {
                                 size="icon"
                                 className="h-8 w-8"
                                 onClick={() => navigate(`/configuracoes?tab=modelos&user=${user.id}`)}
+                                aria-label={`Abrir modelos e cores de ${user.name}`}
                               >
                                 <Palette className="w-4 h-4" />
                               </Button>
@@ -1078,6 +1106,7 @@ export default function AdminClients() {
                                 className="h-8 w-8"
                                 disabled={isMutatingUser || isProtectedMegaMaster}
                                 onClick={() => setShowResetDialog(user.id)}
+                                aria-label={`Resetar senha de ${user.name}`}
                               >
                                 <KeyRound className="w-4 h-4" />
                               </Button>
@@ -1115,6 +1144,7 @@ export default function AdminClients() {
                                 className={cn('h-8 w-8', !user.isActive && 'text-success')}
                                 disabled={isMutatingUser || isProtectedMegaMaster}
                                 onClick={() => handleToggleActive(user.id)}
+                                aria-label={`${user.isActive ? 'Desativar' : 'Ativar'} ${user.name}`}
                               >
                                 <Power className="w-4 h-4" />
                               </Button>
@@ -1139,6 +1169,99 @@ export default function AdminClients() {
                               <TooltipContent>Excluir usuário e vínculos</TooltipContent>
                             </Tooltip>
                           ) : null}
+                          </div>
+
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-11 gap-2 rounded-xl px-3 min-[1400px]:hidden"
+                                aria-label={`Abrir ações de ${user.name}`}
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                                <span>Ações</span>
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-64 p-1.5">
+                              <DropdownMenuItem
+                                className="min-h-11 gap-3 rounded-lg"
+                                disabled={isMutatingUser || isProtectedMegaMaster}
+                                onSelect={() => setShowModulesDialog(user.id)}
+                              >
+                                <LayoutGrid className="h-4 w-4" />
+                                Configurar módulos
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="min-h-11 gap-3 rounded-lg"
+                                onSelect={() => navigate(`/configuracoes?tab=modelos&user=${user.id}`)}
+                              >
+                                <Palette className="h-4 w-4" />
+                                Modelos e cores
+                              </DropdownMenuItem>
+
+                              {isCurrentUserMegaMaster && user.role !== 'ADMIN' && !isMegaMasterUser(user) ? (
+                                <DropdownMenuItem
+                                  className="min-h-11 gap-3 rounded-lg text-amber-700 focus:text-amber-800"
+                                  disabled={isMutatingUser || !user.isActive}
+                                  onSelect={() => setShowPromoteDialog(user.id)}
+                                >
+                                  <Crown className="h-4 w-4" />
+                                  Promover para Master
+                                </DropdownMenuItem>
+                              ) : null}
+
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="min-h-11 gap-3 rounded-lg"
+                                disabled={isMutatingUser || isProtectedMegaMaster}
+                                onSelect={() => setShowResetDialog(user.id)}
+                              >
+                                <KeyRound className="h-4 w-4" />
+                                Resetar senha
+                              </DropdownMenuItem>
+                              {canResendInvite ? (
+                                <DropdownMenuItem
+                                  className="min-h-11 gap-3 rounded-lg text-amber-700 focus:text-amber-800"
+                                  disabled={isMutatingUser || isProtectedMegaMaster}
+                                  onSelect={() => void handleResendInvite(user.id)}
+                                >
+                                  {pendingAction === `invite-${user.id}` ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Mail className="h-4 w-4" />
+                                  )}
+                                  Reenviar convite
+                                </DropdownMenuItem>
+                              ) : null}
+                              <DropdownMenuItem
+                                className={cn(
+                                  'min-h-11 gap-3 rounded-lg',
+                                  !user.isActive && 'text-success focus:text-success',
+                                )}
+                                disabled={isMutatingUser || isProtectedMegaMaster}
+                                onSelect={() => void handleToggleActive(user.id)}
+                              >
+                                <Power className="h-4 w-4" />
+                                {user.isActive ? 'Desativar usuário' : 'Ativar usuário'}
+                              </DropdownMenuItem>
+
+                              {isCurrentUserMegaMaster && !isMegaMasterUser(user) ? (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    className="min-h-11 gap-3 rounded-lg text-destructive focus:text-destructive"
+                                    disabled={isMutatingUser}
+                                    onSelect={() => void openDeleteDialog(user.id)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                    Excluir usuário
+                                  </DropdownMenuItem>
+                                </>
+                              ) : null}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </>
                       ) : null}
 
@@ -1146,7 +1269,7 @@ export default function AdminClients() {
                         <Button
                           type="button"
                           size="sm"
-                          className="shrink-0 rounded-xl bg-blue-600 px-3 text-xs font-semibold text-white shadow-sm shadow-blue-600/20 hover:bg-blue-700 focus-visible:ring-blue-500"
+                          className="h-11 shrink-0 rounded-xl bg-blue-600 px-3 text-xs font-semibold text-white shadow-sm shadow-blue-600/20 hover:bg-blue-700 focus-visible:ring-blue-500"
                           disabled={isMutatingUser}
                           onClick={() => setShowSupportAccessDialog(user.id)}
                           aria-label={`Acessar ${user.name} em modo suporte`}
@@ -1158,7 +1281,7 @@ export default function AdminClients() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8"
+                        className="h-11 w-11 shrink-0 rounded-xl"
                         onClick={() => setExpandedId(isExpanded ? null : user.id)}
                         aria-expanded={isExpanded}
                         aria-label={isExpanded ? `Recolher detalhes de ${user.name}` : `Expandir detalhes de ${user.name}`}
@@ -1240,13 +1363,13 @@ export default function AdminClients() {
           setShowCreateDialog(open);
         }}
       >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
+        <DialogContent className="grid max-h-[calc(100dvh-1rem)] max-w-md grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-h-[calc(100dvh-2rem)] sm:p-0">
+          <DialogHeader className="shrink-0 border-b px-4 py-4 pr-12 text-left sm:px-5">
             <DialogTitle className="flex items-center gap-2">
               <UserPlus className="w-5 h-5" /> Novo Usuário do Sistema
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className="min-h-0 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
             <div className="space-y-2">
               <Label>Nome completo</Label>
               <Input value={newName} onChange={(event) => setNewName(event.target.value)} onBlur={() => setNewName(toTitleCasePtBr(newName))} placeholder="Nome do usuário" className="h-11 rounded-xl" />
@@ -1296,7 +1419,7 @@ export default function AdminClients() {
               </p>
             ) : null}
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t bg-muted/30 px-4 py-3 sm:px-5">
             <Button variant="outline" onClick={() => setShowCreateDialog(false)} disabled={pendingAction === 'create-user'}>
               Cancelar
             </Button>
@@ -1313,8 +1436,8 @@ export default function AdminClients() {
       </Dialog>
 
       <Dialog open={!!showModulesDialog} onOpenChange={() => setShowModulesDialog(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
+        <DialogContent className="grid max-h-[calc(100dvh-1rem)] max-w-md grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-h-[calc(100dvh-2rem)] sm:max-w-2xl sm:p-0">
+          <DialogHeader className="shrink-0 border-b px-4 py-4 pr-12 text-left sm:px-5">
             <DialogTitle className="flex items-center gap-2">
               <LayoutGrid className="w-5 h-5" /> Restrições por Usuário
             </DialogTitle>
@@ -1326,11 +1449,11 @@ export default function AdminClients() {
             }
 
             return (
-              <div className="space-y-4 py-2">
+              <div className="min-h-0 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
                 <p className="text-sm text-muted-foreground">
                   Ajuste restrições adicionais para <strong>{user.name}</strong>. Módulos desligados no perfil base continuam bloqueados aqui.
                 </p>
-                <div className="space-y-3">
+                <div className="grid gap-2 sm:grid-cols-2">
                   {ALL_MODULES.map((module) => {
                     const isEnabled = getEffectiveModules(user)[module.key];
                     const isAdminModuleLocked = module.key === 'admin' && user.role !== 'ADMIN';
@@ -1338,7 +1461,14 @@ export default function AdminClients() {
                     const isDisabled = pendingAction === `modules-${user.id}` || isAdminModuleLocked || isOwnAdminLock;
 
                     return (
-                      <div key={module.key} className="flex items-center justify-between p-3 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors">
+                      <label
+                        key={module.key}
+                        htmlFor={`module-${user.id}-${module.key}`}
+                        className={cn(
+                          'flex min-h-14 cursor-pointer items-center justify-between gap-3 rounded-xl bg-muted/30 p-3 transition-colors hover:bg-muted/50',
+                          isDisabled && 'cursor-not-allowed opacity-60',
+                        )}
+                      >
                         <div>
                           <span className="text-sm font-medium">{module.label}</span>
                           {isAdminModuleLocked && (
@@ -1349,18 +1479,20 @@ export default function AdminClients() {
                           )}
                         </div>
                         <Switch
+                          id={`module-${user.id}-${module.key}`}
                           checked={isEnabled}
                           disabled={isDisabled}
                           onCheckedChange={() => void toggleUserModule(user, module.key)}
+                          aria-label={`${isEnabled ? 'Desativar' : 'Ativar'} módulo ${module.label} para ${user.name}`}
                         />
-                      </div>
+                      </label>
                     );
                   })}
                 </div>
               </div>
             );
           })()}
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t bg-muted/30 px-4 py-3 sm:px-5">
             <Button onClick={() => setShowModulesDialog(null)}>
               Fechar
             </Button>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Outlet, useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -19,12 +19,32 @@ const adminNav = [
   { label: 'Configurações', icon: Settings, path: '/admin/configuracoes' },
 ];
 
+const ADMIN_TABLET_MEDIA_QUERY = '(min-width: 768px) and (max-width: 1366px) and (pointer: coarse)';
+
+function shouldStartWithCompactAdminSidebar() {
+  return typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia(ADMIN_TABLET_MEDIA_QUERY).matches;
+}
+
 export default function AdminLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const isMobile = useIsMobile();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(shouldStartWithCompactAdminSidebar);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+    const mediaQuery = window.matchMedia(ADMIN_TABLET_MEDIA_QUERY);
+    const compactSidebarForTablet = (event: MediaQueryListEvent | MediaQueryList) => {
+      if (event.matches) setCollapsed(true);
+    };
+
+    compactSidebarForTablet(mediaQuery);
+    mediaQuery.addEventListener('change', compactSidebarForTablet);
+    return () => mediaQuery.removeEventListener('change', compactSidebarForTablet);
+  }, []);
 
   if (!user) return <Navigate to="/admin/login" replace />;
 
@@ -41,7 +61,7 @@ export default function AdminLayout() {
         <div className="w-9 h-9 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
           <Shield className="w-5 h-5 text-primary" />
         </div>
-        {!collapsed && (
+        {(!collapsed || isMobile) && (
           <div>
             <span className="font-display font-bold text-sidebar-primary-foreground text-base">GAWI Admin</span>
             <p className="text-[10px] text-sidebar-foreground/50">Gestão de empresas</p>
@@ -65,7 +85,7 @@ export default function AdminLayout() {
               )}
             >
               <item.icon className="w-5 h-5 flex-shrink-0" />
-              {!collapsed && <span>{item.label}</span>}
+              {(!collapsed || isMobile) && <span>{item.label}</span>}
             </Link>
           );
         })}
@@ -81,16 +101,16 @@ export default function AdminLayout() {
           )}
         >
           <ArrowLeft className="w-4 h-4 flex-shrink-0" />
-          {!collapsed && <span>Área Operacional</span>}
+          {(!collapsed || isMobile) && <span>Área Operacional</span>}
         </Link>
       </div>
 
       <div className="shrink-0 border-t border-sidebar-border p-3">
-        <div className={cn('flex items-center gap-3', collapsed && 'justify-center')}>
+        <div className={cn('flex items-center gap-3', collapsed && !isMobile && 'justify-center')}>
           <Avatar className="w-9 h-9">
             <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold tracking-wide">{initials}</AvatarFallback>
           </Avatar>
-          {!collapsed && (
+          {(!collapsed || isMobile) && (
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-sidebar-accent-foreground truncate">{user.name}</p>
               <p className="text-xs text-sidebar-foreground/60 truncate">Administrador</p>
@@ -108,13 +128,16 @@ export default function AdminLayout() {
         <aside className={cn(
           'viewport-sidebar fixed left-0 top-0 z-40 flex flex-col bg-sidebar transition-[width] duration-300 ease-out',
           collapsed ? 'w-[68px]' : 'w-60'
-        )} data-layout-sidebar>
+        )} data-layout-sidebar data-sidebar-collapsed={collapsed ? 'true' : 'false'}>
           <NavContent />
           <button
+            type="button"
             onClick={() => setCollapsed(!collapsed)}
-            className="absolute -right-3 top-20 w-6 h-6 rounded-full bg-card border flex items-center justify-center shadow-sm hover:bg-muted"
+            className="absolute -right-[22px] top-[70px] flex h-11 w-11 items-center justify-center rounded-full border bg-card shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            aria-label={collapsed ? 'Expandir menu administrativo' : 'Recolher menu administrativo'}
+            aria-expanded={!collapsed}
           >
-            {collapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronLeft className="w-3 h-3" />}
+            {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </button>
         </aside>
       )}
@@ -126,7 +149,9 @@ export default function AdminLayout() {
           {isMobile && (
             <Sheet>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon"><Menu className="w-5 h-5" /></Button>
+                <Button variant="ghost" size="icon" aria-label="Abrir menu administrativo">
+                  <Menu className="w-5 h-5" />
+                </Button>
               </SheetTrigger>
               <SheetContent side="left" className="w-[min(86vw,18rem)] p-0 bg-sidebar border-sidebar-border">
                 <SheetTitle className="sr-only">Menu de navegação administrativa</SheetTitle>
@@ -193,7 +218,11 @@ export default function AdminLayout() {
             })}
             <Sheet>
               <SheetTrigger asChild>
-                <button className="flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-2xl px-2 py-1 text-muted-foreground transition-colors hover:bg-muted/70 active:scale-[0.98]">
+                <button
+                  type="button"
+                  aria-label="Abrir menu da conta administrativa"
+                  className="flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-2xl px-2 py-1 text-muted-foreground transition-colors hover:bg-muted/70 active:scale-[0.98]"
+                >
                   <Menu className="h-5 w-5" />
                   <span className="text-[10px] font-semibold leading-none">Conta</span>
                 </button>
