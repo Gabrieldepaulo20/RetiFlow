@@ -270,6 +270,10 @@ export interface MarketingRecentActivityItem {
   position: string | null;
   flowType: string | null;
   stepId: string | null;
+  optionId?: string | null;
+  fieldId?: string | null;
+  interactionAction?: string | null;
+  validationReason?: string | null;
   experimentId: string | null;
   variantId: string | null;
   estimateState: string | null;
@@ -518,9 +522,16 @@ export interface MarketingPaidVisitor {
   pagesTruncated?: boolean;
   actions?: Array<{
     type: string;
+    eventName?: string | null;
     occurredAt: string;
     pagePath: string;
     detail: string | null;
+    flowType?: string | null;
+    stepId?: string | null;
+    optionId?: string | null;
+    fieldId?: string | null;
+    interactionAction?: string | null;
+    validationReason?: string | null;
   }>;
   actionsTruncated?: boolean;
   engagementLevel?: 'converted' | 'contact' | 'engaged' | 'brief' | 'unknown';

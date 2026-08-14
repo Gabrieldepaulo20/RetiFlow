@@ -504,6 +504,60 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByText('/contato · whatsapp_contato')).toBeInTheDocument();
   });
 
+  it('filtra /quanto-custa e mostra os cliques da pergunta na ordem da sessão', () => {
+    const resumo = buildResumo();
+    const baseVisitor = resumo.campaigns.allVisitors![0];
+    resumo.campaigns.allVisitors = [
+      ...resumo.campaigns.allVisitors!,
+      {
+        ...baseVisitor,
+        visitorId: 'sessao-estimativa',
+        firstSeenAt: '2026-07-30T10:00:00.000Z',
+        lastSeenAt: '2026-07-30T10:00:08.000Z',
+        landingPage: '/quanto-custa',
+        lastPage: '/quanto-custa',
+        pages: [{
+          path: '/quanto-custa',
+          title: null,
+          occurredAt: '2026-07-30T10:00:00.000Z',
+        }],
+        actions: [
+          {
+            type: 'custom',
+            eventName: 'quiz_step_view',
+            occurredAt: '2026-07-30T10:00:04.000Z',
+            pagePath: '/quanto-custa',
+            detail: 'quiz_step_view',
+            stepId: 'symptoms',
+          },
+          {
+            type: 'custom',
+            eventName: 'quiz_option_selected',
+            occurredAt: '2026-07-30T10:00:05.000Z',
+            pagePath: '/quanto-custa',
+            detail: 'quiz_option_selected',
+            stepId: 'symptoms',
+            optionId: 'overheating',
+            interactionAction: 'select',
+          },
+        ],
+      },
+    ];
+
+    renderWithTooltips(<OverviewTab resumo={resumo} />);
+
+    const estimateFilter = screen.getByRole('button', { name: /Só \/quanto-custa 1/i });
+    fireEvent.click(estimateFilter);
+    expect(estimateFilter).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText(/Mostrando 1 de 3 jornadas rastreadas/i)).toBeInTheDocument();
+    expect(screen.getByText('2 ação(ões) na estimativa')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Ver detalhes da sessão sessao-estimativa/i }));
+    expect(screen.getByText('Etapa visualizada')).toBeInTheDocument();
+    expect(screen.getByText('Opção da pergunta clicada')).toBeInTheDocument();
+    expect(screen.getByText(/Sintomas · marcou: Superaquecimento/i)).toBeInTheDocument();
+  });
+
   it('mostra a jornada agregada e a atividade recente sem PII', () => {
     renderWithTooltips(
       <JourneyTab

@@ -413,6 +413,34 @@ describe('agregação sanitizada da jornada do site', () => {
     expect(item.contactState).toBe('intent');
   });
 
+  it('leva somente dimensões técnicas da pergunta para a atividade recente', async () => {
+    const [item] = await buildMarketingRecentActivityItems([
+      event('sessao-quiz-segura', 'custom', {
+        eventLabel: 'quiz_option_selected',
+        flowType: 'problem_unknown',
+        stepId: 'symptoms',
+        optionId: 'overheating',
+        fieldId: '11999999999',
+        interactionAction: 'select',
+        validationReason: 'required_symptoms',
+        freeText: 'relato particular do cliente',
+      }, { page_path: '/quanto-custa' }),
+    ], { tokenSalt: 'sal-secreto-do-servidor' });
+
+    expect(item).toMatchObject({
+      eventName: 'quiz_option_selected',
+      pagePath: '/quanto-custa',
+      flowType: 'problem_unknown',
+      stepId: 'symptoms',
+      optionId: 'overheating',
+      fieldId: null,
+      interactionAction: 'select',
+      validationReason: 'required_symptoms',
+    });
+    expect(JSON.stringify(item)).not.toContain('relato particular');
+    expect(JSON.stringify(item)).not.toContain('11999999999');
+  });
+
   it('redige PII acidental em caminhos e dimensões antes de montar o feed', async () => {
     const [item] = await buildMarketingRecentActivityItems([
       event('sessao-path-pii', 'custom', {

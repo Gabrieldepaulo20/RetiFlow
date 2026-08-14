@@ -174,10 +174,14 @@ const journeyEventLabels: Record<string, string> = {
   cta_click: 'Clique em ação',
   quiz_start: 'Estimativa iniciada',
   quiz_flow_selected: 'Fluxo escolhido',
+  quiz_option_selected: 'Opção da pergunta clicada',
+  quiz_field_interaction: 'Campo da pergunta acessado',
   quiz_step_view: 'Etapa visualizada',
   quiz_step_complete: 'Etapa concluída',
+  quiz_continue_blocked: 'Tentou continuar sem preencher',
   quiz_unknown_selected: 'Não sei selecionado',
   quiz_back: 'Voltou uma etapa',
+  quiz_reset: 'Nova triagem iniciada',
   quiz_file_intent: 'Pretende enviar arquivo',
   quiz_result_view: 'Resultado visualizado',
   quiz_estimate_state: 'Estado da estimativa',
@@ -188,6 +192,84 @@ const journeyEventLabels: Record<string, string> = {
   service_detail_click: 'Serviço acessado',
   form_field_complete: 'Campo concluído',
   scroll_depth: 'Profundidade de rolagem',
+};
+
+const quizStepLabels: Record<string, string> = {
+  requester: 'Quem está solicitando',
+  vehicle: 'Veículo',
+  situation: 'Situação atual',
+  symptoms: 'Sintomas',
+  known_information: 'O que já se sabe',
+  contact: 'Localização e prioridade',
+  result: 'Resultado',
+};
+
+const quizFlowLabels: Record<string, string> = {
+  vehicle_known: 'Sei qual é meu veículo',
+  problem_unknown: 'Não sei exatamente o problema',
+};
+
+const quizOptionLabels: Record<string, string> = {
+  owner: 'Proprietário do veículo',
+  workshop: 'Mecânico ou oficina',
+  company: 'Empresa',
+  fleet: 'Frotista',
+  vehicle_unknown: 'Não sei informar o veículo',
+  fuel_gasoline: 'Combustível: gasolina',
+  fuel_flex: 'Combustível: etanol/flex',
+  fuel_diesel: 'Combustível: diesel',
+  fuel_gnv: 'Combustível: GNV',
+  fuel_other: 'Combustível: outro',
+  fuel_unknown: 'Combustível: não sei',
+  running: 'Veículo funcionando',
+  stopped: 'Veículo parado',
+  engine_disassembled: 'Motor desmontado',
+  head_removed: 'Cabeçote já removido',
+  mechanic_assessed: 'Cabeçote avaliado por mecânico',
+  overheating: 'Superaquecimento',
+  water_loss: 'Baixa de água',
+  oil_water_mix: 'Óleo e água misturados',
+  white_smoke: 'Fumaça branca',
+  blue_smoke: 'Fumaça azul',
+  power_loss: 'Perda de potência',
+  misfires: 'Falhas',
+  reservoir_pressure: 'Pressão no reservatório',
+  head_gasket: 'Suspeita de junta queimada',
+  noise: 'Barulho',
+  returned_problem: 'Problema voltou após reparo',
+  other: 'Outro',
+  unknown: 'Não sei',
+  none: 'Nenhum diagnóstico indicado',
+  complete_rebuild: 'Retífica completa',
+  surfacing: 'Plaina',
+  crack_weld: 'Trinca ou solda',
+  valves_guides: 'Sedes, válvulas ou guias',
+  assembly: 'Montagem',
+  has_files_yes: 'Tem fotos ou orçamento anterior',
+  has_files_no: 'Não tem fotos ou orçamento anterior',
+  urgency_urgent: 'Prazo: urgente',
+  urgency_this_week: 'Prazo: nesta semana',
+  urgency_researching: 'Prazo: pesquisando',
+  urgency_no_deadline: 'Prazo: sem prazo',
+  contact_whatsapp: 'Prefere WhatsApp',
+  contact_phone: 'Prefere telefone',
+  contact_take_part: 'Prefere levar a peça',
+};
+
+const quizFieldLabels: Record<string, string> = {
+  vehicle_make: 'Marca do veículo',
+  vehicle_model: 'Modelo do veículo',
+  vehicle_year: 'Ano do veículo',
+  vehicle_engine: 'Motorização',
+  vehicle_fuel: 'Combustível',
+  vehicle_engine_code: 'Código do motor',
+  mechanic_assessment: 'Informação recebida do mecânico',
+  other_symptom: 'Outro sintoma',
+  diagnosis_text: 'Diagnóstico recebido',
+  desired_service: 'Serviço desejado',
+  city: 'Cidade',
+  approximate_quantity: 'Quantidade aproximada de peças',
+  part_availability: 'Disponibilidade da peça',
 };
 
 const destinationLabels: Record<string, string> = {
@@ -872,11 +954,21 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
   const allVisitors = resumo.campaigns.allVisitors ?? [];
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
   const [originFilter, setOriginFilter] = useState<'all' | 'paid' | 'organic' | 'other'>('all');
-  const visibleVisitors = (
-    originFilter === 'all'
-      ? allVisitors
-      : allVisitors.filter((visitor) => visitor.originType === originFilter)
+  const [estimateOnly, setEstimateOnly] = useState(false);
+  const isEstimateVisitor = (visitor: (typeof allVisitors)[number]) => (
+    visitor.landingPage === '/quanto-custa'
+    || visitor.lastPage === '/quanto-custa'
+    || visitor.pages?.some((page) => page.path === '/quanto-custa')
+    || visitor.actions?.some((action) => (
+      action.pagePath === '/quanto-custa'
+      || (action.eventName ?? action.detail ?? '').startsWith('quiz_')
+    ))
   );
+  const estimateVisitors = allVisitors.filter(isEstimateVisitor);
+  const visibleVisitors = allVisitors.filter((visitor) => (
+    (originFilter === 'all' || visitor.originType === originFilter)
+    && (!estimateOnly || isEstimateVisitor(visitor))
+  ));
 
   const originLabel = (originType: 'paid' | 'organic' | 'other') => (
     originType === 'paid' ? 'Google Ads' : originType === 'organic' ? 'Orgânico' : 'Direto / outros'
@@ -923,25 +1015,40 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
           title="De onde vieram e por onde passaram"
           description="Cada linha reúne origem, página de entrada, caminho em ordem, modo de medição, tempo e resultado. Termos brutos não são associados à sessão individual."
           action={(
-            <div className="flex max-w-full gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1" role="group" aria-label="Filtrar jornadas por origem">
-              {originFilters.map((filter) => (
-                <Button
-                  key={filter.value}
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  aria-pressed={originFilter === filter.value}
-                  onClick={() => setOriginFilter(filter.value)}
-                  className={cn(
-                    'h-7 shrink-0 rounded-lg px-2.5 text-[10px] font-bold',
-                    originFilter === filter.value
-                      ? 'bg-slate-950 text-white hover:bg-slate-950 hover:text-white'
-                      : 'text-slate-600 hover:bg-white',
-                  )}
-                >
-                  {filter.label} <span className="ml-1 opacity-65">{filter.count}</span>
-                </Button>
-              ))}
+            <div className="flex max-w-full flex-wrap justify-end gap-1.5">
+              <div className="flex max-w-full gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1" role="group" aria-label="Filtrar jornadas por origem">
+                {originFilters.map((filter) => (
+                  <Button
+                    key={filter.value}
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    aria-pressed={originFilter === filter.value}
+                    onClick={() => setOriginFilter(filter.value)}
+                    className={cn(
+                      'h-7 shrink-0 rounded-lg px-2.5 text-[10px] font-bold',
+                      originFilter === filter.value
+                        ? 'bg-slate-950 text-white hover:bg-slate-950 hover:text-white'
+                        : 'text-slate-600 hover:bg-white',
+                    )}
+                  >
+                    {filter.label} <span className="ml-1 opacity-65">{filter.count}</span>
+                  </Button>
+                ))}
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                aria-pressed={estimateOnly}
+                onClick={() => setEstimateOnly((current) => !current)}
+                className={cn(
+                  'h-9 rounded-xl px-3 text-[10px] font-bold',
+                  estimateOnly && 'border-amber-400 bg-amber-300 text-slate-950 hover:bg-amber-300',
+                )}
+              >
+                Só /quanto-custa <span className="ml-1 opacity-65">{estimateVisitors.length}</span>
+              </Button>
             </div>
           )}
         />
@@ -964,6 +1071,10 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
                 const expanded = expandedSession === sessionKey;
                 const pages = visitor.pages ?? [];
                 const actions = visitor.actions ?? [];
+                const estimateSession = isEstimateVisitor(visitor);
+                const quizActions = actions.filter((action) => (
+                  (action.eventName ?? action.detail ?? '').startsWith('quiz_')
+                ));
                 const durationSource = visitor.durationSource ?? 'event_interval';
                 const engagementLevel = visitor.engagementLevel
                   ?? (visitor.convertedClient ? 'converted' : visitor.actionCount > 0 ? 'contact' : 'unknown');
@@ -1009,7 +1120,18 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
                     <Badge variant="outline" className={cn('whitespace-nowrap font-bold', engagement.className)}>
                       {engagement.label}
                     </Badge>
-                    {actions.length ? <p className="mt-1 text-[9px] font-semibold text-teal-700">{actions.length} ação(ões)</p> : null}
+                    {estimateSession ? (
+                      <p className={cn(
+                        'mt-1 text-[9px] font-semibold',
+                        quizActions.length ? 'text-teal-700' : 'text-amber-700',
+                      )}>
+                        {quizActions.length
+                          ? `${quizActions.length} ação(ões) na estimativa`
+                          : 'Só abriu /quanto-custa'}
+                      </p>
+                    ) : actions.length ? (
+                      <p className="mt-1 text-[9px] font-semibold text-teal-700">{actions.length} ação(ões)</p>
+                    ) : null}
                   </td>
                   <td className="px-2 py-2 text-right">
                     <Button
@@ -1055,16 +1177,50 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
                         </div>
                         <div>
                           <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Ações realizadas</p>
+                          {estimateSession && quizActions.length === 0 ? (
+                            <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+                              A sessão abriu /quanto-custa, mas nenhuma pergunta ou botão da estimativa foi rastreado.
+                            </p>
+                          ) : null}
                           <div className="mt-2 space-y-1.5">
-                            {actions.length ? actions.map((action, index) => (
+                            {actions.length ? actions.map((action, index) => {
+                              const actionName = action.eventName ?? action.detail ?? action.type;
+                              const optionLabel = action.optionId
+                                ? quizOptionLabels[action.optionId] ?? action.optionId
+                                : null;
+                              const fieldLabel = action.fieldId
+                                ? quizFieldLabels[action.fieldId] ?? action.fieldId
+                                : null;
+                              const stepLabel = action.stepId
+                                ? quizStepLabels[action.stepId] ?? action.stepId
+                                : null;
+                              const flowLabel = action.flowType
+                                ? quizFlowLabels[action.flowType] ?? action.flowType
+                                : null;
+                              const selectionLabel = action.interactionAction === 'unselect'
+                                ? 'desmarcou'
+                                : action.interactionAction === 'select'
+                                  ? 'marcou'
+                                  : null;
+                              const actionDetails = [
+                                actionName === 'quiz_flow_selected' && flowLabel ? `fluxo: ${flowLabel}` : null,
+                                stepLabel,
+                                optionLabel ? `${selectionLabel ?? 'opção'}: ${optionLabel}` : null,
+                                fieldLabel ? `campo: ${fieldLabel} (conteúdo não exibido)` : null,
+                                action.validationReason ? 'preenchimento obrigatório pendente' : null,
+                                action.detail && !action.detail.startsWith('quiz_') ? action.detail : null,
+                              ].filter(Boolean);
+                              return (
                               <div key={`${action.occurredAt}-${action.type}-${index}`} className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-2.5 py-2">
-                                <div className="min-w-0">
-                                  <p className="truncate font-semibold text-slate-800">{eventLabels[action.type] ?? action.type}</p>
-                                  <p className="truncate text-[10px] text-slate-500">{action.pagePath}{action.detail ? ` · ${action.detail}` : ''}</p>
+                                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-950 text-[9px] font-bold text-amber-300">{index + 1}</span>
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate font-semibold text-slate-800">{journeyEventLabels[actionName] ?? eventLabels[action.type] ?? actionName}</p>
+                                  <p className="truncate text-[10px] text-slate-500">{action.pagePath}{actionDetails.length ? ` · ${actionDetails.join(' · ')}` : ''}</p>
                                 </div>
                                 <span className="shrink-0 text-[10px] text-slate-400">{formatDateTime(action.occurredAt)}</span>
                               </div>
-                            )) : <p className="text-xs text-slate-500">Nenhuma ação adicional registrada.</p>}
+                              );
+                            }) : <p className="text-xs text-slate-500">Nenhuma ação adicional registrada.</p>}
                             {visitor.actionsTruncated ? <p className="text-[10px] text-amber-700">A lista foi limitada às 100 primeiras ações desta sessão.</p> : null}
                           </div>
                         </div>
@@ -3446,7 +3602,20 @@ export function JourneyTab({
                     <td className="px-3 py-3 font-mono text-[11px]">{item.visitorToken.slice(-8)}</td>
                     <td className="px-3 py-3"><p className="font-semibold">{journeyEventLabels[item.eventName] ?? item.eventName}</p><p className="text-[11px] text-muted-foreground">{item.contactState === 'identified' ? 'contato identificado' : item.contactState === 'intent' ? 'intenção de contato' : 'anônima'}</p></td>
                     <td className="px-3 py-3 font-medium">{item.pagePath}</td>
-                    <td className="px-3 py-3"><p>{item.componentId ?? item.stepId ?? 'Não informado'}</p><p className="text-[11px] text-muted-foreground">{destinationLabels[item.destinationType] ?? item.destinationType}</p></td>
+                    <td className="px-3 py-3">
+                      <p>{item.stepId ? quizStepLabels[item.stepId] ?? item.stepId : item.componentId ?? 'Não informado'}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {item.optionId
+                          ? `${item.interactionAction === 'unselect' ? 'Desmarcou' : 'Marcou'}: ${quizOptionLabels[item.optionId] ?? item.optionId}`
+                          : item.fieldId
+                            ? `Acessou: ${quizFieldLabels[item.fieldId] ?? item.fieldId}`
+                            : item.validationReason
+                              ? 'Preenchimento obrigatório pendente'
+                              : item.eventName === 'quiz_flow_selected' && item.flowType
+                                ? `Fluxo: ${quizFlowLabels[item.flowType] ?? item.flowType}`
+                              : destinationLabels[item.destinationType] ?? item.destinationType}
+                      </p>
+                    </td>
                     <td className="px-3 py-3"><p className="font-medium">{item.source} / {item.medium}</p><p className="text-[11px] text-muted-foreground">{item.campaign ?? item.originType}</p></td>
                     <td className="px-3 py-3">{item.deviceType ?? 'não informado'}</td>
                   </tr>

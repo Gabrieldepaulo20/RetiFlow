@@ -143,6 +143,10 @@ export interface MarketingRecentActivityItem {
   position: string | null;
   flowType: string | null;
   stepId: string | null;
+  optionId: string | null;
+  fieldId: string | null;
+  interactionAction: string | null;
+  validationReason: string | null;
   experimentId: string | null;
   variantId: string | null;
   estimateState: string | null;
@@ -165,10 +169,14 @@ const KNOWN_EVENT_NAMES = new Set([
   'cta_click',
   'quiz_start',
   'quiz_flow_selected',
+  'quiz_option_selected',
+  'quiz_field_interaction',
   'quiz_step_view',
   'quiz_step_complete',
+  'quiz_continue_blocked',
   'quiz_unknown_selected',
   'quiz_back',
+  'quiz_reset',
   'quiz_file_intent',
   'quiz_result_view',
   'quiz_estimate_state',
@@ -390,6 +398,10 @@ interface NormalizedJourneyEvent {
   serviceId: string | null;
   flowType: string | null;
   stepId: string | null;
+  optionId: string | null;
+  fieldId: string | null;
+  interactionAction: string | null;
+  validationReason: string | null;
   experimentId: string | null;
   variantId: string | null;
   estimateState: string | null;
@@ -508,6 +520,16 @@ export function normalizeMarketingJourneyEvent(item: JsonRecord): NormalizedJour
     serviceId,
     flowType: safeDimension(metadata.flowType ?? metadata.flow_type, 100),
     stepId: safeDimension(metadata.stepId ?? metadata.step_id, 100),
+    optionId: safeDimension(metadata.optionId ?? metadata.option_id, 100),
+    fieldId: safeDimension(metadata.fieldId ?? metadata.field_id, 100),
+    interactionAction: safeDimension(
+      metadata.interactionAction ?? metadata.interaction_action,
+      40,
+    ),
+    validationReason: safeDimension(
+      metadata.validationReason ?? metadata.validation_reason,
+      100,
+    ),
     experimentId: safeDimension(metadata.experimentId ?? metadata.experiment_id, 100),
     variantId: safeDimension(metadata.variantId ?? metadata.variant_id, 100),
     estimateState: safeDimension(metadata.estimateState ?? metadata.estimate_state, 100),
@@ -1072,9 +1094,16 @@ export async function sanitizeMarketingVisitorSessionPayload(
   safe.actionsTruncated = rawActions.length > 100;
   safe.actions = rawActions.slice(0, 100).map((action) => ({
     type: safeDimension(action.type, 80) ?? 'other',
+    eventName: safeDimension(action.eventName, 100),
     occurredAt: limitedString(action.occurredAt, 80),
     pagePath: sanitizeMarketingPath(action.pagePath),
     detail: safeDimension(action.detail, 100),
+    flowType: safeDimension(action.flowType, 100),
+    stepId: safeDimension(action.stepId, 100),
+    optionId: safeDimension(action.optionId, 100),
+    fieldId: safeDimension(action.fieldId, 100),
+    interactionAction: safeDimension(action.interactionAction, 40),
+    validationReason: safeDimension(action.validationReason, 100),
   }));
   safe.visitorId = await encodeToken('visit', String(item.visitorId ?? 'unknown'));
   return safe;
@@ -1121,6 +1150,10 @@ export async function buildMarketingRecentActivityItems(
       position: event.position,
       flowType: event.flowType,
       stepId: event.stepId,
+      optionId: event.optionId,
+      fieldId: event.fieldId,
+      interactionAction: event.interactionAction,
+      validationReason: event.validationReason,
       experimentId: event.experimentId,
       variantId: event.variantId,
       estimateState: event.estimateState,

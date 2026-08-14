@@ -48,9 +48,16 @@ export interface MarketingVisitorPage {
 
 export interface MarketingVisitorAction {
   type: string;
+  eventName: string | null;
   occurredAt: string;
   pagePath: string;
   detail: string | null;
+  flowType: string | null;
+  stepId: string | null;
+  optionId: string | null;
+  fieldId: string | null;
+  interactionAction: string | null;
+  validationReason: string | null;
 }
 
 function limitedString(value: unknown, maxLength: number) {
@@ -160,6 +167,35 @@ function isMeaningfulAction(item: JsonRecord) {
   return Boolean(eventType && eventType !== 'page_view' && !isEngagementPulse(item));
 }
 
+function visitorAction(
+  item: JsonRecord,
+  metadata: JsonRecord,
+  occurredAt: string,
+  pagePath: string,
+): MarketingVisitorAction {
+  const eventType = String(item.event_type ?? 'other');
+  const eventLabel = limitedString(metadata.eventLabel ?? metadata.event_label, 100);
+  return {
+    type: eventType,
+    eventName: eventType === 'custom' ? eventLabel : eventType,
+    occurredAt,
+    pagePath,
+    detail: eventLabel,
+    flowType: limitedString(metadata.flowType ?? metadata.flow_type, 100),
+    stepId: limitedString(metadata.stepId ?? metadata.step_id, 100),
+    optionId: limitedString(metadata.optionId ?? metadata.option_id, 100),
+    fieldId: limitedString(metadata.fieldId ?? metadata.field_id, 100),
+    interactionAction: limitedString(
+      metadata.interactionAction ?? metadata.interaction_action,
+      40,
+    ),
+    validationReason: limitedString(
+      metadata.validationReason ?? metadata.validation_reason,
+      100,
+    ),
+  };
+}
+
 function classifyEngagement(session: MarketingVisitorSession): MarketingVisitorSession['engagementLevel'] {
   if (session.convertedClient) return 'converted';
   if (session.actionCount > 0) return 'contact';
@@ -231,12 +267,7 @@ export function buildMarketingVisitorSessions(
           title: limitedString(event.page_title, 300),
           occurredAt,
         }] : [],
-        actions: meaningfulAction ? [{
-          type: String(event.event_type),
-          occurredAt,
-          pagePath,
-          detail: limitedString(metadata.eventLabel ?? metadata.event_label, 180),
-        }] : [],
+        actions: meaningfulAction ? [visitorAction(event, metadata, occurredAt, pagePath)] : [],
         engagementLevel: 'unknown',
         measurementMode: eventMeasurementMode(event),
         leadCode,
@@ -288,12 +319,7 @@ export function buildMarketingVisitorSessions(
       eventMeasurementMode(event),
     );
     if (meaningfulAction) {
-      existing.actions.push({
-        type: String(event.event_type),
-        occurredAt,
-        pagePath,
-        detail: limitedString(metadata.eventLabel ?? metadata.event_label, 180),
-      });
+      existing.actions.push(visitorAction(event, metadata, occurredAt, pagePath));
     }
 
     if (attributionPriority(originType) > attributionPriority(existing.originType)) {

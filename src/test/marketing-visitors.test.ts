@@ -172,6 +172,58 @@ describe('sessões individuais de marketing', () => {
     expect(session.actions).toEqual([]);
   });
 
+  it('preserva a sequência técnica da estimativa sem copiar o conteúdo digitado', () => {
+    const [session] = buildMarketingVisitorSessions([
+      {
+        session_id: 'sessao-estimativa-1',
+        occurred_at: '2026-08-03T11:00:00.000Z',
+        page_path: '/quanto-custa',
+        event_type: 'page_view',
+      },
+      {
+        session_id: 'sessao-estimativa-1',
+        occurred_at: '2026-08-03T11:00:02.000Z',
+        page_path: '/quanto-custa',
+        event_type: 'custom',
+        metadata: {
+          eventLabel: 'quiz_option_selected',
+          flowType: 'problem_unknown',
+          stepId: 'symptoms',
+          optionId: 'overheating',
+          interactionAction: 'select',
+          freeText: 'não deve aparecer no painel',
+        },
+      },
+      {
+        session_id: 'sessao-estimativa-1',
+        occurred_at: '2026-08-03T11:00:03.000Z',
+        page_path: '/quanto-custa',
+        event_type: 'custom',
+        metadata: {
+          eventLabel: 'quiz_field_interaction',
+          stepId: 'vehicle',
+          fieldId: 'vehicle_make',
+        },
+      },
+    ], []);
+
+    expect(session.actions).toEqual([
+      expect.objectContaining({
+        eventName: 'quiz_option_selected',
+        flowType: 'problem_unknown',
+        stepId: 'symptoms',
+        optionId: 'overheating',
+        interactionAction: 'select',
+      }),
+      expect.objectContaining({
+        eventName: 'quiz_field_interaction',
+        stepId: 'vehicle',
+        fieldId: 'vehicle_make',
+      }),
+    ]);
+    expect(JSON.stringify(session.actions)).not.toContain('não deve aparecer');
+  });
+
   it('mapeia os modos de consentimento v2 para a visão legada de sessões', () => {
     for (const measurementMode of ['analytics', 'advertising', 'analytics_and_advertising']) {
       const [session] = buildMarketingVisitorSessions([
