@@ -677,7 +677,8 @@ describe('organização do painel Crescimento', () => {
     );
 
     const grid = screen.getByTestId('contacts-summary-grid');
-    expect(grid).toHaveClass('grid-cols-2', 'lg:grid-cols-4', 'gap-2');
+    expect(grid.className).toMatch(/grid-cols-\[repeat\(auto-fit/);
+    expect(grid).toHaveClass('gap-2');
     expect(grid.children).toHaveLength(4);
     expect(grid.querySelectorAll('[class~="lg:p-2.5"]')).toHaveLength(4);
   });
@@ -711,7 +712,8 @@ describe('organização do painel Crescimento', () => {
     const clientGrid = screen.getByTestId('results-client-grid');
     const valueGrid = screen.getByTestId('results-value-grid');
     for (const grid of [clientGrid, valueGrid]) {
-      expect(grid).toHaveClass('grid-cols-2', 'lg:grid-cols-4', 'gap-2');
+      expect(grid.className).toMatch(/grid-cols-\[repeat\(auto-fit/);
+    expect(grid).toHaveClass('gap-2');
       expect(grid.children).toHaveLength(4);
       expect(grid.querySelectorAll('[class~="lg:p-2.5"]')).toHaveLength(4);
     }
@@ -738,12 +740,14 @@ describe('organização do painel Crescimento', () => {
     renderWithTooltips(<QualityTab resumo={resumo} />);
 
     const summaryGrid = screen.getByTestId('quality-summary-grid');
-    expect(summaryGrid).toHaveClass('grid-cols-2', 'lg:grid-cols-4', 'gap-2');
+    expect(summaryGrid.className).toMatch(/grid-cols-\[repeat\(auto-fit/);
+    expect(summaryGrid).toHaveClass('gap-2');
     expect(summaryGrid.children).toHaveLength(4);
     expect(summaryGrid.querySelectorAll('[class~="lg:p-2.5"]')).toHaveLength(4);
 
     const integrationsGrid = screen.getByTestId('quality-integrations-grid');
-    expect(integrationsGrid).toHaveClass('grid-cols-2', 'lg:grid-cols-4', 'gap-2');
+    expect(integrationsGrid.className).toMatch(/grid-cols-\[repeat\(auto-fit/);
+    expect(integrationsGrid).toHaveClass('gap-2');
     expect(integrationsGrid.children).toHaveLength(4);
     expect(screen.queryByRole('heading', { name: 'O que aconteceu no site' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Snapshots congelados' })).toBeInTheDocument();

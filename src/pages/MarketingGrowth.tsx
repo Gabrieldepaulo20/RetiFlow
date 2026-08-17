@@ -596,6 +596,19 @@ function ClickBreakdownItem({
   );
 }
 
+/**
+ * Cabeçalho de seção compacto.
+ *
+ * A versão anterior empilhava rótulo, título grande e parágrafo — cerca de
+ * 100px antes de qualquer dado aparecer. São 34 seções no painel, então o
+ * custo somado passava de 3.000px de rolagem. Em tablet de 11" em paisagem,
+ * com ~700px úteis de altura, isso é o que fazia a informação começar na
+ * segunda ou terceira tela.
+ *
+ * Agora rótulo e título ficam na mesma linha e a descrição vira uma linha só,
+ * com o texto completo no `title` para quem quiser ler. Nada foi removido —
+ * só deixou de ocupar três linhas o que cabe em uma.
+ */
 function PanelHeading({
   eyebrow,
   title,
@@ -608,11 +621,22 @@ function PanelHeading({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        {eyebrow ? <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-700">{eyebrow}</p> : null}
-        <h2 className="mt-1 text-lg font-bold tracking-tight text-foreground sm:text-xl">{title}</h2>
-        {description ? <p className="mt-1 max-w-4xl text-xs leading-5 text-muted-foreground">{description}</p> : null}
+    <div
+      data-testid="panel-heading"
+      className="flex flex-col gap-1.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3"
+    >
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <h2 className="text-base font-bold tracking-tight text-foreground sm:text-lg">{title}</h2>
+          {eyebrow ? (
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-700">{eyebrow}</p>
+          ) : null}
+        </div>
+        {description ? (
+          <p className="mt-0.5 truncate text-xs leading-5 text-muted-foreground" title={description}>
+            {description}
+          </p>
+        ) : null}
       </div>
       {action}
     </div>
@@ -1984,7 +2008,7 @@ export function ContactsTab({
 
   return (
     <div className="space-y-5">
-      <div data-testid="contacts-summary-grid" className="grid grid-cols-2 gap-2 lg:grid-cols-4 2xl:gap-3">
+      <div data-testid="contacts-summary-grid" className="grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-2 2xl:gap-3">
         <Metric compact label="WhatsApp no site · todas as origens" value={formatNumber(siteWhatsappOrigins.total)} detail={formatSiteWhatsappOriginDetail(siteWhatsappOrigins)} help={siteMetricHelp.whatsapp} icon={MessageCircle} accent="teal" />
         <Metric compact label="Cliques no telefone" value={formatNumber(resumo.site.current.phoneClicks)} detail="Intenções de ligação" icon={PhoneCall} current={resumo.site.current.phoneClicks} previous={resumo.site.previous.phoneClicks} accent="navy" />
         <Metric compact label="Formulários iniciados" value={formatNumber(forms?.starts)} detail={`${formatNumber(forms?.submits)} enviados com sucesso`} icon={FileWarning} current={forms?.starts} previous={resumo.forms?.previous.starts} accent="gold" />
@@ -2175,7 +2199,7 @@ export function ResultsTab({ resumo }: { resumo: MarketingResumo }) {
           title="Quem realmente virou cliente?"
           description="A equipe confirma a origem no cadastro; quando houver telefone, e-mail ou código do site, o Retiflow continua fazendo o vínculo automático."
         />
-        <div data-testid="results-client-grid" className="grid grid-cols-2 gap-2 lg:grid-cols-4 2xl:gap-3">
+        <div data-testid="results-client-grid" className="grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-2 2xl:gap-3">
           <Metric compact label="Clientes novos" value={formatNumber(business?.newClients)} detail="Primeiro atendimento confirmado" help="Clientes marcados como novos no cadastro ou cujo primeiro contato digital aconteceu antes da criação no Retiflow." icon={UserCheck} current={business?.newClients} previous={previous?.newClients} accent="teal" />
           <Metric compact label="Já eram clientes" value={formatNumber(business?.existingClients)} detail="Retorno de cliente conhecido" help="Pessoas que já eram clientes antes deste novo contato de marketing." icon={Users} current={business?.existingClients} previous={previous?.existingClients} accent="navy" />
           <Metric compact label="Sem classificação" value={formatNumber(business?.unknownClients)} detail="A equipe ainda não confirmou" help="Clientes atribuídos cuja situação como novo ou antigo ainda não pôde ser comprovada." icon={CircleHelp} current={business?.unknownClients} previous={previous?.unknownClients} accent="violet" />
@@ -2183,7 +2207,7 @@ export function ResultsTab({ resumo }: { resumo: MarketingResumo }) {
         </div>
       </section>
 
-      <div data-testid="results-value-grid" className="grid grid-cols-2 gap-2 lg:grid-cols-4 2xl:gap-3">
+      <div data-testid="results-value-grid" className="grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-2 2xl:gap-3">
         <Metric
           compact
           label="Clientes identificados"
@@ -2344,7 +2368,7 @@ function GoogleAdsCallDetails({
           description="Horário, duração e atendimento informados pelo encaminhamento de chamadas do Google."
         />
 
-        <div className="mt-3 grid grid-cols-2 overflow-hidden rounded-xl border border-slate-200 bg-slate-200 sm:grid-cols-5">
+        <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] overflow-hidden rounded-xl border border-slate-200 bg-slate-200">
           {summary.map((item) => (
             <div key={item.label} className="min-w-0 bg-white px-3 py-2.5">
               <div className="flex items-start gap-1">
@@ -2826,7 +2850,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-2">
           {[
             { label: 'Outros cliques', value: otherClicks, help: googleAdsHelp.clicks },
             { label: 'Sessões pagas', value: paidActions?.trackedSessions, help: googleAdsHelp.trackedPaidSessions },
@@ -2859,7 +2883,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
         {paidSiteWhatsappPoints.length ? (
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
             <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">Onde visitantes dos anúncios clicaram no WhatsApp</p>
-            <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-4">
+            <div className="mt-2 grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-2">
               {paidSiteWhatsappPoints.slice(0, 4).map((point) => (
                 <div key={`${point.eventLabel}:${point.pagePath}`} className="flex min-w-0 items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-2 text-[11px]">
                   <div className="min-w-0">
@@ -3640,7 +3664,7 @@ export function QualityTab({ resumo }: { resumo: MarketingResumo }) {
 
   return (
     <div className="space-y-5">
-      <div data-testid="quality-summary-grid" className="grid grid-cols-2 gap-2 lg:grid-cols-4 2xl:gap-3">
+      <div data-testid="quality-summary-grid" className="grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-2 2xl:gap-3">
         <Metric compact label="Último evento" value={quality?.lastEventAt ? formatDateTime(quality.lastEventAt).split(' ')[0] : 'Pendente'} detail={quality?.lastEventAt ? formatDateTime(quality.lastEventAt) : 'Nenhum evento direto'} icon={Activity} accent="teal" />
         <Metric compact label="Falhas de alerta" value={formatNumber(quality?.alertFailures)} detail="Requerem revisão imediata" icon={AlertTriangle} accent={quality?.alertFailures ? 'rose' : 'navy'} />
         <Metric compact label="Cliques repetidos" value={formatNumber(quality?.duplicatedClicks)} detail="Não entram no total único" icon={MousePointerClick} accent="gold" />
@@ -3654,7 +3678,7 @@ export function QualityTab({ resumo }: { resumo: MarketingResumo }) {
             title="Integrações e defasagem real"
             description="Eventos internos são consultados a cada 5 minutos; GA4 e Search Console mantêm caches e atrasos próprios para proteger quotas e evitar falsa precisão."
           />
-          <div data-testid="quality-integrations-grid" className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4 2xl:gap-3">
+          <div data-testid="quality-integrations-grid" className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-2 2xl:gap-3">
             {resumo.integrations.map((integration) => (
               <IntegrationDetail key={integration.provider} integration={integration} />
             ))}
