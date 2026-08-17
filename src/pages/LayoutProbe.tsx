@@ -21,7 +21,8 @@
  *
  *   /__probe-layout             barra lateral aberta (256px), o caso pior
  *   /__probe-layout?sidebar=68  barra lateral recolhida
- *   /__probe-layout?aba=resumo  troca a aba medida
+ *   /__probe-layout?aba=resumo    troca a aba medida
+ *   /__probe-layout?aba=contatos
  *
  * A função `window.__medirEstouro()` devolve os elementos que passam da borda
  * direita do container, já ordenados pelo tamanho do estouro.
@@ -31,7 +32,7 @@ import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { useSearchParams } from 'react-router-dom';
 import { FinancialPrivacyProvider } from '@/contexts/FinancialPrivacyProvider';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { BarraDeAbasCrescimento, GoogleAdsTab, OverviewTab } from '@/pages/MarketingGrowth';
+import { BarraDeAbasCrescimento, ContactsTab, GoogleAdsTab, OverviewTab } from '@/pages/MarketingGrowth';
 import { buildResumo } from '@/test/fixtures/marketing-resumo';
 
 declare global {
@@ -107,7 +108,7 @@ export default function LayoutProbe() {
                 colunas media apenas as sub-abas e passava mesmo com a barra
                 principal quebrada — foi o que aconteceu na primeira versão.
               */}
-              <Tabs value={aba === 'resumo' ? 'visao' : 'google'} className="space-y-4">
+              <Tabs value={aba === 'resumo' ? 'visao' : aba === 'contatos' ? 'contatos' : 'google'} className="space-y-4">
                 <BarraDeAbasCrescimento
                   abas={[
                     { valor: 'visao', rotulo: 'Resumo' },
@@ -117,6 +118,9 @@ export default function LayoutProbe() {
                 />
                 <TabsContent value="visao"><OverviewTab resumo={resumo} /></TabsContent>
                 <TabsContent value="google"><GoogleAdsTab resumo={resumo} /></TabsContent>
+                <TabsContent value="contatos">
+                  <ContactsTab resumo={resumo} onLinked={() => {}} canManageAttribution />
+                </TabsContent>
               </Tabs>
             </div>
           </main>

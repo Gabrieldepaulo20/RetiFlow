@@ -63,7 +63,7 @@ async function medirEstouro(page: Page): Promise<{ container: number; culpados: 
   });
 }
 
-async function abrirSonda(page: Page, aba: 'google' | 'resumo', sidebar: number) {
+async function abrirSonda(page: Page, aba: 'google' | 'resumo' | 'contatos', sidebar: number) {
   await page.goto(`/__probe-layout?aba=${aba}&sidebar=${sidebar}`);
   await expect(page.locator('[data-probe-main]')).toBeVisible();
   // Só a aba Google Ads tem sub-abas; o Resumo não tem tablist nenhum.
@@ -79,7 +79,7 @@ const CENARIOS = [
 ] as const;
 
 for (const cenario of CENARIOS) {
-  for (const aba of ['google', 'resumo'] as const) {
+  for (const aba of ['google', 'resumo', 'contatos'] as const) {
     test(`aba ${aba} não estoura a largura — ${cenario.nome}`, async ({ page }) => {
       await page.setViewportSize({ width: cenario.largura, height: cenario.altura });
       await abrirSonda(page, aba, cenario.sidebar);
