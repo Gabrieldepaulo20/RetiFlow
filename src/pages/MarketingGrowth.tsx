@@ -505,47 +505,54 @@ function Metric({
 
   return (
     <Card className="group h-full min-w-0 overflow-hidden rounded-2xl border-border/70 bg-card shadow-[0_8px_28px_-24px_rgba(15,23,42,0.55)] transition-transform duration-200 hover:-translate-y-0.5">
-      <CardContent className={cn('min-w-0 p-3 sm:p-3.5', compact && 'lg:p-2.5 2xl:p-3.5')}>
+      <CardContent className={cn('min-w-0 p-2.5 sm:p-3', compact && 'lg:p-2.5 2xl:p-3.5')}>
         <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-start gap-1">
             <p className="min-w-0 text-[10px] font-bold uppercase leading-4 tracking-[0.1em] text-muted-foreground">{label}</p>
             {help ? <HelpTip label={label} description={help} /> : null}
           </div>
           <div className={cn(
-            'growth-metric-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg shadow-sm',
+            'growth-metric-icon flex h-7 w-7 shrink-0 items-center justify-center rounded-lg shadow-sm',
             compact && 'lg:h-7 lg:w-7 lg:rounded-md 2xl:h-8 2xl:w-8 2xl:rounded-lg',
             accents[accent],
           )}>
             <Icon className={cn('h-4 w-4', compact && 'lg:h-3.5 lg:w-3.5 2xl:h-4 2xl:w-4')} />
           </div>
         </div>
-        <p className={cn(
-          'mt-2 break-words text-xl font-bold leading-tight tracking-tight text-foreground sm:text-2xl',
-          compact && 'lg:mt-1.5 lg:text-lg 2xl:mt-2 2xl:text-2xl',
-        )}>
-          {financial ? <FinancialValue>{value}</FinancialValue> : value}
-        </p>
+        {/*
+          Número e variação na MESMA linha. Antes eram duas linhas empilhadas,
+          o que custava ~28px por cartão. Em tablet de 11" em paisagem, com
+          cinco cartões por fileira e várias fileiras por seção, era a maior
+          fonte de altura desperdiçada do painel.
+        */}
+        <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <p className={cn(
+            'break-words text-lg font-bold leading-tight tracking-tight text-foreground sm:text-xl 2xl:text-2xl',
+            compact && 'lg:text-lg 2xl:text-2xl',
+          )}>
+            {financial ? <FinancialValue>{value}</FinancialValue> : value}
+          </p>
+          {delta ? (
+            <span className={cn(
+              'inline-flex shrink-0 items-center gap-0.5 rounded-full border px-1.5 py-0 text-[10px] font-semibold leading-5',
+              delta.muted
+                ? 'border-slate-200 bg-slate-50 text-slate-500'
+                : delta.positive
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  : 'border-rose-200 bg-rose-50 text-rose-700',
+            )}>
+              {delta.muted
+                ? <Clock3 className="h-3 w-3" />
+                : delta.positive
+                  ? <ArrowUpRight className="h-3 w-3" />
+                  : <ArrowDownRight className="h-3 w-3" />}
+              {delta.label}
+            </span>
+          ) : null}
+        </div>
         <p className={cn('mt-0.5 text-[11px] leading-4 text-muted-foreground', compact && 'lg:text-[10px] lg:leading-[0.875rem] 2xl:text-[11px] 2xl:leading-4')}>
           {financialDetail ? <FinancialValue>{detail}</FinancialValue> : detail}
         </p>
-        {delta ? (
-          <div className={cn(
-            'mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold',
-            compact && 'lg:mt-1.5 lg:px-1.5 lg:text-[9px] 2xl:mt-2 2xl:px-2 2xl:text-[10px]',
-            delta.muted
-              ? 'border-slate-200 bg-slate-50 text-slate-500'
-              : delta.positive
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                : 'border-rose-200 bg-rose-50 text-rose-700',
-          )}>
-            {delta.muted
-              ? <Clock3 className="h-3.5 w-3.5" />
-              : delta.positive
-                ? <ArrowUpRight className="h-3.5 w-3.5" />
-                : <ArrowDownRight className="h-3.5 w-3.5" />}
-            {delta.label} <span className="hidden 2xl:inline">vs. período anterior</span>
-          </div>
-        ) : null}
       </CardContent>
     </Card>
   );
@@ -1267,7 +1274,7 @@ function VisitorSessionsCard({ resumo }: { resumo: MarketingResumo }) {
             </tbody>
           </table>
           {visibleVisitors.length === 0 ? (
-            <div className="p-8 text-center text-sm text-muted-foreground">
+            <div className="px-3 py-2 text-center text-xs text-muted-foreground">
               Nenhuma jornada encontrada neste filtro.
             </div>
           ) : null}
@@ -2100,7 +2107,7 @@ export function ContactsTab({
                 </tbody>
               </table>
               {filteredLeads.length === 0 ? (
-                <div className="p-8 text-center text-sm text-muted-foreground">Nenhum contato encontrado neste período.</div>
+                <div className="px-3 py-2 text-center text-xs text-muted-foreground">Nenhum contato encontrado neste período.</div>
               ) : null}
             </div>
           </CardContent>
@@ -2286,7 +2293,7 @@ export function ResultsTab({ resumo }: { resumo: MarketingResumo }) {
               </tbody>
             </table>
             {commissions.length === 0 ? (
-              <div className="p-8 text-center text-sm text-muted-foreground">Nenhuma O.S. atribuída chegou a “Aprovado” neste período.</div>
+              <div className="px-3 py-2 text-center text-xs text-muted-foreground">Nenhuma O.S. atribuída chegou a “Aprovado” neste período.</div>
             ) : null}
           </div>
         </CardContent>
@@ -2715,6 +2722,96 @@ function PaidClickLedger({
   );
 }
 
+/**
+ * Faixa fixa no topo, com integridade embutida.
+ *
+ * Por que existe: o painel tem 13 seções e o dono consulta duas delas 90% das
+ * vezes, num tablet de 11" em paisagem — cerca de 700px úteis de altura. A
+ * pergunta de toda manhã ("gastei quanto, entrou quanto, está melhor ou pior?")
+ * exigia rolar. Agora a resposta não sai da tela.
+ *
+ * A verificação de integridade vem junto de propósito. Em 16 e 17/08 um bug de
+ * atribuição fez o site parar de reconhecer tráfego pago: houve 6 cliques e
+ * R$ 15,91 de custo com ZERO sessão medida, e isso ficou dois dias invisível
+ * porque nenhum número impossível gritava. A regra abaixo grita.
+ */
+function BarraFixaCrescimento({ resumo }: { resumo: MarketingResumo }) {
+  const ads = resumo.campaigns;
+  const atual = ads.current;
+  const anterior = ads.previous;
+  const sessoesPagas = ads.paidActions?.trackedSessions ?? 0;
+  const contatos = (resumo.site.current?.whatsappClicks ?? 0)
+    + (resumo.site.current?.phoneClicks ?? 0);
+
+  const cliquesPagos = atual?.clicks ?? 0;
+  const gasto = atual?.spend ?? 0;
+
+  // Custo sem sessão medida é o sintoma clássico de medição quebrada.
+  const medicaoQuebrada = cliquesPagos > 0 && sessoesPagas === 0;
+  // Mais sessões que cliques indica contagem duplicada.
+  const contagemDuplicada = cliquesPagos > 0 && sessoesPagas > cliquesPagos * 1.5;
+
+  const itens: { rotulo: string; valor: string; atual?: number; anterior?: number }[] = [
+    { rotulo: 'Investimento', valor: formatCurrency(gasto), atual: gasto, anterior: anterior?.spend },
+    { rotulo: 'Cliques', valor: formatNumber(cliquesPagos), atual: cliquesPagos, anterior: anterior?.clicks },
+    { rotulo: 'Sessões pagas', valor: formatNumber(sessoesPagas) },
+    { rotulo: 'Contatos', valor: formatNumber(contatos) },
+    {
+      rotulo: 'Custo por contato',
+      valor: contatos > 0 ? formatCurrency(gasto / contatos) : '—',
+    },
+  ];
+
+  return (
+    <div className="sticky top-0 z-30 -mx-3 mb-1 border-b border-border/70 bg-background/95 px-3 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-4 sm:px-4 lg:-mx-5 lg:px-5">
+      {medicaoQuebrada || contagemDuplicada ? (
+        <div
+          data-testid="alerta-integridade"
+          className="mb-2 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-[12px] leading-4 text-rose-800"
+        >
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            {medicaoQuebrada
+              ? `Medição comprometida: ${formatNumber(cliquesPagos)} cliques e ${formatCurrency(gasto)} de custo sem nenhuma sessão paga registrada.`
+              : `Contagem suspeita: ${formatNumber(sessoesPagas)} sessões pagas para ${formatNumber(cliquesPagos)} cliques.`}
+          </span>
+        </div>
+      ) : null}
+
+      <div
+        data-testid="barra-fixa-crescimento"
+        className="grid grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))] gap-x-4 gap-y-1"
+      >
+        {itens.map((item) => {
+          const delta = item.atual !== undefined && item.anterior !== undefined
+            ? getDelta(item.atual, item.anterior)
+            : null;
+          return (
+            <div key={item.rotulo} className="min-w-0">
+              <p className="truncate text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+                {item.rotulo}
+              </p>
+              <p className="flex flex-wrap items-baseline gap-x-1.5">
+                <span className="text-base font-bold leading-6 tracking-tight text-foreground">
+                  <FinancialValue>{item.valor}</FinancialValue>
+                </span>
+                {delta && !delta.muted ? (
+                  <span className={cn(
+                    'text-[10px] font-semibold',
+                    delta.positive ? 'text-emerald-600' : 'text-rose-600',
+                  )}>
+                    {delta.label}
+                  </span>
+                ) : null}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
   const { financialValuesHidden } = useFinancialPrivacy();
   const ads = resumo.campaigns;
@@ -3068,7 +3165,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                     ))}
                   </tbody>
                 </table>
-                {ads.items.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">Nenhuma campanha veiculou neste período.</div> : null}
+                {ads.items.length === 0 ? <div className="px-3 py-2 text-center text-xs text-muted-foreground">Nenhuma campanha veiculou neste período.</div> : null}
               </div>
             </CardContent>
           </Card>
@@ -3110,7 +3207,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                     ))}
                   </tbody>
                 </table>
-                {adGroups.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">A divisão por grupo aparecerá na próxima sincronização da API.</div> : null}
+                {adGroups.length === 0 ? <div className="px-3 py-2 text-center text-xs text-muted-foreground">A divisão por grupo aparecerá na próxima sincronização da API.</div> : null}
               </div>
             </CardContent>
           </Card>
@@ -3179,7 +3276,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                   <td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td><td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.cpl)}</FinancialValue></td>
                 </tr>)}
               </tbody></table>
-              {keywords.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">Sem palavras-chave no período.</div> : null}
+              {keywords.length === 0 ? <div className="px-3 py-2 text-center text-xs text-muted-foreground">Sem palavras-chave no período.</div> : null}
             </div>
           </CardContent></Card>
         </TabsContent>
@@ -3205,7 +3302,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                 <td className="px-3 py-3 text-right">{formatNumber(item.impressions)}</td><td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td><td className="px-3 py-3 text-right">{formatPercent(item.ctr)}</td>
                 <td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.spend)}</FinancialValue></td><td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td><td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.cpl)}</FinancialValue></td>
               </tr>)}</tbody>
-            </table>{searchTerms.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">Sem termos pesquisados no período.</div> : null}</div>
+            </table>{searchTerms.length === 0 ? <div className="px-3 py-2 text-center text-xs text-muted-foreground">Sem termos pesquisados no período.</div> : null}</div>
           </CardContent></Card>
         </TabsContent>
 
@@ -3226,7 +3323,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                 <td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.spend)}</FinancialValue></td><td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td>
                 <td className="px-3 py-3 text-right">{formatPercent(item.conversionRate)}</td><td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.cpl)}</FinancialValue></td>
               </tr>)}</tbody>
-            </table>{landingPages.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">Sem páginas de destino no período.</div> : null}</div>
+            </table>{landingPages.length === 0 ? <div className="px-3 py-2 text-center text-xs text-muted-foreground">Sem páginas de destino no período.</div> : null}</div>
           </CardContent></Card>
         </TabsContent>
 
@@ -3248,7 +3345,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                 <td className="px-3 py-3 text-right">{formatNumber(item.impressions)}</td><td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td>
                 <td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.spend)}</FinancialValue></td><td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td><td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.cpl)}</FinancialValue></td>
               </tr>)}</tbody>
-            </table>{schedule.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">Sem distribuição por horário no período.</div> : null}</div>
+            </table>{schedule.length === 0 ? <div className="px-3 py-2 text-center text-xs text-muted-foreground">Sem distribuição por horário no período.</div> : null}</div>
           </CardContent></Card>
         </TabsContent>
 
@@ -3269,7 +3366,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                 <td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td><td className="px-3 py-3 text-right">{formatDecimal(item.allConversions)}</td>
                 <td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.conversionValue)}</FinancialValue></td>
               </tr>)}</tbody>
-            </table>{conversionActions.length === 0 ? <div className="p-8 text-center text-sm text-muted-foreground">Nenhuma ação de conversão registrou dados no período.</div> : null}</div>
+            </table>{conversionActions.length === 0 ? <div className="px-3 py-2 text-center text-xs text-muted-foreground">Nenhuma ação de conversão registrou dados no período.</div> : null}</div>
           </CardContent></Card>
         </TabsContent>
       </Tabs>
@@ -3414,7 +3511,7 @@ export function JourneyTab({
                 </tbody>
               </table>
               {locations.groups.length === 0 ? (
-                <p className="p-8 text-center text-sm text-muted-foreground">
+                <p className="px-3 py-2 text-center text-xs text-muted-foreground">
                   Nenhuma cidade atingiu o mínimo de três sessões consentidas neste período.
                 </p>
               ) : null}
@@ -3424,7 +3521,7 @@ export function JourneyTab({
             ) : null}
           </>
         ) : (
-          <p className="p-8 text-center text-sm text-muted-foreground">
+          <p className="px-3 py-2 text-center text-xs text-muted-foreground">
             A leitura agregada de cidade aguarda a atualização da fonte do painel.
           </p>
         )}
@@ -3473,7 +3570,7 @@ export function JourneyTab({
             </tbody>
           </table>
           {journey.clicks.groups.length === 0 ? (
-            <p className="p-8 text-center text-sm text-muted-foreground">Nenhum clique relevante rastreado no período.</p>
+            <p className="px-3 py-2 text-center text-xs text-muted-foreground">Nenhum clique relevante rastreado no período.</p>
           ) : null}
         </div>
         {journey.clicks.groupsTruncated ? (
@@ -3515,7 +3612,7 @@ export function JourneyTab({
               </tbody>
             </table>
             {journey.quizSteps.length === 0 ? (
-              <p className="p-8 text-center text-sm text-muted-foreground">O quiz ainda não recebeu etapas rastreadas neste período.</p>
+              <p className="px-3 py-2 text-center text-xs text-muted-foreground">O quiz ainda não recebeu etapas rastreadas neste período.</p>
             ) : null}
             {journey.quizStepsTruncated ? (
               <p className="border-t px-4 py-2 text-xs text-amber-700">Exibindo as primeiras 100 combinações de fluxo e etapa do recorte.</p>
@@ -3553,7 +3650,7 @@ export function JourneyTab({
               </tbody>
             </table>
             {journey.variants.length === 0 ? (
-              <p className="p-8 text-center text-sm text-muted-foreground">Nenhuma variante identificada no período.</p>
+              <p className="px-3 py-2 text-center text-xs text-muted-foreground">Nenhuma variante identificada no período.</p>
             ) : null}
             {journey.variantsTruncated ? (
               <p className="border-t px-4 py-2 text-xs text-amber-700">Exibindo as 50 variantes com mais sessões.</p>
@@ -3593,7 +3690,7 @@ export function JourneyTab({
               ))}
             </tbody>
           </table>
-          {journey.pages.length === 0 ? <p className="p-8 text-center text-sm text-muted-foreground">Nenhuma página rastreada no período.</p> : null}
+          {journey.pages.length === 0 ? <p className="px-3 py-2 text-center text-xs text-muted-foreground">Nenhuma página rastreada no período.</p> : null}
           {journey.pagesTruncated ? <p className="border-t px-4 py-2 text-xs text-amber-700">Exibindo as 100 páginas com mais sessões.</p> : null}
         </div>
       </JourneyTableCard>
@@ -3650,7 +3747,7 @@ export function JourneyTab({
               <div className="p-6"><Skeleton className="h-24 w-full rounded-xl" /></div>
             ) : null}
             {!recentActivityLoading && recentActivity && recentActivity.items.length === 0 ? (
-              <p className="p-8 text-center text-sm text-muted-foreground">Nenhuma atividade recente encontrada.</p>
+              <p className="px-3 py-2 text-center text-xs text-muted-foreground">Nenhuma atividade recente encontrada.</p>
             ) : null}
           </div>
         </JourneyTableCard>
@@ -3968,6 +4065,8 @@ export default function MarketingGrowth() {
             </div>
           </div>
         </header>
+
+        {query.data ? <BarraFixaCrescimento resumo={query.data} /> : null}
 
         {query.error && !query.data ? (
           <SectionErrorState
