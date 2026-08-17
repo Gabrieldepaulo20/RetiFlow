@@ -427,11 +427,23 @@ export default function AppLayout() {
       <div
         className={cn(
           'flex min-h-screen min-w-0 flex-col overflow-x-hidden',
+          /*
+            Era `w-[calc(100vw-16rem)]` somado a `ml-64`. O total dava
+            exatamente 100vw — e `100vw` INCLUI a barra de rolagem vertical,
+            enquanto a largura realmente disponível é `clientWidth`. Resultado:
+            a página ficava ~15px mais larga que a tela e ganhava rolagem
+            horizontal em TODA rota, com o conteúdo parecendo empurrado para a
+            direita.
+
+            `flex-1` deixa o próprio flex container medir o espaço restante
+            depois da margem, usando a largura real. É o mesmo padrão que o
+            AdminLayout já usava.
+          */
           isMobile
             ? 'w-full'
             : collapsed
-              ? 'ml-[68px] w-[calc(100vw-68px)]'
-              : 'ml-64 w-[calc(100vw-16rem)]',
+              ? 'ml-[68px] flex-1'
+              : 'ml-64 flex-1',
         )}
       >
         {/* Top bar */}

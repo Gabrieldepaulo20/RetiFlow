@@ -2806,6 +2806,45 @@ function PaidClickLedger({
  * R$ 15,91 de custo com ZERO sessão medida, e isso ficou dois dias invisível
  * porque nenhum número impossível gritava. A regra abaixo grita.
  */
+/**
+ * Barra de abas do painel.
+ *
+ * As colunas saem do TAMANHO DA LISTA, não de uma classe escrita à mão. A
+ * versão anterior tinha `grid-cols-6` fixo; quando as abas caíram de seis para
+ * três, ninguém trocou a classe e metade da barra ficou vazia, com as abas
+ * apertadas na metade esquerda. Derivar do array torna esse defeito impossível
+ * em vez de apenas testável.
+ *
+ * Altura generosa (h-11) porque o uso principal é toque em tablet.
+ */
+export function BarraDeAbasCrescimento({
+  abas,
+  compacta = false,
+}: {
+  abas: { valor: string; rotulo: string }[];
+  compacta?: boolean;
+}) {
+  return (
+    <TabsList
+      className="grid h-auto w-full gap-1 rounded-xl border border-border/60 bg-muted/70 p-1"
+      style={{ gridTemplateColumns: `repeat(${abas.length}, minmax(0, 1fr))` }}
+    >
+      {abas.map((aba) => (
+        <TabsTrigger
+          key={aba.valor}
+          value={aba.valor}
+          className={cn(
+            'rounded-lg px-1 text-center font-semibold leading-tight data-[state=active]:shadow-sm',
+            compacta ? 'h-10 text-sm' : 'h-11 text-sm',
+          )}
+        >
+          {aba.rotulo}
+        </TabsTrigger>
+      ))}
+    </TabsList>
+  );
+}
+
 function BarraFixaCrescimento({ resumo }: { resumo: MarketingResumo }) {
   const ads = resumo.campaigns;
   const atual = ads.current;
@@ -2869,7 +2908,9 @@ function BarraFixaCrescimento({ resumo }: { resumo: MarketingResumo }) {
   ];
 
   return (
-    <div className="sticky top-0 z-30 -mx-3 mb-1 border-b border-border/70 bg-background/95 px-3 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-4 sm:px-4 lg:-mx-5 lg:px-5">
+    /* Margens negativas espelham o padding do <main> para a barra encostar nas
+       duas bordas. Se um lado não casar, ela fica torta ou cria rolagem. */
+    <div className="sticky top-0 z-30 -mx-3 mb-1 border-b border-border/70 bg-background/95 px-3 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-4 sm:px-4 md:-mx-6 md:px-6">
       {avisos.length ? (
         <div
           data-testid="alerta-integridade"
@@ -3193,15 +3234,21 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
       />
 
       <Tabs defaultValue="campanhas" className="min-w-0 space-y-4">
-        <div className="w-full overflow-x-auto pb-1">
-          <TabsList className="grid h-auto w-full min-w-[720px] grid-cols-7 gap-1 rounded-xl bg-muted/80 p-1 md:min-w-0">
-            <TabsTrigger value="campanhas" className="whitespace-nowrap">Campanhas</TabsTrigger>
-            <TabsTrigger value="dispositivos" className="whitespace-nowrap">Dispositivos</TabsTrigger>
-            <TabsTrigger value="palavras" className="whitespace-nowrap">Palavras-chave</TabsTrigger>
-            <TabsTrigger value="pesquisas" className="whitespace-nowrap">Pesquisas</TabsTrigger>
-            <TabsTrigger value="paginas" className="whitespace-nowrap">Páginas</TabsTrigger>
-            <TabsTrigger value="horarios" className="whitespace-nowrap">Horários</TabsTrigger>
-            <TabsTrigger value="conversoes" className="whitespace-nowrap">Conversões</TabsTrigger>
+        {/*
+          Sete sub-abas cabem em 992px (largura útil no tablet com menu aberto):
+          ~140px cada. O min-w-[720px] com wrapper rolável só fazia sentido
+          quando o rótulo era maior; agora quebram em duas linhas se faltar
+          espaço, o que é melhor que arrastar a barra para o lado.
+        */}
+        <div className="w-full">
+          <TabsList className="grid h-auto w-full grid-cols-4 gap-1 rounded-xl border border-border/60 bg-muted/70 p-1 lg:grid-cols-7">
+            <TabsTrigger value="campanhas" className="h-9 rounded-lg px-1 text-center text-xs font-semibold leading-tight data-[state=active]:shadow-sm">Campanhas</TabsTrigger>
+            <TabsTrigger value="dispositivos" className="h-9 rounded-lg px-1 text-center text-xs font-semibold leading-tight data-[state=active]:shadow-sm">Dispositivos</TabsTrigger>
+            <TabsTrigger value="palavras" className="h-9 rounded-lg px-1 text-center text-xs font-semibold leading-tight data-[state=active]:shadow-sm">Palavras-chave</TabsTrigger>
+            <TabsTrigger value="pesquisas" className="h-9 rounded-lg px-1 text-center text-xs font-semibold leading-tight data-[state=active]:shadow-sm">Pesquisas</TabsTrigger>
+            <TabsTrigger value="paginas" className="h-9 rounded-lg px-1 text-center text-xs font-semibold leading-tight data-[state=active]:shadow-sm">Páginas</TabsTrigger>
+            <TabsTrigger value="horarios" className="h-9 rounded-lg px-1 text-center text-xs font-semibold leading-tight data-[state=active]:shadow-sm">Horários</TabsTrigger>
+            <TabsTrigger value="conversoes" className="h-9 rounded-lg px-1 text-center text-xs font-semibold leading-tight data-[state=active]:shadow-sm">Conversões</TabsTrigger>
           </TabsList>
         </div>
 
@@ -3209,39 +3256,69 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           <Card className="rounded-2xl border-border/70 shadow-sm">
             <CardContent className="p-4 sm:p-6">
               <PanelHeading eyebrow="Estrutura" title="Desempenho por campanha" />
-              <div className="mt-5 overflow-auto rounded-xl border">
-                <table className="w-full min-w-[980px] text-left text-xs">
-                  <thead className="border-b bg-muted/70 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                    <tr>
-                      <AdsTableHead label="Campanha" />
-                      <AdsTableHead label="Status" />
-                      <AdsTableHead label="Orçamento/dia" help={googleAdsHelp.dailyBudget} align="right" />
-                      <AdsTableHead label="Otimização" help={googleAdsHelp.optimizationScore} align="right" />
-                      <AdsTableHead label="Custo" help={googleAdsHelp.spend} align="right" />
-                      <AdsTableHead label="Cliques" help={googleAdsHelp.clicks} align="right" />
-                      <AdsTableHead label="CTR" help={googleAdsHelp.ctr} align="right" />
-                      <AdsTableHead label="Conversões" help={googleAdsHelp.conversions} align="right" />
-                      <AdsTableHead label="CPA" help={googleAdsHelp.cpa} align="right" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {ads.items.map((item) => (
-                      <tr key={item.id}>
-                        <td className="px-3 py-3"><p className="font-semibold">{item.name}</p><p className="text-[11px] text-muted-foreground">{item.channelType}</p></td>
-                        <td className="px-3 py-3">{item.status}</td>
-                        <td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.dailyBudget)}</FinancialValue></td>
-                        <td className="px-3 py-3 text-right">{formatPercent(item.optimizationScore)}</td>
-                        <td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.spend)}</FinancialValue></td>
-                        <td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td>
-                        <td className="px-3 py-3 text-right">{formatPercent(item.ctr)}</td>
-                        <td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td>
-                        <td className="px-3 py-3 text-right font-semibold"><FinancialValue>{formatCurrency(item.cpl)}</FinancialValue></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {ads.items.length === 0 ? <div className="px-3 py-2 text-center text-xs text-muted-foreground">Nenhuma campanha veiculou neste período.</div> : null}
+              {/*
+                Era uma tabela de 9 colunas com min-w-[980px] para exibir UMA
+                campanha. No tablet em paisagem, com o menu aberto, sobram cerca
+                de 990px de conteúdo — a tabela pedia 980 e ainda rolava para o
+                lado. Medido na sonda de layout: 80px de estouro.
+
+                Tabela existe para comparar muitas linhas. Com uma ou duas
+                campanhas, cartão informa igual, cabe na largura e fica legível
+                sem arrastar nada.
+              */}
+              <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                {ads.items.map((item) => {
+                  const indicadores = [
+                    { rotulo: 'Orçamento/dia', valor: formatCurrency(item.dailyBudget), help: googleAdsHelp.dailyBudget, financeiro: true },
+                    { rotulo: 'Custo', valor: formatCurrency(item.spend), help: googleAdsHelp.spend, financeiro: true },
+                    { rotulo: 'Cliques', valor: formatNumber(item.clicks), help: googleAdsHelp.clicks },
+                    { rotulo: 'CTR', valor: formatPercent(item.ctr), help: googleAdsHelp.ctr },
+                    { rotulo: 'Conversões', valor: formatDecimal(item.conversions), help: googleAdsHelp.conversions },
+                    { rotulo: 'CPA', valor: formatCurrency(item.cpl), help: googleAdsHelp.cpa, financeiro: true, destaque: true },
+                    { rotulo: 'Otimização', valor: formatPercent(item.optimizationScore), help: googleAdsHelp.optimizationScore },
+                  ];
+                  const ativa = /ENABLED|ATIV/i.test(item.status);
+
+                  return (
+                    <article key={item.id} className="rounded-xl border bg-gradient-to-b from-card to-muted/25 p-3.5">
+                      <header className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-bold text-foreground" title={item.name}>{item.name}</p>
+                          <p className="text-[11px] text-muted-foreground">{item.channelType}</p>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            'shrink-0 whitespace-nowrap font-bold',
+                            ativa ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-slate-50 text-slate-600',
+                          )}
+                        >
+                          {item.status}
+                        </Badge>
+                      </header>
+
+                      <dl className="mt-3.5 grid grid-cols-[repeat(auto-fit,minmax(5.5rem,1fr))] gap-x-3 gap-y-2.5 border-t pt-3">
+                        {indicadores.map((indicador) => (
+                          <div key={indicador.rotulo} className="min-w-0">
+                            <dt className="flex items-center gap-1 truncate text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+                              {indicador.rotulo}
+                              <HelpTip label={indicador.rotulo} description={indicador.help} />
+                            </dt>
+                            <dd className={cn('mt-0.5 truncate font-bold tabular-nums', indicador.destaque ? 'text-base text-foreground' : 'text-sm text-foreground')}>
+                              {indicador.financeiro ? <FinancialValue>{indicador.valor}</FinancialValue> : indicador.valor}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </article>
+                  );
+                })}
               </div>
+              {ads.items.length === 0 ? (
+                <p className="mt-4 rounded-xl border border-dashed py-6 text-center text-xs text-muted-foreground">
+                  Nenhuma campanha veiculou neste período.
+                </p>
+              ) : null}
             </CardContent>
           </Card>
         </TabsContent>
@@ -3997,7 +4074,12 @@ export default function MarketingGrowth() {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,hsl(var(--primary)/0.06),transparent_32%),hsl(var(--background))]">
-      <div className="mx-auto w-full max-w-[1680px] space-y-3 p-3 sm:p-4 lg:p-5">
+      {/*
+        Sem padding próprio: o <main> do AppLayout já aplica px-3 / sm:px-4 /
+        md:p-6. Os dois somados comiam 44px de cada lado no tablet, e é
+        exatamente a largura que faltava para as tabelas caberem sem rolar.
+      */}
+      <div className="mx-auto w-full max-w-[1680px] space-y-3">
         <header className="overflow-hidden rounded-[22px] bg-[#0b2035] text-white shadow-[0_18px_60px_-35px_rgba(2,15,28,0.85)]">
           <div className="relative px-4 py-3 sm:px-5 lg:px-5">
             <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-1/3 bg-[linear-gradient(135deg,transparent,rgba(240,180,77,0.10))] lg:block" />
@@ -4055,7 +4137,12 @@ export default function MarketingGrowth() {
           </div>
 
           <div className="border-t border-white/10 bg-white/[0.035] px-4 py-2 sm:px-5 lg:px-6">
-            <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+            {/*
+              Era `lg:justify-between`: no tablet o grupo "Outro período" ficava
+              isolado na borda direita, com um vão grande no meio. Agora os dois
+              grupos fluem juntos a partir da esquerda, separados por um divisor.
+            */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <div className="flex flex-wrap gap-1.5">
                 {periodOptions.map((days) => (
                   <Button
@@ -4068,7 +4155,8 @@ export default function MarketingGrowth() {
                       setCustomDays(String(days));
                     }}
                     className={cn(
-                      'h-7 rounded-full px-2.5 text-[11px] text-slate-400 hover:bg-white/10 hover:text-white',
+                      // h-9 e não h-7: o uso principal é toque em tablet.
+                      'h-9 rounded-full px-3.5 text-xs font-semibold text-slate-300 hover:bg-white/10 hover:text-white',
                       periodDays === days && 'bg-amber-300 text-slate-950 hover:bg-amber-300 hover:text-slate-950',
                     )}
                     aria-pressed={periodDays === days}
@@ -4077,7 +4165,7 @@ export default function MarketingGrowth() {
                   </Button>
                 ))}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 border-l border-white/10 pl-3">
                 <span className="hidden text-xs text-slate-500 sm:inline">Outro período:</span>
                 <Input
                   type="number"
@@ -4088,10 +4176,10 @@ export default function MarketingGrowth() {
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') applyCustomPeriod();
                   }}
-                  className="h-7 w-20 border-white/15 bg-white/5 text-center text-[11px] text-white"
+                  className="h-9 w-16 border-white/15 bg-white/5 text-center text-xs text-white"
                   aria-label="Quantidade personalizada de dias"
                 />
-                <Button type="button" size="sm" variant="secondary" className="h-7 px-2.5 text-[11px]" onClick={applyCustomPeriod}>
+                <Button type="button" size="sm" variant="secondary" className="h-9 px-3 text-xs font-semibold" onClick={applyCustomPeriod}>
                   Aplicar
                 </Button>
               </div>
@@ -4134,33 +4222,38 @@ export default function MarketingGrowth() {
 
         {query.data ? (
           hasPrivateAccess ? (
+            /* Abas Jornada, Resultados e Qualidade saíram da navegação; o conteúdo
+               útil delas foi para Resumo, Google Ads e para a barra fixa. Os
+               TabsContent órfãos foram removidos porque nenhum gatilho os
+               alcançava. Os componentes seguem exportados para os testes. */
             <Tabs defaultValue="visao" className="space-y-4">
-              <div className="w-full overflow-x-auto pb-1">
-                <TabsList className="grid h-auto min-w-[680px] grid-cols-6 gap-1 rounded-xl bg-muted/80 p-1 md:min-w-0">
-                  <TabsTrigger value="visao">Resumo</TabsTrigger>
-                  <TabsTrigger value="google">Google</TabsTrigger>
-                  <TabsTrigger value="contatos">Contatos</TabsTrigger>
-                </TabsList>
-              </div>
+              {/*
+                Eram seis abas em grid-cols-6. Sobraram três, e o grid continuou
+                com seis colunas: as abas ficavam apertadas na metade esquerda e
+                metade da barra ficava vazia. O min-w-[680px] e o wrapper com
+                overflow-x-auto também eram herança das seis — com três abas nada
+                disso é necessário e o wrapper só criava rolagem lateral.
+
+                Colunas iguais e alvo alto (h-11) porque o uso principal é
+                toque em tablet, não clique de mouse.
+              */}
+<BarraDeAbasCrescimento
+                abas={[
+                  { valor: 'visao', rotulo: 'Resumo' },
+                  { valor: 'google', rotulo: 'Google Ads' },
+                  { valor: 'contatos', rotulo: 'Contatos' },
+                ]}
+              />
               <TabsContent value="visao"><OverviewTab resumo={query.data} /></TabsContent>
-              <TabsContent value="jornada">
-                <JourneyTab
-                  resumo={query.data}
-                  recentActivity={recentActivityQuery.data}
-                  recentActivityLoading={recentActivityEnabled && recentActivityQuery.isLoading}
-                  recentActivityError={recentActivityEnabled && recentActivityQuery.error
-                    ? recentActivityQuery.error instanceof Error
-                      ? recentActivityQuery.error.message
-                      : 'Não foi possível atualizar a atividade recente.'
-                    : null}
-                />
-              </TabsContent>
               <TabsContent value="google">
                 <Tabs defaultValue="google-ads" className="space-y-4">
-                  <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-muted/60 p-1">
-                    <TabsTrigger value="google-ads">Google Ads</TabsTrigger>
-                    <TabsTrigger value="seo">SEO e IA</TabsTrigger>
-                  </TabsList>
+<BarraDeAbasCrescimento
+                    compacta
+                    abas={[
+                      { valor: 'google-ads', rotulo: 'Google Ads' },
+                      { valor: 'seo', rotulo: 'SEO e IA' },
+                    ]}
+                  />
                   <TabsContent value="google-ads"><GoogleAdsTab resumo={query.data} /></TabsContent>
                   <TabsContent value="seo"><SeoTab resumo={query.data} /></TabsContent>
                 </Tabs>
@@ -4172,20 +4265,18 @@ export default function MarketingGrowth() {
                   canManageAttribution={query.data.context?.canManageAttribution === true}
                 />
               </TabsContent>
-              <TabsContent value="resultado"><ResultsTab resumo={query.data} /></TabsContent>
-              <TabsContent value="qualidade"><QualityTab resumo={query.data} /></TabsContent>
             </Tabs>
           ) : (
             <Tabs defaultValue="resumo" className="space-y-4">
-              <div className="pb-1">
-                <TabsList className="grid h-auto w-full grid-cols-4 gap-1 rounded-xl bg-muted/80 p-1">
-                  <TabsTrigger value="resumo">Resumo</TabsTrigger>
-                  <TabsTrigger value="google">Google</TabsTrigger>
-                  <TabsTrigger value="contatos">Contatos</TabsTrigger>
-                </TabsList>
-              </div>
+              {/* Três abas em grid-cols-4 deixavam uma coluna vazia. */}
+<BarraDeAbasCrescimento
+                abas={[
+                  { valor: 'resumo', rotulo: 'Resumo' },
+                  { valor: 'google', rotulo: 'Google' },
+                  { valor: 'contatos', rotulo: 'Contatos' },
+                ]}
+              />
               <TabsContent value="resumo"><BasicOverviewTab resumo={query.data} /></TabsContent>
-              <TabsContent value="jornada"><JourneyTab resumo={query.data} /></TabsContent>
               <TabsContent value="google"><SeoTab resumo={query.data} /></TabsContent>
               <TabsContent value="contatos"><BasicContactsTab resumo={query.data} /></TabsContent>
             </Tabs>

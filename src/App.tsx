@@ -50,6 +50,13 @@ const IntakeNoteDetail = lazy(loadIntakeNoteDetailPage);
 const Kanban = lazy(loadKanbanPage);
 const MonthlyClosing = lazy(loadMonthlyClosingPage);
 const MarketingGrowth = lazy(loadMarketingGrowthPage);
+/*
+  Sonda de layout: o import fica dentro do ternário para o Rollup poder
+  eliminá-lo. Escrito como `lazy(() => import(...))` solto, o bundler emitia um
+  chunk LayoutProbe em produção junto com a fixture de teste — código morto que
+  não deve viajar para o cliente.
+*/
+const LayoutProbe = import.meta.env.DEV ? lazy(() => import('@/pages/LayoutProbe')) : null;
 const Financeiro = lazy(loadFinanceiroPage);
 const ContaPagarForm = lazy(loadContaPagarFormPage);
 const ImportarContaPagar = lazy(loadImportarContaPagarPage);
@@ -156,6 +163,13 @@ const App = () => (
               <ErrorBoundary>
                 <Routes>
                 <Route path="/login" element={<SuspendedPage><Login /></SuspendedPage>} />
+                {/*
+                  Sonda de layout responsivo. Só existe em desenvolvimento —
+                  o bundle de produção nem carrega o módulo. Ver LayoutProbe.tsx.
+                */}
+                {LayoutProbe ? (
+                  <Route path="/__probe-layout" element={<SuspendedPage><LayoutProbe /></SuspendedPage>} />
+                ) : null}
                 <Route path="/admin/login" element={<SuspendedPage><AdminLogin /></SuspendedPage>} />
                 <Route path="/definir-senha" element={<SuspendedPage><ResetPassword /></SuspendedPage>} />
                 <Route path="/acesso-negado" element={<SuspendedPage><AccessDenied /></SuspendedPage>} />
