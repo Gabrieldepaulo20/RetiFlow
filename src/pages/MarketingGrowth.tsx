@@ -583,22 +583,27 @@ function ClickBreakdownItem({
     violet: 'border-violet-200 bg-gradient-to-b from-white to-violet-50 text-violet-950',
   };
 
+  /*
+    Layout horizontal: ícone à esquerda, número e rótulo à direita. A versão
+    anterior empilhava rótulo, número de 24px, ícone flutuando no canto e
+    descrição — cerca de 130px de altura para mostrar um número. Como são
+    três a cinco desses lado a lado, virava uma fileira quase tão alta quanto
+    um gráfico.
+  */
   return (
-    <div className={cn('min-w-0 rounded-2xl border p-3 shadow-[0_8px_24px_-22px_rgba(15,23,42,0.5)]', tones[tone])}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex items-start gap-1">
-            <p className="text-[10px] font-bold uppercase leading-4 tracking-[0.1em] opacity-70">{label}</p>
-            <HelpTip label={label} description={help} className="text-current opacity-60 hover:text-current" />
-          </div>
-          <p className="mt-1.5 text-2xl font-black leading-none tracking-tight">{formatNumber(value)}</p>
+    <div className={cn('flex min-w-0 items-center gap-3 rounded-xl border p-2.5 shadow-[0_6px_18px_-18px_rgba(15,23,42,0.5)]', tones[tone])}>
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-current/10 bg-white/80 shadow-sm">
+        <Icon className="h-4 w-4" aria-hidden="true" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-baseline gap-x-1.5">
+          <p className="text-xl font-black leading-6 tracking-tight">{formatNumber(value)}</p>
+          <p className="text-[10px] font-bold uppercase leading-5 tracking-[0.1em] opacity-70">{label}</p>
+          <HelpTip label={label} description={help} className="text-current opacity-60 hover:text-current" />
         </div>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-current/10 bg-white/80 shadow-sm">
-          <Icon className="h-4 w-4" aria-hidden="true" />
-        </span>
+        <p className="truncate text-[11px] leading-4 opacity-75" title={detail}>{detail}</p>
+        {footer ? <div className="mt-1.5 border-t border-current/10 pt-1.5 text-[10px] leading-4">{footer}</div> : null}
       </div>
-      <p className="mt-2 text-[11px] leading-4 opacity-75">{detail}</p>
-      {footer ? <div className="mt-2 border-t border-current/10 pt-2 text-[10px] leading-4">{footer}</div> : null}
     </div>
   );
 }
@@ -2395,57 +2400,78 @@ function GoogleAdsCallDetails({
           </p>
         </div>
 
-        <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-          {items.map((call) => {
-            const status = googleAdsCallStatus[call.status] ?? googleAdsCallStatus.UNKNOWN;
-            const endedAt = formatGoogleAdsCallEndTime(call.endedAt);
-            const country = call.countryCode
-              ? call.countryCode === '55'
-                ? 'Brasil (+55)'
-                : `País (+${call.countryCode})`
-              : 'País indisponível';
-            const location = `${country} · ${call.areaCode ? `DDD ${call.areaCode}` : 'DDD indisponível'}`;
-            const callOrigin = call.type === 'HIGH_END_MOBILE_SEARCH'
-              ? 'Toque em “Ligar” no anúncio'
-              : call.type === 'MANUALLY_DIALED'
-                ? 'Número do anúncio discado manualmente'
-                : call.displayLocation === 'LANDING_PAGE'
-                  ? 'Telefone exibido no site'
-                  : 'Origem não informada';
+        {/*
+          Tabela no lugar de cards. Nove chamadas em cards de três colunas
+          ocupavam ~420px e obrigavam a comparar horários pulando de bloco em
+          bloco. Em linha, o olho desce e compara direto — que é o que se quer
+          de uma lista de ligações: ver quem ligou, quando e se foi atendida.
+        */}
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full min-w-[42rem] border-collapse text-left text-xs">
+            <thead>
+              <tr className="border-b border-slate-200 text-[9px] uppercase tracking-[0.08em] text-slate-500">
+                <th className="py-1.5 pr-3 font-bold">Início</th>
+                <th className="py-1.5 pr-3 font-bold">Situação</th>
+                <th className="py-1.5 pr-3 text-right font-bold">Duração</th>
+                <th className="py-1.5 pr-3 font-bold">Término</th>
+                <th className="py-1.5 pr-3 font-bold">Local</th>
+                <th className="py-1.5 font-bold">Origem</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((call) => {
+                const status = googleAdsCallStatus[call.status] ?? googleAdsCallStatus.UNKNOWN;
+                const endedAt = formatGoogleAdsCallEndTime(call.endedAt);
+                const country = call.countryCode
+                  ? call.countryCode === '55'
+                    ? 'Brasil (+55)'
+                    : `País (+${call.countryCode})`
+                  : 'País indisponível';
+                const location = `${country} · ${call.areaCode ? `DDD ${call.areaCode}` : 'DDD indisponível'}`;
+                const callOrigin = call.type === 'HIGH_END_MOBILE_SEARCH'
+                  ? 'Toque em “Ligar” no anúncio'
+                  : call.type === 'MANUALLY_DIALED'
+                    ? 'Número do anúncio discado manualmente'
+                    : call.displayLocation === 'LANDING_PAGE'
+                      ? 'Telefone exibido no site'
+                      : 'Origem não informada';
+                const atendida = call.status === 'RECEIVED';
+                const qualificada = atendida && call.durationSeconds >= 30;
 
-            return (
-              <article key={call.id} className="rounded-xl border border-slate-200 bg-white p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">Início da chamada</p>
-                    <p className="mt-0.5 text-xs font-bold text-slate-950">{formatGoogleAdsCallDateTime(call.startedAt)}</p>
-                  </div>
-                  <Badge variant="outline" className={cn('h-5 shrink-0 px-1.5 text-[9px]', status.className)}>
-                    {status.label}
-                  </Badge>
-                </div>
-
-                <dl className="mt-2.5 grid grid-cols-3 gap-2 border-t border-slate-100 pt-2.5">
-                  <div>
-                    <dt className="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">Duração</dt>
-                    <dd className="mt-0.5 text-sm font-black text-slate-950">{formatDuration(call.durationSeconds)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">Término</dt>
-                    <dd className="mt-0.5 text-sm font-black text-slate-950">{endedAt ?? '—'}</dd>
-                  </div>
-                  <div className="min-w-0">
-                    <dt className="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">Local</dt>
-                    <dd className="mt-0.5 truncate text-[11px] font-semibold text-slate-800" title={location}>{location}</dd>
-                  </div>
-                </dl>
-
-                <p className="mt-2 truncate text-[10px] text-slate-600" title={callOrigin}>
-                  <span className="font-semibold text-slate-800">Origem:</span> {callOrigin}
-                </p>
-              </article>
-            );
-          })}
+                return (
+                  <tr
+                    key={call.id}
+                    className={cn(
+                      'border-b border-slate-100 last:border-0',
+                      qualificada && 'bg-emerald-50/50',
+                    )}
+                  >
+                    <td className="py-1.5 pr-3 font-bold text-slate-950">
+                      {formatGoogleAdsCallDateTime(call.startedAt)}
+                    </td>
+                    <td className="py-1.5 pr-3">
+                      <Badge variant="outline" className={cn('h-5 px-1.5 text-[9px]', status.className)}>
+                        {status.label}
+                      </Badge>
+                    </td>
+                    <td className={cn(
+                      'py-1.5 pr-3 text-right font-black tabular-nums',
+                      qualificada ? 'text-emerald-700' : 'text-slate-950',
+                    )}>
+                      {formatDuration(call.durationSeconds)}
+                    </td>
+                    <td className="py-1.5 pr-3 tabular-nums text-slate-700">{endedAt ?? '—'}</td>
+                    <td className="max-w-[11rem] truncate py-1.5 pr-3 text-slate-700" title={location}>
+                      {location}
+                    </td>
+                    <td className="max-w-[14rem] truncate py-1.5 text-slate-600" title={callOrigin}>
+                      {callOrigin}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </CardContent>
     </Card>
@@ -2746,10 +2772,39 @@ function BarraFixaCrescimento({ resumo }: { resumo: MarketingResumo }) {
   const cliquesPagos = atual?.clicks ?? 0;
   const gasto = atual?.spend ?? 0;
 
+  /*
+    Sinais de saúde migrados da aba Qualidade, que o dono não abria. Não faz
+    sentido guardar aviso de medição quebrada numa aba que ninguém visita: o
+    lugar dele é onde a pessoa já está olhando.
+  */
+  const qualidade = resumo.quality;
+  const ultimoEvento = qualidade?.lastEventAt ? new Date(qualidade.lastEventAt) : null;
+  const horasSemEvento = ultimoEvento
+    ? (Date.now() - ultimoEvento.getTime()) / 3_600_000
+    : null;
+  const contatosSemCliente = qualidade?.unlinkedLeads ?? 0;
+  const falhasDeAlerta = qualidade?.alertFailures ?? 0;
+
   // Custo sem sessão medida é o sintoma clássico de medição quebrada.
   const medicaoQuebrada = cliquesPagos > 0 && sessoesPagas === 0;
   // Mais sessões que cliques indica contagem duplicada.
   const contagemDuplicada = cliquesPagos > 0 && sessoesPagas > cliquesPagos * 1.5;
+  // Silêncio longo durante o dia costuma ser coleta interrompida.
+  const coletaParada = horasSemEvento !== null && horasSemEvento > 6;
+
+  const avisos: string[] = [];
+  if (medicaoQuebrada) {
+    avisos.push(`Medição comprometida: ${formatNumber(cliquesPagos)} cliques e ${formatCurrency(gasto)} de custo sem nenhuma sessão paga registrada.`);
+  }
+  if (contagemDuplicada) {
+    avisos.push(`Contagem suspeita: ${formatNumber(sessoesPagas)} sessões pagas para ${formatNumber(cliquesPagos)} cliques.`);
+  }
+  if (coletaParada) {
+    avisos.push(`Sem evento novo há ${Math.round(horasSemEvento!)} horas. Verifique se a coleta do site continua ativa.`);
+  }
+  if (falhasDeAlerta > 0) {
+    avisos.push(`${formatNumber(falhasDeAlerta)} falha(s) de alerta aguardando revisão.`);
+  }
 
   const itens: { rotulo: string; valor: string; atual?: number; anterior?: number }[] = [
     { rotulo: 'Investimento', valor: formatCurrency(gasto), atual: gasto, anterior: anterior?.spend },
@@ -2760,22 +2815,30 @@ function BarraFixaCrescimento({ resumo }: { resumo: MarketingResumo }) {
       rotulo: 'Custo por contato',
       valor: contatos > 0 ? formatCurrency(gasto / contatos) : '—',
     },
+    // Último degrau do funil, migrado da aba Resultados. É o número que
+    // justifica a verba, e estava escondido numa aba que o dono não abria.
+    {
+      rotulo: 'Clientes',
+      valor: formatNumber(resumo.business?.current?.identifiedClients ?? 0),
+    },
   ];
 
   return (
     <div className="sticky top-0 z-30 -mx-3 mb-1 border-b border-border/70 bg-background/95 px-3 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-4 sm:px-4 lg:-mx-5 lg:px-5">
-      {medicaoQuebrada || contagemDuplicada ? (
+      {avisos.length ? (
         <div
           data-testid="alerta-integridade"
           className="mb-2 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-[12px] leading-4 text-rose-800"
         >
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>
-            {medicaoQuebrada
-              ? `Medição comprometida: ${formatNumber(cliquesPagos)} cliques e ${formatCurrency(gasto)} de custo sem nenhuma sessão paga registrada.`
-              : `Contagem suspeita: ${formatNumber(sessoesPagas)} sessões pagas para ${formatNumber(cliquesPagos)} cliques.`}
-          </span>
+          <span>{avisos.join(' ')}</span>
         </div>
+      ) : null}
+
+      {!avisos.length && contatosSemCliente > 0 ? (
+        <p className="mb-1.5 text-[11px] leading-4 text-muted-foreground">
+          {formatNumber(contatosSemCliente)} contato(s) ainda sem cliente vinculado.
+        </p>
       ) : null}
 
       <div
@@ -4027,8 +4090,6 @@ export default function MarketingGrowth() {
                   <TabsTrigger value="visao">Resumo</TabsTrigger>
                   <TabsTrigger value="google">Google</TabsTrigger>
                   <TabsTrigger value="contatos">Contatos</TabsTrigger>
-                  <TabsTrigger value="resultado">Resultados</TabsTrigger>
-                  <TabsTrigger value="qualidade">Qualidade</TabsTrigger>
                 </TabsList>
               </div>
               <TabsContent value="visao"><OverviewTab resumo={query.data} /></TabsContent>
