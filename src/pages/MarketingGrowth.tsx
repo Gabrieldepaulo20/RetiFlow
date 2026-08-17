@@ -3071,44 +3071,6 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           </CardContent>
         </Card>
 
-        <Card className="self-start rounded-2xl border-border/70 bg-slate-950 text-white shadow-sm">
-          <CardContent className="p-4 2xl:p-6">
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300">Conversão de cliente</p>
-            <h3 className="mt-1 text-lg font-bold 2xl:text-xl">Retiflow → Google Ads</h3>
-            <p className="mt-1.5 text-[11px] leading-4 text-slate-400 2xl:mt-2 2xl:text-sm 2xl:leading-relaxed">
-              Cada cliente atribuído a um clique do anúncio entra numa fila privada e idempotente.
-            </p>
-            <div className="mt-3 grid grid-cols-2 gap-2 2xl:mt-5">
-              {[
-                { label: 'Total', value: offline?.total ?? 0, help: googleAdsHelp.offlineTotal },
-                { label: 'Enviadas', value: offline?.uploaded ?? 0, help: googleAdsHelp.offlineUploaded },
-                { label: 'Na fila', value: (offline?.pending ?? 0) + (offline?.processing ?? 0), help: googleAdsHelp.offlinePending },
-                { label: 'Nova tentativa', value: offline?.retry ?? 0, help: googleAdsHelp.offlineRetry },
-              ].map((item) => (
-                <div key={item.label} className="rounded-xl border border-white/10 bg-white/5 p-2.5 2xl:p-3">
-                  <div className="flex items-start gap-1">
-                    <p className="text-[10px] uppercase tracking-wider text-slate-500">{item.label}</p>
-                    <HelpTip label={item.label} description={item.help} className="text-slate-500 hover:bg-white/10 hover:text-white focus-visible:ring-amber-300 focus-visible:ring-offset-slate-950" />
-                  </div>
-                  <p className="mt-1 text-lg font-bold text-white 2xl:mt-2 2xl:text-xl">{formatNumber(Number(item.value))}</p>
-                </div>
-              ))}
-            </div>
-            <div className={cn(
-              'mt-2.5 rounded-xl border p-2.5 text-[11px] leading-4 2xl:mt-3 2xl:p-3 2xl:text-xs 2xl:leading-relaxed',
-              offline?.failed
-                ? 'border-rose-300/30 bg-rose-300/10 text-rose-100'
-                : 'border-emerald-300/20 bg-emerald-300/10 text-emerald-100',
-            )}>
-              {offline?.failed
-                ? `${formatNumber(offline.failed)} envio(s) requerem revisão.`
-                : 'Nenhuma conversão com falha definitiva.'}
-            </div>
-            <p className="mt-2.5 text-[10px] leading-4 text-slate-400 2xl:mt-4 2xl:text-xs 2xl:leading-relaxed">
-              Telefone/e-mail fazem o vínculo automático. Conversas só pelo WhatsApp usam o código RP informado no cadastro.
-            </p>
-          </CardContent>
-        </Card>
       </div>
 
       <PaidClickLedger
@@ -3166,48 +3128,6 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
                   </tbody>
                 </table>
                 {ads.items.length === 0 ? <div className="px-3 py-2 text-center text-xs text-muted-foreground">Nenhuma campanha veiculou neste período.</div> : null}
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="rounded-2xl border-border/70 shadow-sm">
-            <CardContent className="p-4 sm:p-6">
-              <PanelHeading
-                eyebrow="Estrutura"
-                title="Desempenho por grupo de anúncios"
-                description="Mostra qual tema concentra custo, cliques e conversões sem criar mais uma aba."
-              />
-              <div className="mt-5 overflow-auto rounded-xl border">
-                <table className="w-full min-w-[860px] text-left text-xs">
-                  <thead className="border-b bg-muted/70 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                    <tr>
-                      <AdsTableHead label="Grupo" help={googleAdsHelp.adGroup} />
-                      <AdsTableHead label="Campanha" />
-                      <AdsTableHead label="Status" />
-                      <AdsTableHead label="Impressões" help={googleAdsHelp.impressions} align="right" />
-                      <AdsTableHead label="Cliques" help={googleAdsHelp.clicks} align="right" />
-                      <AdsTableHead label="CTR" help={googleAdsHelp.ctr} align="right" />
-                      <AdsTableHead label="Custo" help={googleAdsHelp.spend} align="right" />
-                      <AdsTableHead label="Conversões" help={googleAdsHelp.conversions} align="right" />
-                      <AdsTableHead label="CPA" help={googleAdsHelp.cpa} align="right" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {adGroups.map((item) => (
-                      <tr key={`${item.campaignId}-${item.id}`}>
-                        <td className="px-3 py-3 font-semibold">{item.name}</td>
-                        <td className="px-3 py-3 text-muted-foreground">{item.campaign}</td>
-                        <td className="px-3 py-3">{item.status}</td>
-                        <td className="px-3 py-3 text-right">{formatNumber(item.impressions)}</td>
-                        <td className="px-3 py-3 text-right">{formatNumber(item.clicks)}</td>
-                        <td className="px-3 py-3 text-right">{formatPercent(item.ctr)}</td>
-                        <td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.spend)}</FinancialValue></td>
-                        <td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td>
-                        <td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.cpl)}</FinancialValue></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {adGroups.length === 0 ? <div className="px-3 py-2 text-center text-xs text-muted-foreground">A divisão por grupo aparecerá na próxima sincronização da API.</div> : null}
               </div>
             </CardContent>
           </Card>
@@ -4105,7 +4025,6 @@ export default function MarketingGrowth() {
               <div className="w-full overflow-x-auto pb-1">
                 <TabsList className="grid h-auto min-w-[680px] grid-cols-6 gap-1 rounded-xl bg-muted/80 p-1 md:min-w-0">
                   <TabsTrigger value="visao">Resumo</TabsTrigger>
-                  <TabsTrigger value="jornada">Jornada</TabsTrigger>
                   <TabsTrigger value="google">Google</TabsTrigger>
                   <TabsTrigger value="contatos">Contatos</TabsTrigger>
                   <TabsTrigger value="resultado">Resultados</TabsTrigger>
@@ -4150,7 +4069,6 @@ export default function MarketingGrowth() {
               <div className="pb-1">
                 <TabsList className="grid h-auto w-full grid-cols-4 gap-1 rounded-xl bg-muted/80 p-1">
                   <TabsTrigger value="resumo">Resumo</TabsTrigger>
-                  <TabsTrigger value="jornada">Jornada</TabsTrigger>
                   <TabsTrigger value="google">Google</TabsTrigger>
                   <TabsTrigger value="contatos">Contatos</TabsTrigger>
                 </TabsList>

@@ -647,7 +647,9 @@ describe('organização do painel Crescimento', () => {
     expect(screen.getByRole('heading', { name: 'Onde estamos perdendo oportunidades?' })).toBeInTheDocument();
     expect(screen.queryByText('ROAS configurado')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Pesquisa Google x parceiros' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Desempenho por grupo de anúncios' })).toBeInTheDocument();
+    // Bloco removido a pedido do dono: a divisão por grupo nunca chegou a ser
+    // sincronizada pela Edge Function, então o card vivia vazio no painel.
+    expect(screen.queryByRole('heading', { name: 'Desempenho por grupo de anúncios' })).not.toBeInTheDocument();
     expect(screen.getByText('Todas as conversões')).toBeInTheDocument();
     expect(screen.queryByText('Comissão gerada')).not.toBeInTheDocument();
     expect(screen.queryByText('O.S. aprovadas')).not.toBeInTheDocument();
