@@ -427,14 +427,57 @@ function formatDateTime(value: string | null | undefined) {
   }).format(date);
 }
 
+/**
+ * Variação contra o período anterior.
+ *
+ * Três cuidados, todos por causa de casos reais deste painel:
+ *
+ * 1. Não existe percentual contra zero. Com a janela de 30 dias e a campanha
+ *    iniciada em 28/07, o período anterior é vazio — e "novo no período" não
+ *    explicava por quê. Agora o rótulo diz que falta base, e o `hint` sugere
+ *    a janela menor, onde a comparação existe.
+ *
+ * 2. Percentual sobre base minúscula engana. Ir de 1 para 29 conversões é
+ *    +2.800%, número que não ajuda ninguém a decidir. Abaixo de 5 no período
+ *    anterior, mostramos a diferença absoluta.
+ *
+ * 3. Variação abaixo de 1% é ruído de arredondamento, não tendência.
+ */
 function getDelta(current: number, previous: number) {
-  if (!previous && !current) return { label: 'sem histórico', positive: true, muted: true };
-  if (!previous) return { label: 'novo no período', positive: true, muted: false };
-  const value = ((current - previous) / previous) * 100;
+  if (!previous && !current) {
+    return { label: 'sem histórico', positive: true, muted: true, hint: 'Nenhum dado neste período nem no anterior.' };
+  }
+  if (!previous) {
+    return {
+      label: 'sem base anterior',
+      positive: true,
+      muted: true,
+      hint: 'O período anterior não tem dados para comparar. Escolha uma janela menor (7 ou 14 dias) para ver a variação.',
+    };
+  }
+
+  const diferenca = current - previous;
+
+  // Base pequena: a diferença absoluta informa melhor que o percentual.
+  if (previous < 5) {
+    return {
+      label: `${diferenca >= 0 ? '+' : ''}${formatDecimal(diferenca)} vs ${formatDecimal(previous)}`,
+      positive: diferenca >= 0,
+      muted: false,
+      hint: `Base anterior pequena (${formatDecimal(previous)}), então mostramos a diferença absoluta em vez do percentual.`,
+    };
+  }
+
+  const value = (diferenca / previous) * 100;
+  if (Math.abs(value) < 1) {
+    return { label: 'estável', positive: true, muted: true, hint: `Variação de ${formatDecimal(value)}%, dentro do ruído.` };
+  }
+
   return {
     label: `${value >= 0 ? '+' : ''}${formatDecimal(value)}%`,
     positive: value >= 0,
     muted: false,
+    hint: `De ${formatDecimal(previous)} para ${formatDecimal(current)} no mesmo intervalo anterior.`,
   };
 }
 
@@ -533,7 +576,9 @@ function Metric({
             {financial ? <FinancialValue>{value}</FinancialValue> : value}
           </p>
           {delta ? (
-            <span className={cn(
+            <span
+              title={delta.hint}
+              className={cn(
               'inline-flex shrink-0 items-center gap-0.5 rounded-full border px-1.5 py-0 text-[10px] font-semibold leading-5',
               delta.muted
                 ? 'border-slate-200 bg-slate-50 text-slate-500'
@@ -2858,11 +2903,16 @@ function BarraFixaCrescimento({ resumo }: { resumo: MarketingResumo }) {
                 <span className="text-base font-bold leading-6 tracking-tight text-foreground">
                   <FinancialValue>{item.valor}</FinancialValue>
                 </span>
-                {delta && !delta.muted ? (
-                  <span className={cn(
-                    'text-[10px] font-semibold',
-                    delta.positive ? 'text-emerald-600' : 'text-rose-600',
-                  )}>
+                {delta ? (
+                  <span
+                    title={delta.hint}
+                    className={cn(
+                      'text-[10px] font-semibold',
+                      delta.muted
+                        ? 'text-muted-foreground'
+                        : delta.positive ? 'text-emerald-600' : 'text-rose-600',
+                    )}
+                  >
                     {delta.label}
                   </span>
                 ) : null}
