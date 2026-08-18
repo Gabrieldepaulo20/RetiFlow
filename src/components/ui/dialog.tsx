@@ -46,8 +46,14 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => {
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+    /**
+     * Classes extras para o botão de fechar. Necessário quando o topo do modal
+     * tem fundo escuro: o padrão herda `foreground` e ficaria invisível.
+     */
+    closeButtonClassName?: string;
+  }
+>(({ className, children, closeButtonClassName, ...props }, ref) => {
   const hasDescribedByProp = Object.prototype.hasOwnProperty.call(props, "aria-describedby");
   const hasDescription = containsDialogDescription(children);
   const hasTitle = containsDialogTitle(children);
@@ -72,7 +78,12 @@ const DialogContent = React.forwardRef<
           </DialogPrimitive.Title>
         ) : null}
         {children}
-        <DialogPrimitive.Close className="absolute right-3 top-3 rounded-full p-1.5 opacity-70 ring-offset-background transition-opacity data-[state=open]:bg-accent data-[state=open]:text-muted-foreground hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none sm:right-4 sm:top-4">
+        <DialogPrimitive.Close
+          className={cn(
+            "absolute right-3 top-3 rounded-full p-1.5 opacity-70 ring-offset-background transition-opacity data-[state=open]:bg-accent data-[state=open]:text-muted-foreground hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none sm:right-4 sm:top-4",
+            closeButtonClassName,
+          )}
+        >
           <X className="h-4 w-4" />
           <span className="sr-only">Close</span>
         </DialogPrimitive.Close>

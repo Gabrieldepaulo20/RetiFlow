@@ -1,25 +1,28 @@
 /**
- * NoteDetailModal — Shared premium central modal for viewing OS/note details.
- * Used by both Kanban (replaces Sheet) and IntakeNotes list (replaces page navigation).
- * All business logic mirrors IntakeNoteDetail.tsx.
+ * NoteDetailModal — modal central da O.S., usado pelo Kanban e pela lista de
+ * Notas de Entrada. A regra de negócio espelha `IntakeNoteDetail.tsx`; a
+ * apresentação vem do núcleo compartilhado em `notes/os-view`.
+ *
+ * Contrato de teste (e2e/kanban.spec.ts, e2e/intake-notes.spec.ts):
+ * - `note.number` aparece UMA única vez como nó de texto exato (no cabeçalho);
+ * - o rótulo do status fica isolado num `<span>`;
+ * - o `NoteStatusMoveControl` mantém o combobox "Mover <número> para outro status".
  */
 
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { getNotaPDFSignedUrl, getNotaServicoDetalhes, type NotaServicoDetalhesItem, type NotaServicoDetalhes } from '@/api/supabase/notas';
+import {
+  getNotaPDFSignedUrl,
+  getNotaServicoDetalhes,
+  type NotaServicoDetalhes,
+  type NotaServicoDetalhesItem,
+} from '@/api/supabase/notas';
 import { LazyNotaPDFViewer } from '@/components/notes/LazyNotaPDFViewer';
 import NoteStatusMoveControl from '@/components/notes/NoteStatusMoveControl';
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,154 +34,60 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import {
-  STATUS_LABELS,
-  STATUS_DESCRIPTIONS,
-  PAYMENT_STATUS_LABELS,
-  PAYMENT_METHOD_LABELS,
-  FINAL_STATUSES,
-  NoteStatus,
-  IntakeNote,
-  Client,
-  type PaymentMethod,
-} from '@/types';
+import { FINAL_STATUSES, NoteStatus, STATUS_LABELS } from '@/types';
 import {
   getNextNoteWorkflowStatus,
   getPreviousNoteWorkflowStatus,
-  isBillableNoteStatus,
 } from '@/services/domain/intakeNotes';
 import {
-  User,
-  Car,
-  Clock,
-  Link2,
   Ban,
-  Trash2,
-  XCircle,
-  ChevronRight,
   ChevronLeft,
+  ChevronRight,
   ExternalLink,
-  AlertCircle,
-  Paperclip,
-  FolderOpen,
-  ScanSearch,
-  ClipboardList,
-  ThumbsUp,
-  Wrench,
-  ShoppingCart,
-  CheckCheck,
-  Truck,
-  Hammer,
   Printer,
+  Trash2,
   X,
-  FileWarning,
-  Calendar,
-  Flag,
-  CalendarCheck,
-  Wallet,
-  Phone,
-  CheckCircle2,
-  RotateCcw,
+  XCircle,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { todayLocalISODate } from '@/lib/dates';
 import { useToast } from '@/hooks/use-toast';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
 import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 import { createPdfPreviewWindow, openPdfInBrowser } from '@/lib/printPdf';
 import { NoteClosingReference } from '@/components/notes/NoteClosingReference';
-
-/** Main workflow statuses for timeline display */
-const MAIN_FLOW: NoteStatus[] = [
-  'ABERTO',
-  'EM_ANALISE',
-  'ORCAMENTO',
-  'APROVADO',
-  'EM_EXECUCAO',
-  'AGUARDANDO_COMPRA',
-  'PRONTA',
-  'ENTREGUE',
-];
-
-const STATUS_ICON: Record<NoteStatus, LucideIcon> = {
-  ABERTO: FolderOpen,
-  EM_ANALISE: ScanSearch,
-  ORCAMENTO: ClipboardList,
-  APROVADO: ThumbsUp,
-  EM_EXECUCAO: Wrench,
-  AGUARDANDO_COMPRA: ShoppingCart,
-  PRONTA: CheckCheck,
-  ENTREGUE: Truck,
-  RECUSADO: XCircle,
-  SEM_CONSERTO: Hammer,
-  EXCLUIDA: Trash2,
-};
-
-const STATUS_DOT: Record<NoteStatus, string> = {
-  ABERTO: 'bg-blue-500',
-  EM_ANALISE: 'bg-amber-500',
-  ORCAMENTO: 'bg-orange-500',
-  APROVADO: 'bg-emerald-500',
-  EM_EXECUCAO: 'bg-violet-500',
-  AGUARDANDO_COMPRA: 'bg-yellow-500',
-  PRONTA: 'bg-teal-500',
-  ENTREGUE: 'bg-sky-500',
-  RECUSADO: 'bg-red-500',
-  SEM_CONSERTO: 'bg-rose-500',
-  EXCLUIDA: 'bg-zinc-400',
-};
-
-const STATUS_TEXT: Record<NoteStatus, string> = {
-  ABERTO: 'text-blue-600',
-  EM_ANALISE: 'text-amber-600',
-  ORCAMENTO: 'text-orange-600',
-  APROVADO: 'text-emerald-600',
-  EM_EXECUCAO: 'text-violet-600',
-  AGUARDANDO_COMPRA: 'text-yellow-600',
-  PRONTA: 'text-teal-600',
-  ENTREGUE: 'text-sky-600',
-  RECUSADO: 'text-red-600',
-  SEM_CONSERTO: 'text-rose-600',
-  EXCLUIDA: 'text-zinc-500',
-};
-
-/** Tinta de fundo suave do cabeçalho por status (substitui a antiga listra colorida no topo). */
-const STATUS_SOFT: Record<NoteStatus, string> = {
-  ABERTO: 'from-blue-50',
-  EM_ANALISE: 'from-amber-50',
-  ORCAMENTO: 'from-orange-50',
-  APROVADO: 'from-emerald-50',
-  EM_EXECUCAO: 'from-violet-50',
-  AGUARDANDO_COMPRA: 'from-yellow-50',
-  PRONTA: 'from-teal-50',
-  ENTREGUE: 'from-sky-50',
-  RECUSADO: 'from-red-50',
-  SEM_CONSERTO: 'from-rose-50',
-  EXCLUIDA: 'from-zinc-100',
-};
-
-/** Dica curta exibida junto ao nome da etapa (ex.: Aprovado = espera para execução). */
-const STEP_HINT: Partial<Record<NoteStatus, string>> = {
-  APROVADO: 'Espera para execução',
-};
-
-/** Data BR; datas "só data" (YYYY-MM-DD) viram meia-noite local para não regredir um dia em UTC-3. */
-function fmtDate(value?: string | null): string {
-  if (!value) return '—';
-  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value;
-  const date = new Date(normalized);
-  return Number.isFinite(date.getTime()) ? date.toLocaleDateString('pt-BR') : '—';
-}
+import {
+  OSAltFinalBanner,
+  OSAttachmentsCard,
+  OSClientCard,
+  OSComplaintCard,
+  OSHeaderBar,
+  OSItemsTable,
+  OSLinkedNotesBanner,
+  OSObservationsCard,
+  OSPaymentCard,
+  OSScheduleCard,
+  OSStepper,
+  OSTotalCard,
+  formatOSRelativeTime,
+} from '@/components/notes/os-view';
 
 interface NoteDetailModalProps {
   noteId: string | null;
   onClose: () => void;
-  noteOverride?: IntakeNote | null;
-  clientOverride?: Client | null;
+  noteOverride?: import('@/types').IntakeNote | null;
+  clientOverride?: import('@/types').Client | null;
 }
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
+
+/** Botão de fechar sobre o cabeçalho escuro — o padrão herda `foreground` e sumiria. */
+const CLOSE_BUTTON_ON_INK = cn(
+  'z-20 flex h-11 w-11 items-center justify-center rounded-xl border border-os-ink-line bg-os-ink-2 p-0',
+  'text-os-cream-2 opacity-100 hover:border-os-ink-line-2 hover:bg-os-ink-3 hover:text-os-cream',
+  'right-4 top-4 sm:right-6 sm:top-6 [&>svg]:h-5 [&>svg]:w-5',
+);
+
+const FOOTER_BUTTON = 'h-10 gap-2 rounded-[11px] border-os-line bg-os-surface font-os text-[13px] font-semibold text-os-slate hover:bg-os-muted hover:text-os-ink';
 
 export default function NoteDetailModal({ noteId, onClose, noteOverride, clientOverride }: NoteDetailModalProps) {
   const {
@@ -204,8 +113,6 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
   const [realDetalhesLoading, setRealDetalhesLoading] = useState(false);
   const [showPDF, setShowPDF] = useState(false);
   const [isChangingStatus, setIsChangingStatus] = useState(false);
-  const [recebForma, setRecebForma] = useState<PaymentMethod>('PIX');
-  const [recebData, setRecebData] = useState(() => todayLocalISODate());
 
   const note = noteOverride ?? (noteId ? getNote(noteId) : undefined);
   const client = clientOverride ?? (note ? getClient(note.clientId) : undefined);
@@ -300,12 +207,6 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
     || can('kanban.manage');
   const canAdvance = canManageWorkflowStatus && !note.closingId && nextMainStatus !== undefined;
   const canGoBack = canManageWorkflowStatus && !note.closingId && previousMainStatus !== undefined;
-  const daysInStatus = Math.floor(
-    (Date.now() - new Date(note.updatedAt).getTime()) / (1000 * 60 * 60 * 24),
-  );
-
-  const isAltFinal = isFinal && !MAIN_FLOW.includes(note.status);
-  const statusIdxForTimeline = isAltFinal ? -1 : MAIN_FLOW.indexOf(note.status);
 
   const moveStatus = async (status: NoteStatus) => {
     setIsChangingStatus(true);
@@ -334,656 +235,104 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
     }
   };
 
-  const hasItems = svcs.length > 0 || prds.length > 0 || atts.length > 0;
+  const openLinkedNote = (linkedNoteId: string) => {
+    onClose();
+    navigate(`/notas-entrada/${linkedNoteId}`);
+  };
 
   return (
     <>
     <Dialog open={isOpen} onOpenChange={(v) => !v && onClose()}>
       {/*
-       * Override DialogContent defaults:
-       * - max-w-2xl (wider than default max-w-lg)
-       * - p-0 gap-0 (we control internal spacing)
-       * - overflow-hidden (child div handles scroll)
+       * Override DialogContent defaults: largura do design (1120px), sem padding
+       * (o layout controla o espaçamento) e sem scroll no container — o corpo
+       * interno é que rola.
        */}
-      <DialogContent className="w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] gap-0 overflow-hidden p-0 sm:w-[calc(100vw-2rem)] sm:max-w-2xl min-[900px]:max-w-[min(980px,calc(100vw-2rem))]">
+      <DialogContent
+        className="w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] gap-0 overflow-hidden rounded-[20px] border-0 bg-os-panel p-0 font-os sm:w-[calc(100vw-2rem)] sm:p-0 sm:max-w-2xl min-[900px]:max-w-[min(1120px,calc(100vw-2rem))]"
+        closeButtonClassName={CLOSE_BUTTON_ON_INK}
+      >
         <DialogTitle className="sr-only">Detalhes da nota {note.number}</DialogTitle>
-        <div className="flex max-h-[calc(100dvh-1rem)] flex-col sm:max-h-[calc(100dvh-2rem)]">
-          {/* ── Header (fundo suave por status; sem a antiga listra no topo) ── */}
-          {/* pr-12/14 reserva espaço para o botão de fechar do Dialog */}
-          <div
-            className={cn(
-              'shrink-0 border-b bg-gradient-to-b to-background px-4 pb-3.5 pt-4 pr-12 sm:px-6 sm:pr-14',
-              STATUS_SOFT[note.status] ?? 'from-muted/30',
-            )}
-          >
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-mono text-lg font-bold tracking-tight text-foreground sm:text-xl">
-                {note.number}
-              </span>
-              <span
-                className={cn(
-                  'text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-widest leading-none',
-                  note.type === 'COMPRA' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700',
-                )}
-              >
-                {note.type === 'COMPRA' ? 'Compra' : 'Serviço'}
-              </span>
-              {/* Status badge (com dica de etapa, ex.: Aprovado · Espera para execução) */}
-              {(() => {
-                const Icon = STATUS_ICON[note.status] ?? FolderOpen;
-                const bgClass = STATUS_DOT[note.status].replace('-500', '-100').replace('-400', '-100');
-                return (
-                  <span
-                    className={cn(
-                      'inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-1 rounded-full',
-                      bgClass, STATUS_TEXT[note.status],
-                    )}
-                  >
-                    <Icon className="w-3.5 h-3.5 shrink-0" />
-                    {STATUS_LABELS[note.status]}
-                    {STEP_HINT[note.status] && (
-                      <span className="font-medium opacity-70">· {STEP_HINT[note.status]}</span>
-                    )}
-                    {isFinal && <span className="opacity-50 text-[10px]">· final</span>}
-                  </span>
-                );
-              })()}
-              {/* Eixo financeiro (recebimento) */}
-              <span
-                className={cn(
-                  'inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full',
-                  note.paymentStatus === 'PAGO'
-                    ? 'bg-emerald-100 text-emerald-700'
-                    : 'bg-amber-100 text-amber-700',
-                )}
-              >
-                {note.paymentStatus === 'PAGO' ? <CheckCircle2 className="w-3 h-3" /> : <Wallet className="w-3 h-3" />}
-                {PAYMENT_STATUS_LABELS[note.paymentStatus]}
-              </span>
-            </div>
-            {/* Cliente · veículo · placa */}
-            <p className="mt-1.5 text-xs text-muted-foreground leading-snug">
-              {client.name}
-              {note.vehicleModel ? <span className="opacity-60"> · {note.vehicleModel}</span> : ''}
-              {note.plate ? <span className="font-mono opacity-50"> · {note.plate}</span> : ''}
-            </p>
-          </div>
+        {/*
+         * `w-full min-w-0` é obrigatório: o DialogContent é um grid e todo grid
+         * item tem `min-width: auto`, então a largura mínima do stepper (que rola
+         * na horizontal por conta própria) esticaria o modal além do `max-w`.
+         *
+         * A altura espelha unidade por unidade o teto do DialogContent (`dvh` na
+         * base, `vh` a partir de `sm`). Se as duas divergirem, esta coluna passa
+         * do teto do modal e o rodapé é cortado pelo `overflow-hidden`.
+         */}
+        <div className="flex w-full min-w-0 max-h-[calc(100dvh-1rem)] flex-col overflow-hidden sm:max-h-[calc(100vh-2rem)]">
+          <OSHeaderBar note={note} client={client} className="pr-16 sm:pr-20" />
 
-          {/* ── Timeline band (truly edge-to-edge) ── */}
-          <div className="shrink-0 border-t border-b bg-muted/20">
-            <div className="flex items-baseline justify-between gap-3 px-4 pt-3 pb-0.5 sm:px-6">
-              <p className="shrink-0 text-[9px] font-bold text-muted-foreground/60 uppercase tracking-[0.12em]">
-                Progresso
-              </p>
-              <p className="truncate text-right text-[10px] leading-tight text-muted-foreground/70">
-                {STATUS_DESCRIPTIONS[note.status]}
-              </p>
-            </div>
-            {/* overflow-x-auto only on mobile; on larger screens fills 100% */}
-            <div className="overflow-x-auto pb-3 scrollbar-thin">
-              <div className="flex items-end w-full min-w-[540px] px-4 sm:px-6 pt-2">
-                {MAIN_FLOW.map((s, i) => {
-                  const isPast = i < statusIdxForTimeline;
-                  const isCurrent = i === statusIdxForTimeline;
-                  const isLast = i === MAIN_FLOW.length - 1 && !isAltFinal;
-                  const StepIcon = STATUS_ICON[s] ?? FolderOpen;
-                  return (
-                    /* Each non-last item = step + flex-1 connector; last item = step only */
-                    <div key={s} className={cn('flex items-center', isLast ? 'shrink-0' : 'flex-1 min-w-0')}>
-                      {/* Step column */}
-                      <div className="flex flex-col items-center gap-1.5 shrink-0">
-                        <div
-                          className={cn(
-                            'flex items-center justify-center rounded-full transition-all',
-                            isCurrent
-                              ? 'w-11 h-11 bg-primary text-primary-foreground ring-[3px] ring-primary/20 ring-offset-2 shadow-md shadow-primary/20'
-                              : isPast
-                                ? 'w-9 h-9 bg-primary/15 text-primary'
-                                : 'w-7 h-7 bg-border/60 text-muted-foreground/30',
-                          )}
-                        >
-                          <StepIcon
-                            className={cn(
-                              isCurrent ? 'w-5 h-5' : isPast ? 'w-[18px] h-[18px]' : 'w-3.5 h-3.5',
-                            )}
-                          />
-                        </div>
-                        <div className="flex max-w-[72px] flex-col items-center gap-0.5">
-                          <span
-                            className={cn(
-                              'text-[8px] whitespace-nowrap leading-none',
-                              isPast
-                                ? 'text-primary/60 font-medium'
-                                : isCurrent
-                                  ? 'text-primary font-bold'
-                                  : 'text-muted-foreground/35 font-medium',
-                            )}
-                          >
-                            {STATUS_LABELS[s]}
-                          </span>
-                          {STEP_HINT[s] && (
-                            <span
-                              className={cn(
-                                'text-center text-[7px] leading-[1.15]',
-                                isCurrent ? 'text-primary/70 font-semibold' : 'text-muted-foreground/40',
-                              )}
-                            >
-                              {STEP_HINT[s]}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      {/* Connector — flex-1 fills remaining space */}
-                      {!isLast && (
-                        <div
-                          className={cn(
-                            'flex-1 min-w-[6px] mb-[22px] mx-0.5',
-                            isPast ? 'h-0.5 bg-primary/35' : 'h-px bg-border/50',
-                          )}
-                        />
-                      )}
-                    </div>
-                  );
-                })}
-                {isAltFinal && (
-                  <div className="flex items-center flex-1 min-w-0">
-                    <div className="flex-1 min-w-[6px] mb-[22px] mx-0.5 h-px bg-destructive/30" />
-                    <div className="flex flex-col items-center gap-1.5 shrink-0">
-                      <div className="w-9 h-9 rounded-full bg-destructive/15 flex items-center justify-center ring-2 ring-destructive/25 ring-offset-1">
-                        {(() => {
-                          const AltIcon = STATUS_ICON[note.status] ?? Ban;
-                          return <AltIcon className="w-[18px] h-[18px] text-destructive" />;
-                        })()}
-                      </div>
-                      <span className="text-[8px] font-bold whitespace-nowrap leading-none text-destructive">
-                        {STATUS_LABELS[note.status]}
-                      </span>
-                    </div>
-                  </div>
-                )}
+          <OSAltFinalBanner note={note} />
+
+          <OSStepper note={note} />
+
+          {/* ── Corpo (rolável) ── */}
+          <div className="flex-1 overflow-y-auto bg-os-panel">
+            <div className="flex flex-col gap-5 px-4 py-6 sm:px-8 sm:py-7">
+              <OSLinkedNotesBanner
+                note={note}
+                parentNote={parentNote}
+                childNotes={childNotes}
+                onOpenNote={openLinkedNote}
+              />
+
+              <div className="grid gap-5 min-[820px]:grid-cols-2">
+                <OSClientCard note={note} client={client} />
+                <OSScheduleCard note={note} />
               </div>
+
+              {note.complaint || note.observations ? (
+                <div className="grid gap-5 min-[820px]:grid-cols-2">
+                  <OSComplaintCard note={note} />
+                  <OSObservationsCard note={note} />
+                </div>
+              ) : null}
+
+              <OSItemsTable
+                note={note}
+                services={svcs}
+                products={prds}
+                loading={IS_REAL_AUTH && realDetalhesLoading}
+              />
+
+              <div className="grid items-start gap-5 min-[820px]:grid-cols-2">
+                <OSTotalCard note={note} />
+                <OSPaymentCard
+                  note={note}
+                  isAdmin={user?.role === 'ADMIN'}
+                  onRegistrar={(input) => registrarRecebimentoNota(note.id, input)}
+                  onEstornar={() => estornarRecebimentoNota(note.id)}
+                />
+              </div>
+
+              <OSAttachmentsCard attachments={atts} />
             </div>
           </div>
 
-          {/* ── Body (scrollable) ── */}
-          <div className="flex-1 overflow-y-auto">
-            <div className="space-y-5 px-4 py-4 sm:px-6 sm:py-5">
-              {/* Banner: AGUARDANDO_COMPRA */}
-              {isAguardando && (
-                <div className="flex gap-3 p-3.5 bg-yellow-50 border border-yellow-200/80 rounded-lg">
-                  <AlertCircle className="w-4 h-4 text-yellow-600 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium text-yellow-800">
-                      Nota pausada — aguardando compra vinculada ser finalizada.
-                    </p>
-                    {childNotes.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {childNotes.map((child) => (
-                          <button
-                            key={child.id}
-                            className="text-xs text-yellow-700 underline underline-offset-2 hover:text-yellow-900"
-                            onClick={() => {
-                              onClose();
-                              navigate(`/notas-entrada/${child.id}`);
-                            }}
-                          >
-                            {child.number} — {STATUS_LABELS[child.status]}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
+          {/* ── Rodapé (ações) ── */}
+          <div className="flex-none space-y-2.5 border-t border-os-line bg-os-surface px-4 py-3.5 sm:px-8">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="mr-auto hidden text-[12.5px] text-os-stone sm:block">
+                Atualizada {formatOSRelativeTime(note.updatedAt)}
+              </span>
 
-              {/* Banner: parent note */}
-              {parentNote && (
-                <div className="flex gap-3 p-3.5 bg-blue-50/70 border border-blue-200/60 rounded-lg">
-                  <Link2 className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-[10px] text-blue-500 font-semibold uppercase tracking-wider">
-                      Vinculada à nota de serviço
-                    </p>
-                    <button
-                      className="text-xs font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900 mt-0.5"
-                      onClick={() => {
-                        onClose();
-                        navigate(`/notas-entrada/${parentNote.id}`);
-                      }}
-                    >
-                      {parentNote.number} — {STATUS_LABELS[parentNote.status]}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Queixa / Defeito relatado */}
-              {note.complaint && (
-                <div className="rounded-xl border border-border/60 bg-background p-3.5">
-                  <div className="mb-1.5 flex items-center gap-1.5">
-                    <FileWarning className="h-3.5 w-3.5 text-muted-foreground/50" />
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Queixa / Defeito relatado
-                    </p>
-                  </div>
-                  <p className="whitespace-pre-line text-sm leading-relaxed text-foreground/85">
-                    {note.complaint}
-                  </p>
-                </div>
-              )}
-
-              {/* Client + Vehicle grid */}
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                {/* Client */}
-                <div className="flex items-start gap-2.5 p-3 rounded-xl bg-muted/30">
-                  <div className="w-8 h-8 rounded-full bg-foreground/[0.06] flex items-center justify-center shrink-0 mt-0.5">
-                    <User className="w-3.5 h-3.5 text-foreground/30" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Cliente</p>
-                    <p className="text-sm font-semibold leading-tight mt-0.5 break-words">
-                      {client.name}
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground/70 truncate">
-                      {client.phone}
-                    </p>
-                    {client.docNumber && (
-                      <p className="text-[10px] text-muted-foreground/40 font-mono truncate">
-                        {client.docNumber}
-                      </p>
-                    )}
-                    {note.contatoNome && (
-                      <p className="mt-1 flex items-center gap-1 text-[11px] text-foreground/70">
-                        <Phone className="h-3 w-3 shrink-0 text-muted-foreground/40" />
-                        <span className="text-muted-foreground/60">Contato:</span>
-                        <span className="font-medium truncate">{note.contatoNome}</span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Vehicle info */}
-                <div className="flex items-start gap-2.5 p-3 rounded-xl bg-muted/30">
-                  <div className="w-8 h-8 rounded-full bg-foreground/[0.06] flex items-center justify-center shrink-0 mt-0.5">
-                    <Car className="w-3.5 h-3.5 text-foreground/30" />
-                  </div>
-                  <div className="min-w-0 space-y-1.5">
-                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Veículo</p>
-                    <p className="text-sm font-semibold leading-tight">{note.vehicleModel || '—'}</p>
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <div>
-                        <p className="text-[9px] text-muted-foreground/50 uppercase tracking-wider">Motor</p>
-                        <p className="text-xs font-medium text-foreground/80">{note.engineType || '—'}</p>
-                      </div>
-                      {note.plate && (
-                        <div>
-                          <p className="text-[9px] text-muted-foreground/50 uppercase tracking-wider">Placa</p>
-                          <p className="font-mono text-xs font-bold text-foreground/80 tracking-widest">{note.plate}</p>
-                        </div>
-                      )}
-                      {note.km && (
-                        <div>
-                          <p className="text-[9px] text-muted-foreground/50 uppercase tracking-wider">KM</p>
-                          <p className="text-xs font-medium text-foreground/80">{note.km.toLocaleString('pt-BR')}</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Internal observation */}
-              {note.observations && (
-                <div className="p-3 rounded-xl bg-muted/30">
-                  <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
-                    Observação interna
-                  </p>
-                  <p className="text-sm leading-relaxed text-foreground/75">
-                    {note.observations}
-                  </p>
-                </div>
-              )}
-
-              {/* Datas & prazo + tempo na etapa */}
-              <div className="rounded-xl bg-muted/30 p-3">
-                <p className="mb-2 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Datas & prazo
-                </p>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-muted-foreground/50">
-                      <Calendar className="h-3 w-3" /> Aberta
-                    </span>
-                    <span className="text-xs font-semibold text-foreground/80">{fmtDate(note.createdAt)}</span>
-                  </div>
-                  <div className="flex flex-col gap-0.5">
-                    <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-muted-foreground/50">
-                      <Flag className="h-3 w-3" /> Prazo
-                    </span>
-                    <span className="text-xs font-semibold text-foreground/80">{fmtDate(note.deadline)}</span>
-                  </div>
-                  <div className="flex flex-col gap-0.5">
-                    <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-muted-foreground/50">
-                      <CalendarCheck className="h-3 w-3" /> Entregue
-                    </span>
-                    <span className="text-xs font-semibold text-foreground/80">{fmtDate(note.finalizedAt)}</span>
-                  </div>
-                </div>
-                <div
-                  className={cn(
-                    'mt-2.5 flex items-center gap-2 rounded-lg px-2.5 py-1.5',
-                    daysInStatus >= 7
-                      ? 'bg-red-50 text-red-700'
-                      : daysInStatus >= 4
-                        ? 'bg-amber-50 text-amber-700'
-                        : 'bg-background/60 text-muted-foreground',
-                  )}
-                >
-                  <Clock className="h-3.5 w-3.5 shrink-0 opacity-70" />
-                  <span className="text-xs font-medium">
-                    {daysInStatus === 0
-                      ? 'Atualizado hoje'
-                      : `${daysInStatus} dia${daysInStatus !== 1 ? 's' : ''} nesta etapa`}
-                  </span>
-                  {daysInStatus >= 7 && (
-                    <span className="ml-auto text-[10px] font-bold uppercase tracking-wide opacity-80">Atenção</span>
-                  )}
-                </div>
-              </div>
-
-              {/* Pagamento (eixo financeiro, separado do fluxo) */}
-              <div className="space-y-2.5 rounded-xl bg-muted/30 p-3">
-                <div className="flex items-center gap-2.5">
-                  <div
-                    className={cn(
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
-                      note.paymentStatus === 'PAGO' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600',
-                    )}
-                  >
-                    {note.paymentStatus === 'PAGO' ? <CheckCircle2 className="h-4 w-4" /> : <Wallet className="h-4 w-4" />}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Pagamento</p>
-                    <p
-                      className={cn(
-                        'text-sm font-semibold leading-tight',
-                        note.paymentStatus === 'PAGO' ? 'text-emerald-700' : 'text-amber-700',
-                      )}
-                    >
-                      {PAYMENT_STATUS_LABELS[note.paymentStatus]}
-                    </p>
-                  </div>
-                  {note.paymentStatus === 'PAGO' && (
-                    <div className="text-right">
-                      <p className="text-xs font-medium text-foreground/80">{fmtDate(note.paidAt)}</p>
-                      {note.paidWith && (
-                        <p className="text-[10px] text-muted-foreground/60">{PAYMENT_METHOD_LABELS[note.paidWith]}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Registrar recebimento — nota faturável e pendente */}
-                {isBillableNoteStatus(note.status) && note.paymentStatus === 'PENDENTE' && (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button size="sm" className="h-8 w-full gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700">
-                        <Wallet className="h-3.5 w-3.5" /> Registrar recebimento
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Registrar recebimento de {note.number}</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          Confirme a forma e a data do recebimento de R$ {note.totalAmount.toLocaleString('pt-BR')}.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-medium text-muted-foreground">Forma de pagamento</label>
-                          <Select value={recebForma} onValueChange={(v) => setRecebForma(v as PaymentMethod)}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              {(Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethod[]).map((m) => (
-                                <SelectItem key={m} value={m}>{PAYMENT_METHOD_LABELS[m]}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-medium text-muted-foreground">Data do recebimento</label>
-                          <Input type="date" value={recebData} onChange={(e) => setRecebData(e.target.value)} />
-                        </div>
-                      </div>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Voltar</AlertDialogCancel>
-                        <AlertDialogAction
-                          className="bg-emerald-600 text-white hover:bg-emerald-700"
-                          onClick={async () => {
-                            try {
-                              await registrarRecebimentoNota(note.id, { paidWith: recebForma, paidAt: new Date(`${recebData}T12:00:00`).toISOString() });
-                              toast({ title: `${note.number} recebida`, description: `Pagamento via ${PAYMENT_METHOD_LABELS[recebForma]} registrado.` });
-                            } catch (error) {
-                              toast({
-                                title: 'Não foi possível registrar o recebimento',
-                                description: error instanceof Error ? error.message : 'Tente novamente.',
-                                variant: 'destructive',
-                              });
-                            }
-                          }}
-                        >
-                          Confirmar recebimento
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                )}
-
-                {/* Estornar recebimento — admin, nota paga */}
-                {isBillableNoteStatus(note.status) && note.paymentStatus === 'PAGO' && user?.role === 'ADMIN' && (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="outline" size="sm" className="h-8 w-full gap-1.5">
-                        <RotateCcw className="h-3.5 w-3.5" /> Estornar recebimento
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Estornar recebimento de {note.number}?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          A nota volta para "A receber". Use apenas para corrigir um lançamento.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Voltar</AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={async () => {
-                            try {
-                              await estornarRecebimentoNota(note.id);
-                              toast({ title: `${note.number} estornada`, description: 'Recebimento revertido para pendente.' });
-                            } catch (error) {
-                              toast({
-                                title: 'Não foi possível estornar o recebimento',
-                                description: error instanceof Error ? error.message : 'Tente novamente.',
-                                variant: 'destructive',
-                              });
-                            }
-                          }}
-                        >
-                          Confirmar estorno
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                )}
-              </div>
-
-              {/* Financial summary */}
-              <div className="rounded-xl bg-muted/30 overflow-hidden">
-                <div className="grid grid-cols-2 divide-x divide-border/40">
-                  <div className="p-3">
-                    <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Serviços</p>
-                    <p className="font-semibold text-sm mt-1 tabular-nums text-foreground/80">
-                      R${' '}{note.totalServices.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  <div className="p-3">
-                    <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Peças</p>
-                    <p className="font-semibold text-sm mt-1 tabular-nums text-foreground/80">
-                      R${' '}{note.totalProducts.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                </div>
-                <div className="border-t border-border/40 px-3 py-2.5 bg-primary/[0.05] flex items-center justify-between">
-                  <p className="text-[10px] font-bold text-primary uppercase tracking-wider">Total</p>
-                  <p className="font-bold text-base text-primary tabular-nums">
-                    R${' '}{note.totalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                  </p>
-                </div>
-              </div>
-
-              {/* Items tabs */}
-              {hasItems && (
-                <div>
-                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                    Itens
-                  </p>
-                  <Tabs
-                    defaultValue={
-                      svcs.length > 0
-                        ? 'svcs'
-                        : prds.length > 0
-                          ? 'prds'
-                          : 'atts'
-                    }
-                  >
-                    <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 rounded-xl bg-muted/40 p-1">
-                      {svcs.length > 0 && (
-                        <TabsTrigger value="svcs" className="h-8 min-w-[110px] flex-1 text-xs sm:flex-none">
-                          Serviços ({svcs.length})
-                        </TabsTrigger>
-                      )}
-                      {prds.length > 0 && (
-                        <TabsTrigger value="prds" className="h-8 min-w-[110px] flex-1 text-xs sm:flex-none">
-                          Peças ({prds.length})
-                        </TabsTrigger>
-                      )}
-                      {atts.length > 0 && (
-                        <TabsTrigger value="atts" className="h-8 min-w-[110px] flex-1 text-xs sm:flex-none">
-                          <Paperclip className="w-3 h-3 mr-1" />
-                          Anexos ({atts.length})
-                        </TabsTrigger>
-                      )}
-                    </TabsList>
-
-                    {svcs.length > 0 && (
-                      <TabsContent value="svcs" className="mt-2">
-                        <div className="space-y-1">
-                          {svcs.map((s) => (
-                            <div
-                              key={s.id}
-                              className="rounded-lg bg-muted/25 px-3 py-3 transition-colors hover:bg-muted/40"
-                            >
-                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                <div className="min-w-0">
-                                  <p className="break-words text-sm leading-relaxed text-foreground">
-                                    <span className="mr-2 text-xs tabular-nums text-muted-foreground/50">
-                                      {s.quantity}×
-                                    </span>
-                                    {s.name}
-                                  </p>
-                                </div>
-                                <span className="text-sm font-semibold tabular-nums sm:ml-4 sm:shrink-0">
-                                  R${' '}
-                                  {s.subtotal.toLocaleString('pt-BR', {
-                                    minimumFractionDigits: 2,
-                                  })}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </TabsContent>
-                    )}
-
-                    {prds.length > 0 && (
-                      <TabsContent value="prds" className="mt-2">
-                        <div className="space-y-1">
-                          {prds.map((p) => (
-                            <div
-                              key={p.id}
-                              className="rounded-lg bg-muted/25 px-3 py-3 transition-colors hover:bg-muted/40"
-                            >
-                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                <div className="min-w-0">
-                                  <p className="break-words text-sm leading-relaxed text-foreground">
-                                    <span className="mr-2 text-xs tabular-nums text-muted-foreground/50">
-                                      {p.quantity}×
-                                    </span>
-                                    {p.name}
-                                  </p>
-                                  {p.sku && (
-                                    <p className="mt-1 text-[11px] text-muted-foreground/60">
-                                      SKU: {p.sku}
-                                    </p>
-                                  )}
-                                </div>
-                                <span className="text-sm font-semibold tabular-nums sm:ml-4 sm:shrink-0">
-                                  R${' '}
-                                  {p.subtotal.toLocaleString('pt-BR', {
-                                    minimumFractionDigits: 2,
-                                  })}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </TabsContent>
-                    )}
-
-                    {atts.length > 0 && (
-                      <TabsContent value="atts" className="mt-2">
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                          {atts.map((a) => (
-                            <div
-                              key={a.id}
-                              className="flex items-center gap-2 rounded-md bg-muted/25 p-2.5 text-xs"
-                            >
-                              <span className="font-bold text-muted-foreground/50 text-[10px] w-8 shrink-0 uppercase text-center">
-                                {a.type}
-                              </span>
-                              <span className="truncate text-foreground/70">
-                                {a.filename}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </TabsContent>
-                    )}
-                  </Tabs>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* ── Footer (actions) ── */}
-          <div className="shrink-0 space-y-2 border-t bg-background/95 backdrop-blur-sm px-4 py-3.5 sm:px-6">
-            {/* Primary row */}
-            <div className="flex flex-wrap items-center gap-2">
               {canGoBack && (
                 <Button
                   variant="outline"
-                  size="sm"
-                  className="h-9 shrink-0 gap-1.5 px-3 text-xs font-medium"
+                  className={cn(FOOTER_BUTTON, 'shrink-0')}
                   onClick={goBack}
                   disabled={isChangingStatus}
                   title="Voltar status"
                 >
-                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <ChevronLeft className="h-4 w-4" />
                   <span className="hidden sm:inline">Voltar status</span>
                   <span className="sm:hidden">Voltar</span>
                 </Button>
               )}
+
               <NoteStatusMoveControl
                 note={note}
                 canManage={canManageWorkflowStatus}
@@ -991,19 +340,20 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                 compact
                 disabled={isChangingStatus}
               />
+
               <Button
                 variant="outline"
-                size="sm"
-                className="h-9 flex-1 justify-start text-xs gap-1.5 text-muted-foreground"
+                className={FOOTER_BUTTON}
                 onClick={() => {
                   onClose();
                   navigate(`/notas-entrada/${note.id}`);
                 }}
               >
-                <ExternalLink className="w-3.5 h-3.5" />
+                <ExternalLink className="h-4 w-4" />
                 <span className="hidden sm:inline">Ver O.S. completa</span>
                 <span className="sm:hidden">Detalhes</span>
               </Button>
+
               {note.closingId ? (
                 <NoteClosingReference
                   noteId={note.id}
@@ -1013,11 +363,12 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                   onBeforeNavigate={onClose}
                 />
               ) : null}
+
               {(pdfDados || IS_REAL_AUTH) && noteId && (
                 <Button
                   variant="outline"
                   size="icon"
-                  className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
+                  className={cn(FOOTER_BUTTON, 'w-10 shrink-0')}
                   disabled={IS_REAL_AUTH && realDetalhesLoading}
                   onClick={async () => {
                     if (IS_REAL_AUTH && !realDetalhes && noteId) {
@@ -1032,24 +383,25 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                   title="Imprimir / PDF"
                 >
                   {IS_REAL_AUTH && realDetalhesLoading
-                    ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    : <Printer className="w-4 h-4" />
+                    ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    : <Printer className="h-4 w-4" />
                   }
                 </Button>
               )}
+
               {canAdvance && (
                 <Button
-                  className="h-9 shrink-0 gap-1.5 px-4 text-sm font-semibold"
+                  className="h-10 shrink-0 gap-2 rounded-[11px] bg-os-accent px-5 font-os text-sm font-semibold text-white shadow-[0_6px_16px_-6px_rgba(226,96,11,0.8)] hover:bg-os-accent-hover"
                   onClick={advance}
                   disabled={isChangingStatus}
                 >
                   Avançar
-                  <ChevronRight className="w-4 h-4" />
+                  <ChevronRight className="h-4 w-4" />
                 </Button>
               )}
             </div>
 
-            {/* Secondary row (contextual actions) */}
+            {/* Ações contextuais de saída do fluxo */}
             {(note.status === 'ORCAMENTO' ||
               note.status === 'EM_EXECUCAO' ||
               (!isFinal && !isAguardando)) && (
@@ -1059,10 +411,9 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                     <AlertDialogTrigger asChild>
                       <Button
                         variant="outline"
-                        size="sm"
-                        className="h-9 gap-1.5 border-red-200 text-xs text-red-600 hover:border-red-300 hover:bg-red-50/50 sm:h-8"
+                        className="h-9 gap-2 rounded-[10px] border-os-danger-line bg-os-surface font-os text-xs font-semibold text-os-danger hover:bg-os-danger-soft hover:text-os-danger-ink"
                       >
-                        <Ban className="w-3.5 h-3.5" />
+                        <Ban className="h-3.5 w-3.5" />
                         Recusar O.S.
                       </Button>
                     </AlertDialogTrigger>
@@ -1081,9 +432,7 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                         <AlertDialogCancel>Voltar</AlertDialogCancel>
                         <AlertDialogAction
                           className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          onClick={() =>
-                            void moveToFinal('RECUSADO')
-                          }
+                          onClick={() => void moveToFinal('RECUSADO')}
                         >
                           Confirmar Recusa
                         </AlertDialogAction>
@@ -1097,10 +446,9 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                     <AlertDialogTrigger asChild>
                       <Button
                         variant="outline"
-                        size="sm"
-                        className="h-9 gap-1.5 border-rose-200 text-xs text-rose-600 hover:border-rose-300 hover:bg-rose-50/50 sm:h-8"
+                        className="h-9 gap-2 rounded-[10px] border-os-danger-line bg-os-surface font-os text-xs font-semibold text-os-danger hover:bg-os-danger-soft hover:text-os-danger-ink"
                       >
-                        <XCircle className="w-3.5 h-3.5" />
+                        <XCircle className="h-3.5 w-3.5" />
                         Sem Conserto
                       </Button>
                     </AlertDialogTrigger>
@@ -1118,9 +466,7 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                         <AlertDialogCancel>Voltar</AlertDialogCancel>
                         <AlertDialogAction
                           className="bg-rose-600 text-white hover:bg-rose-700"
-                          onClick={() =>
-                            void moveToFinal('SEM_CONSERTO')
-                          }
+                          onClick={() => void moveToFinal('SEM_CONSERTO')}
                         >
                           Confirmar
                         </AlertDialogAction>
@@ -1134,10 +480,9 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                     <AlertDialogTrigger asChild>
                       <Button
                         variant="ghost"
-                        size="sm"
-                        className="h-9 gap-1.5 text-xs text-muted-foreground hover:bg-muted/60 hover:text-zinc-600 sm:h-8"
+                        className="h-9 gap-2 rounded-[10px] font-os text-xs font-semibold text-os-stone hover:bg-os-muted hover:text-os-slate"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="h-3.5 w-3.5" />
                         Excluir O.S.
                       </Button>
                     </AlertDialogTrigger>
@@ -1155,9 +500,7 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                         <AlertDialogCancel>Voltar</AlertDialogCancel>
                         <AlertDialogAction
                           className="bg-zinc-600 text-white hover:bg-zinc-700"
-                          onClick={() =>
-                            void moveToFinal('EXCLUIDA')
-                          }
+                          onClick={() => void moveToFinal('EXCLUIDA')}
                         >
                           Confirmar Exclusão
                         </AlertDialogAction>

@@ -1,38 +1,84 @@
+/**
+ * IntakeNoteDetail — página completa da O.S. (`/notas-entrada/:id`).
+ *
+ * Compartilha o núcleo visual com `NoteDetailModal` via `notes/os-view`, para que
+ * "Ver O.S. completa" leve a mesma leitura do modal. As ações de documento
+ * (visualizar, imprimir, WhatsApp) são exclusivas desta tela.
+ *
+ * Contrato de teste (src/test/app-routes.test.tsx): o número da nota é o `h1` da
+ * página — daí o `numberAs="h1"` no cabeçalho.
+ */
+
 import { lazy, Suspense, useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { getNotaPDFSignedUrl, getNotaServicoDetalhes, type NotaServicoDetalhes } from '@/api/supabase/notas';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 import { useOperationalData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import NoteStatusMoveControl from '@/components/notes/NoteStatusMoveControl';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { STATUS_LABELS, STATUS_COLORS, NOTE_STATUS_ORDER, FINAL_STATUSES, NoteStatus, PaymentMethod, PAYMENT_STATUS_COLORS, PAYMENT_STATUS_LABELS, PAYMENT_METHOD_LABELS } from '@/types';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
-import { getNextNoteWorkflowStatus, getPreviousNoteWorkflowStatus, isBillableNoteStatus } from '@/services/domain/intakeNotes';
-import { ArrowLeft, Eye, Printer, Share2, ChevronRight, ChevronLeft, Paperclip, Ban, Trash2, XCircle, Link2, Wallet, RotateCcw } from 'lucide-react';
+import { STATUS_LABELS, FINAL_STATUSES, NoteStatus } from '@/types';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { getNextNoteWorkflowStatus, getPreviousNoteWorkflowStatus } from '@/services/domain/intakeNotes';
+import { ArrowLeft, Eye, Printer, Share2, ChevronRight, ChevronLeft, Ban, Trash2, XCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { todayLocalISODate } from '@/lib/dates';
 import { buildWhatsAppUrl, openExternalUrl } from '@/lib/browserShare';
 import { generateNotaPdfBlob } from '@/lib/notaPdf';
 import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 import { createPdfPreviewWindow, openPdfInBrowser } from '@/lib/printPdf';
 import { NoteClosingReference } from '@/components/notes/NoteClosingReference';
+import {
+  OSAltFinalBanner,
+  OSAttachmentsCard,
+  OSClientCard,
+  OSComplaintCard,
+  OSHeaderBar,
+  OSItemsTable,
+  OSLinkedNotesBanner,
+  OSObservationsCard,
+  OSPaymentCard,
+  OSScheduleCard,
+  OSStepper,
+  OSTotalCard,
+  formatOSRelativeTime,
+} from '@/components/notes/os-view';
 
 const OSPreviewModal = lazy(() => import('@/components/OSPreviewModal'));
 
-/** Estágios do fluxo principal (sem os finais alternativos) para a timeline */
-const MAIN_FLOW: NoteStatus[] = ['ABERTO', 'EM_ANALISE', 'ORCAMENTO', 'APROVADO', 'EM_EXECUCAO', 'AGUARDANDO_COMPRA', 'PRONTA', 'ENTREGUE'];
+/** Botão de ação sobre o cabeçalho escuro. */
+const HEADER_BUTTON = cn(
+  'h-11 gap-2 rounded-xl border border-os-ink-line bg-os-ink-2 px-3.5 font-os text-[13px] font-semibold text-os-cream-2',
+  'hover:border-os-ink-line-2 hover:bg-os-ink-3 hover:text-os-cream',
+);
+
+const FOOTER_BUTTON = 'h-10 gap-2 rounded-[11px] border-os-line bg-os-surface font-os text-[13px] font-semibold text-os-slate hover:bg-os-muted hover:text-os-ink';
+
 export default function IntakeNoteDetail() {
   const { id } = useParams();
-  const { getNote, getClient, getServicesForNote, getProductsForNote, getAttachmentsForNote, updateNoteStatus, updateNote, registrarRecebimentoNota, estornarRecebimentoNota, getChildNotes, notes } = useOperationalData();
+  const {
+    getNote,
+    getClient,
+    getServicesForNote,
+    getProductsForNote,
+    getAttachmentsForNote,
+    updateNoteStatus,
+    registrarRecebimentoNota,
+    estornarRecebimentoNota,
+    getChildNotes,
+    notes,
+  } = useOperationalData();
   const { user, can } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -42,8 +88,6 @@ export default function IntakeNoteDetail() {
   const [isChangingStatus, setIsChangingStatus] = useState(false);
   const [realDetalhes, setRealDetalhes] = useState<NotaServicoDetalhes | null>(null);
   const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
-  const [recebForma, setRecebForma] = useState<PaymentMethod>('PIX');
-  const [recebData, setRecebData] = useState(() => todayLocalISODate());
 
   useEffect(() => {
     if (!IS_REAL_AUTH || !id) return;
@@ -129,462 +173,280 @@ export default function IntakeNoteDetail() {
     openExternalUrl(url);
   };
 
-  // Timeline: mostra o fluxo principal + estágio final alternativo se aplicável
-  const timelineStatuses = MAIN_FLOW.slice();
-  const isAltFinal = isFinal && !MAIN_FLOW.includes(note.status);
-  const statusIdxForTimeline = isAltFinal ? -1 : MAIN_FLOW.indexOf(note.status);
+  const handlePrint = async () => {
+    const source = IS_REAL_AUTH ? realDetalhes : null;
+    if (IS_REAL_AUTH && !source) { toast({ title: 'Dados ainda carregando' }); return; }
+    const previewWindow = createPdfPreviewWindow(`O.S. ${source?.cabecalho.os_numero ?? note.number}`);
+    setIsDownloadingPDF(true);
+    try {
+      if (source?.cabecalho.pdf_url) {
+        const resolvedUrl = await getNotaPDFSignedUrl(source.cabecalho.pdf_url);
+        if (!resolvedUrl) {
+          throw new Error('Não foi possível preparar o link seguro do PDF.');
+        }
+        openPdfInBrowser(resolvedUrl, {
+          title: `O.S. ${source.cabecalho.os_numero}`,
+          previewWindow,
+        });
+      } else if (source) {
+        const [scopedTemplateSettings, scopedDocumentSettings] = await Promise.all([
+          templateSettingsQuery.requireData(),
+          documentSettingsQuery.requireData(),
+        ]);
+        const blob = await generateNotaPdfBlob(source, {
+          accentColor: scopedTemplateSettings.corDocumento,
+          templateMode: scopedTemplateSettings.osModelo,
+          documentSettings: scopedDocumentSettings,
+          expectedUserId: scopedDocumentSettings.fkUsuarios,
+        });
+        const url = URL.createObjectURL(blob);
+        openPdfInBrowser(url, {
+          title: `O.S. ${note.number}`,
+          previewWindow,
+          revokeObjectUrlAfterMs: 30_000,
+        });
+      } else {
+        previewWindow?.close();
+        toast({
+          title: 'PDF ainda não disponível',
+          description: 'Atualize ou gere novamente a O.S. para preparar o documento de impressão.',
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
+      previewWindow?.close();
+      toast({
+        title: 'Não foi possível abrir o PDF',
+        description: error instanceof Error ? error.message : 'Tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDownloadingPDF(false);
+    }
+  };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
-        <div className="flex min-w-0 items-start gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="shrink-0 rounded-xl"><ArrowLeft className="w-5 h-5" /></Button>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="min-w-0 break-words text-xl font-display font-bold text-primary sm:text-2xl">{note.number}</h1>
-            <Badge className={STATUS_COLORS[note.status]}>{STATUS_LABELS[note.status]}</Badge>
-            {isBillableNoteStatus(note.status) && (
-              <Badge className={PAYMENT_STATUS_COLORS[note.paymentStatus]}>{PAYMENT_STATUS_LABELS[note.paymentStatus]}</Badge>
-            )}
-            <Badge className={cn(
-              note.type === 'COMPRA' ? 'bg-amber-100 text-amber-700' : 'bg-blue-50 text-blue-600'
-            )}>
-              {note.type === 'COMPRA' ? 'Compra' : 'Serviço'}
-            </Badge>
-          </div>
-          <p className="mt-1 break-words text-sm text-muted-foreground">{client?.name} · {note.vehicleModel} · R$ {note.totalAmount.toLocaleString('pt-BR')}</p>
-        </div>
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap lg:ml-auto lg:justify-end">
-          <Button variant="outline" size="sm" onClick={() => setShowPreview(true)} className="gap-1.5">
-            <Eye className="w-4 h-4" /> Visualizar O.S.
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={isDownloadingPDF || (IS_REAL_AUTH && !realDetalhes)}
-            className="gap-1.5"
-            onClick={async () => {
-              const source = IS_REAL_AUTH ? realDetalhes : null;
-              if (IS_REAL_AUTH && !source) { toast({ title: 'Dados ainda carregando' }); return; }
-              const previewWindow = createPdfPreviewWindow(`O.S. ${source?.cabecalho.os_numero ?? note.number}`);
-              setIsDownloadingPDF(true);
-              try {
-                if (source?.cabecalho.pdf_url) {
-                  const resolvedUrl = await getNotaPDFSignedUrl(source.cabecalho.pdf_url);
-                  if (!resolvedUrl) {
-                    throw new Error('Não foi possível preparar o link seguro do PDF.');
-                  }
-                  openPdfInBrowser(resolvedUrl, {
-                    title: `O.S. ${source.cabecalho.os_numero}`,
-                    previewWindow,
-                  });
-                } else if (source) {
-                  const [scopedTemplateSettings, scopedDocumentSettings] = await Promise.all([
-                    templateSettingsQuery.requireData(),
-                    documentSettingsQuery.requireData(),
-                  ]);
-                  const blob = await generateNotaPdfBlob(source, {
-                    accentColor: scopedTemplateSettings.corDocumento,
-                    templateMode: scopedTemplateSettings.osModelo,
-                    documentSettings: scopedDocumentSettings,
-                    expectedUserId: scopedDocumentSettings.fkUsuarios,
-                  });
-                  const url = URL.createObjectURL(blob);
-                  openPdfInBrowser(url, {
-                    title: `O.S. ${note.number}`,
-                    previewWindow,
-                    revokeObjectUrlAfterMs: 30_000,
-                  });
-                } else {
-                  previewWindow?.close();
-                  toast({
-                    title: 'PDF ainda não disponível',
-                    description: 'Atualize ou gere novamente a O.S. para preparar o documento de impressão.',
-                    variant: 'destructive',
-                  });
-                }
-              } catch (error) {
-                previewWindow?.close();
-                toast({
-                  title: 'Não foi possível abrir o PDF',
-                  description: error instanceof Error ? error.message : 'Tente novamente.',
-                  variant: 'destructive',
-                });
-              } finally {
-                setIsDownloadingPDF(false);
-              }
-            }}
-          >
-            {isDownloadingPDF
-              ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-              : <Printer className="w-4 h-4" />}
-            Imprimir
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleWhatsAppShare} className="gap-1.5">
-            <Share2 className="w-4 h-4" /> WhatsApp
-          </Button>
-          {note.closingId ? (
-            <NoteClosingReference
-              noteId={note.id}
-              closingId={note.closingId}
-              clientId={note.clientId}
-            />
-          ) : null}
-          {canGoBack && (
-            <Button variant="outline" size="sm" onClick={goBack} className="gap-1.5" disabled={isChangingStatus}>
-              <ChevronLeft className="w-4 h-4" /> Voltar status
+    <div className="font-os">
+      <div className="overflow-hidden rounded-[20px] border border-os-line bg-os-panel shadow-[0_24px_48px_-28px_rgba(28,26,23,0.35)]">
+        <OSHeaderBar
+          note={note}
+          client={client}
+          numberAs="h1"
+          leading={
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate(-1)}
+              className="h-10 w-10 shrink-0 rounded-xl text-os-cream-2 hover:bg-os-ink-2 hover:text-os-cream"
+              aria-label="Voltar"
+            >
+              <ArrowLeft className="h-5 w-5" />
             </Button>
-          )}
-          <NoteStatusMoveControl
+          }
+          trailing={
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="ghost" className={HEADER_BUTTON} onClick={() => setShowPreview(true)}>
+                <Eye className="h-4 w-4" />
+                <span className="hidden sm:inline">Visualizar</span>
+              </Button>
+              <Button
+                variant="ghost"
+                className={HEADER_BUTTON}
+                disabled={isDownloadingPDF || (IS_REAL_AUTH && !realDetalhes)}
+                onClick={() => void handlePrint()}
+              >
+                {isDownloadingPDF
+                  ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  : <Printer className="h-4 w-4" />}
+                <span className="hidden sm:inline">Imprimir</span>
+              </Button>
+              <Button variant="ghost" className={HEADER_BUTTON} onClick={handleWhatsAppShare}>
+                <Share2 className="h-4 w-4" />
+                <span className="hidden sm:inline">WhatsApp</span>
+              </Button>
+            </div>
+          }
+        />
+
+        <OSAltFinalBanner note={note} />
+
+        <OSStepper note={note} />
+
+        <div className="flex flex-col gap-5 bg-os-panel px-4 py-6 sm:px-8 sm:py-7">
+          <OSLinkedNotesBanner
             note={note}
-            canManage={canManageWorkflowStatus}
-            onMove={moveStatus}
-            disabled={isChangingStatus}
+            parentNote={parentNote}
+            childNotes={childNotes}
+            onOpenNote={(linkedNoteId) => navigate(`/notas-entrada/${linkedNoteId}`)}
           />
-          {canAdvance && <Button size="sm" onClick={advance} disabled={isChangingStatus}>Avançar <ChevronRight className="w-4 h-4 ml-1" /></Button>}
 
-          {/* Registrar recebimento - somente em nota faturável e pendente */}
-          {isBillableNoteStatus(note.status) && note.paymentStatus === 'PENDENTE' && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button size="sm" className="gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700">
-                  <Wallet className="w-4 h-4" /> Registrar recebimento
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Registrar recebimento de {note.number}</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Confirme a forma e a data do recebimento de R$ {note.totalAmount.toLocaleString('pt-BR')}.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-muted-foreground">Forma de pagamento</label>
-                    <Select value={recebForma} onValueChange={(v) => setRecebForma(v as PaymentMethod)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {(Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethod[]).map((m) => (
-                          <SelectItem key={m} value={m}>{PAYMENT_METHOD_LABELS[m]}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-muted-foreground">Data do recebimento</label>
-                    <Input type="date" value={recebData} onChange={(e) => setRecebData(e.target.value)} />
-                  </div>
-                </div>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Voltar</AlertDialogCancel>
-                  <AlertDialogAction
-                    className="bg-emerald-600 text-white hover:bg-emerald-700"
-                    onClick={async () => {
-                      try {
-                        await registrarRecebimentoNota(note.id, { paidWith: recebForma, paidAt: new Date(`${recebData}T12:00:00`).toISOString() });
-                        toast({ title: `${note.number} recebida`, description: `Pagamento via ${PAYMENT_METHOD_LABELS[recebForma]} registrado.` });
-                      } catch (error) {
-                        toast({
-                          title: 'Não foi possível registrar o recebimento',
-                          description: error instanceof Error ? error.message : 'Tente novamente.',
-                          variant: 'destructive',
-                        });
-                      }
-                    }}
-                  >
-                    Confirmar recebimento
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
+          <div className="grid gap-5 min-[900px]:grid-cols-2">
+            <OSClientCard note={note} client={client} />
+            <OSScheduleCard note={note} />
+          </div>
 
-          {/* Estornar recebimento - admin, nota paga */}
-          {isBillableNoteStatus(note.status) && note.paymentStatus === 'PAGO' && user?.role === 'ADMIN' && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-1.5">
-                  <RotateCcw className="w-4 h-4" /> Estornar
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Estornar recebimento de {note.number}?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    A nota volta para "A receber". Use apenas para corrigir um lançamento.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Voltar</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={async () => {
-                      try {
-                        await estornarRecebimentoNota(note.id);
-                        toast({ title: `${note.number} estornada`, description: 'Recebimento revertido para pendente.' });
-                      } catch (error) {
-                        toast({
-                          title: 'Não foi possível estornar o recebimento',
-                          description: error instanceof Error ? error.message : 'Tente novamente.',
-                          variant: 'destructive',
-                        });
-                      }
-                    }}
-                  >
-                    Confirmar estorno
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
+          {note.complaint || note.observations ? (
+            <div className="grid gap-5 min-[900px]:grid-cols-2">
+              <OSComplaintCard note={note} />
+              <OSObservationsCard note={note} />
+            </div>
+          ) : null}
 
-          {/* Cancelar - somente a partir de Orçamento */}
-          {note.status === 'ORCAMENTO' && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="destructive" size="sm" className="gap-1.5">
-                  <Ban className="w-4 h-4" /> Recusar O.S.
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Recusar {note.number}?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    O cliente não aprovou o orçamento. A O.S. será movida para "Recusada" (estágio final) e o banho químico será faturado.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Voltar</AlertDialogCancel>
-                  <AlertDialogAction
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    onClick={() => void moveToFinal('RECUSADO')}
-                  >
-                    Confirmar Recusa
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
+          <OSItemsTable
+            note={note}
+            services={svcs}
+            products={prds}
+            loading={IS_REAL_AUTH && !realDetalhes}
+          />
 
-          {/* Sem Conserto - somente a partir de Em Execução */}
-          {note.status === 'EM_EXECUCAO' && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-1.5 border-rose-300 text-rose-700 hover:bg-rose-50">
-                  <XCircle className="w-4 h-4" /> Sem Conserto
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Marcar {note.number} como Sem Conserto?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    A O.S. será movida para "Sem Conserto" (estágio final). Se necessário, ela poderá ser reaberta para Em Execução.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Voltar</AlertDialogCancel>
-                  <AlertDialogAction className="bg-rose-600 text-white hover:bg-rose-700" onClick={() => void moveToFinal('SEM_CONSERTO')}>
-                    Confirmar
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
+          <div className="grid items-start gap-5 min-[900px]:grid-cols-2">
+            <OSTotalCard note={note} />
+            <OSPaymentCard
+              note={note}
+              isAdmin={user?.role === 'ADMIN'}
+              onRegistrar={(input) => registrarRecebimentoNota(note.id, input)}
+              onEstornar={() => estornarRecebimentoNota(note.id)}
+            />
+          </div>
 
-          {/* Descartar - a partir de qualquer estágio não-final e não-aguardando */}
-          {!isFinal && !isAguardando && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-1.5 border-zinc-300 text-zinc-600 hover:bg-zinc-50">
-                  <Trash2 className="w-4 h-4" /> Excluir
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Excluir {note.number}?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    A O.S. será movida para "Excluída" (anulação por engano/duplicata). Se necessário, ela poderá ser restaurada como Aberta.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Voltar</AlertDialogCancel>
-                  <AlertDialogAction className="bg-zinc-600 text-white hover:bg-zinc-700" onClick={() => void moveToFinal('EXCLUIDA')}>
-                    Confirmar Exclusão
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+          <OSAttachmentsCard attachments={atts} />
+        </div>
+
+        {/* ── Rodapé (fluxo) ── */}
+        <div className="flex flex-col gap-2.5 border-t border-os-line bg-os-surface px-4 py-3.5 sm:px-8">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="mr-auto hidden text-[12.5px] text-os-stone sm:block">
+              Atualizada {formatOSRelativeTime(note.updatedAt)}
+            </span>
+
+            {note.closingId ? (
+              <NoteClosingReference
+                noteId={note.id}
+                closingId={note.closingId}
+                clientId={note.clientId}
+              />
+            ) : null}
+
+            {canGoBack && (
+              <Button
+                variant="outline"
+                className={cn(FOOTER_BUTTON, 'shrink-0')}
+                onClick={goBack}
+                disabled={isChangingStatus}
+              >
+                <ChevronLeft className="h-4 w-4" /> Voltar status
+              </Button>
+            )}
+
+            <NoteStatusMoveControl
+              note={note}
+              canManage={canManageWorkflowStatus}
+              onMove={moveStatus}
+              disabled={isChangingStatus}
+            />
+
+            {canAdvance && (
+              <Button
+                className="h-10 shrink-0 gap-2 rounded-[11px] bg-os-accent px-5 font-os text-sm font-semibold text-white shadow-[0_6px_16px_-6px_rgba(226,96,11,0.8)] hover:bg-os-accent-hover"
+                onClick={advance}
+                disabled={isChangingStatus}
+              >
+                Avançar <ChevronRight className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+
+          {(note.status === 'ORCAMENTO' ||
+            note.status === 'EM_EXECUCAO' ||
+            (!isFinal && !isAguardando)) && (
+            <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
+              {note.status === 'ORCAMENTO' && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="h-9 gap-2 rounded-[10px] border-os-danger-line bg-os-surface font-os text-xs font-semibold text-os-danger hover:bg-os-danger-soft hover:text-os-danger-ink"
+                    >
+                      <Ban className="h-3.5 w-3.5" /> Recusar O.S.
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Recusar {note.number}?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        O cliente não aprovou o orçamento. A O.S. será movida para "Recusada" (estágio final) e o banho químico será faturado.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Voltar</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        onClick={() => void moveToFinal('RECUSADO')}
+                      >
+                        Confirmar Recusa
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+
+              {note.status === 'EM_EXECUCAO' && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="h-9 gap-2 rounded-[10px] border-os-danger-line bg-os-surface font-os text-xs font-semibold text-os-danger hover:bg-os-danger-soft hover:text-os-danger-ink"
+                    >
+                      <XCircle className="h-3.5 w-3.5" /> Sem Conserto
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Marcar {note.number} como Sem Conserto?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        A O.S. será movida para "Sem Conserto" (estágio final). Se necessário, ela poderá ser reaberta para Em Execução.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Voltar</AlertDialogCancel>
+                      <AlertDialogAction className="bg-rose-600 text-white hover:bg-rose-700" onClick={() => void moveToFinal('SEM_CONSERTO')}>
+                        Confirmar
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+
+              {!isFinal && !isAguardando && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      className="h-9 gap-2 rounded-[10px] font-os text-xs font-semibold text-os-stone hover:bg-os-muted hover:text-os-slate"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> Excluir
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Excluir {note.number}?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        A O.S. será movida para "Excluída" (anulação por engano/duplicata). Se necessário, ela poderá ser restaurada como Aberta.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Voltar</AlertDialogCancel>
+                      <AlertDialogAction className="bg-zinc-600 text-white hover:bg-zinc-700" onClick={() => void moveToFinal('EXCLUIDA')}>
+                        Confirmar Exclusão
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+            </div>
           )}
         </div>
       </div>
-
-      {/* Banner AGUARDANDO_COMPRA */}
-      {isAguardando && (
-        <Card className="border-yellow-200 bg-yellow-50 shadow-sm">
-          <CardContent className="p-4">
-            <p className="text-sm font-medium text-yellow-800">Nota pausada — aguardando compra vinculada ser finalizada.</p>
-            {childNotes.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {childNotes.map(child => (
-                  <Link key={child.id} to={`/notas-entrada/${child.id}`} className="text-xs font-semibold text-yellow-700 underline hover:text-yellow-900">
-                    {child.number} — {STATUS_LABELS[child.status]}
-                  </Link>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Notas Vinculadas */}
-      {(parentNote || childNotes.length > 0) && (
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2"><Link2 className="w-4 h-4" /> Notas Vinculadas</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {parentNote && (
-              <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-lg">
-                <span className="text-[10px] text-blue-600 font-semibold uppercase">Nota pai</span>
-                <Link to={`/notas-entrada/${parentNote.id}`} className="text-xs font-mono font-bold text-blue-700 hover:underline">
-                  {parentNote.number}
-                </Link>
-                <Badge className={cn("text-[10px]", STATUS_COLORS[parentNote.status])}>{STATUS_LABELS[parentNote.status]}</Badge>
-              </div>
-            )}
-            {childNotes.map(child => (
-              <div key={child.id} className="flex items-center gap-2 p-2 bg-amber-50 rounded-lg">
-                <span className="text-[10px] text-amber-600 font-semibold uppercase">Compra</span>
-                <Link to={`/notas-entrada/${child.id}`} className="text-xs font-mono font-bold text-amber-700 hover:underline">
-                  {child.number}
-                </Link>
-                <Badge className={cn("text-[10px]", STATUS_COLORS[child.status])}>{STATUS_LABELS[child.status]}</Badge>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Timeline */}
-      <Card className="border-0 shadow-sm">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-1 overflow-x-auto">
-            {timelineStatuses.map((s, i) => (
-              <div key={s} className="flex items-center">
-                <div className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${i <= statusIdxForTimeline ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
-                  {STATUS_LABELS[s]}
-                </div>
-                {i < timelineStatuses.length - 1 && <div className={`w-6 h-0.5 mx-1 ${i < statusIdxForTimeline ? 'bg-primary' : 'bg-border'}`} />}
-              </div>
-            ))}
-            {/* Mostra estágio final alternativo na timeline */}
-            {isAltFinal && (
-              <>
-                <div className="w-6 h-0.5 mx-1 bg-destructive" />
-                <div className="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap bg-destructive text-destructive-foreground">
-                  {STATUS_LABELS[note.status]}
-                </div>
-              </>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Tabs defaultValue="itens">
-        <TabsList className="w-full justify-start overflow-x-auto sm:w-auto">
-          <TabsTrigger value="itens">Itens</TabsTrigger>
-          <TabsTrigger value="anexos">Anexos ({atts.length})</TabsTrigger>
-        </TabsList>
-        <TabsContent value="itens">
-          <div className="space-y-4">
-            <Card className="border-0 shadow-sm">
-              <CardHeader><CardTitle className="text-base">Serviços</CardTitle></CardHeader>
-              <CardContent>
-                <div className="grid gap-3 md:hidden">
-                  {svcs.map((s) => (
-                    <div key={s.id} className="rounded-2xl border border-border/70 bg-background p-4 shadow-sm">
-                      <p className="font-semibold leading-tight">{s.name}</p>
-                      {s.description && s.description !== s.name ? (
-                        <p className="mt-1 text-xs text-muted-foreground">{s.description}</p>
-                      ) : null}
-                      <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
-                        <div><p className="text-xs text-muted-foreground">Qtd</p><p className="font-medium">{s.quantity}</p></div>
-                        <div><p className="text-xs text-muted-foreground">Preço</p><p className="font-medium">R$ {s.price.toFixed(2)}</p></div>
-                        <div className="text-right"><p className="text-xs text-muted-foreground">Subtotal</p><p className="font-semibold">R$ {s.subtotal.toFixed(2)}</p></div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="hidden overflow-x-auto md:block">
-                <Table>
-                  <TableHeader><TableRow><TableHead>Serviço</TableHead><TableHead className="w-[80px]">Qtd</TableHead><TableHead className="w-[100px] text-right">Preço</TableHead><TableHead className="w-[100px] text-right">Subtotal</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {svcs.map(s => (
-                      <TableRow key={s.id}><TableCell>{s.name}</TableCell><TableCell>{s.quantity}</TableCell><TableCell className="text-right">R$ {s.price.toFixed(2)}</TableCell><TableCell className="text-right font-medium">R$ {s.subtotal.toFixed(2)}</TableCell></TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-0 shadow-sm">
-              <CardHeader><CardTitle className="text-base">Produtos / Peças</CardTitle></CardHeader>
-              <CardContent>
-                {prds.length > 0 ? (
-                  <>
-                  <div className="grid gap-3 md:hidden">
-                    {prds.map((p) => (
-                      <div key={p.id} className="rounded-2xl border border-border/70 bg-background p-4 shadow-sm">
-                        <p className="font-semibold leading-tight">{p.name}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">SKU: {p.sku || '—'}</p>
-                        <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
-                          <div><p className="text-xs text-muted-foreground">Qtd</p><p className="font-medium">{p.quantity}</p></div>
-                          <div><p className="text-xs text-muted-foreground">Preço</p><p className="font-medium">R$ {p.unitPrice.toFixed(2)}</p></div>
-                          <div className="text-right"><p className="text-xs text-muted-foreground">Subtotal</p><p className="font-semibold">R$ {p.subtotal.toFixed(2)}</p></div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="hidden overflow-x-auto md:block">
-                  <Table>
-                    <TableHeader><TableRow><TableHead>Produto</TableHead><TableHead>SKU</TableHead><TableHead className="w-[80px]">Qtd</TableHead><TableHead className="w-[100px] text-right">Preço</TableHead><TableHead className="w-[100px] text-right">Subtotal</TableHead></TableRow></TableHeader>
-                    <TableBody>
-                      {prds.map(p => (
-                        <TableRow key={p.id}><TableCell>{p.name}</TableCell><TableCell className="text-muted-foreground">{p.sku}</TableCell><TableCell>{p.quantity}</TableCell><TableCell className="text-right">R$ {p.unitPrice.toFixed(2)}</TableCell><TableCell className="text-right font-medium">R$ {p.subtotal.toFixed(2)}</TableCell></TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                  </div>
-                  </>
-                ) : <p className="text-center py-4 text-muted-foreground text-sm">Nenhum produto.</p>}
-              </CardContent>
-            </Card>
-            <Card className="border-0 shadow-sm">
-              <CardContent className="p-4">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div><p className="text-xs text-muted-foreground">Serviços</p><p className="font-bold">R$ {note.totalServices.toLocaleString('pt-BR')}</p></div>
-                  <div><p className="text-xs text-muted-foreground">Produtos</p><p className="font-bold">R$ {note.totalProducts.toLocaleString('pt-BR')}</p></div>
-                  <div><p className="text-xs text-muted-foreground">Total</p><p className="font-bold text-lg text-primary">R$ {note.totalAmount.toLocaleString('pt-BR')}</p></div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-        <TabsContent value="anexos">
-          <Card className="border-0 shadow-sm"><CardContent className="p-6">
-            {atts.length === 0 ? <p className="text-center py-8 text-muted-foreground">Nenhum anexo.</p> : (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {atts.map(a => (
-                  <div key={a.id} className="border rounded-lg p-3 text-center">
-                    <div className="w-10 h-10 bg-muted rounded mx-auto mb-2 flex items-center justify-center text-xs font-bold text-muted-foreground">{a.type}</div>
-                    <p className="text-xs truncate">{a.filename}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent></Card>
-        </TabsContent>
-      </Tabs>
 
       {/* Preview Modal */}
       {showPreview && (
