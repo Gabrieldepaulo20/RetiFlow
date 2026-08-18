@@ -82,12 +82,12 @@ const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
 /** Botão de fechar sobre o cabeçalho escuro — o padrão herda `foreground` e sumiria. */
 const CLOSE_BUTTON_ON_INK = cn(
-  'z-20 flex h-11 w-11 items-center justify-center rounded-xl border border-os-ink-line bg-os-ink-2 p-0',
+  'z-20 flex h-9 w-9 items-center justify-center rounded-[10px] border border-os-ink-line bg-os-ink-2 p-0',
   'text-os-cream-2 opacity-100 hover:border-os-ink-line-2 hover:bg-os-ink-3 hover:text-os-cream',
-  'right-4 top-4 sm:right-6 sm:top-6 [&>svg]:h-5 [&>svg]:w-5',
+  'right-3 top-3 sm:right-5 sm:top-3.5 [&>svg]:h-[18px] [&>svg]:w-[18px]',
 );
 
-const FOOTER_BUTTON = 'h-10 gap-2 rounded-[11px] border-os-line bg-os-surface font-os text-[13px] font-semibold text-os-slate hover:bg-os-muted hover:text-os-ink';
+const FOOTER_BUTTON = 'h-9 gap-2 rounded-[10px] border-os-line bg-os-surface font-os text-[13px] font-semibold text-os-slate hover:bg-os-muted hover:text-os-ink';
 
 export default function NoteDetailModal({ noteId, onClose, noteOverride, clientOverride }: NoteDetailModalProps) {
   const {
@@ -313,11 +313,127 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
           </div>
 
           {/* ── Rodapé (ações) ── */}
-          <div className="flex-none space-y-2.5 border-t border-os-line bg-os-surface px-4 py-3.5 sm:px-8">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <span className="mr-auto hidden text-[12.5px] text-os-stone sm:block">
+          <div className="flex-none border-t border-os-line bg-os-surface px-4 py-2 sm:px-8">
+            {/* Uma única linha: no desktop tudo cabe; em telas estreitas quebra. */}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+              <span className="hidden text-[12px] text-os-stone sm:block">
                 Atualizada {formatOSRelativeTime(note.updatedAt)}
               </span>
+
+              {/* Grupo da esquerda: contexto + saídas do fluxo. `mr-auto` empurra
+                  as ações de avanço para a direita, longe de Excluir/Recusar. */}
+              <div className="mr-auto flex flex-wrap items-center gap-2">
+                {/* Ações contextuais de saída do fluxo */}
+                {(note.status === 'ORCAMENTO' ||
+                  note.status === 'EM_EXECUCAO' ||
+                  (!isFinal && !isAguardando)) && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {note.status === 'ORCAMENTO' && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className="h-8 gap-2 rounded-[9px] border-os-danger-line bg-os-surface font-os text-xs font-semibold text-os-danger hover:bg-os-danger-soft hover:text-os-danger-ink"
+                          >
+                            <Ban className="h-3.5 w-3.5" />
+                            Recusar O.S.
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              Recusar {note.number}?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              O cliente não aprovou o orçamento. A O.S. será movida
+                              para "Recusada" (estágio final) e o banho químico será
+                              faturado.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Voltar</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              onClick={() => void moveToFinal('RECUSADO')}
+                            >
+                              Confirmar Recusa
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
+
+                    {note.status === 'EM_EXECUCAO' && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className="h-8 gap-2 rounded-[9px] border-os-danger-line bg-os-surface font-os text-xs font-semibold text-os-danger hover:bg-os-danger-soft hover:text-os-danger-ink"
+                          >
+                            <XCircle className="h-3.5 w-3.5" />
+                            Sem Conserto
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              Marcar {note.number} como Sem Conserto?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              A O.S. será movida para "Sem Conserto" (estágio
+                              final). Se necessário, ela poderá ser reaberta para Em Execução.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Voltar</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-rose-600 text-white hover:bg-rose-700"
+                              onClick={() => void moveToFinal('SEM_CONSERTO')}
+                            >
+                              Confirmar
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
+
+                    {!isFinal && !isAguardando && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            className="h-8 gap-2 rounded-[9px] font-os text-xs font-semibold text-os-stone hover:bg-os-muted hover:text-os-slate"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Excluir O.S.
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              Excluir {note.number}?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              A O.S. será movida para "Excluída" (anulação por
+                              engano/duplicata). Se necessário, ela poderá ser restaurada como Aberta.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Voltar</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-zinc-600 text-white hover:bg-zinc-700"
+                              onClick={() => void moveToFinal('EXCLUIDA')}
+                            >
+                              Confirmar Exclusão
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
+                  </div>
+                )}
+              </div>
+
 
               {canGoBack && (
                 <Button
@@ -368,7 +484,7 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                 <Button
                   variant="outline"
                   size="icon"
-                  className={cn(FOOTER_BUTTON, 'w-10 shrink-0')}
+                  className={cn(FOOTER_BUTTON, 'w-9 shrink-0')}
                   disabled={IS_REAL_AUTH && realDetalhesLoading}
                   onClick={async () => {
                     if (IS_REAL_AUTH && !realDetalhes && noteId) {
@@ -391,7 +507,7 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
 
               {canAdvance && (
                 <Button
-                  className="h-10 shrink-0 gap-2 rounded-[11px] bg-os-accent px-5 font-os text-sm font-semibold text-white shadow-[0_6px_16px_-6px_rgba(226,96,11,0.8)] hover:bg-os-accent-hover"
+                  className="h-9 shrink-0 gap-2 rounded-[10px] bg-os-accent px-4 font-os text-[13px] font-semibold text-white shadow-[0_6px_16px_-6px_rgba(226,96,11,0.8)] hover:bg-os-accent-hover"
                   onClick={advance}
                   disabled={isChangingStatus}
                 >
@@ -400,116 +516,6 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
                 </Button>
               )}
             </div>
-
-            {/* Ações contextuais de saída do fluxo */}
-            {(note.status === 'ORCAMENTO' ||
-              note.status === 'EM_EXECUCAO' ||
-              (!isFinal && !isAguardando)) && (
-              <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
-                {note.status === 'ORCAMENTO' && (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className="h-9 gap-2 rounded-[10px] border-os-danger-line bg-os-surface font-os text-xs font-semibold text-os-danger hover:bg-os-danger-soft hover:text-os-danger-ink"
-                      >
-                        <Ban className="h-3.5 w-3.5" />
-                        Recusar O.S.
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>
-                          Recusar {note.number}?
-                        </AlertDialogTitle>
-                        <AlertDialogDescription>
-                          O cliente não aprovou o orçamento. A O.S. será movida
-                          para "Recusada" (estágio final) e o banho químico será
-                          faturado.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Voltar</AlertDialogCancel>
-                        <AlertDialogAction
-                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          onClick={() => void moveToFinal('RECUSADO')}
-                        >
-                          Confirmar Recusa
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                )}
-
-                {note.status === 'EM_EXECUCAO' && (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className="h-9 gap-2 rounded-[10px] border-os-danger-line bg-os-surface font-os text-xs font-semibold text-os-danger hover:bg-os-danger-soft hover:text-os-danger-ink"
-                      >
-                        <XCircle className="h-3.5 w-3.5" />
-                        Sem Conserto
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>
-                          Marcar {note.number} como Sem Conserto?
-                        </AlertDialogTitle>
-                        <AlertDialogDescription>
-                          A O.S. será movida para "Sem Conserto" (estágio
-                          final). Se necessário, ela poderá ser reaberta para Em Execução.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Voltar</AlertDialogCancel>
-                        <AlertDialogAction
-                          className="bg-rose-600 text-white hover:bg-rose-700"
-                          onClick={() => void moveToFinal('SEM_CONSERTO')}
-                        >
-                          Confirmar
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                )}
-
-                {!isFinal && !isAguardando && (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        className="h-9 gap-2 rounded-[10px] font-os text-xs font-semibold text-os-stone hover:bg-os-muted hover:text-os-slate"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        Excluir O.S.
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>
-                          Excluir {note.number}?
-                        </AlertDialogTitle>
-                        <AlertDialogDescription>
-                          A O.S. será movida para "Excluída" (anulação por
-                          engano/duplicata). Se necessário, ela poderá ser restaurada como Aberta.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Voltar</AlertDialogCancel>
-                        <AlertDialogAction
-                          className="bg-zinc-600 text-white hover:bg-zinc-700"
-                          onClick={() => void moveToFinal('EXCLUIDA')}
-                        >
-                          Confirmar Exclusão
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                )}
-              </div>
-            )}
           </div>
         </div>
       </DialogContent>

@@ -51,7 +51,7 @@ export function OSHeaderBar({
   return (
     <div
       className={cn(
-        'relative flex flex-none flex-wrap items-start gap-4 bg-os-ink px-4 pb-5 pt-5 text-os-cream sm:gap-6 sm:px-8 sm:pb-[22px] sm:pt-[26px]',
+        'relative flex flex-none flex-wrap items-start gap-3 bg-os-ink px-4 pb-3 pt-3 text-os-cream sm:gap-5 sm:px-8 sm:pb-4 sm:pt-4',
         className,
       )}
     >
@@ -61,28 +61,28 @@ export function OSHeaderBar({
         className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(226,96,11,0.22)_0%,rgba(226,96,11,0)_45%)]"
       />
 
-      <div className="relative flex min-w-0 flex-1 flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-3">
+      <div className="relative flex min-w-0 flex-1 flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
           {leading}
           {/* Nó de texto exato do número — não repetir em outro lugar da tela */}
-          <NumberTag className="font-os-mono text-[26px] font-semibold leading-none tracking-tight sm:text-[34px]">
+          <NumberTag className="font-os-mono text-[22px] font-semibold leading-none tracking-tight sm:text-[27px]">
             {note.number}
           </NumberTag>
 
           <span
             className={cn(
-              'inline-flex items-center gap-[7px] rounded-full border px-3 py-1.5 text-[13px] font-semibold',
+              'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12.5px] font-semibold',
               OS_STATUS_PILL_ON_INK[tone],
             )}
           >
-            <StatusIcon className="h-[15px] w-[15px] shrink-0" />
+            <StatusIcon className="h-[14px] w-[14px] shrink-0" />
             <span>{STATUS_LABELS[note.status]}</span>
             {stepHint ? <span className="font-medium opacity-70">· {stepHint}</span> : null}
           </span>
 
           <span
             className={cn(
-              'inline-flex items-center rounded-full border px-2.5 py-1 text-[11.5px] font-semibold',
+              'inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold',
               note.paymentStatus === 'PAGO'
                 ? 'border-os-done/60 bg-os-done/25 text-os-done-soft'
                 : 'border-os-warn-dot/50 bg-os-warn-dot/20 text-os-warn-line',
@@ -103,21 +103,21 @@ export function OSHeaderBar({
           </span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] text-os-cream-2 sm:gap-x-[18px] sm:text-[15px]">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12.5px] text-os-cream-2 sm:gap-x-4 sm:text-[14px]">
           <span className="flex min-w-0 items-center gap-2 font-medium text-os-cream">
-            <User className="h-[17px] w-[17px] shrink-0 text-os-cream-3" />
+            <User className="h-[15px] w-[15px] shrink-0 text-os-cream-3" />
             <span className="truncate">{client?.name ?? 'Cliente não encontrado'}</span>
           </span>
 
           {note.vehicleModel ? (
             <span className="flex min-w-0 items-center gap-2">
-              <Car className="h-[18px] w-[18px] shrink-0 text-os-cream-3" />
+              <Car className="h-4 w-4 shrink-0 text-os-cream-3" />
               <span className="truncate">{note.vehicleModel}</span>
             </span>
           ) : null}
 
           {note.plate ? (
-            <span className="rounded-md border border-os-ink-line bg-os-ink-2 px-3 py-1.5 font-os-mono text-[13px] font-semibold tracking-[0.08em] text-os-cream">
+            <span className="rounded-md border border-os-ink-line bg-os-ink-2 px-2.5 py-0.5 font-os-mono text-[12px] font-semibold tracking-[0.08em] text-os-cream">
               {note.plate}
             </span>
           ) : null}
