@@ -2540,9 +2540,65 @@ function aggregateInternalData(
     return ids.size;
   };
 
+  /*
+    Engajamento e tempo, a partir do nosso proprio evento.
+
+    Estes tres campos vinham so do GA4 e eram `?? 0` sem fallback, entao
+    apareciam zerados no painel junto com as sessoes. Os dados existem:
+    `session_engagement` carrega `engagedSeconds` no metadata, e os eventos
+    `engagement_5s` / `engagement_10s` marcam quem passou do limiar.
+
+    Sessao engajada segue a definicao do GA4: passou de 10s, OU viu mais de uma
+    pagina, OU realizou uma acao de contato. Assim o numero continua comparavel
+    com o que o GA4 mostraria se estivesse conectado.
+  */
+  const metricasDeEngajamento = (eventItems: JsonRecord[]) => {
+    const paginasPorSessao = new Map<string, Set<string>>();
+    const segundosPorSessao = new Map<string, number>();
+    const engajadas = new Set<string>();
+
+    eventItems.forEach((event) => {
+      const sessionId = typeof event.session_id === 'string' ? event.session_id.trim() : '';
+      if (!sessionId) return;
+
+      const paginas = paginasPorSessao.get(sessionId) ?? new Set<string>();
+      paginas.add(String(event.page_path ?? '/'));
+      paginasPorSessao.set(sessionId, paginas);
+
+      const metadata = (event.metadata ?? {}) as JsonRecord;
+      const segundos = toNumber(metadata.engagedSeconds);
+      if (segundos > 0) {
+        segundosPorSessao.set(sessionId, Math.max(segundosPorSessao.get(sessionId) ?? 0, segundos));
+      }
+
+      const rotulo = String(metadata.eventLabel ?? event.event_type ?? '');
+      const acaoDeContato = ['whatsapp_click', 'phone_click', 'form_submit'].includes(String(event.event_type));
+      if (rotulo === 'engagement_10s' || acaoDeContato) engajadas.add(sessionId);
+    });
+
+    segundosPorSessao.forEach((segundos, sessionId) => {
+      if (segundos >= 10) engajadas.add(sessionId);
+    });
+    paginasPorSessao.forEach((paginas, sessionId) => {
+      if (paginas.size > 1) engajadas.add(sessionId);
+    });
+
+    const duracoes = Array.from(segundosPorSessao.values());
+    const totalSessoes = paginasPorSessao.size;
+
+    return {
+      engagedSessions: engajadas.size,
+      engagementRate: totalSessoes > 0 ? round((engajadas.size / totalSessoes) * 100) : 0,
+      averageSessionDuration: duracoes.length > 0
+        ? round(duracoes.reduce((total, item) => total + item, 0) / duracoes.length)
+        : 0,
+    };
+  };
+
   const buildTotals = (eventItems: JsonRecord[], leadItems: JsonRecord[]) => ({
     visits: countEvent(eventItems, 'page_view'),
     sessions: contarSessoes(eventItems),
+    ...metricasDeEngajamento(eventItems),
     whatsappClicks: countEvent(eventItems, 'whatsapp_click'),
     phoneClicks: countEvent(eventItems, 'phone_click'),
     formViews: countEvent(eventItems, 'form_view'),
@@ -3258,9 +3314,9 @@ async function handleRequest(request: Request) {
         : (gaCurrent?.whatsappClicks ?? 0)
           + (gaCurrent?.phoneClicks ?? 0)
           + Math.max(gaCurrent?.formSubmits ?? 0, gaCurrent?.generateLeads ?? 0),
-      engagementRate: gaCurrent?.engagementRate ?? 0,
-      averageSessionDuration: gaCurrent?.averageSessionDuration ?? 0,
-      engagedSessions: gaCurrent?.engagedSessions ?? 0,
+      engagementRate: internal.current.engagementRate || gaCurrent?.engagementRate || 0,
+      averageSessionDuration: internal.current.averageSessionDuration || gaCurrent?.averageSessionDuration || 0,
+      engagedSessions: internal.current.engagedSessions || gaCurrent?.engagedSessions || 0,
       leads: internal.current.leads,
       conversionRate: percentage(internal.current.leads, gaCurrent?.activeUsers ?? internal.current.visits),
     };
@@ -3291,9 +3347,9 @@ async function handleRequest(request: Request) {
         : (gaPrevious?.whatsappClicks ?? 0)
           + (gaPrevious?.phoneClicks ?? 0)
           + Math.max(gaPrevious?.formSubmits ?? 0, gaPrevious?.generateLeads ?? 0),
-      engagementRate: gaPrevious?.engagementRate ?? 0,
-      averageSessionDuration: gaPrevious?.averageSessionDuration ?? 0,
-      engagedSessions: gaPrevious?.engagedSessions ?? 0,
+      engagementRate: internal.previous.engagementRate || gaPrevious?.engagementRate || 0,
+      averageSessionDuration: internal.previous.averageSessionDuration || gaPrevious?.averageSessionDuration || 0,
+      engagedSessions: internal.previous.engagedSessions || gaPrevious?.engagedSessions || 0,
       leads: internal.previous.leads,
     };
     const siteSources = ga4?.sources ?? internal.sources;
