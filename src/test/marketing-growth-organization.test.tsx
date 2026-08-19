@@ -28,6 +28,12 @@ describe('organização do painel Crescimento', () => {
   it('prioriza visitantes, WhatsApp, tempo e páginas no resumo', () => {
     renderWithTooltips(<OverviewTab resumo={buildResumo()} />);
 
+    expect(screen.getByRole('heading', {
+      name: 'De clique a resultado comercial, sem somar etapas diferentes',
+    })).toBeInTheDocument();
+    expect(screen.getByText('Cliques oficiais do Google Ads')).toBeInTheDocument();
+    expect(screen.getByText('Cabeçotes recebidos para avaliação')).toBeInTheDocument();
+    expect(screen.getAllByText('Fonte ainda indisponível').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Visitantes · todas as origens')).toBeInTheDocument();
     expect(screen.getByText('WhatsApp no site · todas as origens')).toBeInTheDocument();
     expect(screen.getByText('Tempo médio no site')).toBeInTheDocument();

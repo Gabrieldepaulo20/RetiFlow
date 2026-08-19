@@ -7,6 +7,7 @@
  * jsdom não calcula layout, então teste unitário não pega esse tipo de defeito.
  */
 import type { MarketingResumo } from '@/api/supabase/marketing';
+import { buildMarketingMeasurementLedger } from '../../../supabase/functions/_shared/marketing-measurement-ledger';
 
 export function buildResumo(): MarketingResumo {
   const adsTotals = {
@@ -45,6 +46,22 @@ export function buildResumo(): MarketingResumo {
       commissionRate: 0.2,
     },
     integrations: [],
+    measurementLedger: buildMarketingMeasurementLedger({
+      startDate: '2026-08-01',
+      endDate: '2026-08-19',
+      googleAdsAvailable: true,
+      siteTelemetryAvailability: 'available',
+      siteTelemetryCoverageStartDate: '2026-07-23',
+      siteTelemetryCoverageEndDate: null,
+      officialAdsClicks: 55,
+      adWhatsappClicks: 5,
+      adCallClicks: 2,
+      consentedSessions: 10,
+      siteWhatsappClicks: 5,
+      sitePhoneClicks: 0,
+      approvedOrders: 1,
+      attributedServicesRevenue: 1_000,
+    }),
     site: {
       current: {
         visits: 20,

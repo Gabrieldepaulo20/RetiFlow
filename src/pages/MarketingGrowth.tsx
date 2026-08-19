@@ -1349,6 +1349,7 @@ export function OverviewTab({ resumo }: { resumo: MarketingResumo }) {
 
   return (
     <div className="space-y-5">
+      <MeasurementLedgerPanel resumo={resumo} />
       <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
         <Metric
           label="Visitantes · todas as origens"
@@ -2966,6 +2967,100 @@ function BarraFixaCrescimento({ resumo }: { resumo: MarketingResumo }) {
   );
 }
 
+const measurementClassificationLabels = {
+  click: 'Clique',
+  intention: 'Intenção',
+  session: 'Sessão',
+  operational: 'Operação',
+  commercial_result: 'Resultado comercial',
+} as const;
+
+function MeasurementLedgerPanel({ resumo }: { resumo: MarketingResumo }) {
+  const items = resumo.measurementLedger ?? [];
+  if (items.length === 0) return null;
+
+  return (
+    <Card className="rounded-2xl border-border/70 shadow-sm">
+      <CardContent className="p-4 sm:p-6">
+        <PanelHeading
+          eyebrow="Linha de verdade"
+          title="De clique a resultado comercial, sem somar etapas diferentes"
+          description="Cada número mostra fonte, período, deduplicação, atraso e limitação. O traço indica que o marco ainda não possui fonte histórica confiável — não significa zero."
+        />
+        <div className="mt-5 overflow-auto rounded-xl border">
+          <table className="w-full min-w-[1120px] text-left text-xs">
+            <thead className="border-b bg-muted/70">
+              <tr>
+                <th className="px-3 py-2.5 font-semibold">Indicador</th>
+                <th className="px-3 py-2.5 font-semibold">Valor</th>
+                <th className="px-3 py-2.5 font-semibold">Classificação</th>
+                <th className="px-3 py-2.5 font-semibold">Fonte e campo</th>
+                <th className="px-3 py-2.5 font-semibold">Deduplicação, atraso e limite</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {items.map((item) => (
+                <tr key={item.key} className="align-top">
+                  <td className="px-3 py-3">
+                    <p className="font-semibold text-foreground">{item.label}</p>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      {item.period.startDate} a {item.period.endDate} · {item.period.timeZone}
+                    </p>
+                  </td>
+                  <td className="px-3 py-3">
+                    <div className="space-y-1">
+                      {item.values.map((value) => (
+                        <p key={value.key} className="whitespace-nowrap">
+                          <span className="text-muted-foreground">{value.label}: </span>
+                          <span className="font-semibold">
+                            {value.value === null
+                              ? '—'
+                              : value.unit === 'BRL'
+                                ? <FinancialValue>{formatCurrency(value.value)}</FinancialValue>
+                                : formatNumber(value.value)}
+                          </span>
+                        </p>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-3 py-3">
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        'whitespace-nowrap',
+                        item.availability === 'unavailable' && 'border-amber-300 text-amber-700',
+                        item.availability === 'partial' && 'border-sky-300 text-sky-700',
+                      )}
+                    >
+                      {measurementClassificationLabels[item.classification]}
+                    </Badge>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      {item.availability === 'available'
+                        ? 'Disponível'
+                        : item.availability === 'partial'
+                          ? 'Disponível com ressalvas'
+                          : 'Fonte ainda indisponível'}
+                    </p>
+                  </td>
+                  <td className="max-w-[260px] px-3 py-3">
+                    <p className="font-medium">{item.sourceOfTruth}</p>
+                    <p className="mt-1 text-muted-foreground">{item.queryOrField}</p>
+                  </td>
+                  <td className="max-w-[360px] space-y-1 px-3 py-3 text-muted-foreground">
+                    <p><span className="font-medium text-foreground">Dedup:</span> {item.deduplication}</p>
+                    <p><span className="font-medium text-foreground">Atraso:</span> {item.expectedLatency}</p>
+                    <p><span className="font-medium text-foreground">Limite:</span> {item.limitations}</p>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
   const { financialValuesHidden } = useFinancialPrivacy();
   const ads = resumo.campaigns;
@@ -3462,17 +3557,20 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
         <TabsContent value="conversoes">
           <Card className="rounded-2xl border-border/70 shadow-sm"><CardContent className="p-4 sm:p-6">
             <PanelHeading eyebrow="Mensuração" title="Ações de conversão do Google Ads" description="Compare contatos do site, ligações, WhatsApp e cliente cadastrado no Retiflow. O CPA confiável permanece no resumo, pois o custo não é rateado com segurança entre as ações." />
-            <div className="mt-5 overflow-auto rounded-xl border"><table className="w-full min-w-[680px] text-left text-xs">
+            <div className="mt-5 overflow-auto rounded-xl border"><table className="w-full min-w-[860px] text-left text-xs">
               <thead className="border-b bg-muted/70"><tr>
                 <AdsTableHead label="Ação" help="Nome da ação de conversão configurada dentro do Google Ads." />
                 <AdsTableHead label="Categoria" help="Tipo de objetivo informado ao Google, como contato, ligação ou lead qualificado." />
+                <AdsTableHead label="Origem" help="Tipo técnico da ação no Google Ads, útil para distinguir tag, chamada e upload offline." />
+                <AdsTableHead label="Meta padrão" help="Indica se a ação está marcada como principal para a meta. Metas personalizadas ainda precisam ser auditadas separadamente antes de concluir uso nos lances." />
                 <AdsTableHead label="Status" help={googleAdsHelp.conversionStatus} />
                 <AdsTableHead label="Conversões" help={googleAdsHelp.conversions} align="right" />
                 <AdsTableHead label="Todas" help={googleAdsHelp.allConversions} align="right" />
                 <AdsTableHead label="Valor" help={googleAdsHelp.conversionValue} align="right" />
               </tr></thead>
               <tbody className="divide-y">{conversionActions.map((item) => <tr key={item.id}>
-                <td className="px-3 py-3 font-semibold">{item.name}</td><td className="px-3 py-3">{item.category}</td><td className="px-3 py-3">{item.status}</td>
+                <td className="px-3 py-3 font-semibold">{item.name}</td><td className="px-3 py-3">{item.category}</td><td className="px-3 py-3">{item.type}</td>
+                <td className="px-3 py-3">{item.primaryForGoal ? 'Principal na meta' : 'Não principal'}</td><td className="px-3 py-3">{item.status}</td>
                 <td className="px-3 py-3 text-right">{formatDecimal(item.conversions)}</td><td className="px-3 py-3 text-right">{formatDecimal(item.allConversions)}</td>
                 <td className="px-3 py-3 text-right"><FinancialValue>{formatCurrency(item.conversionValue)}</FinancialValue></td>
               </tr>)}</tbody>

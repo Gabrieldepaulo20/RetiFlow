@@ -26,6 +26,11 @@ import {
   parseMarketingRecentLimit,
   sanitizeMarketingVisitorSessionPayload,
 } from '../_shared/marketing-journey.ts';
+import {
+  buildMarketingMeasurementLedger,
+  isSiteTelemetryDateCovered,
+  resolveSiteTelemetryAvailability,
+} from '../_shared/marketing-measurement-ledger.ts';
 
 type JsonRecord = Record<string, unknown>;
 function createServiceClient(supabaseUrl: string, serviceRoleKey: string) {
@@ -280,7 +285,14 @@ interface GoogleAdsApiResult {
     status?: string;
     primaryStatus?: string;
   };
-  conversionAction?: { id?: string; name?: string; category?: string; status?: string };
+  conversionAction?: {
+    id?: string;
+    name?: string;
+    category?: string;
+    status?: string;
+    type?: string;
+    primaryForGoal?: boolean;
+  };
   metrics?: JsonRecord;
   segments?: {
     date?: string;
@@ -394,6 +406,8 @@ interface GoogleAdsSummary {
     name: string;
     category: string;
     status: string;
+    type: string;
+    primaryForGoal: boolean;
     conversions: number;
     allConversions: number;
     conversionValue: number;
@@ -1978,6 +1992,8 @@ async function fetchGoogleAdsSummary(
         name: row.conversionAction?.name ?? 'Conversão sem nome',
         category: row.conversionAction?.category ?? 'UNKNOWN',
         status: row.conversionAction?.status ?? 'UNKNOWN',
+        type: row.conversionAction?.type ?? 'UNKNOWN',
+        primaryForGoal: row.conversionAction?.primaryForGoal === true,
         conversions: round(toNumber(performance?.metrics?.conversions), 2),
         allConversions: round(toNumber(performance?.metrics?.allConversions), 2),
         conversionValue: round(toNumber(performance?.metrics?.conversionsValue)),
@@ -3239,6 +3255,44 @@ async function handleRequest(request: Request) {
       syncedAt: null,
       dataWindowMonths: 6 as const,
     };
+    const countOfficialClickType = (type: string) => (googleAds?.clickTypes ?? [])
+      .filter((item) => item.type === type)
+      .reduce((total, item) => total + item.clicks, 0);
+    const siteTelemetryAvailability = resolveSiteTelemetryAvailability({
+      moduleEnabled: config.moduloHabilitado,
+      hasSiteKey: config.hasSiteKey,
+      pilotStartDate: config.pilotStartDate,
+      pilotEndDate: config.pilotEndDate,
+      startDate: range.startDate,
+      endDate: range.endDate,
+    });
+    const ledgerSiteEvents = internal.currentEvents.filter((event) => (
+      isSiteTelemetryDateCovered({
+        date: String(event.occurred_at ?? ''),
+        pilotStartDate: config.pilotStartDate,
+        pilotEndDate: config.pilotEndDate,
+      })
+    ));
+    const ledgerJourney = buildMarketingJourneySummary(ledgerSiteEvents);
+    const countLedgerSiteEvent = (eventType: string) => ledgerSiteEvents
+      .filter((event) => event.event_type === eventType)
+      .length;
+    const measurementLedger = buildMarketingMeasurementLedger({
+      startDate: range.startDate,
+      endDate: range.endDate,
+      googleAdsAvailable: Boolean(googleAds),
+      siteTelemetryAvailability,
+      siteTelemetryCoverageStartDate: config.pilotStartDate,
+      siteTelemetryCoverageEndDate: config.pilotEndDate,
+      officialAdsClicks: googleAds?.current.clicks ?? 0,
+      adWhatsappClicks: countOfficialClickType('CLICK_TO_MESSAGE_THIRD_PARTY_CLICK'),
+      adCallClicks: countOfficialClickType('CALLS'),
+      consentedSessions: ledgerJourney.measurement.consentedSessions,
+      siteWhatsappClicks: countLedgerSiteEvent('whatsapp_click'),
+      sitePhoneClicks: countLedgerSiteEvent('phone_click'),
+      approvedOrders: business.current.approvedOrders,
+      attributedServicesRevenue: business.current.approvedServices,
+    });
 
     const unlinkedLeads = internal.currentLeads.filter((lead) => !lead.fk_clientes);
     const quality = {
@@ -3376,6 +3430,7 @@ async function handleRequest(request: Request) {
             ?? config.searchConsoleStatus,
         },
         integrations,
+        measurementLedger,
         executive: {
           funnel: {
             visits: siteCurrent.visits,

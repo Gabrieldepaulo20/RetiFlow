@@ -481,10 +481,35 @@ export interface MarketingAdsConversionActionMetric {
   name: string;
   category: string;
   status: string;
+  type: string;
+  primaryForGoal: boolean;
   conversions: number;
   allConversions: number;
   conversionValue: number;
   costPerConversion: number;
+}
+
+export interface MarketingMeasurementLedgerItem {
+  key: string;
+  label: string;
+  classification: 'click' | 'intention' | 'session' | 'operational' | 'commercial_result';
+  availability: 'available' | 'partial' | 'unavailable';
+  values: Array<{
+    key: string;
+    label: string;
+    value: number | null;
+    unit: 'count' | 'BRL';
+  }>;
+  sourceOfTruth: string;
+  queryOrField: string;
+  period: {
+    startDate: string;
+    endDate: string;
+    timeZone: 'America/Sao_Paulo';
+  };
+  deduplication: string;
+  expectedLatency: string;
+  limitations: string;
 }
 
 export interface MarketingPaidVisitor {
@@ -581,6 +606,7 @@ export interface MarketingResumo {
   };
   config: MarketingConfigSummary;
   integrations: MarketingIntegrationSummary[];
+  measurementLedger?: MarketingMeasurementLedgerItem[];
   site: {
     current: MarketingSiteTotals;
     previous: Omit<MarketingSiteTotals, 'conversionRate'>;

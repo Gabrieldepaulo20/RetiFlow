@@ -1,8 +1,16 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { normalizeMarketingOccurredAt } from '../_shared/marketing-date.ts';
 import {
-  MARKETING_ACCEPTED_EVENT_TYPES,
+  containsHighConfidencePersonalData,
+  MARKETING_EVENT_CONTRACT,
+  normalizeMarketingLeadCode,
   normalizeMarketingEventForStorage,
+  normalizeMarketingEventType,
+  sanitizeMarketingClickId,
+  sanitizeMarketingEventMetadata,
+  sanitizeMarketingPageLocation,
+  sanitizeMarketingPagePath,
+  sanitizeMarketingTechnicalId,
   storedMarketingEventMatches,
 } from '../_shared/marketing-event-contract.ts';
 
@@ -111,35 +119,28 @@ function jsonResponse(body: unknown, status: number, request: Request) {
 
 function asString(value: unknown, max = 500) {
   if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  return trimmed.slice(0, max);
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (!normalized) return null;
+  return normalized.slice(0, max);
+}
+
+function asNonPersonalString(value: unknown, max = 500) {
+  const normalized = asString(value, max);
+  return normalized && !containsHighConfidencePersonalData(normalized) ? normalized : null;
 }
 
 function asObject(value: unknown): JsonRecord {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  const sanitized: JsonRecord = {};
-  Object.entries(value as JsonRecord)
-    .slice(0, 30)
-    .forEach(([key, item]) => {
-      const safeKey = key.slice(0, 80);
-      if (typeof item === 'string') sanitized[safeKey] = item.slice(0, 500);
-      else if (typeof item === 'number' && Number.isFinite(item)) sanitized[safeKey] = item;
-      else if (typeof item === 'boolean' || item === null) sanitized[safeKey] = item;
-    });
-  return sanitized;
+  return sanitizeMarketingEventMetadata(value);
 }
 
-function sanitizeUrl(value: unknown, max = 800) {
-  const raw = asString(value, max);
+function sanitizeReferrer(value: unknown) {
+  const raw = asString(value, MARKETING_EVENT_CONTRACT.limits.referrer);
   if (!raw) return null;
   try {
-    const parsed = new URL(raw, 'https://retiflow.invalid');
-    return parsed.origin === 'https://retiflow.invalid'
-      ? parsed.pathname.slice(0, max)
-      : `${parsed.origin}${parsed.pathname}`.slice(0, max);
+    const parsed = new URL(raw);
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.origin : null;
   } catch {
-    return raw.split(/[?#]/, 1)[0].slice(0, max);
+    return null;
   }
 }
 
@@ -196,7 +197,10 @@ async function updateAlertStatus(
   config: MarketingConfig,
   body: EventPayload,
 ) {
-  const externalEventId = asString(body.eventId, 100);
+  const externalEventId = sanitizeMarketingTechnicalId(
+    body.eventId,
+    MARKETING_EVENT_CONTRACT.limits.eventId,
+  );
   const alertStatus = asString(body.alertStatus, 40);
 
   if (!externalEventId || !alertStatus || !allowedAlertStatuses.has(alertStatus)) {
@@ -303,18 +307,19 @@ async function ensureLeadForEvent(input: {
     fk_criado_por: input.config.fk_criado_por,
     occurred_at: input.occurredAt,
     lead_code: input.leadCode,
-    channel: asString(input.body.channel, 80) ?? 'site_form',
+    channel: asNonPersonalString(input.body.channel, MARKETING_EVENT_CONTRACT.limits.channel)
+      ?? 'site_form',
     nome: canPersistPii ? asString(input.body.lead?.name, 180) : null,
     email: leadEmail,
     telefone: leadPhone,
     source: input.source,
     medium: input.medium,
     campaign: input.campaign,
-    term: asString(input.body.term, 180),
-    content: asString(input.body.content, 180),
-    gclid: asString(input.body.gclid, 240),
-    gbraid: asString(input.body.gbraid, 240),
-    wbraid: asString(input.body.wbraid, 240),
+    term: asNonPersonalString(input.body.term, MARKETING_EVENT_CONTRACT.limits.term),
+    content: asNonPersonalString(input.body.content, MARKETING_EVENT_CONTRACT.limits.content),
+    gclid: sanitizeMarketingClickId(input.body.gclid),
+    gbraid: sanitizeMarketingClickId(input.body.gbraid),
+    wbraid: sanitizeMarketingClickId(input.body.wbraid),
     page_path: input.pagePath,
     event_id: input.storedEventId,
     dedupe_key: dedupeKey,
@@ -358,9 +363,25 @@ async function handleRequest(request: Request) {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: getCorsHeaders(request) });
   if (request.method !== 'POST') return jsonResponse({ ok: false, error: 'Método não permitido.' }, 405, request);
   const contentLength = Number(request.headers.get('content-length') ?? 0);
-  if (Number.isFinite(contentLength) && contentLength > 64 * 1024) {
+  if (Number.isFinite(contentLength) && contentLength > MARKETING_EVENT_CONTRACT.limits.bodyBytes) {
     return jsonResponse({ ok: false, error: 'Payload excede o limite permitido.' }, 413, request);
   }
+
+  const rawBody = await request.text().catch(() => '');
+  if (new TextEncoder().encode(rawBody).byteLength > MARKETING_EVENT_CONTRACT.limits.bodyBytes) {
+    return jsonResponse({ ok: false, error: 'Payload excede o limite permitido.' }, 413, request);
+  }
+
+  let body: EventPayload | null = null;
+  try {
+    const parsed = JSON.parse(rawBody) as unknown;
+    body = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as EventPayload
+      : null;
+  } catch {
+    body = null;
+  }
+  if (!body) return jsonResponse({ ok: false, error: 'Payload JSON inválido.' }, 400, request);
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
@@ -368,7 +389,6 @@ async function handleRequest(request: Request) {
     return jsonResponse({ ok: false, error: 'Configuração Supabase ausente.' }, 500, request);
   }
 
-  const body = await request.json().catch(() => ({})) as EventPayload;
   const siteKey = asString(body.siteKey, 200)
     ?? asString(request.headers.get('x-site-key'), 200)
     ?? asString(request.headers.get('x-retiflow-site-key'), 200);
@@ -389,27 +409,42 @@ async function handleRequest(request: Request) {
       return await updateAlertStatus(request, serviceClient, config, body);
     }
 
-    const eventType = asString(body.eventType, 60);
-    if (!eventType || !MARKETING_ACCEPTED_EVENT_TYPES.has(eventType)) {
+    const eventDefinition = normalizeMarketingEventType(body.eventType);
+    if (!eventDefinition) {
       return jsonResponse({ ok: false, error: 'Tipo de evento inválido.' }, 400, request);
     }
+    const eventType = eventDefinition.name;
 
-    const externalEventId = asString(body.eventId, 100);
-    const leadCode = asString(body.leadCode, 60);
-    if (!externalEventId || !leadCode) {
-      return jsonResponse({ ok: false, error: 'eventId e leadCode são obrigatórios.' }, 400, request);
+    const externalEventId = sanitizeMarketingTechnicalId(
+      body.eventId,
+      MARKETING_EVENT_CONTRACT.limits.eventId,
+    );
+    if (!externalEventId) {
+      return jsonResponse({ ok: false, error: 'eventId é obrigatório para idempotência.' }, 400, request);
+    }
+    const leadCode = normalizeMarketingLeadCode(body.leadCode);
+    if (!leadCode) {
+      return jsonResponse({ ok: false, error: 'leadCode é obrigatório.' }, 400, request);
     }
 
+    const sanitizedMetadata = asObject(body.metadata);
+    if (
+      sanitizedMetadata.measurementMode !== 'analytics'
+      && sanitizedMetadata.measurementMode !== 'analytics_and_advertising'
+    ) {
+      delete sanitizedMetadata.visitorCity;
+    }
     const normalizedStorageEvent = normalizeMarketingEventForStorage(
       eventType,
-      asObject(body.metadata),
+      sanitizedMetadata,
     );
     const metadata = normalizedStorageEvent.metadata;
     const occurredAt = normalizeMarketingOccurredAt(body.occurredAt);
-    const source = asString(body.source, 120) ?? 'direto';
-    const medium = asString(body.medium, 120);
-    const campaign = asString(body.campaign, 180);
-    const pagePath = asString(body.pagePath, 800) ?? '/';
+    const source = asNonPersonalString(body.source, MARKETING_EVENT_CONTRACT.limits.source)
+      ?? 'direto';
+    const medium = asNonPersonalString(body.medium, MARKETING_EVENT_CONTRACT.limits.medium);
+    const campaign = asNonPersonalString(body.campaign, MARKETING_EVENT_CONTRACT.limits.campaign);
+    const pagePath = sanitizeMarketingPagePath(body.pagePath);
 
     const existingExternalEvent = await findExistingExternalEvent(
       serviceClient,
@@ -453,8 +488,14 @@ async function handleRequest(request: Request) {
       }, 200, request);
     }
 
-    const sessionId = asString(body.sessionId, 180);
-    const anonymousId = asString(body.anonymousId, 180);
+    const sessionId = sanitizeMarketingTechnicalId(
+      body.sessionId,
+      MARKETING_EVENT_CONTRACT.limits.sessionId,
+    );
+    const anonymousId = sanitizeMarketingTechnicalId(
+      body.anonymousId,
+      MARKETING_EVENT_CONTRACT.limits.anonymousId,
+    );
     if (eventType === 'whatsapp_click') {
       const recentClick = await findRecentWhatsAppClick(serviceClient, config, sessionId, anonymousId);
       if (recentClick) {
@@ -491,25 +532,26 @@ async function handleRequest(request: Request) {
       external_event_id: externalEventId,
       lead_code: leadCode,
       event_type: normalizedStorageEvent.eventType,
-      channel: asString(body.channel, 80),
+      channel: asNonPersonalString(body.channel, MARKETING_EVENT_CONTRACT.limits.channel),
       occurred_at: occurredAt,
       session_id: sessionId,
       anonymous_id: anonymousId,
       page_path: pagePath,
-      page_location: sanitizeUrl(body.pageLocation, 1200),
-      page_title: asString(body.pageTitle, 300),
-      referrer: sanitizeUrl(body.referrer, 1000),
+      page_location: sanitizeMarketingPageLocation(body.pageLocation),
+      page_title: asNonPersonalString(body.pageTitle, MARKETING_EVENT_CONTRACT.limits.pageTitle),
+      referrer: sanitizeReferrer(body.referrer),
       source,
       medium,
       campaign,
-      term: asString(body.term, 180),
-      content: asString(body.content, 180),
-      gclid: asString(body.gclid, 240),
-      gbraid: asString(body.gbraid, 240),
-      wbraid: asString(body.wbraid, 240),
-      device_type: asString(body.deviceType, 80),
-      city: asString(body.city, 120),
-      region: asString(body.region, 120),
+      term: asNonPersonalString(body.term, MARKETING_EVENT_CONTRACT.limits.term),
+      content: asNonPersonalString(body.content, MARKETING_EVENT_CONTRACT.limits.content),
+      gclid: sanitizeMarketingClickId(body.gclid),
+      gbraid: sanitizeMarketingClickId(body.gbraid),
+      wbraid: sanitizeMarketingClickId(body.wbraid),
+      device_type: asNonPersonalString(body.deviceType, MARKETING_EVENT_CONTRACT.limits.deviceType),
+      city: typeof metadata.visitorCity === 'string' ? metadata.visitorCity : null,
+      // O proxy genérico do site não encaminha região; não confie em body.region.
+      region: null,
       last_field: asString(metadata.lastField, 120),
       validation_reason: asString(metadata.validationReason, 300),
       form_elapsed_seconds: asNonNegativeInteger(metadata.elapsedSeconds),
@@ -555,8 +597,8 @@ async function handleRequest(request: Request) {
       shouldAlert: eventType === 'whatsapp_click',
       alertStatus,
     }, 200, request);
-  } catch (error) {
-    console.error('marketing-events failed', error instanceof Error ? error.message : 'unknown');
+  } catch {
+    console.error(JSON.stringify({ event: 'marketing_events_failed', code: 'UNHANDLED_REQUEST_ERROR' }));
     return jsonResponse({ ok: false, error: 'Falha ao registrar o evento.' }, 500, request);
   }
 }

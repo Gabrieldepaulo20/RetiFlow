@@ -1,0 +1,198 @@
+{
+  "schemaVersion": "marketing-events-v3",
+  "aliases": {},
+  "events": [
+    { "name": "page_view", "storageEventType": "page_view" },
+    { "name": "whatsapp_click", "storageEventType": "whatsapp_click" },
+    {
+      "name": "instagram_click",
+      "storageEventType": "custom",
+      "metadataEventLabel": "instagram_click"
+    },
+    { "name": "phone_click", "storageEventType": "phone_click" },
+    {
+      "name": "directions_click",
+      "storageEventType": "custom",
+      "metadataEventLabel": "directions_click"
+    },
+    {
+      "name": "cta_click",
+      "storageEventType": "custom",
+      "metadataEventLabel": "cta_click"
+    },
+    {
+      "name": "service_detail_click",
+      "storageEventType": "custom",
+      "metadataEventLabel": "service_detail_click"
+    },
+    { "name": "form_view", "storageEventType": "form_view" },
+    { "name": "form_start", "storageEventType": "form_start" },
+    {
+      "name": "form_field_complete",
+      "storageEventType": "custom",
+      "metadataEventLabel": "form_field_complete"
+    },
+    { "name": "form_abandon", "storageEventType": "form_abandon" },
+    {
+      "name": "form_submit_attempt",
+      "storageEventType": "form_submit_attempt"
+    },
+    {
+      "name": "form_validation_error",
+      "storageEventType": "form_validation_error"
+    },
+    {
+      "name": "form_submit_error",
+      "storageEventType": "form_submit_error"
+    },
+    { "name": "form_submit", "storageEventType": "form_submit" },
+    { "name": "lead_created", "storageEventType": "lead_created" },
+    {
+      "name": "critical_page_view",
+      "storageEventType": "critical_page_view"
+    },
+    {
+      "name": "scroll_depth",
+      "storageEventType": "custom",
+      "metadataEventLabel": "scroll_depth"
+    },
+    { "name": "custom", "storageEventType": "custom" }
+  ],
+  "requiredFields": ["eventType", "leadCode", "eventId"],
+  "optionalFields": [
+    "anonymousId",
+    "sessionId",
+    "channel",
+    "occurredAt",
+    "pagePath",
+    "pageLocation",
+    "pageTitle",
+    "referrer",
+    "source",
+    "medium",
+    "campaign",
+    "term",
+    "content",
+    "gclid",
+    "gbraid",
+    "wbraid",
+    "deviceType",
+    "city",
+    "region",
+    "metadata",
+    "lead"
+  ],
+  "limits": {
+    "bodyBytes": 32000,
+    "eventType": 60,
+    "eventId": 80,
+    "leadCode": 40,
+    "anonymousId": 120,
+    "sessionId": 120,
+    "channel": 80,
+    "occurredAt": 80,
+    "pagePath": 500,
+    "pageLocation": 800,
+    "pageTitle": 300,
+    "referrer": 800,
+    "source": 120,
+    "medium": 120,
+    "campaign": 180,
+    "term": 180,
+    "content": 180,
+    "clickId": 220,
+    "deviceType": 40,
+    "city": 60,
+    "region": 60,
+    "metadataString": 180,
+    "metadataHostname": 255
+  },
+  "metadata": {
+    "allowedKeys": [
+      "eventLabel",
+      "method",
+      "formName",
+      "lastField",
+      "validationReason",
+      "elapsedSeconds",
+      "fieldsCompleted",
+      "completionPercent",
+      "engagedSeconds",
+      "percentScrolled",
+      "experimentId",
+      "variantId",
+      "componentId",
+      "position",
+      "pageType",
+      "serviceId",
+      "flowType",
+      "stepId",
+      "optionId",
+      "fieldId",
+      "interactionAction",
+      "estimateState",
+      "destinationType",
+      "destinationPath",
+      "visitorCity",
+      "sessionOriginType",
+      "siteHostname",
+      "environment",
+      "measurementMode",
+      "eventContractVersion"
+    ],
+    "maxKeys": 30,
+    "keyLength": 80,
+    "numericMin": -1000000,
+    "numericMax": 1000000,
+    "destinationTypes": [
+      "whatsapp",
+      "phone",
+      "estimate",
+      "service",
+      "contact",
+      "directions",
+      "video",
+      "other"
+    ],
+    "measurementModes": [
+      "analytics",
+      "advertising",
+      "analytics_and_advertising"
+    ],
+    "technicalDimensionKeys": [
+      "optionId",
+      "fieldId",
+      "interactionAction"
+    ],
+    "technicalDimensionLimit": 100,
+    "technicalDimensionMaxDigits": 9,
+    "destinationPathLimit": 180,
+    "visitorCityLimit": "city",
+    "defaultStringLimit": "metadataString",
+    "hostnameStringLimit": "metadataHostname",
+    "allowBoolean": true,
+    "allowNull": false
+  },
+  "normalization": {
+    "eventType": "trim_exact_case_no_unknown_fallback",
+    "eventId": "trim_required_caller_stable_url_safe_charset_field_limit_reject_email_or_phone_shaped",
+    "technicalIds": "trim_url_safe_charset_field_limit_reject_email_or_phone_shaped",
+    "technicalIdPattern": "^[A-Za-z0-9._~-]{8,}$",
+    "leadCode": "trim_uppercase",
+    "leadCodePattern": "^RP-[0-9]{8}-[A-Z0-9]{8}$",
+    "strings": "collapse_whitespace_trim_truncate",
+    "personalDataDecodePasses": 3,
+    "pageLocation": "origin_and_path_only",
+    "referrer": "origin_only",
+    "pathPersonalData": "decode_up_to_3_fail_closed_replace_path_with_root",
+    "clickIds": "trim_url_safe_charset_length_1_220_reject_email_or_phone_shaped",
+    "clickIdPattern": "^[A-Za-z0-9._~-]{1,220}$"
+  },
+  "pii": {
+    "siteTelemetryEndpointForwardsLead": false,
+    "siteTelemetryEndpointRejectedEvents": ["form_submit", "lead_created"],
+    "edgeAcceptsLeadOnlyForEvents": ["form_submit", "lead_created"],
+    "genericFreeTextWithEmailOrPhone": "drop_raw_or_decoded_up_to_3_embedded_sequence",
+    "queryStringsInPageLocationOrReferrer": "drop"
+  }
+}
