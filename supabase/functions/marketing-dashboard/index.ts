@@ -2487,9 +2487,20 @@ function aggregateInternalData(
 
   const daily = buildEmptyDaily(periodDays, range.startDate);
   const dailyByDate = new Map(daily.map((item) => [item.date, item]));
+  // Sessão é distinta POR DIA: a mesma sessão não pode contar duas vezes no
+  // mesmo dia, e uma sessão que atravessa a meia-noite conta em cada dia em que
+  // teve evento — que é como o GA4 também reporta.
+  const sessoesPorDia = new Map<string, Set<string>>();
   currentEvents.forEach((event) => {
-    const item = dailyByDate.get(getMarketingDateKey(String(event.occurred_at ?? '')));
+    const chave = getMarketingDateKey(String(event.occurred_at ?? ''));
+    const item = dailyByDate.get(chave);
     if (!item) return;
+    const sessionId = typeof event.session_id === 'string' ? event.session_id.trim() : '';
+    if (sessionId) {
+      const doDia = sessoesPorDia.get(chave) ?? new Set<string>();
+      doDia.add(sessionId);
+      sessoesPorDia.set(chave, doDia);
+    }
     if (event.event_type === 'page_view') {
       item.visits += 1;
       item.pageViews += 1;
@@ -2500,9 +2511,38 @@ function aggregateInternalData(
     const item = dailyByDate.get(getMarketingDateKey(String(lead.occurred_at ?? '')));
     if (item) item.leads += 1;
   });
+  sessoesPorDia.forEach((ids, chave) => {
+    const item = dailyByDate.get(chave);
+    if (item) item.sessions = ids.size;
+  });
+
+  /*
+    Sessões contadas pelo nosso próprio `session_id`.
+
+    Antes, o painel só tinha sessão vinda do GA4, e o campo era
+    `gaCurrent?.sessions ?? 0` — sem fallback, ao contrário de `visits` e
+    `pageViews`, que caem para o dado interno. Resultado: sem GA4 respondendo, o
+    painel mostrava ZERO sessões enquanto a tabela tinha 25 sessões distintas em
+    7 dias. Foi exatamente o que o dono relatou: "não estou vendo nenhuma sessão
+    medida".
+
+    O `session_id` é dado de primeira mão do nosso próprio site: não depende de
+    GA4 estar conectado, não é amostrado e não some quando a API do Google
+    falha. É a mesma lógica que o painel já aplica em ações, onde
+    `useFirstPartyActions` prefere o dado próprio.
+  */
+  const contarSessoes = (eventItems: JsonRecord[]) => {
+    const ids = new Set<string>();
+    eventItems.forEach((event) => {
+      const id = typeof event.session_id === 'string' ? event.session_id.trim() : '';
+      if (id) ids.add(id);
+    });
+    return ids.size;
+  };
 
   const buildTotals = (eventItems: JsonRecord[], leadItems: JsonRecord[]) => ({
     visits: countEvent(eventItems, 'page_view'),
+    sessions: contarSessoes(eventItems),
     whatsappClicks: countEvent(eventItems, 'whatsapp_click'),
     phoneClicks: countEvent(eventItems, 'phone_click'),
     formViews: countEvent(eventItems, 'form_view'),
@@ -3194,7 +3234,12 @@ async function handleRequest(request: Request) {
     const siteCurrent = {
       visits: gaCurrent?.activeUsers ?? internal.current.visits,
       newUsers: gaCurrent?.newUsers ?? 0,
-      sessions: gaCurrent?.sessions ?? 0,
+      /*
+        Prefere o dado próprio: `session_id` não depende de GA4 conectado, não é
+        amostrado e não é perdido quando a API do Google falha. O GA4 entra só
+        como reforço quando o nosso número não existe.
+      */
+      sessions: internal.current.sessions || gaCurrent?.sessions || 0,
       pageViews: gaCurrent?.pageViews ?? internal.current.visits,
       whatsappClicks: useFirstPartyActions ? internal.current.whatsappClicks : (gaCurrent?.whatsappClicks ?? 0),
       phoneClicks: useFirstPartyActions ? internal.current.phoneClicks : (gaCurrent?.phoneClicks ?? 0),
@@ -3222,7 +3267,12 @@ async function handleRequest(request: Request) {
     const sitePrevious = {
       visits: gaPrevious?.activeUsers ?? internal.previous.visits,
       newUsers: gaPrevious?.newUsers ?? 0,
-      sessions: gaPrevious?.sessions ?? 0,
+      /*
+        Prefere o dado próprio: `session_id` não depende de GA4 conectado, não é
+        amostrado e não é perdido quando a API do Google falha. O GA4 entra só
+        como reforço quando o nosso número não existe.
+      */
+      sessions: internal.previous.sessions || gaPrevious?.sessions || 0,
       pageViews: gaPrevious?.pageViews ?? internal.previous.visits,
       whatsappClicks: useFirstPartyActions ? internal.previous.whatsappClicks : (gaPrevious?.whatsappClicks ?? 0),
       phoneClicks: useFirstPartyActions ? internal.previous.phoneClicks : (gaPrevious?.phoneClicks ?? 0),
