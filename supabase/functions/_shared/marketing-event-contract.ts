@@ -107,6 +107,15 @@ export const MARKETING_EVENT_CONTRACT = {
       'analytics',
       'advertising',
       'analytics_and_advertising',
+      /*
+        'essencial' = contagem minima do funil por legitimo interesse, de quem
+        ainda nao decidiu sobre cookies. Sem este item na lista o sanitizador
+        descartava o rotulo e os registros anonimos chegavam sem base legal
+        identificavel, o que impede auditoria. Esta e a SEGUNDA copia do
+        contrato: a do site vive em src/lib/marketing-event-contract.ts e as
+        duas precisam concordar.
+      */
+      'essencial',
     ],
     technicalDimensionKeys: [
       'optionId',

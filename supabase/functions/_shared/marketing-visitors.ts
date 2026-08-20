@@ -128,11 +128,15 @@ function eventMeasurementMode(item: JsonRecord): MarketingVisitorSession['measur
   const metadata = eventMetadata(item);
   const raw = limitedString(metadata.measurementMode ?? metadata.measurement_mode, 30);
   if (raw === 'anonymous') return 'anonymous';
+  // 'essencial' e sessao medida de fato: o evento existe e foi registrado por
+  // legitimo interesse. Deixar de fora faria a jornada ignorar justamente o
+  // trafego que a correcao de 19/08 recuperou.
   if (
     raw === 'consented'
     || raw === 'analytics'
     || raw === 'advertising'
     || raw === 'analytics_and_advertising'
+    || raw === 'essencial'
   ) {
     return 'consented';
   }

@@ -2,14 +2,23 @@
   "schemaVersion": "marketing-events-v3",
   "aliases": {},
   "events": [
-    { "name": "page_view", "storageEventType": "page_view" },
-    { "name": "whatsapp_click", "storageEventType": "whatsapp_click" },
+    {
+      "name": "page_view",
+      "storageEventType": "page_view"
+    },
+    {
+      "name": "whatsapp_click",
+      "storageEventType": "whatsapp_click"
+    },
     {
       "name": "instagram_click",
       "storageEventType": "custom",
       "metadataEventLabel": "instagram_click"
     },
-    { "name": "phone_click", "storageEventType": "phone_click" },
+    {
+      "name": "phone_click",
+      "storageEventType": "phone_click"
+    },
     {
       "name": "directions_click",
       "storageEventType": "custom",
@@ -25,14 +34,23 @@
       "storageEventType": "custom",
       "metadataEventLabel": "service_detail_click"
     },
-    { "name": "form_view", "storageEventType": "form_view" },
-    { "name": "form_start", "storageEventType": "form_start" },
+    {
+      "name": "form_view",
+      "storageEventType": "form_view"
+    },
+    {
+      "name": "form_start",
+      "storageEventType": "form_start"
+    },
     {
       "name": "form_field_complete",
       "storageEventType": "custom",
       "metadataEventLabel": "form_field_complete"
     },
-    { "name": "form_abandon", "storageEventType": "form_abandon" },
+    {
+      "name": "form_abandon",
+      "storageEventType": "form_abandon"
+    },
     {
       "name": "form_submit_attempt",
       "storageEventType": "form_submit_attempt"
@@ -45,8 +63,14 @@
       "name": "form_submit_error",
       "storageEventType": "form_submit_error"
     },
-    { "name": "form_submit", "storageEventType": "form_submit" },
-    { "name": "lead_created", "storageEventType": "lead_created" },
+    {
+      "name": "form_submit",
+      "storageEventType": "form_submit"
+    },
+    {
+      "name": "lead_created",
+      "storageEventType": "lead_created"
+    },
     {
       "name": "critical_page_view",
       "storageEventType": "critical_page_view"
@@ -56,9 +80,16 @@
       "storageEventType": "custom",
       "metadataEventLabel": "scroll_depth"
     },
-    { "name": "custom", "storageEventType": "custom" }
+    {
+      "name": "custom",
+      "storageEventType": "custom"
+    }
   ],
-  "requiredFields": ["eventType", "leadCode", "eventId"],
+  "requiredFields": [
+    "eventType",
+    "leadCode",
+    "eventId"
+  ],
   "optionalFields": [
     "anonymousId",
     "sessionId",
@@ -157,7 +188,8 @@
     "measurementModes": [
       "analytics",
       "advertising",
-      "analytics_and_advertising"
+      "analytics_and_advertising",
+      "essencial"
     ],
     "technicalDimensionKeys": [
       "optionId",
@@ -190,8 +222,14 @@
   },
   "pii": {
     "siteTelemetryEndpointForwardsLead": false,
-    "siteTelemetryEndpointRejectedEvents": ["form_submit", "lead_created"],
-    "edgeAcceptsLeadOnlyForEvents": ["form_submit", "lead_created"],
+    "siteTelemetryEndpointRejectedEvents": [
+      "form_submit",
+      "lead_created"
+    ],
+    "edgeAcceptsLeadOnlyForEvents": [
+      "form_submit",
+      "lead_created"
+    ],
     "genericFreeTextWithEmailOrPhone": "drop_raw_or_decoded_up_to_3_embedded_sequence",
     "queryStringsInPageLocationOrReferrer": "drop"
   }

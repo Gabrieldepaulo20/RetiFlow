@@ -321,11 +321,15 @@ function sessionOrigin(item: JsonRecord, metadata: JsonRecord): MarketingAttribu
 function eventMeasurementMode(metadata: JsonRecord): 'anonymous' | 'consented' | 'unknown' {
   const measurement = safeDimension(metadata.measurementMode ?? metadata.measurement_mode, 40);
   if (measurement === 'anonymous') return 'anonymous';
+  // 'essencial' e sessao medida de fato: o evento existe e foi registrado por
+  // legitimo interesse. Deixar de fora faria a jornada ignorar justamente o
+  // trafego que a correcao de 19/08 recuperou.
   if (
     measurement === 'consented'
     || measurement === 'analytics'
     || measurement === 'advertising'
     || measurement === 'analytics_and_advertising'
+    || measurement === 'essencial'
   ) {
     return 'consented';
   }
@@ -483,11 +487,19 @@ function normalizeMarketingRegion(value: unknown) {
   return BRAZIL_STATE_NAMES.get(normalizedLocationKey(normalized)) ?? null;
 }
 
+/*
+  Usada apenas para liberar a agregacao de CIDADE na jornada (ver o filtro
+  `!event.analyticsConsent || !event.city`). O modo 'essencial' entra porque
+  cidade passou a fazer parte da contagem por legitimo interesse, decidida pelo
+  controlador em 19/08/2026 — e a agregacao ja oculta grupos com menos de 3
+  sessoes, que e a salvaguarda que torna isso defensavel.
+*/
 function hasAnalyticsConsent(metadata: JsonRecord) {
   const measurement = safeDimension(metadata.measurementMode ?? metadata.measurement_mode, 40);
   return measurement === 'analytics'
     || measurement === 'analytics_and_advertising'
-    || measurement === 'consented';
+    || measurement === 'consented'
+    || measurement === 'essencial';
 }
 
 export function normalizeMarketingJourneyEvent(item: JsonRecord): NormalizedJourneyEvent | null {

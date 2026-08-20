@@ -428,9 +428,16 @@ async function handleRequest(request: Request) {
     }
 
     const sanitizedMetadata = asObject(body.metadata);
+    /*
+      Cidade tambem e aceita na contagem essencial, por decisao do controlador
+      em 19/08/2026. O modo 'advertising' continua SEM cidade: quem liberou so
+      publicidade nao autorizou analise, e cidade nao e necessaria para medir
+      conversao de anuncio. Ver a pagina /privacidade do site.
+    */
     if (
       sanitizedMetadata.measurementMode !== 'analytics'
       && sanitizedMetadata.measurementMode !== 'analytics_and_advertising'
+      && sanitizedMetadata.measurementMode !== 'essencial'
     ) {
       delete sanitizedMetadata.visitorCity;
     }
