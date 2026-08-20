@@ -2430,6 +2430,115 @@ function buildEmptyDaily(periodDays: number, startDate: string): MarketingDailyM
   }));
 }
 
+/**
+ * Contatos cruzados com a palavra-chave que trouxe cada pessoa.
+ *
+ * POR QUE ISSO EXISTE
+ *
+ * O painel mostrava palavras-chave e termos pesquisados vindos da API do
+ * Google, mas so agregados: "esta palavra teve 19 cliques". Isso nao responde a
+ * pergunta que decide verba — QUAL palavra traz gente que realmente fala com a
+ * retifica, e se essa gente chega preparada ou so perguntando preco.
+ *
+ * O dado necessario ja estava no banco: a campanha manda `utm_term={keyword}`
+ * no sufixo da URL, e isso cai na coluna `term`. Medido em 30 dias: 29 dos 32
+ * contatos pagos tinham a palavra-chave gravada.
+ *
+ * O tempo ativo ao lado do contato e o que expoe o padrao: contato pago
+ * disparando em 2 a 14 segundos e alguem que nao leu nada antes de pedir preco.
+ *
+ * LIMITE HONESTO
+ *
+ * `term` e a PALAVRA-CHAVE que acionou o anuncio, nao o que a pessoa digitou. O
+ * texto digitado o Google nao entrega por URL; ele existe so agregado, na aba
+ * "Termos pesquisados". Quem nao aceita cookies tambem nao traz `gclid`, entao
+ * a palavra-chave aparece apenas quando o sufixo UTM chega junto.
+ */
+function contatosComPalavraChave(events: JsonRecord[]) {
+  const EVENTOS_DE_CONTATO = ['whatsapp_click', 'phone_click', 'form_submit'];
+  const porSessao = new Map<string, {
+    termo: string | null;
+    campanha: string | null;
+    pago: boolean;
+    paginaEntrada: string | null;
+    cidade: string | null;
+    segundos: number;
+    contato: string | null;
+    quando: string | null;
+  }>();
+
+  events.forEach((event) => {
+    const sessionId = typeof event.session_id === 'string' ? event.session_id.trim() : '';
+    if (!sessionId) return;
+
+    const atual = porSessao.get(sessionId) ?? {
+      termo: null, campanha: null, pago: false, paginaEntrada: null,
+      cidade: null, segundos: 0, contato: null, quando: null,
+    };
+
+    const termo = asString(event.term, 120);
+    if (termo && !atual.termo) atual.termo = termo;
+    const campanha = asString(event.campaign, 120);
+    if (campanha && !atual.campanha) atual.campanha = campanha;
+
+    const medium = String(event.medium ?? '').toLowerCase();
+    if (event.gclid || medium === 'cpc' || medium === 'paid') atual.pago = true;
+
+    if (!atual.paginaEntrada && typeof event.page_path === 'string') {
+      atual.paginaEntrada = event.page_path;
+    }
+    const cidade = asString(event.city, 80);
+    if (cidade && !atual.cidade) atual.cidade = cidade;
+
+    const metadata = (event.metadata ?? {}) as JsonRecord;
+    const segundos = toNumber(metadata.engagedSeconds);
+    if (segundos > atual.segundos) atual.segundos = segundos;
+
+    if (EVENTOS_DE_CONTATO.includes(String(event.event_type))) {
+      atual.contato = String(event.event_type);
+      atual.quando = String(event.occurred_at ?? '');
+    }
+
+    porSessao.set(sessionId, atual);
+  });
+
+  const contatos = Array.from(porSessao.values())
+    .filter((item) => item.contato)
+    .sort((a, b) => String(b.quando).localeCompare(String(a.quando)));
+
+  // Resumo por palavra: e ele que orienta verba e negativas.
+  const porPalavra = new Map<string, { palavra: string; contatos: number; pagos: number; segundosTotal: number }>();
+  contatos.forEach((item) => {
+    const chave = item.termo ?? (item.pago ? '(sem palavra registrada)' : '(orgânico)');
+    const linha = porPalavra.get(chave) ?? { palavra: chave, contatos: 0, pagos: 0, segundosTotal: 0 };
+    linha.contatos += 1;
+    if (item.pago) linha.pagos += 1;
+    linha.segundosTotal += item.segundos;
+    porPalavra.set(chave, linha);
+  });
+
+  return {
+    recentes: contatos.slice(0, 40).map((item) => ({
+      quando: item.quando,
+      tipo: item.contato,
+      pago: item.pago,
+      palavra: item.termo,
+      campanha: item.campanha,
+      paginaEntrada: item.paginaEntrada,
+      cidade: item.cidade,
+      segundos: item.segundos,
+    })),
+    porPalavra: Array.from(porPalavra.values())
+      .map((linha) => ({
+        palavra: linha.palavra,
+        contatos: linha.contatos,
+        pagos: linha.pagos,
+        segundosMedios: linha.contatos > 0 ? round(linha.segundosTotal / linha.contatos) : 0,
+      }))
+      .sort((a, b) => b.contatos - a.contatos),
+  };
+}
+
 function aggregateInternalData(
   periodDays: number,
   events: JsonRecord[],
@@ -3450,6 +3559,7 @@ async function handleRequest(request: Request) {
             previous: sitePrevious,
             journey,
             whatsapp: buildSiteWhatsappSummary(internal.currentEvents),
+          contatosPorPalavra: contatosComPalavraChave(internal.currentEvents),
             pages: ga4?.pages ?? internal.pages,
             sources: siteSources,
             aiTraffic,

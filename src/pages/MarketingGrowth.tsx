@@ -3069,6 +3069,7 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
   const devices = ads.devices ?? [];
   const adGroups = ads.adGroups ?? [];
   const keywords = ads.keywords ?? [];
+  const contatosPalavra = resumo.site.contatosPorPalavra;
   const searchTerms = ads.searchTerms ?? [];
   const landingPages = ads.landingPages ?? [];
   const schedule = ads.schedule ?? [];
@@ -3336,11 +3337,12 @@ export function GoogleAdsTab({ resumo }: { resumo: MarketingResumo }) {
           espaço, o que é melhor que arrastar a barra para o lado.
         */}
         <div className="w-full">
-          <TabsList className="grid h-auto w-full grid-cols-4 gap-1 rounded-xl border border-border/60 bg-muted/70 p-1 lg:grid-cols-7">
+          <TabsList className="grid h-auto w-full grid-cols-4 gap-1 rounded-xl border border-border/60 bg-muted/70 p-1 lg:grid-cols-8">
             <TabsTrigger value="campanhas" className="h-9 rounded-lg px-1 text-center text-xs font-semibold leading-tight data-[state=active]:shadow-sm">Campanhas</TabsTrigger>
             <TabsTrigger value="dispositivos" className="h-9 rounded-lg px-1 text-center text-xs font-semibold leading-tight data-[state=active]:shadow-sm">Dispositivos</TabsTrigger>
             <TabsTrigger value="palavras" className="h-9 rounded-lg px-1 text-center text-xs font-semibold leading-tight data-[state=active]:shadow-sm">Palavras-chave</TabsTrigger>
             <TabsTrigger value="pesquisas" className="h-9 rounded-lg px-1 text-center text-xs font-semibold leading-tight data-[state=active]:shadow-sm">Pesquisas</TabsTrigger>
+            <TabsTrigger value="conversoes-palavra" className="h-9 rounded-lg px-1 text-center text-xs font-semibold leading-tight data-[state=active]:shadow-sm">Quem falou</TabsTrigger>
             <TabsTrigger value="paginas" className="h-9 rounded-lg px-1 text-center text-xs font-semibold leading-tight data-[state=active]:shadow-sm">Páginas</TabsTrigger>
             <TabsTrigger value="horarios" className="h-9 rounded-lg px-1 text-center text-xs font-semibold leading-tight data-[state=active]:shadow-sm">Horários</TabsTrigger>
             <TabsTrigger value="conversoes" className="h-9 rounded-lg px-1 text-center text-xs font-semibold leading-tight data-[state=active]:shadow-sm">Conversões</TabsTrigger>

@@ -612,6 +612,29 @@ export interface MarketingResumo {
     previous: Omit<MarketingSiteTotals, 'conversionRate'>;
     journey?: MarketingJourneySummary;
     whatsapp?: MarketingSiteWhatsappSummary;
+    /**
+     * Contatos cruzados com a palavra-chave que trouxe cada pessoa.
+     * `palavra` e a PALAVRA-CHAVE que acionou o anuncio, nao o texto digitado —
+     * esse ultimo o Google entrega so agregado, na aba "Termos pesquisados".
+     */
+    contatosPorPalavra?: {
+      recentes: Array<{
+        quando: string | null;
+        tipo: string | null;
+        pago: boolean;
+        palavra: string | null;
+        campanha: string | null;
+        paginaEntrada: string | null;
+        cidade: string | null;
+        segundos: number;
+      }>;
+      porPalavra: Array<{
+        palavra: string;
+        contatos: number;
+        pagos: number;
+        segundosMedios: number;
+      }>;
+    };
     pages: MarketingPageMetric[];
     sources: MarketingSourceMetric[];
     aiTraffic?: MarketingAiTrafficSummary;
