@@ -407,7 +407,17 @@ export default function NoteFormCore({
     setItems((prev) => prev.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
 
   const normalizeItemText = (id: string) =>
-    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, description: toTitleCasePtBr(item.description) } : item)));
+    setItems((prev) =>
+      prev.map((item) => {
+        if (item.id === id) {
+          const description = noteType === 'COMPRA'
+            ? normalizeWhitespace(item.description).toUpperCase()
+            : toTitleCasePtBr(item.description);
+          return { ...item, description };
+        }
+        return item;
+      })
+    );
 
   const closeServiceSuggestionsSoon = (itemId: string) => {
     window.setTimeout(() => {

@@ -53,7 +53,7 @@ function KindTag({ kind }: { kind: OSItemKind }) {
 
 function ItemCardMobile({ item }: { item: OSItemRow }) {
   return (
-    <div className="border-b border-os-line-soft px-4 py-3.5 last:border-b-0">
+    <div className="border-b border-os-line-soft px-3 py-3 last:border-b-0">
       <div className="flex items-start gap-2.5">
         <span className={cn('mt-1.5 h-[7px] w-[7px] shrink-0 rounded-sm', KIND_DOT[item.kind])} />
         <div className="min-w-0 flex-1">
