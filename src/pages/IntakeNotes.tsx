@@ -604,6 +604,7 @@ export default function IntakeNotes() {
         'Placa',
         'KM',
         'Observação interna',
+        'Observação para o cliente',
         'Valor Total',
       ];
       const rows: CsvRow[] = filtered.map((note) => {
@@ -621,6 +622,7 @@ export default function IntakeNotes() {
           Placa: note.plate ?? '',
           KM: note.km ?? '',
           'Observação interna': note.observations ?? '',
+          'Observação para o cliente': note.customerObservations ?? '',
           'Valor Total': note.totalAmount,
         };
       });

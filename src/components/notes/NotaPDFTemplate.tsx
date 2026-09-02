@@ -10,6 +10,7 @@ import {
   normalizeServiceOrderText,
   renderTemplateText,
 } from '@/services/domain/documentCustomization';
+import { splitCustomerObservationLines } from '@/components/notes/notaCustomerObservation';
 import {
   formatNotaClientPrintName,
   NOTA_PRINT_LONG_MAX_ROWS,
@@ -425,6 +426,7 @@ function Via({
   const footerText = resolvedConfig?.showFooter === false
     ? ''
     : renderTemplateText(resolvedConfig?.footerText || '', templateVariables);
+  const customerObservationLines = splitCustomerObservationLines(cabecalho.observacao_cliente);
 
   return (
     <View style={sx(styles.nota, fullPage && styles.notaFullPage)}>
@@ -548,6 +550,11 @@ function Via({
             {footerText}
           </Text>
         )}
+        {customerObservationLines.map((linha, index) => (
+          <Text key={`customer-observation-${index}`} style={styles.observacaoLinha}>
+            {linha}
+          </Text>
+        ))}
       </View>
 
       <View style={styles.assinaturas}>

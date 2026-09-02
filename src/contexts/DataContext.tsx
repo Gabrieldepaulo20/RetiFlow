@@ -771,6 +771,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         fk_clientes: note.type === 'SERVICO' ? note.clientId : undefined,
         fk_notas_servico: note.type === 'COMPRA' ? note.parentNoteId : undefined,
         observacoes: note.observations || undefined,
+        observacao_cliente: note.customerObservations || undefined,
         contato_nome: note.contatoNome,
         total_servicos: note.totalServices,
         total_produtos: note.totalProducts,
@@ -827,6 +828,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const payload: Record<string, unknown> = { id_notas_servico: id };
       if (data.complaint    !== undefined) payload.defeito          = data.complaint;
       if (data.observations !== undefined) payload.observacoes      = data.observations;
+      if (data.customerObservations !== undefined) payload.observacao_cliente = data.customerObservations;
       if (data.clientId     !== undefined) payload.fk_clientes      = data.clientId;
       if (data.createdAt    !== undefined) payload.data_entrada     = data.createdAt.slice(0, 10);
       if (data.deadline     !== undefined) payload.prazo            = data.deadline;

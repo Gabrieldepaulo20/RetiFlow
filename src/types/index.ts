@@ -133,6 +133,8 @@ export interface IntakeNote {
   km?: number;
   complaint: string;
   observations: string;
+  /** Observação pública específica da O.S.; aparece na notinha/PDF do cliente. */
+  customerObservations?: string;
   responsavel?: string;
   /** Contato responsável pela nota (ex.: funcionário da empresa cliente). */
   contatoNome?: string;

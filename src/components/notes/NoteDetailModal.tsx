@@ -138,6 +138,7 @@ export default function NoteDetailModal({ noteId, onClose, noteOverride, clientO
       prazo: note.deadline ?? '',
       defeito: note.complaint,
       observacoes: note.observations ?? null,
+      observacao_cliente: note.customerObservations ?? null,
       data_criacao: note.createdAt,
       finalizado_em: note.finalizedAt ?? null,
       total: note.totalAmount,

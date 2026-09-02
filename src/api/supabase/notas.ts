@@ -19,6 +19,7 @@ export interface NotaServico {
   prazo: string;
   defeito: string;
   observacoes: string | null;
+  observacao_cliente?: string | null;
   total: number;
   total_servicos: number;
   total_produtos: number;
@@ -63,6 +64,7 @@ export interface NovaNotaPayload {
   fk_clientes?: string;
   fk_notas_servico?: string;
   observacoes?: string;
+  observacao_cliente?: string | null;
   contato_nome?: string | null;
   contato_telefone?: string | null;
   total_servicos?: number;
@@ -129,6 +131,7 @@ export interface NotaServicoDetalhes {
     prazo: string;
     defeito: string;
     observacoes: string | null;
+    observacao_cliente?: string | null;
     data_criacao: string;
     finalizado_em: string | null;
     total: number;
@@ -415,6 +418,7 @@ export function supabaseToIntakeNote(row: NotaServico): IntakeNote {
     pago_com?: string | null;
     contato_nome?: string | null;
     contato_telefone?: string | null;
+    observacao_cliente?: string | null;
   };
   const paymentStatus: NotePaymentStatus =
     extra.payment_status === 'PAGO'
@@ -441,6 +445,7 @@ export function supabaseToIntakeNote(row: NotaServico): IntakeNote {
     engineType:       row.veiculo.motor || '',
     complaint:        row.defeito,
     observations:     row.observacoes ?? '',
+    customerObservations: extra.observacao_cliente ?? row.observacao_cliente ?? '',
     contatoNome:      extra.contato_nome ?? undefined,
     contatoTelefone:  extra.contato_telefone ?? undefined,
     totalServices:    row.total_servicos,

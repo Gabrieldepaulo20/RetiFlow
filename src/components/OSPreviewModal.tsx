@@ -29,6 +29,7 @@ import {
   normalizeServiceOrderText,
   renderTemplateText,
 } from '@/services/domain/documentCustomization';
+import { splitCustomerObservationLines } from '@/components/notes/notaCustomerObservation';
 import { getNotaItemDetailLines } from '@/components/notes/notaItemDetails';
 import { formatCepForDisplay, formatDocumentForDisplay } from '@/services/domain/customers';
 
@@ -135,6 +136,7 @@ function buildPdfDados(
       prazo: note.deadline ?? '',
       defeito: note.complaint,
       observacoes: note.observations || null,
+      observacao_cliente: note.customerObservations || null,
       data_criacao: note.createdAt,
       finalizado_em: note.finalizedAt ?? null,
       total: note.totalAmount,
@@ -232,6 +234,7 @@ function PreviewVia({
     .map((value) => renderTemplateText(value, templateVariables));
   const observationLines = configuredObservation.length > 0 ? configuredObservation : NOTA_PRINT_OBSERVATIONS;
   const footerText = config?.showFooter === false ? '' : renderTemplateText(config?.footerText || '', templateVariables);
+  const customerObservationLines = splitCustomerObservationLines(cabecalho.observacao_cliente);
 
   return (
     <section
@@ -407,6 +410,11 @@ function PreviewVia({
           </p>
         ))}
         {footerText && <p className="my-[5px]">{footerText}</p>}
+        {customerObservationLines.map((line, index) => (
+          <p key={`customer-observation-${index}`} className="my-[5px] font-medium text-neutral-900">
+            {line}
+          </p>
+        ))}
       </div>
 
       <div className="flex shrink-0 justify-evenly gap-5 pt-[10px] text-center text-[12px]">

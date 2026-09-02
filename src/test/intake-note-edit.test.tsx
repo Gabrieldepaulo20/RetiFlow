@@ -73,6 +73,7 @@ describe('Note edit flow', () => {
       km: 12345,
       complaint: 'Batendo válvula',
       observations: 'Observação antiga',
+      customerObservations: 'Garantia de 90 dias',
       contatoNome: 'João Oficina',
       totalServices: 350,
       totalProducts: 0,
@@ -198,6 +199,12 @@ describe('Note edit flow', () => {
     expect(screen.getByRole('button', { name: 'Entrega / retirada prevista' })).toBeInTheDocument();
     expect(screen.getByText('Pode ser qualquer data dentro do ano civil informado.')).toBeInTheDocument();
     expect(screen.getByText(/anterior ou posterior à O\.S\./i)).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Na nota / PDF' })).toHaveAttribute('data-state', 'active');
+    expect(screen.getByLabelText('Observação para o cliente')).toHaveValue('Garantia de 90 dias');
+
+    fireEvent.change(screen.getByLabelText('Observação para o cliente'), {
+      target: { value: 'Levar esta O.S. no retorno.' },
+    });
 
     fireEvent.change(screen.getByDisplayValue('Gol 1.0'), {
       target: { value: 'Gol 1.6 atualizado' },
@@ -218,6 +225,7 @@ describe('Note edit flow', () => {
           complaint: 'Plaina Completa',
           totalAmount: 350,
           contatoNome: 'João Oficina',
+          customerObservations: 'Levar esta O.S. no retorno.',
         }),
         expect.any(Array),
       );

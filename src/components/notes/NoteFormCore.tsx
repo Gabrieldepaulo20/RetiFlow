@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
   SelectContent,
@@ -52,6 +53,10 @@ import { generateNotaPdfBlob } from '@/lib/notaPdf';
 import { useDocumentCustomization, useDocumentTemplateSettings } from '@/hooks/useDocumentTemplateSettings';
 import { getNotaItemDetailLines } from '@/components/notes/notaItemDetails';
 import { PURCHASE_NOTES_ENABLED } from '@/services/domain/intakeNotes';
+import {
+  CUSTOMER_OBSERVATION_MAX_LENGTH,
+  normalizeCustomerObservation,
+} from '@/components/notes/notaCustomerObservation';
 
 const IS_REAL_AUTH = import.meta.env.VITE_AUTH_MODE === 'real';
 
@@ -221,6 +226,7 @@ export default function NoteFormCore({
   const [km, setKm] = useState('');
   const [complaint, setComplaint] = useState('');
   const [observations, setObservations] = useState('');
+  const [customerObservations, setCustomerObservations] = useState('');
   const [responsavel, setResponsavel] = useState('');
   const [contatoNome, setContatoNome] = useState('');
   const [items, setItems] = useState<ServiceItem[]>([newItem()]);
@@ -251,6 +257,7 @@ export default function NoteFormCore({
     setKm(editingNote.km ? String(editingNote.km) : '');
     setComplaint(editingNote.complaint);
     setObservations(editingNote.observations);
+    setCustomerObservations(editingNote.customerObservations ?? '');
     setResponsavel(editingNote.responsavel || '');
     setContatoNome(editingNote.contatoNome || '');
     setOsNumber(editingNote.number);
@@ -632,6 +639,7 @@ export default function NoteFormCore({
       km: km ? parseInt(onlyDigits(km), 10) : undefined,
       complaint: generatedComplaint || complaint.trim() || 'Serviços conforme descrição dos itens',
       observations: normalizeWhitespace(observations),
+      customerObservations: normalizeCustomerObservation(customerObservations),
       responsavel: toTitleCasePtBr(responsavel) || undefined,
       contatoNome: noteType === 'SERVICO' ? normalizedContatoNome : undefined,
       createdByUserId: editingNote?.createdByUserId || user!.id,
@@ -1331,17 +1339,43 @@ export default function NoteFormCore({
 
   const section5 = (
     <FormSection>
-      <SectionHeader step={5} icon={<FileText className="w-3.5 h-3.5" />} title="Observação interna" />
-      <Textarea
-        value={observations}
-        onChange={(e) => setObservations(e.target.value)}
-        onBlur={() => setObservations(normalizeWhitespace(observations))}
-        placeholder="Anotações internas sobre esta O.S. Não aparecem na notinha/PDF."
-        className="min-h-[92px] resize-y text-sm"
-      />
-      <p className="mt-2 text-xs text-muted-foreground">
-        A descrição impressa da notinha vem dos serviços/produtos. As observações do PDF permanecem fixas.
-      </p>
+      <SectionHeader step={5} icon={<FileText className="w-3.5 h-3.5" />} title="Observações da O.S." />
+      <Tabs defaultValue="cliente" className="w-full">
+        <TabsList className="grid h-10 w-full grid-cols-2 sm:max-w-md">
+          <TabsTrigger value="cliente">Na nota / PDF</TabsTrigger>
+          <TabsTrigger value="interna">Observação interna</TabsTrigger>
+        </TabsList>
+        <TabsContent value="cliente" className="mt-4">
+          <Textarea
+            aria-label="Observação para o cliente"
+            value={customerObservations}
+            maxLength={CUSTOMER_OBSERVATION_MAX_LENGTH}
+            onChange={(e) => setCustomerObservations(e.target.value)}
+            onBlur={() => setCustomerObservations(normalizeCustomerObservation(customerObservations))}
+            placeholder="Ex.: Garantia válida mediante apresentação desta O.S."
+            className="min-h-[92px] resize-y text-sm"
+          />
+          <div className="mt-2 flex items-start justify-between gap-3 text-xs text-muted-foreground">
+            <p>Este texto aparece abaixo das observações fixas na notinha/PDF entregue ao cliente.</p>
+            <span className="shrink-0 tabular-nums">
+              {customerObservations.length}/{CUSTOMER_OBSERVATION_MAX_LENGTH}
+            </span>
+          </div>
+        </TabsContent>
+        <TabsContent value="interna" className="mt-4">
+          <Textarea
+            aria-label="Observação interna"
+            value={observations}
+            onChange={(e) => setObservations(e.target.value)}
+            onBlur={() => setObservations(normalizeWhitespace(observations))}
+            placeholder="Anotações internas sobre esta O.S. Não aparecem na notinha/PDF."
+            className="min-h-[92px] resize-y text-sm"
+          />
+          <p className="mt-2 text-xs text-muted-foreground">
+            Uso exclusivo da equipe. Esta observação não aparece para o cliente.
+          </p>
+        </TabsContent>
+      </Tabs>
     </FormSection>
   );
 
