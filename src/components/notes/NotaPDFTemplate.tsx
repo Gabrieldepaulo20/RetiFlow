@@ -422,11 +422,13 @@ function Via({
     .map((value) => value?.trim() ?? '')
     .filter((value): value is string => value.length > 0)
     .map((value) => renderTemplateText(value, templateVariables));
-  const observationLines = configuredObservation.length > 0 ? configuredObservation : NOTA_PRINT_OBSERVATIONS;
+  const customerObservationLines = splitCustomerObservationLines(cabecalho.observacao_cliente);
+  const observationLines = customerObservationLines.length > 0
+    ? customerObservationLines
+    : (configuredObservation.length > 0 ? configuredObservation : NOTA_PRINT_OBSERVATIONS);
   const footerText = resolvedConfig?.showFooter === false
     ? ''
     : renderTemplateText(resolvedConfig?.footerText || '', templateVariables);
-  const customerObservationLines = splitCustomerObservationLines(cabecalho.observacao_cliente);
 
   return (
     <View style={sx(styles.nota, fullPage && styles.notaFullPage)}>
@@ -550,11 +552,6 @@ function Via({
             {footerText}
           </Text>
         )}
-        {customerObservationLines.map((linha, index) => (
-          <Text key={`customer-observation-${index}`} style={styles.observacaoLinha}>
-            {linha}
-          </Text>
-        ))}
       </View>
 
       <View style={styles.assinaturas}>

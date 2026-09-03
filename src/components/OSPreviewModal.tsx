@@ -232,9 +232,11 @@ function PreviewVia({
     .map((value) => value?.trim() ?? '')
     .filter((value): value is string => value.length > 0)
     .map((value) => renderTemplateText(value, templateVariables));
-  const observationLines = configuredObservation.length > 0 ? configuredObservation : NOTA_PRINT_OBSERVATIONS;
-  const footerText = config?.showFooter === false ? '' : renderTemplateText(config?.footerText || '', templateVariables);
   const customerObservationLines = splitCustomerObservationLines(cabecalho.observacao_cliente);
+  const observationLines = customerObservationLines.length > 0
+    ? customerObservationLines
+    : (configuredObservation.length > 0 ? configuredObservation : NOTA_PRINT_OBSERVATIONS);
+  const footerText = config?.showFooter === false ? '' : renderTemplateText(config?.footerText || '', templateVariables);
 
   return (
     <section
@@ -410,11 +412,6 @@ function PreviewVia({
           </p>
         ))}
         {footerText && <p className="my-[5px]">{footerText}</p>}
-        {customerObservationLines.map((line, index) => (
-          <p key={`customer-observation-${index}`} className="my-[5px] font-medium text-neutral-900">
-            {line}
-          </p>
-        ))}
       </div>
 
       <div className="flex shrink-0 justify-evenly gap-5 pt-[10px] text-center text-[12px]">
