@@ -20,7 +20,7 @@ export const NOTA_PRINT_PORTRAIT_PAGE = {
 export const NOTA_PRINT_OBSERVATIONS = [
   '1. O prazo de entrega poderá ser alterado caso seja necessário serviço adicional não previsto.',
   '2. Peças substituídas ficam à disposição do cliente por até 30 dias após a retirada.',
-  '3. Garantia de 6 meses para os serviços executados conforme contrato.',
+  '3. Garantia de 3 meses para os serviços executados conforme contrato.',
 ];
 
 const LEADING_CUSTOMER_TITLES = new Set([
